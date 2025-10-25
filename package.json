@@ -1,24 +1,24 @@
 {
-  "name": "zotero-plugin-template",
+  "name": "zotero-ai-butler",
   "type": "module",
-  "version": "3.1.0",
-  "description": "Zotero Plugin Template",
+  "version": "0.0.0",
+  "description": "zotero-ai-butler - An AI-powered assistant for Zotero users.",
   "config": {
-    "addonName": "Zotero Plugin Template",
-    "addonID": "addontemplate@euclpts.com",
-    "addonRef": "addontemplate",
-    "addonInstance": "AddonTemplate",
-    "prefsPrefix": "extensions.zotero.addontemplate"
+    "addonName": "zotero-ai-butler",
+    "addonID": "zotero-ai-butler@steven",
+    "addonRef": "zoteroaibutler",
+    "addonInstance": "zotero-ai-butler",
+    "prefsPrefix": "extensions.zotero.zoteroaibutler"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/windingwind/zotero-plugin-template.git"
+    "url": "git+https://github.com/steven-jianhao-li/zotero-AI-Butler.git"
   },
-  "author": "windingwind",
+  "author": "Steven Jianhao Li",
   "bugs": {
-    "url": "https://github.com/windingwind/zotero-plugin-template/issues"
+    "url": "https://github.com/steven-jianhao-li/zotero-AI-Butler/issues"
   },
-  "homepage": "https://github.com/windingwind/zotero-plugin-template#readme",
+  "homepage": "https://github.com/steven-jianhao-li/zotero-AI-Butler#readme",
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "zotero-plugin serve",

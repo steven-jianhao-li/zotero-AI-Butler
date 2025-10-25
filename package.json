@@ -30,7 +30,7 @@
     "update-deps": "npm update --save"
   },
   "dependencies": {
-    "zotero-plugin-toolkit": "^5.1.0-beta.4"
+    "zotero-plugin-toolkit": "^5.1.0-beta.10"
   },
   "devDependencies": {
     "@types/chai": "^5.2.2",

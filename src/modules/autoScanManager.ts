@@ -245,7 +245,10 @@ export class AutoScanManager {
         if (latest) {
           await this.enqueueIfReady(latest);
         }
-      } catch {}
+      } catch (e) {
+        // 避免空的 catch 触发 ESLint：记录并忽略重试错误
+        ztoolkit.log("[AutoScan] enqueueIfReady retry error:", e);
+      }
     }, delayMs) as unknown as number;
     this.retryTimers.set(item.id, timer);
   }

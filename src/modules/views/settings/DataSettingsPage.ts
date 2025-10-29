@@ -172,7 +172,10 @@ export class DataSettingsPage {
     keys.forEach((k) => {
       try {
         data[k] = getPref(k as any);
-      } catch {}
+      } catch (e) {
+        // 忽略单个首选项读取失败
+        return;
+      }
     });
     const json = JSON.stringify(data, null, 2);
 
@@ -215,7 +218,7 @@ export class DataSettingsPage {
 
   private importSettings(): void {
     const win = Zotero.getMainWindow() as any;
-    let text = { value: "" } as any;
+    const text = { value: "" } as any;
     const ok = Services.prompt.prompt(
       win,
       "导入设置",
@@ -230,7 +233,10 @@ export class DataSettingsPage {
       Object.entries(obj).forEach(([k, v]) => {
         try {
           setPref(k as any, v as any);
-        } catch {}
+        } catch (e) {
+          // 忽略无法设置的项，继续处理其他项
+          return;
+        }
       });
       new ztoolkit.ProgressWindow("导入设置")
         .createLine({ text: "✅ 导入成功", type: "success" })

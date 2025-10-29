@@ -1,4 +1,5 @@
-﻿(function () {
+﻿/* global Zotero, document, window */
+(function () {
   "use strict";
 
   try {

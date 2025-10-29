@@ -606,7 +606,9 @@ export class TaskQueueManager {
               this.notifyStream(taskId, { type: "start", title: task.title });
             }
             this.notifyStream(taskId, { type: "chunk", chunk });
-          } catch {}
+          } catch (e) {
+            ztoolkit.log(`流式内容广播失败: ${e}`);
+          }
         },
       );
 

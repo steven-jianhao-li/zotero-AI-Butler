@@ -537,7 +537,10 @@ export class LLMClient {
                         });
                       }
                     }
-                  } catch {}
+                  } catch (e) {
+                    // 忽略无法解析的 SSE 行，继续处理后续数据
+                    continue;
+                  }
                 }
               }
             } catch (err) {
@@ -568,7 +571,10 @@ export class LLMClient {
           const msg = err?.message || error?.message || String(error);
           errorMessage = `${code}: ${msg}`;
         }
-      } catch {}
+      } catch (e) {
+        // 解析错误响应失败时忽略，保留默认错误消息
+        ztoolkit.log("[AI-Butler] Failed to parse Gemini error response");
+      }
       LLMClient.notifyError(errorMessage);
       throw new Error(errorMessage);
     }
@@ -815,7 +821,10 @@ export class LLMClient {
             const msg = err?.message || "请求失败";
             errorMessage = `${code}: ${msg}`;
           }
-        } catch {}
+        } catch (e) {
+          // 忽略错误响应解析失败，使用默认错误信息
+          ztoolkit.log("[AI-Butler] Failed to parse testConnection error");
+        }
         throw new Error(errorMessage);
       }
     }

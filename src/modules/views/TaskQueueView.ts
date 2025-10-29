@@ -560,7 +560,9 @@ export class TaskQueueView extends BaseView {
       // 确保执行器已启动，尽快进入处理
       try {
         this.manager.start();
-      } catch {}
+      } catch (e) {
+        ztoolkit.log("[AI Butler] 启动任务执行器失败:", e);
+      }
       let started = false;
       this.detailStreamUnsubscribe = this.manager.onStream((taskId, event) => {
         if (taskId !== task.id) return;

@@ -17,11 +17,9 @@ import { config } from "../package.json";
       // Use globalThis to reference the current window object in this context
       hooks.onPrefsEvent("load", { window: globalThis as unknown as Window });
     } else {
-      // eslint-disable-next-line no-console
       console.warn("[AI-Butler][Prefs] hooks.onPrefsEvent not available");
     }
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error("[AI-Butler][Prefs] prefs-entry execution error:", e);
   }
 })();

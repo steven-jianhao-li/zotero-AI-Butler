@@ -125,7 +125,9 @@ export class MainWindow {
       this.switchTab(initialTab);
       try {
         this.dialog?.window?.focus?.();
-      } catch {}
+      } catch (e) {
+        ztoolkit.log("[AI Butler] 聚焦已打开窗口失败:", e);
+      }
       return;
     }
 

@@ -1,24 +1,24 @@
 {
-  "name": "zotero-plugin-template",
+  "name": "zotero-ai-butler",
   "type": "module",
-  "version": "3.1.0",
-  "description": "Zotero Plugin Template",
+  "version": "1.0.0",
+  "description": "Your personal AI butler, automatically and meticulously reads papers and summarizes notes.",
   "config": {
-    "addonName": "Zotero Plugin Template",
-    "addonID": "addontemplate@euclpts.com",
-    "addonRef": "addontemplate",
-    "addonInstance": "AddonTemplate",
-    "prefsPrefix": "extensions.zotero.addontemplate"
+    "addonName": "zotero-ai-butler",
+    "addonID": "zotero-ai-butler@github.com",
+    "addonRef": "aiButler",
+    "addonInstance": "AIButler",
+    "prefsPrefix": "extensions.zotero.aiButler"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/windingwind/zotero-plugin-template.git"
+    "url": "git+https://github.com/steven-jianhao-li/zotero-AI-Butler.git"
   },
-  "author": "windingwind",
+  "author": "Steven Jianhao Li",
   "bugs": {
-    "url": "https://github.com/windingwind/zotero-plugin-template/issues"
+    "url": "https://github.com/steven-jianhao-li/zotero-AI-Butler/issues"
   },
-  "homepage": "https://github.com/windingwind/zotero-plugin-template#readme",
+  "homepage": "https://github.com/steven-jianhao-li/zotero-AI-Butler#readme",
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "zotero-plugin serve",
@@ -30,6 +30,9 @@
     "update-deps": "npm update --save"
   },
   "dependencies": {
+    "@types/marked": "^5.0.2",
+    "marked": "^16.4.1",
+    "mathjax": "^3.2.2",
     "zotero-plugin-toolkit": "^5.1.0-beta.4"
   },
   "devDependencies": {

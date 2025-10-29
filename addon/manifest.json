@@ -6,14 +6,14 @@
   "homepage_url": "__homepage__",
   "author": "__author__",
   "icons": {
-    "48": "content/icons/favicon@0.5x.png",
-    "96": "content/icons/favicon.png"
+    "48": "content/icons/logo.png",
+    "96": "content/icons/logo.png"
   },
   "applications": {
     "zotero": {
       "id": "__addonID__",
       "update_url": "__updateURL__",
-      "strict_min_version": "6.999",
+      "strict_min_version": "7.0.0",
       "strict_max_version": "8.*"
     }
   }

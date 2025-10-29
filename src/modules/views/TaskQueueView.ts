@@ -2,30 +2,30 @@
  * ================================================================
  * 任务队列视图
  * ================================================================
- * 
+ *
  * 本模块提供任务队列管理的可视化界面
- * 
+ *
  * 主要职责:
  * 1. 显示所有待处理/处理中/已完成/失败的文献任务
  * 2. 提供任务状态筛选和排序功能
  * 3. 支持手动操作任务(重试/删除/优先级调整)
  * 4. 实时更新任务进度和状态
  * 5. 显示任务详细信息和错误日志
- * 
+ *
  * 任务状态:
  * - pending: 待处理 (灰色)
  * - processing: 处理中 (蓝色)
  * - completed: 已完成 (绿色)
  * - failed: 失败 (红色)
  * - priority: 优先处理 (橙色)
- * 
+ *
  * 显示顺序:
  * 1. 优先处理
  * 2. 处理中
  * 3. 待处理
  * 4. 失败
  * 5. 已完成
- * 
+ *
  * @module TaskQueueView
  * @author AI-Butler Team
  */
@@ -77,7 +77,7 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 渲染视图内容
-   * 
+   *
    * @protected
    */
   protected renderContent(): HTMLElement {
@@ -100,13 +100,13 @@ export class TaskQueueView extends BaseView {
     const headerWrapper = this.createElement("div", {
       id: "task-header-wrapper",
       styles: {
-        position: "sticky",  // 使用 sticky 定位实现冻结效果
-        top: "0",            // 固定在容器顶部
-        flexShrink: "0",     // 不允许收缩
+        position: "sticky", // 使用 sticky 定位实现冻结效果
+        top: "0", // 固定在容器顶部
+        flexShrink: "0", // 不允许收缩
         backgroundColor: "#fff",
         // 防止下方滚动内容透出
         boxShadow: "0 2px 4px rgba(0,0,0,0.08)",
-        zIndex: "10",        // 提高层级确保在滚动内容之上
+        zIndex: "10", // 提高层级确保在滚动内容之上
       },
     });
 
@@ -132,7 +132,7 @@ export class TaskQueueView extends BaseView {
       },
     });
 
-  container.appendChild(headerWrapper);
+    container.appendChild(headerWrapper);
     container.appendChild(this.taskListContainer);
 
     return container;
@@ -140,7 +140,7 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 创建头部区域
-   * 
+   *
    * @private
    */
   private createHeader(): HTMLElement {
@@ -165,7 +165,7 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 创建统计信息区域
-   * 
+   *
    * @private
    */
   private createStatsSection(): HTMLElement {
@@ -190,14 +190,14 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 创建统计卡片
-   * 
+   *
    * @private
    */
   private createStatCard(
     id: string,
     label: string,
     value: string,
-    color: string
+    color: string,
   ): HTMLElement {
     return this.createElement("div", {
       id: `stat-${id}`,
@@ -232,7 +232,7 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 创建筛选栏
-   * 
+   *
    * @private
    */
   private createFilterBar(): HTMLElement {
@@ -344,7 +344,7 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 渲染任务列表
-   * 
+   *
    * @private
    */
   private renderTaskList(): void {
@@ -355,13 +355,17 @@ export class TaskQueueView extends BaseView {
     // 筛选任务
     let filteredTasks = this.tasks;
     if (this.filterStatus !== "all") {
-      filteredTasks = this.tasks.filter((task) => task.status === this.filterStatus);
+      filteredTasks = this.tasks.filter(
+        (task) => task.status === this.filterStatus,
+      );
     }
 
     // 文本搜索
     if (this.searchQuery) {
       const q = this.searchQuery.toLowerCase();
-      filteredTasks = filteredTasks.filter(t => (t.title || "").toLowerCase().includes(q));
+      filteredTasks = filteredTasks.filter((t) =>
+        (t.title || "").toLowerCase().includes(q),
+      );
     }
 
     // 排序任务
@@ -406,7 +410,7 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 创建任务元素
-   * 
+   *
    * @private
    */
   private createTaskElement(task: TaskItem): HTMLElement {
@@ -517,7 +521,7 @@ export class TaskQueueView extends BaseView {
       },
     });
 
-  // 详情按钮：打开 AI 总结面板并展示本次调用的流式结果
+    // 详情按钮：打开 AI 总结面板并展示本次调用的流式结果
     const detailBtn = this.createElement("button", {
       styles: {
         padding: "6px 12px",
@@ -554,7 +558,9 @@ export class TaskQueueView extends BaseView {
       // 注册一次性流式订阅，仅监听该 taskId
       if (!this.manager) this.manager = TaskQueueManager.getInstance();
       // 确保执行器已启动，尽快进入处理
-      try { this.manager.start(); } catch {}
+      try {
+        this.manager.start();
+      } catch {}
       let started = false;
       this.detailStreamUnsubscribe = this.manager.onStream((taskId, event) => {
         if (taskId !== task.id) return;
@@ -663,7 +669,7 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 更新统计信息
-   * 
+   *
    * @private
    */
   private updateStats(): void {
@@ -671,10 +677,13 @@ export class TaskQueueView extends BaseView {
 
     const stats = {
       total: this.tasks.length,
-      priority: this.tasks.filter((t) => t.status === TaskStatus.PRIORITY).length,
-      processing: this.tasks.filter((t) => t.status === TaskStatus.PROCESSING).length,
+      priority: this.tasks.filter((t) => t.status === TaskStatus.PRIORITY)
+        .length,
+      processing: this.tasks.filter((t) => t.status === TaskStatus.PROCESSING)
+        .length,
       pending: this.tasks.filter((t) => t.status === TaskStatus.PENDING).length,
-      completed: this.tasks.filter((t) => t.status === TaskStatus.COMPLETED).length,
+      completed: this.tasks.filter((t) => t.status === TaskStatus.COMPLETED)
+        .length,
       failed: this.tasks.filter((t) => t.status === TaskStatus.FAILED).length,
     };
 
@@ -691,7 +700,7 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 筛选任务
-   * 
+   *
    * @param status 任务状态
    */
   public filterTasks(status: TaskStatus | "all"): void {
@@ -729,7 +738,7 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 添加任务
-   * 
+   *
    * @param task 任务数据
    */
   public addTask(task: TaskItem): void {
@@ -740,13 +749,13 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 更新任务
-   * 
+   *
    * @param taskId 任务 ID
    * @param updates 更新数据
    */
   public updateTask(
     taskId: string,
-    updates: Partial<Omit<TaskItem, "id">>
+    updates: Partial<Omit<TaskItem, "id">>,
   ): void {
     const task = this.tasks.find((t) => t.id === taskId);
     if (task) {
@@ -758,7 +767,7 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 删除任务
-   * 
+   *
    * @param taskId 任务 ID
    */
   public deleteTask(taskId: string): void {
@@ -783,7 +792,7 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 重试任务
-   * 
+   *
    * @param taskId 任务 ID
    */
   public async retryTask(taskId: string): Promise<void> {
@@ -798,7 +807,7 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 优先处理任务
-   * 
+   *
    * @param taskId 任务 ID
    */
   public async prioritizeTask(taskId: string): Promise<void> {
@@ -823,7 +832,7 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 获取所有任务
-   * 
+   *
    * @returns 任务列表
    */
   public getTasks(): TaskItem[] {
@@ -844,7 +853,7 @@ export class TaskQueueView extends BaseView {
 
   /**
    * 视图显示时的回调
-   * 
+   *
    * @protected
    */
   protected onShow(): void {
@@ -870,7 +879,7 @@ export class TaskQueueView extends BaseView {
 
     // 注册回调
     this.unsubscribeProgress = this.manager.onProgress((taskId, progress) => {
-      const t = this.tasks.find(t => t.id === taskId);
+      const t = this.tasks.find((t) => t.id === taskId);
       if (t) {
         t.status = TaskStatus.PROCESSING;
         t.progress = progress;
@@ -878,26 +887,31 @@ export class TaskQueueView extends BaseView {
       }
     });
 
-    this.unsubscribeComplete = this.manager.onComplete((taskId, success, error) => {
-      const t = this.tasks.find(t => t.id === taskId);
-      if (t) {
-        t.status = success ? TaskStatus.COMPLETED : TaskStatus.FAILED;
-        t.error = success ? undefined : (error || t.error);
-        t.completedAt = new Date();
-        t.progress = 100;
-        this.updateStats();
-        this.renderTaskList();
-      } else {
-        // 不在视图内,做一次全量同步
-        this.syncFromManager();
-      }
-    });
+    this.unsubscribeComplete = this.manager.onComplete(
+      (taskId, success, error) => {
+        const t = this.tasks.find((t) => t.id === taskId);
+        if (t) {
+          t.status = success ? TaskStatus.COMPLETED : TaskStatus.FAILED;
+          t.error = success ? undefined : error || t.error;
+          t.completedAt = new Date();
+          t.progress = 100;
+          this.updateStats();
+          this.renderTaskList();
+        } else {
+          // 不在视图内,做一次全量同步
+          this.syncFromManager();
+        }
+      },
+    );
 
     // 兜底定时刷新(5s)
     if (this.refreshTimerId) {
       clearInterval(this.refreshTimerId);
     }
-    this.refreshTimerId = setInterval(() => this.syncFromManager(), 5000) as unknown as number;
+    this.refreshTimerId = setInterval(
+      () => this.syncFromManager(),
+      5000,
+    ) as unknown as number;
   }
 
   /** 从管理器同步任务到视图 */

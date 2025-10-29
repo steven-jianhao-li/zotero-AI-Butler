@@ -9,7 +9,8 @@ import { config } from "../package.json";
   try {
     // Prefer the named instance, fallback to __addonInstance__ if available
     // @ts-expect-error - dynamic access to global Zotero
-    const addonInstance = Zotero?.[config.addonInstance] || Zotero?.__addonInstance__;
+    const addonInstance =
+      Zotero?.[config.addonInstance] || Zotero?.__addonInstance__;
     const hooks = addonInstance?.hooks;
 
     if (hooks && typeof hooks.onPrefsEvent === "function") {

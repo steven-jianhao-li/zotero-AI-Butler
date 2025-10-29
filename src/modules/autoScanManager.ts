@@ -2,16 +2,16 @@
  * ================================================================
  * 自动扫描管理器
  * ================================================================
- * 
+ *
  * 本模块负责监听 Zotero 库中新添加的文献条目，
  * 并自动将需要 AI 分析的条目加入任务队列
- * 
+ *
  * 主要职责:
  * 1. 监听 Zotero item-add 事件
  * 2. 检查新条目是否需要 AI 笔记（是否已有 AI 笔记）
  * 3. 自动将符合条件的条目加入队列
  * 4. 尊重用户的自动扫描开关设置
- * 
+ *
  * @module autoScanManager
  * @author AI-Butler Team
  */
@@ -75,13 +75,13 @@ export class AutoScanManager {
           event: string,
           type: string,
           ids: Array<string | number>,
-          extraData: any
+          extraData: any,
         ) => {
           await this.handleNotify(event, type, ids, extraData);
         },
       },
       ["item"],
-      "ai-butler-auto-scan"
+      "ai-butler-auto-scan",
     );
 
     this.running = true;
@@ -112,7 +112,7 @@ export class AutoScanManager {
     event: string,
     type: string,
     ids: Array<string | number>,
-    extraData: any
+    extraData: any,
   ): Promise<void> {
     if (type !== "item") return;
 
@@ -179,7 +179,8 @@ export class AutoScanManager {
   /** 判断是否存在可用的 PDF 附件 */
   private async hasUsablePDFAttachment(item: Zotero.Item): Promise<boolean> {
     try {
-      const attIDs: number[] = ((item as any).getAttachments?.() || []) as number[];
+      const attIDs: number[] = ((item as any).getAttachments?.() ||
+        []) as number[];
       for (const aid of attIDs) {
         const att = await Zotero.Items.getAsync(aid);
         if (!att || !att.isAttachment()) continue;
@@ -211,7 +212,9 @@ export class AutoScanManager {
       this.pendingParents.delete(item.id);
       const tqm = TaskQueueManager.getInstance();
       await tqm.addTasks([item], false);
-      ztoolkit.log(`[AutoScan] 自动加入 1 个新条目到队列: ${item.getField("title")}`);
+      ztoolkit.log(
+        `[AutoScan] 自动加入 1 个新条目到队列: ${item.getField("title")}`,
+      );
       // 清理重试计时器
       const timer = this.retryTimers.get(item.id);
       if (timer) {
@@ -228,7 +231,9 @@ export class AutoScanManager {
     if (attempts >= 5) {
       this.pendingParents.delete(item.id);
       (item as any)[attemptKey] = 0;
-      ztoolkit.log(`[AutoScan] 附件仍未就绪，放弃自动加入: ${item.getField("title")}`);
+      ztoolkit.log(
+        `[AutoScan] 附件仍未就绪，放弃自动加入: ${item.getField("title")}`,
+      );
       return;
     }
 
@@ -250,7 +255,7 @@ export class AutoScanManager {
    * 检查是否已经存在 AI 生成的笔记
    */
   private async filterItemsNeedingAI(
-    items: Zotero.Item[]
+    items: Zotero.Item[],
   ): Promise<Zotero.Item[]> {
     const result: Zotero.Item[] = [];
 

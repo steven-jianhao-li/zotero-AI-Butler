@@ -2,9 +2,9 @@
  * ================================================================
  * 任务队列管理器
  * ================================================================
- * 
+ *
  * 本模块提供文献处理任务的队列管理功能
- * 
+ *
  * 主要职责:
  * 1. 任务入队/出队管理
  * 2. 任务状态跟踪 (待处理/处理中/已完成/失败)
@@ -13,14 +13,14 @@
  * 5. 失败重试机制
  * 6. 持久化存储
  * 7. 任务进度回调
- * 
+ *
  * 任务执行流程:
  * 1. 用户添加任务到队列
  * 2. 任务按优先级和创建时间排序
  * 3. 后台执行器按并发数限制处理任务
  * 4. 任务完成/失败后更新状态
  * 5. 失败任务可重试或移除
- * 
+ *
  * @module taskQueue
  * @author AI-Butler Team
  */
@@ -32,60 +32,72 @@ import { NoteGenerator } from "./noteGenerator";
  * 任务状态枚举
  */
 export enum TaskStatus {
-  PENDING = "pending",       // 待处理
+  PENDING = "pending", // 待处理
   PROCESSING = "processing", // 处理中
-  COMPLETED = "completed",   // 已完成
-  FAILED = "failed",         // 失败
-  PRIORITY = "priority",     // 优先处理
+  COMPLETED = "completed", // 已完成
+  FAILED = "failed", // 失败
+  PRIORITY = "priority", // 优先处理
 }
 
 /**
  * 任务项接口
  */
 export interface TaskItem {
-  id: string;                 // 任务唯一ID (使用 Zotero Item ID)
-  itemId: number;             // Zotero 文献条目 ID
-  title: string;              // 文献标题
-  status: TaskStatus;         // 当前状态
-  progress: number;           // 进度百分比 (0-100)
-  createdAt: Date;            // 创建时间
-  startedAt?: Date;           // 开始处理时间
-  completedAt?: Date;         // 完成时间
-  error?: string;             // 错误信息
-  retryCount: number;         // 已重试次数
-  maxRetries: number;         // 最大重试次数
-  duration?: number;          // 处理耗时(秒)
+  id: string; // 任务唯一ID (使用 Zotero Item ID)
+  itemId: number; // Zotero 文献条目 ID
+  title: string; // 文献标题
+  status: TaskStatus; // 当前状态
+  progress: number; // 进度百分比 (0-100)
+  createdAt: Date; // 创建时间
+  startedAt?: Date; // 开始处理时间
+  completedAt?: Date; // 完成时间
+  error?: string; // 错误信息
+  retryCount: number; // 已重试次数
+  maxRetries: number; // 最大重试次数
+  duration?: number; // 处理耗时(秒)
 }
 
 /**
  * 任务队列统计信息
  */
 export interface QueueStats {
-  total: number;              // 总任务数
-  pending: number;            // 待处理数
-  priority: number;           // 优先处理数
-  processing: number;         // 处理中数
-  completed: number;          // 已完成数
-  failed: number;             // 失败数
-  successRate: number;        // 成功率(%)
+  total: number; // 总任务数
+  pending: number; // 待处理数
+  priority: number; // 优先处理数
+  processing: number; // 处理中数
+  completed: number; // 已完成数
+  failed: number; // 失败数
+  successRate: number; // 成功率(%)
 }
 
 /**
  * 任务进度回调类型
  */
-export type TaskProgressCallback = (taskId: string, progress: number, message: string) => void;
+export type TaskProgressCallback = (
+  taskId: string,
+  progress: number,
+  message: string,
+) => void;
 
 /**
  * 任务完成回调类型
  */
-export type TaskCompleteCallback = (taskId: string, success: boolean, error?: string) => void;
+export type TaskCompleteCallback = (
+  taskId: string,
+  success: boolean,
+  error?: string,
+) => void;
 
 /**
  * 任务流式事件回调类型
  */
 export type TaskStreamCallback = (
   taskId: string,
-  event: { type: "start" | "chunk" | "finish" | "error"; chunk?: string; title?: string }
+  event: {
+    type: "start" | "chunk" | "finish" | "error";
+    chunk?: string;
+    title?: string;
+  },
 ) => void;
 
 /**
@@ -144,14 +156,17 @@ export class TaskQueueManager {
 
   /**
    * 添加单个任务到队列
-   * 
+   *
    * @param item Zotero 文献条目
    * @param priority 是否优先处理
    * @returns 任务ID
    */
-  public async addTask(item: Zotero.Item, priority: boolean = false): Promise<string> {
+  public async addTask(
+    item: Zotero.Item,
+    priority: boolean = false,
+  ): Promise<string> {
     const taskId = `task-${item.id}`;
-    
+
     // 检查是否已存在
     if (this.tasks.has(taskId)) {
       ztoolkit.log(`任务已存在: ${taskId}`);
@@ -185,14 +200,17 @@ export class TaskQueueManager {
 
   /**
    * 批量添加任务
-   * 
+   *
    * @param items Zotero 文献条目数组
    * @param priority 是否优先处理
    * @returns 任务ID数组
    */
-  public async addTasks(items: Zotero.Item[], priority: boolean = false): Promise<string[]> {
+  public async addTasks(
+    items: Zotero.Item[],
+    priority: boolean = false,
+  ): Promise<string[]> {
     const taskIds: string[] = [];
-    
+
     for (const item of items) {
       const taskId = await this.addTask(item, priority);
       taskIds.push(taskId);
@@ -203,7 +221,7 @@ export class TaskQueueManager {
 
   /**
    * 移除任务
-   * 
+   *
    * @param taskId 任务ID
    */
   public async removeTask(taskId: string): Promise<void> {
@@ -227,8 +245,9 @@ export class TaskQueueManager {
    * 清空已完成的任务
    */
   public async clearCompleted(): Promise<void> {
-    const completedTasks = Array.from(this.tasks.values())
-      .filter(task => task.status === TaskStatus.COMPLETED);
+    const completedTasks = Array.from(this.tasks.values()).filter(
+      (task) => task.status === TaskStatus.COMPLETED,
+    );
 
     for (const task of completedTasks) {
       this.tasks.delete(task.id);
@@ -248,25 +267,31 @@ export class TaskQueueManager {
     // 清空队列
     this.tasks.clear();
     this.processingTasks.clear();
-    
+
     await this.saveToStorage();
     ztoolkit.log("清空所有任务");
   }
 
   /**
    * 设置任务优先级
-   * 
+   *
    * @param taskId 任务ID
    * @param priority 是否优先
    */
-  public async setTaskPriority(taskId: string, priority: boolean): Promise<void> {
+  public async setTaskPriority(
+    taskId: string,
+    priority: boolean,
+  ): Promise<void> {
     const task = this.tasks.get(taskId);
     if (!task) {
       return;
     }
 
     // 只有待处理或失败的任务可以调整优先级
-    if (task.status === TaskStatus.PENDING || task.status === TaskStatus.FAILED) {
+    if (
+      task.status === TaskStatus.PENDING ||
+      task.status === TaskStatus.FAILED
+    ) {
       task.status = priority ? TaskStatus.PRIORITY : TaskStatus.PENDING;
       await this.saveToStorage();
       ztoolkit.log(`任务 ${taskId} 优先级已更新: ${priority}`);
@@ -275,7 +300,7 @@ export class TaskQueueManager {
 
   /**
    * 重试失败任务
-   * 
+   *
    * @param taskId 任务ID
    */
   public async retryTask(taskId: string): Promise<void> {
@@ -289,7 +314,7 @@ export class TaskQueueManager {
     task.progress = 0;
     task.error = undefined;
     task.retryCount = 0;
-    
+
     await this.saveToStorage();
     ztoolkit.log(`重试任务: ${taskId}`);
 
@@ -310,23 +335,23 @@ export class TaskQueueManager {
 
   /**
    * 按状态筛选任务
-   * 
+   *
    * @param status 任务状态
    */
   public getTasksByStatus(status: TaskStatus): TaskItem[] {
-    return this.getAllTasks().filter(task => task.status === status);
+    return this.getAllTasks().filter((task) => task.status === status);
   }
 
   /**
    * 获取排序后的任务列表
-   * 
+   *
    * 排序规则:
    * 1. 优先处理
    * 2. 处理中
    * 3. 待处理
    * 4. 失败
    * 5. 已完成
-   * 
+   *
    * 同状态内按创建时间升序
    */
   public getSortedTasks(): TaskItem[] {
@@ -356,15 +381,22 @@ export class TaskQueueManager {
   public getStats(): QueueStats {
     const tasks = this.getAllTasks();
     const total = tasks.length;
-    const pending = tasks.filter(t => t.status === TaskStatus.PENDING).length;
-    const priority = tasks.filter(t => t.status === TaskStatus.PRIORITY).length;
-    const processing = tasks.filter(t => t.status === TaskStatus.PROCESSING).length;
-    const completed = tasks.filter(t => t.status === TaskStatus.COMPLETED).length;
-    const failed = tasks.filter(t => t.status === TaskStatus.FAILED).length;
+    const pending = tasks.filter((t) => t.status === TaskStatus.PENDING).length;
+    const priority = tasks.filter(
+      (t) => t.status === TaskStatus.PRIORITY,
+    ).length;
+    const processing = tasks.filter(
+      (t) => t.status === TaskStatus.PROCESSING,
+    ).length;
+    const completed = tasks.filter(
+      (t) => t.status === TaskStatus.COMPLETED,
+    ).length;
+    const failed = tasks.filter((t) => t.status === TaskStatus.FAILED).length;
 
-    const successRate = total > 0 
-      ? Math.round((completed / (completed + failed)) * 100) || 0
-      : 100;
+    const successRate =
+      total > 0
+        ? Math.round((completed / (completed + failed)) * 100) || 0
+        : 100;
 
     return {
       total,
@@ -379,7 +411,7 @@ export class TaskQueueManager {
 
   /**
    * 获取单个任务
-   * 
+   *
    * @param taskId 任务ID
    */
   public getTask(taskId: string): TaskItem | undefined {
@@ -404,9 +436,9 @@ export class TaskQueueManager {
     this.executeNextBatch();
 
     // 设置定时器
-    this.executorTimerId = (setInterval(() => {
+    this.executorTimerId = setInterval(() => {
       this.executeNextBatch();
-    }, this.executionInterval) as any) as number;
+    }, this.executionInterval) as any as number;
   }
 
   /**
@@ -429,7 +461,7 @@ export class TaskQueueManager {
 
   /**
    * 更新执行器设置
-   * 
+   *
    * @param maxConcurrency 最大并发数
    * @param intervalSeconds 执行间隔(秒)
    */
@@ -443,7 +475,9 @@ export class TaskQueueManager {
       this.start();
     }
 
-    ztoolkit.log(`更新执行器设置: 并发=${maxConcurrency}, 间隔=${intervalSeconds}秒`);
+    ztoolkit.log(
+      `更新执行器设置: 并发=${maxConcurrency}, 间隔=${intervalSeconds}秒`,
+    );
   }
 
   // ==================== 任务执行 ====================
@@ -460,16 +494,23 @@ export class TaskQueueManager {
 
     // 获取待处理的任务(优先和待处理状态)
     const pendingTasks = this.getAllTasks()
-      .filter(task => 
-        task.status === TaskStatus.PRIORITY || 
-        task.status === TaskStatus.PENDING
+      .filter(
+        (task) =>
+          task.status === TaskStatus.PRIORITY ||
+          task.status === TaskStatus.PENDING,
       )
       .sort((a, b) => {
         // 优先处理的任务排在前面
-        if (a.status === TaskStatus.PRIORITY && b.status !== TaskStatus.PRIORITY) {
+        if (
+          a.status === TaskStatus.PRIORITY &&
+          b.status !== TaskStatus.PRIORITY
+        ) {
           return -1;
         }
-        if (a.status !== TaskStatus.PRIORITY && b.status === TaskStatus.PRIORITY) {
+        if (
+          a.status !== TaskStatus.PRIORITY &&
+          b.status === TaskStatus.PRIORITY
+        ) {
           return 1;
         }
         // 同状态按创建时间排序
@@ -487,13 +528,15 @@ export class TaskQueueManager {
     }
 
     // 并发执行任务
-    const executePromises = pendingTasks.map(task => this.executeTask(task.id));
+    const executePromises = pendingTasks.map((task) =>
+      this.executeTask(task.id),
+    );
     await Promise.allSettled(executePromises);
   }
 
   /**
    * 执行单个任务
-   * 
+   *
    * @param taskId 任务ID
    */
   private async executeTask(taskId: string): Promise<void> {
@@ -536,7 +579,7 @@ export class TaskQueueManager {
             }
             this.notifyStream(taskId, { type: "chunk", chunk });
           } catch {}
-        }
+        },
       );
 
       // 任务成功完成
@@ -544,14 +587,13 @@ export class TaskQueueManager {
       task.progress = 100;
       task.completedAt = new Date();
       task.duration = Math.floor(
-        (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000
+        (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
       );
 
       ztoolkit.log(`任务完成: ${task.title} (耗时${task.duration}秒)`);
-  this.notifyComplete(taskId, true);
-  // 发送结束事件
-  this.notifyStream(taskId, { type: "finish" });
-
+      this.notifyComplete(taskId, true);
+      // 发送结束事件
+      this.notifyStream(taskId, { type: "finish" });
     } catch (error: any) {
       // 任务失败
       task.error = error.message || "未知错误";
@@ -562,7 +604,9 @@ export class TaskQueueManager {
         // 重置为待处理状态,等待重试
         task.status = TaskStatus.PENDING;
         task.progress = 0;
-        ztoolkit.log(`任务失败,将重试 (${task.retryCount}/${task.maxRetries}): ${task.title}`);
+        ztoolkit.log(
+          `任务失败,将重试 (${task.retryCount}/${task.maxRetries}): ${task.title}`,
+        );
       } else {
         // 超过最大重试次数,标记为失败
         task.status = TaskStatus.FAILED;
@@ -570,9 +614,8 @@ export class TaskQueueManager {
         ztoolkit.log(`任务最终失败: ${task.title} - ${task.error}`);
       }
 
-  this.notifyComplete(taskId, false, task.error);
-  this.notifyStream(taskId, { type: "error" });
-
+      this.notifyComplete(taskId, false, task.error);
+      this.notifyStream(taskId, { type: "error" });
     } finally {
       // 移除处理中标记
       this.processingTasks.delete(taskId);
@@ -584,12 +627,12 @@ export class TaskQueueManager {
 
   /**
    * 注册进度回调
-   * 
+   *
    * @param callback 回调函数
    */
   public onProgress(callback: TaskProgressCallback): () => void {
     this.progressCallbacks.add(callback);
-    
+
     // 返回取消注册的函数
     return () => {
       this.progressCallbacks.delete(callback);
@@ -598,12 +641,12 @@ export class TaskQueueManager {
 
   /**
    * 注册完成回调
-   * 
+   *
    * @param callback 回调函数
    */
   public onComplete(callback: TaskCompleteCallback): () => void {
     this.completeCallbacks.add(callback);
-    
+
     // 返回取消注册的函数
     return () => {
       this.completeCallbacks.delete(callback);
@@ -621,8 +664,12 @@ export class TaskQueueManager {
   /**
    * 通知进度回调
    */
-  private notifyProgress(taskId: string, progress: number, message: string): void {
-    this.progressCallbacks.forEach(callback => {
+  private notifyProgress(
+    taskId: string,
+    progress: number,
+    message: string,
+  ): void {
+    this.progressCallbacks.forEach((callback) => {
       try {
         callback(taskId, progress, message);
       } catch (error) {
@@ -634,8 +681,12 @@ export class TaskQueueManager {
   /**
    * 通知完成回调
    */
-  private notifyComplete(taskId: string, success: boolean, error?: string): void {
-    this.completeCallbacks.forEach(callback => {
+  private notifyComplete(
+    taskId: string,
+    success: boolean,
+    error?: string,
+  ): void {
+    this.completeCallbacks.forEach((callback) => {
       try {
         callback(taskId, success, error);
       } catch (error) {
@@ -645,9 +696,20 @@ export class TaskQueueManager {
   }
 
   /** 通知流式事件 */
-  private notifyStream(taskId: string, event: { type: "start" | "chunk" | "finish" | "error"; chunk?: string; title?: string }): void {
-    this.streamCallbacks.forEach(cb => {
-      try { cb(taskId, event); } catch (e) { ztoolkit.log(`流式回调执行失败: ${e}`); }
+  private notifyStream(
+    taskId: string,
+    event: {
+      type: "start" | "chunk" | "finish" | "error";
+      chunk?: string;
+      title?: string;
+    },
+  ): void {
+    this.streamCallbacks.forEach((cb) => {
+      try {
+        cb(taskId, event);
+      } catch (e) {
+        ztoolkit.log(`流式回调执行失败: ${e}`);
+      }
     });
   }
 
@@ -658,21 +720,28 @@ export class TaskQueueManager {
    */
   private loadFromStorage(): void {
     try {
-      const stored = Zotero.Prefs.get("extensions.zotero.aibutler.taskQueue", true) as string;
+      const stored = Zotero.Prefs.get(
+        "extensions.zotero.aibutler.taskQueue",
+        true,
+      ) as string;
       if (!stored) {
         return;
       }
 
       const data = JSON.parse(stored);
-      
+
       // 恢复任务数据
       this.tasks.clear();
       for (const taskData of data.tasks || []) {
         const task: TaskItem = {
           ...taskData,
           createdAt: new Date(taskData.createdAt),
-          startedAt: taskData.startedAt ? new Date(taskData.startedAt) : undefined,
-          completedAt: taskData.completedAt ? new Date(taskData.completedAt) : undefined,
+          startedAt: taskData.startedAt
+            ? new Date(taskData.startedAt)
+            : undefined,
+          completedAt: taskData.completedAt
+            ? new Date(taskData.completedAt)
+            : undefined,
         };
 
         // 重置处理中的任务为待处理
@@ -685,7 +754,6 @@ export class TaskQueueManager {
       }
 
       ztoolkit.log(`从存储加载 ${this.tasks.size} 个任务`);
-
     } catch (error) {
       ztoolkit.log(`加载任务队列失败: ${error}`);
     }
@@ -701,8 +769,11 @@ export class TaskQueueManager {
         savedAt: new Date().toISOString(),
       };
 
-      Zotero.Prefs.set("extensions.zotero.aibutler.taskQueue", JSON.stringify(data), true);
-
+      Zotero.Prefs.set(
+        "extensions.zotero.aibutler.taskQueue",
+        JSON.stringify(data),
+        true,
+      );
     } catch (error) {
       ztoolkit.log(`保存任务队列失败: ${error}`);
     }
@@ -713,7 +784,8 @@ export class TaskQueueManager {
    */
   private loadSettings(): void {
     this.maxConcurrency = parseInt(getPref("batchSize") as string) || 1;
-    this.executionInterval = (parseInt(getPref("batchInterval") as string) || 60) * 1000;
+    this.executionInterval =
+      (parseInt(getPref("batchInterval") as string) || 60) * 1000;
   }
 
   // ==================== 今日统计 ====================
@@ -725,13 +797,12 @@ export class TaskQueueManager {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return this.getAllTasks()
-      .filter(task => 
+    return this.getAllTasks().filter(
+      (task) =>
         task.status === TaskStatus.COMPLETED &&
         task.completedAt &&
-        task.completedAt >= today
-      )
-      .length;
+        task.completedAt >= today,
+    ).length;
   }
 
   /**
@@ -741,12 +812,11 @@ export class TaskQueueManager {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return this.getAllTasks()
-      .filter(task => 
+    return this.getAllTasks().filter(
+      (task) =>
         task.status === TaskStatus.FAILED &&
         task.completedAt &&
-        task.completedAt >= today
-      )
-      .length;
+        task.completedAt >= today,
+    ).length;
   }
 }

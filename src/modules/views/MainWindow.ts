@@ -2,27 +2,27 @@
  * ================================================================
  * 主窗口容器
  * ================================================================
- * 
+ *
  * 本模块是插件主界面的容器,整合所有子视图
- * 
+ *
  * 主要职责:
  * 1. 创建和管理对话框窗口
  * 2. 提供标签页导航功能
  * 3. 管理多个子视图的切换
  * 4. 统一的窗口生命周期管理
  * 5. 子视图间的通信协调
- * 
+ *
  * 子视图列表:
  * - DashboardView: 仪表盘概览
  * - SummaryView: AI 总结输出
  * - TaskQueueView: 任务队列管理
  * - SettingsView: 快捷设置面板
- * 
+ *
  * 技术实现:
  * - 使用 ztoolkit.Dialog 创建对话框
  * - 标签页切换显示不同视图
  * - 响应式布局适配不同窗口大小
- * 
+ *
  * @module MainWindow
  * @author AI-Butler Team
  */
@@ -39,11 +39,16 @@ import { BaseView } from "./BaseView";
 /**
  * 标签页类型
  */
-export type TabType = "dashboard" | "summary" | "tasks" | "settings" | "scanner";
+export type TabType =
+  | "dashboard"
+  | "summary"
+  | "tasks"
+  | "settings"
+  | "scanner";
 
 /**
  * 主窗口类
- * 
+ *
  * 管理插件的主界面,提供多标签页视图切换
  */
 export class MainWindow {
@@ -111,14 +116,16 @@ export class MainWindow {
 
   /**
    * 打开主窗口
-   * 
+   *
    * @param initialTab 初始显示的标签页,默认为 dashboard
    */
   public async open(initialTab: TabType = "dashboard"): Promise<void> {
     if (this.isOpen) {
       // 如果窗口已打开,只切换标签页
       this.switchTab(initialTab);
-      try { this.dialog?.window?.focus?.(); } catch {}
+      try {
+        this.dialog?.window?.focus?.();
+      } catch {}
       return;
     }
 
@@ -197,7 +204,7 @@ export class MainWindow {
 
   /**
    * 初始化 UI
-   * 
+   *
    * @private
    */
   private initializeUI(): void {
@@ -227,7 +234,7 @@ export class MainWindow {
 
   /**
    * 注入样式
-   * 
+   *
    * @private
    */
   private injectStyles(): void {
@@ -241,7 +248,7 @@ export class MainWindow {
 
   /**
    * 创建标签页按钮
-   * 
+   *
    * @private
    */
   private createTabButtons(): void {
@@ -262,7 +269,7 @@ export class MainWindow {
 
       Object.assign(button.style, {
         flex: "1",
-        padding: "12px 20px",  // 恢复均衡的内边距
+        padding: "12px 20px", // 恢复均衡的内边距
         border: "none",
         backgroundColor: "transparent",
         color: "#666",
@@ -271,10 +278,10 @@ export class MainWindow {
         cursor: "pointer",
         transition: "all 0.2s",
         borderBottom: "3px solid transparent",
-        display: "flex",  // 使用 flex 布局
-        alignItems: "center",  // 垂直居中
-        justifyContent: "center",  // 水平居中
-        boxSizing: "border-box",  // 包含边框在内的盒模型
+        display: "flex", // 使用 flex 布局
+        alignItems: "center", // 垂直居中
+        justifyContent: "center", // 水平居中
+        boxSizing: "border-box", // 包含边框在内的盒模型
       });
 
       button.addEventListener("click", () => {
@@ -299,7 +306,7 @@ export class MainWindow {
 
   /**
    * 渲染所有视图
-   * 
+   *
    * @private
    */
   private renderViews(): void {
@@ -319,7 +326,7 @@ export class MainWindow {
 
   /**
    * 切换标签页
-   * 
+   *
    * @param tabId 标签页 ID
    * @param force 强制切换(即使已是当前标签)
    */
@@ -355,7 +362,7 @@ export class MainWindow {
 
   /**
    * 更新标签按钮样式
-   * 
+   *
    * @private
    */
   private updateTabButtons(): void {
@@ -380,7 +387,7 @@ export class MainWindow {
 
   /**
    * 显示占位符
-   * 
+   *
    * @private
    */
   private showPlaceholder(tabId: TabType): void {
@@ -428,7 +435,7 @@ export class MainWindow {
 
   /**
    * 窗口加载完成回调
-   * 
+   *
    * @private
    */
   private onLoad(): void {
@@ -437,7 +444,7 @@ export class MainWindow {
 
   /**
    * 窗口卸载回调
-   * 
+   *
    * @private
    */
   private onUnload(): void {
@@ -453,7 +460,7 @@ export class MainWindow {
 
   /**
    * 获取仪表盘视图
-   * 
+   *
    * @returns 仪表盘视图实例
    */
   public getDashboardView(): DashboardView {
@@ -462,7 +469,7 @@ export class MainWindow {
 
   /**
    * 获取 AI 总结视图
-   * 
+   *
    * @returns AI 总结视图实例
    */
   public getSummaryView(): SummaryView {
@@ -471,7 +478,7 @@ export class MainWindow {
 
   /**
    * 获取任务队列视图
-   * 
+   *
    * @returns 任务队列视图实例
    */
   public getTaskQueueView(): TaskQueueView {
@@ -480,7 +487,7 @@ export class MainWindow {
 
   /**
    * 检查窗口是否打开
-   * 
+   *
    * @returns 是否打开
    */
   public isWindowOpen(): boolean {

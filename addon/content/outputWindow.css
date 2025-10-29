@@ -11,13 +11,16 @@
   cursor: pointer !important;
   transition: all 0.2s ease !important;
   min-width: 140px !important;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.15) !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15) !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   text-align: center !important;
   line-height: normal !important;
-  font-family: system-ui, -apple-system, sans-serif !important;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif !important;
   outline: none !important;
   text-decoration: none !important;
   -webkit-appearance: none !important;
@@ -28,7 +31,7 @@
 #ai-butler-stop-button:hover:not(:disabled) {
   background-color: #f44336 !important;
   transform: translateY(-1px) !important;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.2) !important;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2) !important;
 }
 
 #ai-butler-stop-button:disabled {

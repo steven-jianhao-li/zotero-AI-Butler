@@ -1,9 +1,9 @@
 /**
  * 设置视图 - 重构版
- * 
+ *
  * 提供插件配置和管理界面
  * 使用子页面模式组织代码
- * 
+ *
  * @file SettingsView.ts
  * @author AI Butler Team
  */
@@ -45,7 +45,7 @@ export class SettingsView extends BaseView {
 
   /**
    * 渲染设置视图内容
-   * 
+   *
    * @protected
    */
   protected renderContent(): HTMLElement {
@@ -96,7 +96,7 @@ export class SettingsView extends BaseView {
 
   /**
    * 创建左侧分类导航栏
-   * 
+   *
    * @private
    */
   private createSidebar(): HTMLElement {
@@ -123,7 +123,7 @@ export class SettingsView extends BaseView {
     // 创建分类按钮
     categories.forEach((category) => {
       const button = this.createSidebarButton(category.id, category.label);
-      
+
       if (category.id === this.currentCategory) {
         this.activeButton = button;
         this.setButtonActive(button, true);
@@ -137,7 +137,7 @@ export class SettingsView extends BaseView {
 
   /**
    * 创建侧边栏按钮
-   * 
+   *
    * @private
    */
   private createSidebarButton(id: SettingCategory, label: string): HTMLElement {
@@ -183,7 +183,7 @@ export class SettingsView extends BaseView {
 
   /**
    * 设置按钮激活状态
-   * 
+   *
    * @private
    */
   private setButtonActive(button: HTMLElement, active: boolean): void {
@@ -202,7 +202,7 @@ export class SettingsView extends BaseView {
 
   /**
    * 切换设置分类
-   * 
+   *
    * @private
    */
   private switchCategory(category: SettingCategory, button: HTMLElement): void {
@@ -224,7 +224,7 @@ export class SettingsView extends BaseView {
 
   /**
    * 根据分类渲染对应的设置内容
-   * 
+   *
    * @private
    */
   private renderSettings(category: SettingCategory): void {
@@ -235,7 +235,7 @@ export class SettingsView extends BaseView {
 
     // 获取或创建子页面实例
     let page = this.pages.get(category);
-    
+
     if (!page) {
       switch (category) {
         case "api":
@@ -254,7 +254,7 @@ export class SettingsView extends BaseView {
           page = new AboutPage(this.settingsContainer);
           break;
       }
-      
+
       if (page) {
         this.pages.set(category, page);
       }
@@ -268,7 +268,7 @@ export class SettingsView extends BaseView {
 
   /**
    * 视图显示时的回调
-   * 
+   *
    * @protected
    */
   protected onShow(): void {
@@ -281,7 +281,7 @@ export class SettingsView extends BaseView {
   /**
    * 视图销毁时的回调
    * 清理子页面实例
-   * 
+   *
    * @protected
    */
   protected onDestroy(): void {

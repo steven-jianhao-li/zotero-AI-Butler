@@ -2,23 +2,23 @@
  * ================================================================
  * 仪表盘视图
  * ================================================================
- * 
+ *
  * 本模块提供插件工作状态的可视化概览
- * 
+ *
  * 主要职责:
  * 1. 展示管家工作状态 (工作中/休息中)
  * 2. 显示实时统计数据和图表
  * 3. 展示最近处理的文献列表
  * 4. 提供快速操作入口
  * 5. 显示系统健康状态
- * 
+ *
  * 显示内容:
  * - 管家状态卡片
  * - 统计数据总览
  * - 处理趋势图表
  * - 最近活动列表
  * - 快捷操作按钮
- * 
+ *
  * @module DashboardView
  * @author AI-Butler Team
  */
@@ -33,21 +33,21 @@ import { getPref, setPref } from "../../utils/prefs";
  * 管家状态枚举
  */
 export enum ButlerStatus {
-  WORKING = "working",    // 工作中
-  IDLE = "idle",         // 休息中
-  ERROR = "error",       // 错误状态
+  WORKING = "working", // 工作中
+  IDLE = "idle", // 休息中
+  ERROR = "error", // 错误状态
 }
 
 /**
  * 统计数据接口
  */
 export interface DashboardStats {
-  totalProcessed: number;      // 总处理数
-  todayProcessed: number;       // 今日处理数
-  pendingCount: number;         // 待处理数
-  failedCount: number;          // 失败数
-  successRate: number;          // 成功率
-  averageTime: number;          // 平均处理时间(秒)
+  totalProcessed: number; // 总处理数
+  todayProcessed: number; // 今日处理数
+  pendingCount: number; // 待处理数
+  failedCount: number; // 失败数
+  successRate: number; // 成功率
+  averageTime: number; // 平均处理时间(秒)
 }
 
 /**
@@ -113,21 +113,25 @@ export class DashboardView extends BaseView {
   /**
    * 视图挂载时的回调
    * 注册任务队列事件监听器并启动数据刷新
-   * 
+   *
    * @protected
    */
   protected onMount(): void {
     super.onMount();
 
     // 注册任务进度回调
-    this.unsubscribeProgress = this.taskQueueManager.onProgress((taskId, progress, message) => {
-      this.handleTaskProgress(taskId, progress, message);
-    });
+    this.unsubscribeProgress = this.taskQueueManager.onProgress(
+      (taskId, progress, message) => {
+        this.handleTaskProgress(taskId, progress, message);
+      },
+    );
 
     // 注册任务完成回调
-    this.unsubscribeComplete = this.taskQueueManager.onComplete((taskId, success, error) => {
-      this.handleTaskComplete(taskId, success, error);
-    });
+    this.unsubscribeComplete = this.taskQueueManager.onComplete(
+      (taskId, success, error) => {
+        this.handleTaskComplete(taskId, success, error);
+      },
+    );
 
     // 启动定时刷新
     this.startRefreshTimer();
@@ -139,7 +143,7 @@ export class DashboardView extends BaseView {
   /**
    * 视图销毁时的回调
    * 清理事件监听器和定时器
-   * 
+   *
    * @protected
    */
   protected onDestroy(): void {
@@ -162,7 +166,7 @@ export class DashboardView extends BaseView {
 
   /**
    * 渲染视图内容
-   * 
+   *
    * @protected
    */
   protected renderContent(): HTMLElement {
@@ -203,7 +207,7 @@ export class DashboardView extends BaseView {
 
   /**
    * 创建头部区域
-   * 
+   *
    * @private
    */
   private createHeader(): HTMLElement {
@@ -228,7 +232,7 @@ export class DashboardView extends BaseView {
 
   /**
    * 创建管家状态卡片
-   * 
+   *
    * @private
    */
   private createStatusCard(): HTMLElement {
@@ -281,7 +285,7 @@ export class DashboardView extends BaseView {
 
   /**
    * 创建统计数据区域
-   * 
+   *
    * @private
    */
   private createStatsSection(): HTMLElement {
@@ -306,7 +310,7 @@ export class DashboardView extends BaseView {
 
   /**
    * 创建统计卡片
-   * 
+   *
    * @private
    */
   private createStatCard(
@@ -314,7 +318,7 @@ export class DashboardView extends BaseView {
     label: string,
     value: string,
     color: string,
-    icon: string
+    icon: string,
   ): HTMLElement {
     return this.createElement("div", {
       id: `stat-${id}`,
@@ -360,7 +364,7 @@ export class DashboardView extends BaseView {
 
   /**
    * 创建快捷操作区域
-   * 
+   *
    * @private
    */
   private createQuickActions(): HTMLElement {
@@ -402,7 +406,7 @@ export class DashboardView extends BaseView {
       const button = createStyledButton(
         `<span style="font-size: 20px;">${action.icon}</span> ${action.label}`,
         action.color,
-        "large"
+        "large",
       );
 
       button.addEventListener("click", () => {
@@ -420,7 +424,7 @@ export class DashboardView extends BaseView {
 
   /**
    * 创建最近活动区域
-   * 
+   *
    * @private
    */
   private createRecentActivities(): HTMLElement {
@@ -472,7 +476,7 @@ export class DashboardView extends BaseView {
 
   /**
    * 更新管家状态
-   * 
+   *
    * @param status 状态
    * @param currentItem 当前处理的文献标题
    * @param remaining 剩余数量
@@ -480,7 +484,7 @@ export class DashboardView extends BaseView {
   public updateButlerStatus(
     status: ButlerStatus,
     currentItem?: string,
-    remaining?: number
+    remaining?: number,
   ): void {
     this.butlerStatus = status;
 
@@ -523,7 +527,7 @@ export class DashboardView extends BaseView {
 
   /**
    * 更新统计数据
-   * 
+   *
    * @param stats 统计数据
    */
   public updateStats(stats: Partial<DashboardStats>): void {
@@ -535,14 +539,17 @@ export class DashboardView extends BaseView {
     this.updateStatValue("total", this.stats.totalProcessed.toString());
     this.updateStatValue("today", this.stats.todayProcessed.toString());
     this.updateStatValue("pending", this.stats.pendingCount.toString());
-    this.updateStatValue("success-rate", `${this.stats.successRate.toFixed(1)}%`);
+    this.updateStatValue(
+      "success-rate",
+      `${this.stats.successRate.toFixed(1)}%`,
+    );
     this.updateStatValue("avg-time", `${this.stats.averageTime.toFixed(0)}s`);
     this.updateStatValue("failed", this.stats.failedCount.toString());
   }
 
   /**
    * 更新单个统计值
-   * 
+   *
    * @private
    */
   private updateStatValue(id: string, value: string): void {
@@ -557,7 +564,7 @@ export class DashboardView extends BaseView {
 
   /**
    * 添加最近活动
-   * 
+   *
    * @param activity 活动数据
    */
   public addRecentActivity(activity: RecentActivity): void {
@@ -573,11 +580,12 @@ export class DashboardView extends BaseView {
 
   /**
    * 渲染最近活动列表
-   * 
+   *
    * @private
    */
   private renderRecentActivities(): void {
-    const activityList = this.activityContainer?.querySelector("#activity-list");
+    const activityList =
+      this.activityContainer?.querySelector("#activity-list");
     if (!activityList) return;
 
     activityList.innerHTML = "";
@@ -673,7 +681,7 @@ export class DashboardView extends BaseView {
 
   /**
    * 格式化时间
-   * 
+   *
    * @private
    */
   private formatTime(date: Date): string {
@@ -690,12 +698,12 @@ export class DashboardView extends BaseView {
 
   /**
    * 处理快捷操作
-   * 
+   *
    * @private
    */
   private async handleQuickAction(action: string): Promise<void> {
     ztoolkit.log(`[AI Butler] 快捷操作: ${action}`);
-    
+
     switch (action) {
       case "扫描未分析论文":
         // 切换到库扫描视图
@@ -745,20 +753,20 @@ export class DashboardView extends BaseView {
 
   /**
    * 获取主窗口实例
-   * 
+   *
    * @private
    */
   private getMainWindow(): MainWindow | null {
     // 从全局存储获取主窗口实例
     const win = Zotero.getMainWindow();
-    return (win as any).__aiButlerMainWindow as MainWindow || null;
+    return ((win as any).__aiButlerMainWindow as MainWindow) || null;
   }
 
   // ==================== 数据刷新 ====================
 
   /**
    * 启动定时刷新
-   * 
+   *
    * @private
    */
   private startRefreshTimer(): void {
@@ -767,14 +775,14 @@ export class DashboardView extends BaseView {
     }
 
     // 每5秒刷新一次
-    this.refreshTimerId = (setInterval(() => {
+    this.refreshTimerId = setInterval(() => {
       this.refreshData();
-    }, 5000) as any) as number;
+    }, 5000) as any as number;
   }
 
   /**
    * 停止定时刷新
-   * 
+   *
    * @private
    */
   private stopRefreshTimer(): void {
@@ -786,7 +794,7 @@ export class DashboardView extends BaseView {
 
   /**
    * 刷新所有数据
-   * 
+   *
    * @private
    */
   private refreshData(): void {
@@ -795,23 +803,28 @@ export class DashboardView extends BaseView {
 
     // 计算管家状态
     const butlerStatus = this.calculateButlerStatus(queueStats);
-    
+
     // 获取当前处理的任务
-    const processingTask = this.taskQueueManager.getTasksByStatus(TaskStatus.PROCESSING)[0];
+    const processingTask = this.taskQueueManager.getTasksByStatus(
+      TaskStatus.PROCESSING,
+    )[0];
 
     // 更新管家状态
     this.updateButlerStatus(
       butlerStatus,
       processingTask?.title,
-      queueStats.pending + queueStats.priority
+      queueStats.pending + queueStats.priority,
     );
 
     // 计算平均处理时间
-    const completedTasks = this.taskQueueManager.getAllTasks()
-      .filter(t => t.status === "completed" && t.duration);
-    const avgTime = completedTasks.length > 0
-      ? completedTasks.reduce((sum, t) => sum + (t.duration || 0), 0) / completedTasks.length
-      : 0;
+    const completedTasks = this.taskQueueManager
+      .getAllTasks()
+      .filter((t) => t.status === "completed" && t.duration);
+    const avgTime =
+      completedTasks.length > 0
+        ? completedTasks.reduce((sum, t) => sum + (t.duration || 0), 0) /
+          completedTasks.length
+        : 0;
 
     // 更新统计数据
     this.updateStats({
@@ -829,7 +842,7 @@ export class DashboardView extends BaseView {
 
   /**
    * 计算管家状态
-   * 
+   *
    * @private
    */
   private calculateButlerStatus(stats: QueueStats): ButlerStatus {
@@ -846,16 +859,16 @@ export class DashboardView extends BaseView {
 
   /**
    * 从任务队列加载最近活动
-   * 
+   *
    * @private
    */
   private loadRecentActivitiesFromQueue(): void {
     const allTasks = this.taskQueueManager.getAllTasks();
-    
+
     // 筛选已完成和失败的任务
     const finishedTasks = allTasks
-      .filter(t => t.status === "completed" || t.status === "failed")
-      .filter(t => t.completedAt)
+      .filter((t) => t.status === "completed" || t.status === "failed")
+      .filter((t) => t.completedAt)
       .sort((a, b) => {
         const aTime = a.completedAt?.getTime() || 0;
         const bTime = b.completedAt?.getTime() || 0;
@@ -864,10 +877,13 @@ export class DashboardView extends BaseView {
       .slice(0, 20);
 
     // 转换为活动记录
-    this.recentActivities = finishedTasks.map(task => ({
+    this.recentActivities = finishedTasks.map((task) => ({
       id: task.id,
       title: task.title,
-      status: task.status === "completed" ? "success" as const : "failed" as const,
+      status:
+        task.status === "completed"
+          ? ("success" as const)
+          : ("failed" as const),
       timestamp: task.completedAt!,
       duration: task.duration || 0,
     }));
@@ -879,22 +895,30 @@ export class DashboardView extends BaseView {
 
   /**
    * 处理任务进度更新
-   * 
+   *
    * @private
    */
-  private handleTaskProgress(taskId: string, progress: number, message: string): void {
+  private handleTaskProgress(
+    taskId: string,
+    progress: number,
+    message: string,
+  ): void {
     ztoolkit.log(`任务进度: ${taskId} - ${progress}% - ${message}`);
-    
+
     // 刷新数据以更新状态
     this.refreshData();
   }
 
   /**
    * 处理任务完成
-   * 
+   *
    * @private
    */
-  private handleTaskComplete(taskId: string, success: boolean, error?: string): void {
+  private handleTaskComplete(
+    taskId: string,
+    success: boolean,
+    error?: string,
+  ): void {
     ztoolkit.log(`任务完成: ${taskId} - 成功=${success}`);
 
     // 获取任务信息
@@ -932,7 +956,7 @@ export class DashboardView extends BaseView {
 
   /**
    * 视图显示时的回调
-   * 
+   *
    * @protected
    */
   protected onShow(): void {

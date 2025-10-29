@@ -131,7 +131,10 @@ export class NoteGenerator {
         // 将增量通过外部 streamCallback 也广播出去(用于任务队列的流式详情)
         try {
           streamCallback?.(chunk);
-        } catch {}
+        } catch (e) {
+          // 避免空的 catch：记录并忽略外部回调错误
+          ztoolkit.log("[AI Butler] streamCallback error:", e);
+        }
         if (outputWindow) {
           // 第一次收到内容时,开始显示条目(会自动隐藏加载状态)
           if (fullContent === chunk) {
@@ -318,9 +321,8 @@ export class NoteGenerator {
     // 转换行内公式: $...$ → <span class="math">$...$</span>
     // Zotero 使用 <span class="math"> 标签来渲染行内数学公式
     // 注意: 公式内不能包含换行符或另一个 $
-    // eslint-disable-next-line no-useless-escape
     html = html.replace(
-      /\$([^\$\n]+?)\$/g,
+      /\$([^$\n]+?)\$/g,
       (_match: string, formula: string) => {
         return `<span class="math">$${formula}$</span>`;
       },

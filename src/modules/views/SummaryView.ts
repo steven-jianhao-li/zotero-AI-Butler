@@ -254,7 +254,10 @@ export class SummaryView extends BaseView {
               if (b > a) targetNote = n;
             }
           }
-        } catch {}
+        } catch (e) {
+          // 忽略异常的子笔记，继续查找
+          continue;
+        }
       }
 
       this.hideLoading();
@@ -335,7 +338,9 @@ export class SummaryView extends BaseView {
       const auto = (getPref as any)("autoScroll") as boolean;
       this.autoScrollEnabled =
         auto === undefined || auto === null ? true : !!auto;
-    } catch {}
+    } catch (e) {
+      ztoolkit.log("[AI Butler] 应用字体或滚动首选项失败:", e);
+    }
   }
 
   /**

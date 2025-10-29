@@ -224,7 +224,7 @@ export class PromptsSettingsPage {
     };
 
     // 自定义预设
-    let custom: PresetMap = {};
+    const custom: PresetMap = {};
     try {
       const raw = (getPref("customPrompts") as string) || "";
       if (raw && raw.trim()) {
@@ -271,7 +271,7 @@ export class PromptsSettingsPage {
 
   private saveAsPreset(): void {
     const win = Zotero.getMainWindow() as any;
-    let name = { value: "" } as any;
+    const name = { value: "" } as any;
     const ok = Services.prompt.prompt(
       win,
       "保存为新预设",
@@ -292,7 +292,7 @@ export class PromptsSettingsPage {
       return;
     }
 
-    let custom: PresetMap = {};
+    const custom: PresetMap = {};
     try {
       const raw = (getPref("customPrompts") as string) || "";
       if (raw && raw.trim()) {
@@ -325,7 +325,7 @@ export class PromptsSettingsPage {
   private deleteCustomPreset(): void {
     const name = (this.presetSelect as any).getValue();
     // 只允许删除自定义的(避免删内置)
-    let custom: PresetMap = {};
+    const custom: PresetMap = {};
     try {
       const raw = (getPref("customPrompts") as string) || "";
       if (raw && raw.trim()) {

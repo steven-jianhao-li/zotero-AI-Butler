@@ -28,6 +28,7 @@ import { TaskQueueManager, QueueStats, TaskStatus } from "../taskQueue";
 import { MainWindow } from "./MainWindow";
 import { AutoScanManager } from "../autoScanManager";
 import { getPref, setPref } from "../../utils/prefs";
+import { createStyledButton } from "./ui/components";
 
 /**
  * 管家状态枚举
@@ -401,8 +402,6 @@ export class DashboardView extends BaseView {
     ];
 
     actions.forEach((action) => {
-      // 动态导入 UI 组件
-      const { createStyledButton } = require("./ui/components");
       const button = createStyledButton(
         `<span style="font-size: 20px;">${action.icon}</span> ${action.label}`,
         action.color,

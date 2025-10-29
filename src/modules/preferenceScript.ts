@@ -338,7 +338,6 @@ function bindOpenMainWindowButton(win: Window) {
         try {
           ztoolkit?.log?.(...args);
         } catch {
-          // eslint-disable-next-line no-console
           console.log(...args);
         }
       };
@@ -408,7 +407,6 @@ function bindOpenMainWindowButton(win: Window) {
           );
         }
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.error("[AI-Butler][Prefs] 绑定按钮回调执行失败:", err);
       }
     }, 100); // 延迟 100ms 确保 DOM 就绪
@@ -416,7 +414,6 @@ function bindOpenMainWindowButton(win: Window) {
     try {
       ztoolkit?.log?.("[AI-Butler][Prefs] 绑定按钮事件时出错:", error);
     } catch {
-      // eslint-disable-next-line no-console
       console.error("[AI-Butler][Prefs] 绑定按钮事件时出错:", error);
     }
   }

@@ -79,3 +79,12 @@ TA 是您7x24小时待命、不知疲倦且绝对忠诚的私人管家。
 9.  **Markdown 格式支持**
     - **格式保存**：假定大模型API返回的是Markdown格式文本。
     - **直接存储**：插件将返回的Markdown原文直接保存到Zotero笔记中。Zotero笔记编辑器（6.0.x以上版本）支持Markdown渲染。
+
+## 常用命令
+
+- 发布新版本：`npm run release`
+- 打包插件：`npm run build`
+- 本地测试：`npm start`
+- 修改zotero profile： `./zotero.exe -p`(在Windows zotero安装目录下运行)
+- 统一代码格式：`npx prettier --write .`
+- 检查代码格式：`npm run lint:check`

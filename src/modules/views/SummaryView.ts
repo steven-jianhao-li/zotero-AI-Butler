@@ -44,11 +44,11 @@ export class SummaryView extends BaseView {
   /** 当前条目的内容缓冲区 */
   private currentItemBuffer: string = "";
 
-  /** 停止按钮回调函数 */
-  private onStopCallback: (() => void) | null = null;
+  /** 返回任务队列按钮回调函数 */
+  private onQueueButtonCallback: (() => void) | null = null;
 
-  /** 停止按钮元素 */
-  private stopButton: HTMLElement | null = null;
+  /** 返回任务队列按钮元素 */
+  private queueButton: HTMLButtonElement | null = null;
 
   /** MathJax 是否就绪 */
   private mathJaxReady: boolean = false;
@@ -175,23 +175,25 @@ export class SummaryView extends BaseView {
     this.scrollArea = scrollArea;
 
     // 底部按钮区域
-    this.stopButton = this.createElement("button", {
-      id: "ai-butler-stop-button",
+    const queueButton = this.createElement("button", {
+      id: "ai-butler-queue-button",
       styles: {
         fontSize: "16px",
         fontWeight: "700",
         padding: "12px 32px",
-        backgroundColor: "#ff5722",
+        backgroundColor: "#3f51b5",
         color: "#ffffff",
         border: "none",
         borderRadius: "6px",
         cursor: "pointer",
         transition: "all 0.2s ease",
-        minWidth: "140px",
+        minWidth: "180px",
         boxShadow: "0 2px 4px rgba(0,0,0,0.15)",
       },
-      innerHTML: "🛑 停止后续条目的AI总结",
-    });
+      innerHTML: "� 返回任务队列",
+    }) as HTMLButtonElement;
+    this.queueButton = queueButton;
+    this.updateQueueButton("ready");
 
     const footer = this.createElement("div", {
       styles: {
@@ -200,7 +202,7 @@ export class SummaryView extends BaseView {
         textAlign: "center",
         flexShrink: "0",
       },
-      children: [this.stopButton],
+      children: [queueButton],
     });
 
     container.appendChild(header);
@@ -290,23 +292,22 @@ export class SummaryView extends BaseView {
    */
   protected onMount(): void {
     // 绑定停止按钮事件
-    if (this.stopButton) {
-      this.stopButton.addEventListener("click", (e: Event) => {
+    if (this.queueButton) {
+      this.queueButton.addEventListener("click", (e: Event) => {
         e.preventDefault();
         e.stopPropagation();
 
-        // 更新按钮状态
-        if (this.stopButton) {
-          (this.stopButton as HTMLButtonElement).disabled = true;
-          this.stopButton.innerHTML = "✓ 已停止";
-          this.stopButton.style.backgroundColor = "#9e9e9e";
-          this.stopButton.style.cursor = "not-allowed";
-          this.stopButton.style.opacity = "0.8";
+        const button = this.queueButton;
+        if (button) {
+          button.disabled = true;
+          button.innerHTML = "⏳ 正在打开任务队列...";
+          button.style.backgroundColor = "#9e9e9e";
+          button.style.cursor = "not-allowed";
+          button.style.opacity = "0.8";
         }
 
-        // 调用停止回调
-        if (this.onStopCallback) {
-          this.onStopCallback();
+        if (this.onQueueButtonCallback) {
+          this.onQueueButtonCallback();
         }
       });
     }
@@ -807,30 +808,54 @@ export class SummaryView extends BaseView {
    *
    * @param callback 停止按钮点击时的回调函数
    */
-  public setOnStop(callback: () => void): void {
-    this.onStopCallback = callback;
+  /**
+   * 设置返回任务队列按钮的回调
+   */
+  public setQueueButtonHandler(callback: () => void): void {
+    this.onQueueButtonCallback = callback;
   }
 
   /**
-   * 禁用停止按钮
-   *
-   * @param isStopped 是否为停止状态
+   * 为兼容旧调用保留的别名
    */
-  public disableStopButton(isStopped: boolean): void {
-    if (!this.stopButton) return;
+  public setOnStop(callback: () => void): void {
+    this.setQueueButtonHandler(callback);
+  }
 
-    (this.stopButton as HTMLButtonElement).disabled = true;
-
-    if (isStopped) {
-      this.stopButton.innerHTML = "⏸️ 已停止";
-      this.stopButton.style.backgroundColor = "#9e9e9e";
-    } else {
-      this.stopButton.innerHTML = "✓ 已完成";
-      this.stopButton.style.backgroundColor = "#4caf50";
+  /**
+   * 更新导航按钮状态
+   */
+  public updateQueueButton(
+    state: "ready" | "stopped" | "completed" | "error",
+  ): void {
+    if (!this.queueButton) {
+      return;
     }
 
-    this.stopButton.style.cursor = "not-allowed";
-    this.stopButton.style.opacity = "0.8";
+    const button = this.queueButton;
+    button.disabled = false;
+    button.style.cursor = "pointer";
+    button.style.opacity = "1";
+
+    switch (state) {
+      case "stopped":
+        button.innerHTML = "⏹️ 已中断, 查看任务队列";
+        button.style.backgroundColor = "#ff9800";
+        break;
+      case "completed":
+        button.innerHTML = "✅ 查看任务队列";
+        button.style.backgroundColor = "#4caf50";
+        break;
+      case "error":
+        button.innerHTML = "⚠️ 查看任务队列";
+        button.style.backgroundColor = "#f44336";
+        break;
+      case "ready":
+      default:
+        button.innerHTML = "📋 返回任务队列";
+        button.style.backgroundColor = "#3f51b5";
+        break;
+    }
   }
 
   /**
@@ -989,6 +1014,7 @@ export class SummaryView extends BaseView {
     this.currentItemContainer = null;
     this.currentItemBuffer = "";
     this.userHasScrolled = false;
+    this.updateQueueButton("ready");
   }
 
   /**
@@ -1010,10 +1036,10 @@ export class SummaryView extends BaseView {
 
     this.outputContainer = null;
     this.currentItemContainer = null;
-    this.stopButton = null;
+    this.queueButton = null;
     this.scrollContainer = null;
     this.scrollArea = null;
-    this.onStopCallback = null;
+    this.onQueueButtonCallback = null;
     this.loadingContainer = null;
   }
 }

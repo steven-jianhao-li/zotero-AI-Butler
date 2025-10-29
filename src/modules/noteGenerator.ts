@@ -467,6 +467,7 @@ export class NoteGenerator {
     let successCount = 0; // 成功处理计数
     let failedCount = 0; // 失败处理计数
     let stopped = false; // 用户停止标记
+    let processingCompleted = false;
 
     // 创建并打开主窗口
     const mainWindow = MainWindow.getInstance();
@@ -474,11 +475,15 @@ export class NoteGenerator {
 
     // 获取 AI 总结视图
     const summaryView = mainWindow.getSummaryView();
+    summaryView.updateQueueButton("ready");
 
-    // 设置停止按钮的回调函数
-    // 当用户点击停止按钮时,将 stopped 标记设为 true
-    summaryView.setOnStop(() => {
-      stopped = true;
+    // 设置返回任务队列按钮的回调函数
+    summaryView.setQueueButtonHandler(() => {
+      if (!stopped && !processingCompleted) {
+        stopped = true;
+        summaryView.updateQueueButton("stopped");
+      }
+      mainWindow.switchTab("tasks");
     });
 
     // 等待窗口完全初始化,避免渲染问题
@@ -521,8 +526,9 @@ export class NoteGenerator {
       if (stopped) {
         // 用户主动停止的情况
         const notProcessed = total - successCount - failedCount;
-        summaryView.disableStopButton(true); // true 表示是停止状态
         summaryView.showStopped(successCount, failedCount, notProcessed);
+        summaryView.updateQueueButton("stopped");
+        processingCompleted = true;
         progressCallback?.(
           total,
           total,
@@ -531,8 +537,9 @@ export class NoteGenerator {
         );
       } else {
         // 正常完成的情况
-        summaryView.disableStopButton(false); // false 表示正常完成
         summaryView.showComplete(successCount, total);
+        summaryView.updateQueueButton("completed");
+        processingCompleted = true;
 
         // 根据成功/失败情况生成不同的完成消息
         if (failedCount === 0) {
@@ -550,7 +557,8 @@ export class NoteGenerator {
       }
     } catch (error: any) {
       // 发生系统级错误时禁用停止按钮
-      summaryView.disableStopButton(false);
+      summaryView.updateQueueButton("error");
+      processingCompleted = true;
       ztoolkit.log("[AI Butler] 批量处理过程中发生错误:", error);
       throw error;
     }

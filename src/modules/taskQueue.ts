@@ -128,6 +128,12 @@ export class TaskQueueManager {
   /** 最大并发数 */
   private maxConcurrency: number = 1;
 
+  /** 每批次处理的任务数量 */
+  private batchSize: number = 1;
+
+  /** 当前是否正在执行批次 */
+  private isBatchRunning: boolean = false;
+
   /** 执行间隔(毫秒) */
   private executionInterval: number = 60000; // 默认60秒
 
@@ -450,6 +456,7 @@ export class TaskQueueManager {
     }
 
     this.isRunning = false;
+    this.isBatchRunning = false;
 
     if (this.executorTimerId !== null) {
       clearInterval(this.executorTimerId);
@@ -465,9 +472,10 @@ export class TaskQueueManager {
    * @param maxConcurrency 最大并发数
    * @param intervalSeconds 执行间隔(秒)
    */
-  public updateSettings(maxConcurrency: number, intervalSeconds: number): void {
-    this.maxConcurrency = maxConcurrency;
-    this.executionInterval = intervalSeconds * 1000;
+  public updateSettings(batchSize: number, intervalSeconds: number): void {
+    this.batchSize = Math.max(1, Math.floor(batchSize));
+    this.maxConcurrency = Math.max(1, this.batchSize);
+    this.executionInterval = Math.max(1, Math.floor(intervalSeconds)) * 1000;
 
     // 如果正在运行,重启以应用新设置
     if (this.isRunning) {
@@ -476,7 +484,7 @@ export class TaskQueueManager {
     }
 
     ztoolkit.log(
-      `更新执行器设置: 并发=${maxConcurrency}, 间隔=${intervalSeconds}秒`,
+      `更新执行器设置: 批次大小=${this.batchSize}, 间隔=${intervalSeconds}秒`,
     );
   }
 
@@ -486,13 +494,11 @@ export class TaskQueueManager {
    * 执行下一批任务
    */
   private async executeNextBatch(): Promise<void> {
-    // 计算可用的并发槽位
-    const availableSlots = this.maxConcurrency - this.processingTasks.size;
-    if (availableSlots <= 0) {
+    if (this.isBatchRunning) {
       return;
     }
 
-    // 获取待处理的任务(优先和待处理状态)
+    // 获取待处理任务(优先、待处理)
     const pendingTasks = this.getAllTasks()
       .filter(
         (task) =>
@@ -500,7 +506,6 @@ export class TaskQueueManager {
           task.status === TaskStatus.PENDING,
       )
       .sort((a, b) => {
-        // 优先处理的任务排在前面
         if (
           a.status === TaskStatus.PRIORITY &&
           b.status !== TaskStatus.PRIORITY
@@ -513,25 +518,48 @@ export class TaskQueueManager {
         ) {
           return 1;
         }
-        // 同状态按创建时间排序
         return a.createdAt.getTime() - b.createdAt.getTime();
-      })
-      .slice(0, availableSlots);
+      });
 
     if (pendingTasks.length === 0) {
-      // 没有待处理任务,检查是否应该停止执行器
       if (this.processingTasks.size === 0 && this.isRunning) {
-        // 所有任务都完成了,可以停止
         this.stop();
       }
       return;
     }
 
-    // 并发执行任务
-    const executePromises = pendingTasks.map((task) =>
-      this.executeTask(task.id),
-    );
-    await Promise.allSettled(executePromises);
+    const tasksForBatch = pendingTasks.slice(0, this.batchSize);
+    if (tasksForBatch.length === 0) {
+      return;
+    }
+
+    this.isBatchRunning = true;
+    ztoolkit.log(`开始执行批次, 计划处理 ${tasksForBatch.length} 个任务`);
+
+    try {
+      let index = 0;
+      while (index < tasksForBatch.length) {
+        const remaining = tasksForBatch.length - index;
+        const chunkSize = Math.max(1, Math.min(this.maxConcurrency, remaining));
+        const chunk = tasksForBatch.slice(index, index + chunkSize);
+        await Promise.allSettled(
+          chunk.map((task) => this.executeTask(task.id)),
+        );
+        index += chunk.length;
+      }
+    } finally {
+      this.isBatchRunning = false;
+
+      const hasPending = this.getAllTasks().some(
+        (task) =>
+          task.status === TaskStatus.PRIORITY ||
+          task.status === TaskStatus.PENDING,
+      );
+
+      if (!hasPending && this.processingTasks.size === 0 && this.isRunning) {
+        this.stop();
+      }
+    }
   }
 
   /**
@@ -783,7 +811,9 @@ export class TaskQueueManager {
    * 从配置加载设置
    */
   private loadSettings(): void {
-    this.maxConcurrency = parseInt(getPref("batchSize") as string) || 1;
+    const rawBatchSize = parseInt(getPref("batchSize") as string) || 1;
+    this.batchSize = Math.max(1, rawBatchSize);
+    this.maxConcurrency = Math.max(1, this.batchSize);
     this.executionInterval =
       (parseInt(getPref("batchInterval") as string) || 60) * 1000;
   }

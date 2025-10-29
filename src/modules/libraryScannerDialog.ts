@@ -2,17 +2,17 @@
  * ================================================================
  * 库扫描对话框
  * ================================================================
- * 
+ *
  * 本模块提供一个交互式对话框，用于扫描整个 Zotero 库，
  * 显示所有未分析的文献，并允许用户通过树形结构选择要分析的条目
- * 
+ *
  * 主要职责:
  * 1. 扫描所有收藏夹和条目
  * 2. 检测哪些条目缺少 AI 笔记
  * 3. 以树形结构展示扫描结果（支持多级目录）
  * 4. 提供父子联动的复选框选择逻辑
  * 5. 将用户选择的条目批量加入队列
- * 
+ *
  * @module libraryScannerDialog
  * @author AI-Butler Team
  */
@@ -76,7 +76,7 @@ export class LibraryScannerDialog {
       "chrome://zotero/content/standalone/standalone.xhtml",
       "",
       "chrome,centerscreen,resizable=yes,width=700,height=600",
-      null
+      null,
     );
 
     if (!dialogWin) {
@@ -169,7 +169,7 @@ export class LibraryScannerDialog {
    * 构建收藏夹节点（递归）
    */
   private async buildCollectionNode(
-    collection: Zotero.Collection
+    collection: Zotero.Collection,
   ): Promise<TreeNode | null> {
     const node: TreeNode = {
       id: `col-${collection.id}`,
@@ -287,7 +287,7 @@ export class LibraryScannerDialog {
    */
   private renderDialog(win: Window): void {
     const doc = win.document;
-    
+
     // 设置窗口标题
     if (doc.title) {
       doc.title = "扫描未分析文献 - AI 管家";
@@ -407,7 +407,7 @@ export class LibraryScannerDialog {
     doc: Document,
     container: HTMLElement,
     nodes: TreeNode[],
-    level: number = 0
+    level: number = 0,
   ): void {
     for (const node of nodes) {
       const nodeEl = doc.createElement("div");
@@ -462,7 +462,7 @@ export class LibraryScannerDialog {
   private handleCheckboxChange(
     node: TreeNode,
     checked: boolean,
-    doc: Document
+    doc: Document,
   ): void {
     // 更新当前节点
     node.checked = checked;

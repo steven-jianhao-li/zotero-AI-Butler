@@ -2,23 +2,23 @@
  * ================================================================
  * AI 总结视图
  * ================================================================
- * 
+ *
  * 本模块提供流式 AI 输出的展示界面
- * 
+ *
  * 主要职责:
  * 1. 显示 AI 生成的实时输出内容
  * 2. 支持 Markdown 渲染和数学公式显示
  * 3. 管理多条目的分段显示
  * 4. 提供停止按钮控制生成过程
  * 5. 自动滚动和主题切换
- * 
+ *
  * 技术特点:
  * - 流式输出:实时追加 AI 返回的增量文本
  * - Markdown 支持:使用 marked 库渲染格式
  * - 数学公式:集成 MathJax 渲染 LaTeX 公式
  * - 自动滚动:智能判断用户滚动行为
  * - 主题适配:支持 Zotero 深色/浅色主题
- * 
+ *
  * @module SummaryView
  * @author AI-Butler Team
  */
@@ -30,7 +30,7 @@ import { config } from "../../../package.json";
 
 /**
  * AI 总结视图类
- * 
+ *
  * 专门用于显示流式 AI 输出的视图组件
  * 继承自 BaseView,实现特定的渲染和交互逻辑
  */
@@ -89,7 +89,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 渲染视图内容
-   * 
+   *
    * @protected
    * @returns 视图的根元素
    */
@@ -100,8 +100,8 @@ export class SummaryView extends BaseView {
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        width: "100%",  // 明确宽度
-        overflow: "hidden",  // 防止容器本身滚动
+        width: "100%", // 明确宽度
+        overflow: "hidden", // 防止容器本身滚动
         fontFamily: "system-ui, -apple-system, sans-serif",
       },
     });
@@ -128,19 +128,19 @@ export class SummaryView extends BaseView {
     // 可滚动内容区域
     this.scrollContainer = this.createElement("div", {
       styles: {
-        flex: "1 1 0",  // 关键:基准值为0,强制从 flex 分配获取高度
-        minHeight: "0",  // 允许 flex 项目缩小
-        overflow: "hidden",  // 外层不滚动
+        flex: "1 1 0", // 关键:基准值为0,强制从 flex 分配获取高度
+        minHeight: "0", // 允许 flex 项目缩小
+        overflow: "hidden", // 外层不滚动
       },
     });
 
     // 创建实际的滚动区域 - 使用 100% 高度而不是 flex
     const scrollArea = this.createElement("div", {
       styles: {
-        height: "100%",  // 关键:明确设置100%高度
+        height: "100%", // 关键:明确设置100%高度
         width: "100%",
-        overflowY: "auto",  // 启用纵向滚动
-        overflowX: "hidden",  // 禁止横向滚动
+        overflowY: "auto", // 启用纵向滚动
+        overflowX: "hidden", // 禁止横向滚动
         boxSizing: "border-box",
       },
     });
@@ -159,8 +159,8 @@ export class SummaryView extends BaseView {
       styles: {
         fontSize: "14px",
         lineHeight: "1.6",
-        wordWrap: "break-word",  // 确保长文本换行
-        overflowWrap: "break-word",  // 兼容性换行
+        wordWrap: "break-word", // 确保长文本换行
+        overflowWrap: "break-word", // 兼容性换行
       },
     });
 
@@ -212,7 +212,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 显示已保存的笔记内容(来自 Zotero 笔记,HTML 直接渲染)
-   * 
+   *
    * @param itemId 文献条目ID
    */
   public async showSavedNoteForItem(itemId: number): Promise<void> {
@@ -239,7 +239,7 @@ export class SummaryView extends BaseView {
           const n = await Zotero.Items.getAsync(nid);
           if (!n) continue;
           const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-          const hasTag = tags.some(t => t.tag === "AI-Generated");
+          const hasTag = tags.some((t) => t.tag === "AI-Generated");
           const noteHtml: string = (n as any).getNote?.() || "";
           const titleMatch = /<h2>\s*AI 管家\s*-/.test(noteHtml);
           if (hasTag || titleMatch) {
@@ -269,7 +269,7 @@ export class SummaryView extends BaseView {
       const html = (targetNote as any).getNote?.() || "";
       this.startItem(title);
       const contentElement = this.currentItemContainer?.querySelector(
-        ".item-content"
+        ".item-content",
       ) as HTMLElement | null;
       if (contentElement) {
         contentElement.innerHTML = html;
@@ -285,7 +285,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 视图挂载后的初始化
-   * 
+   *
    * @protected
    */
   protected onMount(): void {
@@ -326,18 +326,20 @@ export class SummaryView extends BaseView {
 
     // 应用用户首选项: 字号与自动滚动
     try {
-      const fontSize = parseInt(((getPref as any)("fontSize") as string) || "14", 10) || 14;
+      const fontSize =
+        parseInt(((getPref as any)("fontSize") as string) || "14", 10) || 14;
       if (this.container) {
         (this.container as HTMLElement).style.fontSize = `${fontSize}px`;
       }
       const auto = (getPref as any)("autoScroll") as boolean;
-      this.autoScrollEnabled = (auto === undefined || auto === null) ? true : !!auto;
+      this.autoScrollEnabled =
+        auto === undefined || auto === null ? true : !!auto;
     } catch {}
   }
 
   /**
    * 初始化 MathJax
-   * 
+   *
    * @private
    */
   private initMathJax(): void {
@@ -354,7 +356,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 处理滚动事件
-   * 
+   *
    * @private
    */
   private handleScroll(): void {
@@ -379,14 +381,15 @@ export class SummaryView extends BaseView {
 
   /**
    * 自动滚动到底部
-   * 
+   *
    * @private
    */
   private scrollToBottom(): void {
-    if (!this.scrollArea || this.userHasScrolled || !this.autoScrollEnabled) return;
+    if (!this.scrollArea || this.userHasScrolled || !this.autoScrollEnabled)
+      return;
 
     const area = this.scrollArea;
-    
+
     // 使用 setTimeout 确保在 DOM 更新后滚动
     setTimeout(() => {
       if (area) {
@@ -397,7 +400,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 显示初始提示信息
-   * 
+   *
    * @private
    */
   private showInitialHint(): void {
@@ -441,11 +444,14 @@ export class SummaryView extends BaseView {
 
   /**
    * 显示加载状态
-   * 
+   *
    * @param message 加载消息
    * @private
    */
-  private showLoading(message: string = "正在请求 AI 分析", startedAt?: Date): void {
+  private showLoading(
+    message: string = "正在请求 AI 分析",
+    startedAt?: Date,
+  ): void {
     // 清空初始提示
     if (this.outputContainer) {
       const hint = this.outputContainer.querySelector(".initial-hint");
@@ -514,16 +520,19 @@ export class SummaryView extends BaseView {
 
   /**
    * 显示加载状态(公开方法)
-   * 
+   *
    * @param message 加载消息
    */
-  public showLoadingState(message: string = "正在请求 AI 分析", startedAt?: Date): void {
+  public showLoadingState(
+    message: string = "正在请求 AI 分析",
+    startedAt?: Date,
+  ): void {
     this.showLoading(message, startedAt);
   }
 
   /**
    * 注入旋转动画样式
-   * 
+   *
    * @private
    */
   private injectSpinnerStyle(): void {
@@ -548,7 +557,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 更新加载计时器
-   * 
+   *
    * @private
    */
   private updateLoadingTimer(): void {
@@ -563,7 +572,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 隐藏加载状态
-   * 
+   *
    * @private
    */
   private hideLoading(): void {
@@ -580,7 +589,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 开始显示新条目
-   * 
+   *
    * @param itemTitle 条目标题
    */
   public startItem(itemTitle: string): void {
@@ -631,7 +640,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 追加内容到当前条目
-   * 
+   *
    * @param chunk 增量文本
    */
   public appendContent(chunk: string): void {
@@ -642,7 +651,7 @@ export class SummaryView extends BaseView {
 
     // 获取内容容器
     const contentElement = this.currentItemContainer.querySelector(
-      ".item-content"
+      ".item-content",
     ) as HTMLElement;
 
     if (contentElement) {
@@ -655,10 +664,10 @@ export class SummaryView extends BaseView {
         const scrollHeight = this.scrollArea.scrollHeight;
         const clientHeight = this.scrollArea.clientHeight;
         const hasScroll = scrollHeight > clientHeight;
-        
+
         // 输出调试信息到控制台
         ztoolkit.log(
-          `[AI Butler] 滚动状态 - scrollHeight: ${scrollHeight}, clientHeight: ${clientHeight}, hasScroll: ${hasScroll}`
+          `[AI Butler] 滚动状态 - scrollHeight: ${scrollHeight}, clientHeight: ${clientHeight}, hasScroll: ${hasScroll}`,
         );
       }
 
@@ -686,7 +695,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 显示错误信息
-   * 
+   *
    * @param itemTitle 条目标题
    * @param errorMessage 错误消息
    */
@@ -731,7 +740,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 显示完成消息
-   * 
+   *
    * @param successCount 成功数量
    * @param totalCount 总数量
    */
@@ -762,7 +771,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 显示停止消息
-   * 
+   *
    * @param successCount 成功数量
    * @param failedCount 失败数量
    * @param notProcessed 未处理数量
@@ -770,7 +779,7 @@ export class SummaryView extends BaseView {
   public showStopped(
     successCount: number,
     failedCount: number,
-    notProcessed: number
+    notProcessed: number,
   ): void {
     if (!this.outputContainer) return;
 
@@ -795,7 +804,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 设置停止回调
-   * 
+   *
    * @param callback 停止按钮点击时的回调函数
    */
   public setOnStop(callback: () => void): void {
@@ -804,7 +813,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 禁用停止按钮
-   * 
+   *
    * @param isStopped 是否为停止状态
    */
   public disableStopButton(isStopped: boolean): void {
@@ -826,7 +835,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 将 Markdown 转换为 HTML（实例方法，简化版）
-   * 
+   *
    * @param markdown Markdown 文本
    * @returns HTML 字符串
    * @private
@@ -838,26 +847,26 @@ export class SummaryView extends BaseView {
 
   /**
    * 静态方法：将 Markdown 转换为 HTML（带公式处理）
-   * 
+   *
    * 这是核心的 Markdown 转换逻辑,支持 LaTeX 数学公式
-   * 
+   *
    * 处理流程:
    * 1. 保护所有公式(避免被 marked 误处理)
    *    - 块级公式: \[...\] 和 $$...$$
    *    - 行内公式: \(...\) 和 $...$
    * 2. 使用 marked 解析 Markdown 语法
    * 3. 恢复所有公式到最终 HTML
-   * 
+   *
    * 公式占位符格式:
    * - 块级: ⒻⓄⓇⓂⓊⓁⒶ_BLOCK_<index>
    * - 行内: ⒻⓄⓇⓂⓊⓁⒶ_INLINE_<index>
-   * 
+   *
    * 错误处理:
    * - 如果 marked 解析失败,返回 HTML 转义的原文
-   * 
+   *
    * @param markdown Markdown 源文本
    * @returns 转换后的 HTML 字符串
-   * 
+   *
    * @example
    * ```typescript
    * const html = SummaryView.convertMarkdownToHTMLCore(
@@ -869,28 +878,28 @@ export class SummaryView extends BaseView {
     // ===== 步骤 1: 保护公式，避免被 marked 误处理 =====
     const formulas: string[] = [];
     let html = markdown;
-    
+
     // 转换并保护 LaTeX 块级公式: \[...\] → $$...$$
     html = html.replace(/\\\[([\s\S]*?)\\\]/g, (match, formula) => {
       const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_BLOCK_${formulas.length}`;
       formulas.push(`$$${formula.trim()}$$`);
       return placeholder;
     });
-    
+
     // 保护已有的 $$ $$ 块级公式
     html = html.replace(/\$\$([\s\S]*?)\$\$/g, (match) => {
       const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_BLOCK_${formulas.length}`;
       formulas.push(match);
       return placeholder;
     });
-    
+
     // 转换并保护 LaTeX 行内公式: \(...\) → $...$
     html = html.replace(/\\\((.*?)\\\)/g, (match, formula) => {
       const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_INLINE_${formulas.length}`;
       formulas.push(`$${formula}$`);
       return placeholder;
     });
-    
+
     // 保护已有的 $ $ 行内公式
     // eslint-disable-next-line no-useless-escape
     html = html.replace(/\$([^\$\n]+?)\$/g, (match) => {
@@ -907,21 +916,24 @@ export class SummaryView extends BaseView {
       // 如果解析失败，返回 HTML 转义的原文
       html = `<p>${SummaryView.escapeHtml(html)}</p>`;
     }
-    
+
     // ===== 步骤 3: 恢复所有公式 =====
-    html = html.replace(/ⒻⓄⓇⓂⓊⓁⒶ_(BLOCK|INLINE)_(\d+)/g, (match, type, index) => {
-      const formula = formulas[parseInt(index)];
-      return formula || match;
-    });
+    html = html.replace(
+      /ⒻⓄⓇⓂⓊⓁⒶ_(BLOCK|INLINE)_(\d+)/g,
+      (match, type, index) => {
+        const formula = formulas[parseInt(index)];
+        return formula || match;
+      },
+    );
 
     return html;
   }
 
   /**
    * HTML 转义工具方法（静态）
-   * 
+   *
    * 防止 XSS 攻击和 HTML 注入
-   * 
+   *
    * @param text 待转义的文本
    * @returns 转义后的文本
    * @private
@@ -937,7 +949,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 节流渲染数学公式
-   * 
+   *
    * @private
    */
   private scheduleRenderMath(): void {
@@ -952,7 +964,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 渲染数学公式
-   * 
+   *
    * @private
    */
   private renderMath(): void {
@@ -981,7 +993,7 @@ export class SummaryView extends BaseView {
 
   /**
    * 视图销毁前的清理
-   * 
+   *
    * @protected
    */
   protected onDestroy(): void {

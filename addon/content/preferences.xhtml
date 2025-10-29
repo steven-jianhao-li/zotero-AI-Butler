@@ -6,23 +6,24 @@
   一个纯粹的、不包含任何脚本或 onload 事件的“哑”组件。
   它的初始化将由插件的主脚本从外部控制。
 -->
-<vbox flex="1" style="overflow: auto; padding: 20px;">
+<vbox flex="1" style="overflow: auto; padding: 20px">
   <groupbox>
     <caption label="AI Butler" />
-    
+
     <!-- 简要说明 -->
-    <description style="margin-bottom: 15px;">
-      AI Butler 为您提供智能文献总结服务。所有设置选项已集中到专用的管家控制面板中。
+    <description style="margin-bottom: 15px">
+      AI Butler
+      为您提供智能文献总结服务。所有设置选项已集中到专用的管家控制面板中。
     </description>
-    
+
     <!-- 跳转按钮 -->
     <vbox>
-      <button 
-        id="__addonRef__-openMainWindow" 
+      <button
+        id="__addonRef__-openMainWindow"
         label=" 打开 AI 管家控制面板"
-        style="padding: 10px 20px; font-size: 14px; font-weight: bold;"
+        style="padding: 10px 20px; font-size: 14px; font-weight: bold"
       />
-      <description style="margin-top: 8px; color: #666; font-size: 12px;">
+      <description style="margin-top: 8px; color: #666; font-size: 12px">
         点击上方按钮打开管家主界面,在"设置"标签页中配置 API、提示词等所有选项。
       </description>
     </vbox>

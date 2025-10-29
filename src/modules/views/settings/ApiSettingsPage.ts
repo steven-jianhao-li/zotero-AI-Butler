@@ -1,14 +1,19 @@
 /**
  * API 设置页面
- * 
+ *
  * 提供 API 配置管理界面
- * 
+ *
  * @file ApiSettingsPage.ts
  * @author AI Butler Team
  */
 
 import { getPref, setPref } from "../../../utils/prefs";
-import { createStyledButton, createFormGroup, createInput, createSelect } from "../ui/components";
+import {
+  createStyledButton,
+  createFormGroup,
+  createInput,
+  createSelect,
+} from "../ui/components";
 import LLMClient from "../../llmClient";
 
 /**
@@ -53,7 +58,8 @@ export class ApiSettingsPage {
       },
     });
     const doc = Zotero.getMainWindow().document;
-    notice.innerHTML = "📝 <strong>说明</strong>: 标有 <strong style='color: #d32f2f;'>*</strong> 的字段为必填项";
+    notice.innerHTML =
+      "📝 <strong>说明</strong>: 标有 <strong style='color: #d32f2f;'>*</strong> 的字段为必填项";
     this.container.appendChild(notice);
 
     // 表单容器
@@ -78,98 +84,176 @@ export class ApiSettingsPage {
         // 若切换到 Gemini 且未填写，填充默认 URL 与模型
         if (newVal === "google") {
           const curUrl = (getPref("geminiApiUrl") as string) || "";
-          const urlInput = this.container.querySelector("#setting-geminiApiUrl") as HTMLInputElement;
-          const modelInput = this.container.querySelector("#setting-geminiModel") as HTMLInputElement;
+          const urlInput = this.container.querySelector(
+            "#setting-geminiApiUrl",
+          ) as HTMLInputElement;
+          const modelInput = this.container.querySelector(
+            "#setting-geminiModel",
+          ) as HTMLInputElement;
           if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
             urlInput.value = "https://generativelanguage.googleapis.com";
           }
-          if (modelInput && (!modelInput.value || modelInput.value.trim() === "")) {
+          if (
+            modelInput &&
+            (!modelInput.value || modelInput.value.trim() === "")
+          ) {
             modelInput.value = "gemini-2.5-pro";
           }
         }
-      }
+      },
     );
-    form.appendChild(this.createFormGroup(
-      "API 提供商",
-      providerSelect,
-      "选择您使用的 AI 模型提供商"
-    ));
+    form.appendChild(
+      this.createFormGroup(
+        "API 提供商",
+        providerSelect,
+        "选择您使用的 AI 模型提供商",
+      ),
+    );
 
     // Provider 专属字段容器
     const sectionOpenAI = this.createElement("div", { id: "provider-openai" });
     const sectionGemini = this.createElement("div", { id: "provider-gemini" });
 
     // OpenAI 字段
-    sectionOpenAI.appendChild(this.createFormGroup(
-      "API 地址 *",
-      this.createInput("apiUrl", "text", getPref("apiUrl") as string, "https://api.openai.com/v1/chat/completions"),
-      "【必填】API 端点地址 (OpenAI 兼容接口)"
-    ));
-    sectionOpenAI.appendChild(this.createFormGroup(
-      "API 密钥 *",
-      this.createPasswordInput("apiKey", getPref("apiKey") as string, "sk-..."),
-      "【必填】您的 API 密钥,将安全存储在本地"
-    ));
-    sectionOpenAI.appendChild(this.createFormGroup(
-      "模型 *",
-      this.createInput("model", "text", getPref("model") as string, "gpt-3.5-turbo"),
-      "【必填】要使用的模型名称"
-    ));
+    sectionOpenAI.appendChild(
+      this.createFormGroup(
+        "API 地址 *",
+        this.createInput(
+          "apiUrl",
+          "text",
+          getPref("apiUrl") as string,
+          "https://api.openai.com/v1/chat/completions",
+        ),
+        "【必填】API 端点地址 (OpenAI 兼容接口)",
+      ),
+    );
+    sectionOpenAI.appendChild(
+      this.createFormGroup(
+        "API 密钥 *",
+        this.createPasswordInput(
+          "apiKey",
+          getPref("apiKey") as string,
+          "sk-...",
+        ),
+        "【必填】您的 API 密钥,将安全存储在本地",
+      ),
+    );
+    sectionOpenAI.appendChild(
+      this.createFormGroup(
+        "模型 *",
+        this.createInput(
+          "model",
+          "text",
+          getPref("model") as string,
+          "gpt-3.5-turbo",
+        ),
+        "【必填】要使用的模型名称",
+      ),
+    );
 
     // Gemini 字段
-    sectionGemini.appendChild(this.createFormGroup(
-      "API 基础地址 *",
-      this.createInput("geminiApiUrl", "text", getPref("geminiApiUrl") as string, "https://generativelanguage.googleapis.com"),
-      "【必填】将以 /v1beta/models/{模型名}:streamGenerateContent?alt=sse 调用"
-    ));
-    sectionGemini.appendChild(this.createFormGroup(
-      "API 密钥 *",
-      this.createPasswordInput("geminiApiKey", getPref("geminiApiKey") as string, "sk-..."),
-      "【必填】您的 Gemini API Key, 将通过 x-goog-api-key 发送"
-    ));
-    sectionGemini.appendChild(this.createFormGroup(
-      "模型 *",
-      this.createInput("geminiModel", "text", getPref("geminiModel") as string, "gemini-2.5-pro"),
-      "【必填】Gemini 模型名称, 如 gemini-2.5-pro"
-    ));
+    sectionGemini.appendChild(
+      this.createFormGroup(
+        "API 基础地址 *",
+        this.createInput(
+          "geminiApiUrl",
+          "text",
+          getPref("geminiApiUrl") as string,
+          "https://generativelanguage.googleapis.com",
+        ),
+        "【必填】将以 /v1beta/models/{模型名}:streamGenerateContent?alt=sse 调用",
+      ),
+    );
+    sectionGemini.appendChild(
+      this.createFormGroup(
+        "API 密钥 *",
+        this.createPasswordInput(
+          "geminiApiKey",
+          getPref("geminiApiKey") as string,
+          "sk-...",
+        ),
+        "【必填】您的 Gemini API Key, 将通过 x-goog-api-key 发送",
+      ),
+    );
+    sectionGemini.appendChild(
+      this.createFormGroup(
+        "模型 *",
+        this.createInput(
+          "geminiModel",
+          "text",
+          getPref("geminiModel") as string,
+          "gemini-2.5-pro",
+        ),
+        "【必填】Gemini 模型名称, 如 gemini-2.5-pro",
+      ),
+    );
 
     form.appendChild(sectionOpenAI);
     form.appendChild(sectionGemini);
 
     const renderProviderSections = (prov: string) => {
       const isGemini = prov === "google";
-      (sectionOpenAI as HTMLElement).style.display = isGemini ? "none" : "block";
-      (sectionGemini as HTMLElement).style.display = isGemini ? "block" : "none";
+      (sectionOpenAI as HTMLElement).style.display = isGemini
+        ? "none"
+        : "block";
+      (sectionGemini as HTMLElement).style.display = isGemini
+        ? "block"
+        : "none";
     };
     renderProviderSections(providerValue);
 
     // Temperature 参数
-    form.appendChild(this.createFormGroup(
-      "Temperature",
-      this.createSlider("temperature", 0, 2, 0.1, parseFloat(getPref("temperature") as string)),
-      "控制输出的随机性 (0-2),值越高输出越随机"
-    ));
+    form.appendChild(
+      this.createFormGroup(
+        "Temperature",
+        this.createSlider(
+          "temperature",
+          0,
+          2,
+          0.1,
+          parseFloat(getPref("temperature") as string),
+        ),
+        "控制输出的随机性 (0-2),值越高输出越随机",
+      ),
+    );
 
     // Max Tokens 参数
-    form.appendChild(this.createFormGroup(
-      "Max Tokens",
-      this.createInput("maxTokens", "number", getPref("maxTokens") as string, "4096"),
-      "生成内容的最大 token 数"
-    ));
+    form.appendChild(
+      this.createFormGroup(
+        "Max Tokens",
+        this.createInput(
+          "maxTokens",
+          "number",
+          getPref("maxTokens") as string,
+          "4096",
+        ),
+        "生成内容的最大 token 数",
+      ),
+    );
 
     // Top P 参数
-    form.appendChild(this.createFormGroup(
-      "Top P",
-      this.createSlider("topP", 0, 1, 0.05, parseFloat(getPref("topP") as string)),
-      "核采样参数 (0-1),控制输出的多样性"
-    ));
+    form.appendChild(
+      this.createFormGroup(
+        "Top P",
+        this.createSlider(
+          "topP",
+          0,
+          1,
+          0.05,
+          parseFloat(getPref("topP") as string),
+        ),
+        "核采样参数 (0-1),控制输出的多样性",
+      ),
+    );
 
     // 流式输出开关
-    form.appendChild(this.createFormGroup(
-      "流式输出",
-      this.createCheckbox("stream", getPref("stream") as boolean),
-      "启用后将实时显示生成过程"
-    ));
+    form.appendChild(
+      this.createFormGroup(
+        "流式输出",
+        this.createCheckbox("stream", getPref("stream") as boolean),
+        "启用后将实时显示生成过程",
+      ),
+    );
 
     // === 调度配置分隔线 ===
     const scheduleTitle = this.createElement("h3", {
@@ -186,25 +270,46 @@ export class ApiSettingsPage {
     form.appendChild(scheduleTitle);
 
     // 每批次处理论文数量
-    form.appendChild(this.createFormGroup(
-      "每批次处理论文数量",
-      this.createInput("batchSize", "number", getPref("batchSize") as string, "1"),
-      "同时处理的论文数量,建议设置为 1 以避免 API 限流"
-    ));
+    form.appendChild(
+      this.createFormGroup(
+        "每批次处理论文数量",
+        this.createInput(
+          "batchSize",
+          "number",
+          getPref("batchSize") as string,
+          "1",
+        ),
+        "同时处理的论文数量,建议设置为 1 以避免 API 限流",
+      ),
+    );
 
     // 批次间隔时间
-    form.appendChild(this.createFormGroup(
-      "批次间隔时间(秒)",
-      this.createInput("batchInterval", "number", getPref("batchInterval") as string, "60"),
-      "每批次之间的等待时间,用于控制 API 调用频率"
-    ));
+    form.appendChild(
+      this.createFormGroup(
+        "批次间隔时间(秒)",
+        this.createInput(
+          "batchInterval",
+          "number",
+          getPref("batchInterval") as string,
+          "60",
+        ),
+        "每批次之间的等待时间,用于控制 API 调用频率",
+      ),
+    );
 
     // 自动扫描间隔
-    form.appendChild(this.createFormGroup(
-      "自动扫描间隔(秒)",
-      this.createInput("scanInterval", "number", getPref("scanInterval") as string, "300"),
-      "后台自动扫描新文献的时间间隔,默认 5 分钟"
-    ));
+    form.appendChild(
+      this.createFormGroup(
+        "自动扫描间隔(秒)",
+        this.createInput(
+          "scanInterval",
+          "number",
+          getPref("scanInterval") as string,
+          "300",
+        ),
+        "后台自动扫描新文献的时间间隔,默认 5 分钟",
+      ),
+    );
 
     // === PDF 处理配置分隔线 ===
     const pdfTitle = this.createElement("h3", {
@@ -229,13 +334,15 @@ export class ApiSettingsPage {
         { value: "text", label: "文本提取(仅文字内容)" },
       ],
       pdfModeValue,
-      () => {} // 无需回调
+      () => {}, // 无需回调
     );
-    form.appendChild(this.createFormGroup(
-      "PDF 处理模式",
-      pdfModeSelect,
-      "Base64 模式:将 PDF 直接编码发送给多模态大模型,支持图片、表格、公式等。文本模式:仅提取文字内容,适合不支持多模态的模型"
-    ));
+    form.appendChild(
+      this.createFormGroup(
+        "PDF 处理模式",
+        pdfModeSelect,
+        "Base64 模式:将 PDF 直接编码发送给多模态大模型,支持图片、表格、公式等。文本模式:仅提取文字内容,适合不支持多模态的模型",
+      ),
+    );
 
     // 按钮组
     const buttonGroup = this.createElement("div", {
@@ -253,7 +360,7 @@ export class ApiSettingsPage {
     testButton.addEventListener("click", () => this.testApiConnection());
     buttonGroup.appendChild(testButton);
 
-  // 保存按钮
+    // 保存按钮
     const saveButton = this.createButton("💾 保存设置", "#4caf50");
     saveButton.addEventListener("click", () => this.saveSettings());
     buttonGroup.appendChild(saveButton);
@@ -306,7 +413,11 @@ export class ApiSettingsPage {
   /**
    * 创建表单组
    */
-  private createFormGroup(label: string, input: HTMLElement, description?: string): HTMLElement {
+  private createFormGroup(
+    label: string,
+    input: HTMLElement,
+    description?: string,
+  ): HTMLElement {
     const group = this.createElement("div", {
       styles: {
         marginBottom: "24px",
@@ -345,14 +456,19 @@ export class ApiSettingsPage {
   /**
    * 创建文本输入框
    */
-  private createInput(id: string, type: string, value: string, placeholder?: string): HTMLInputElement {
+  private createInput(
+    id: string,
+    type: string,
+    value: string,
+    placeholder?: string,
+  ): HTMLInputElement {
     const doc = Zotero.getMainWindow().document;
     const input = doc.createElement("input");
     input.type = type;
     input.id = `setting-${id}`;
     input.value = value || "";
     if (placeholder) input.placeholder = placeholder;
-    
+
     Object.assign(input.style, {
       width: "100%",
       padding: "10px 12px",
@@ -377,7 +493,11 @@ export class ApiSettingsPage {
   /**
    * 创建密码输入框
    */
-  private createPasswordInput(id: string, value: string, placeholder?: string): HTMLElement {
+  private createPasswordInput(
+    id: string,
+    value: string,
+    placeholder?: string,
+  ): HTMLElement {
     const container = this.createElement("div", {
       styles: {
         position: "relative",
@@ -421,7 +541,13 @@ export class ApiSettingsPage {
   /**
    * 创建滑块
    */
-  private createSlider(id: string, min: number, max: number, step: number, value: number): HTMLElement {
+  private createSlider(
+    id: string,
+    min: number,
+    max: number,
+    step: number,
+    value: number,
+  ): HTMLElement {
     const doc = Zotero.getMainWindow().document;
     const container = this.createElement("div", {
       styles: {
@@ -523,27 +649,57 @@ export class ApiSettingsPage {
     try {
       // 🔧 修复: 在 container 内查找元素,而不是在主窗口 document 中
       ztoolkit.log("[API Settings] Starting save...");
-      
+
       // 获取表单值 - 使用 querySelector 在 container 内查找
-  const providerEl = this.container.querySelector("#setting-provider") as HTMLElement;
-  // OpenAI
-  const apiUrlEl = this.container.querySelector("#setting-apiUrl") as HTMLInputElement;
-  const apiKeyEl = this.container.querySelector("#setting-apiKey") as HTMLInputElement;
-  const modelEl = this.container.querySelector("#setting-model") as HTMLInputElement;
-  // Gemini
-  const gemUrlEl = this.container.querySelector("#setting-geminiApiUrl") as HTMLInputElement;
-  const gemKeyEl = this.container.querySelector("#setting-geminiApiKey") as HTMLInputElement;
-  const gemModelEl = this.container.querySelector("#setting-geminiModel") as HTMLInputElement;
-      const temperatureEl = this.container.querySelector("#setting-temperature") as HTMLInputElement;
-      const maxTokensEl = this.container.querySelector("#setting-maxTokens") as HTMLInputElement;
-      const topPEl = this.container.querySelector("#setting-topP") as HTMLInputElement;
-      const streamEl = this.container.querySelector("#setting-stream") as HTMLInputElement;
+      const providerEl = this.container.querySelector(
+        "#setting-provider",
+      ) as HTMLElement;
+      // OpenAI
+      const apiUrlEl = this.container.querySelector(
+        "#setting-apiUrl",
+      ) as HTMLInputElement;
+      const apiKeyEl = this.container.querySelector(
+        "#setting-apiKey",
+      ) as HTMLInputElement;
+      const modelEl = this.container.querySelector(
+        "#setting-model",
+      ) as HTMLInputElement;
+      // Gemini
+      const gemUrlEl = this.container.querySelector(
+        "#setting-geminiApiUrl",
+      ) as HTMLInputElement;
+      const gemKeyEl = this.container.querySelector(
+        "#setting-geminiApiKey",
+      ) as HTMLInputElement;
+      const gemModelEl = this.container.querySelector(
+        "#setting-geminiModel",
+      ) as HTMLInputElement;
+      const temperatureEl = this.container.querySelector(
+        "#setting-temperature",
+      ) as HTMLInputElement;
+      const maxTokensEl = this.container.querySelector(
+        "#setting-maxTokens",
+      ) as HTMLInputElement;
+      const topPEl = this.container.querySelector(
+        "#setting-topP",
+      ) as HTMLInputElement;
+      const streamEl = this.container.querySelector(
+        "#setting-stream",
+      ) as HTMLInputElement;
       // 调度配置
-      const batchSizeEl = this.container.querySelector("#setting-batchSize") as HTMLInputElement;
-      const batchIntervalEl = this.container.querySelector("#setting-batchInterval") as HTMLInputElement;
-      const scanIntervalEl = this.container.querySelector("#setting-scanInterval") as HTMLInputElement;
+      const batchSizeEl = this.container.querySelector(
+        "#setting-batchSize",
+      ) as HTMLInputElement;
+      const batchIntervalEl = this.container.querySelector(
+        "#setting-batchInterval",
+      ) as HTMLInputElement;
+      const scanIntervalEl = this.container.querySelector(
+        "#setting-scanInterval",
+      ) as HTMLInputElement;
       // PDF 处理模式
-      const pdfModeEl = this.container.querySelector("#setting-pdfProcessMode") as HTMLElement;
+      const pdfModeEl = this.container.querySelector(
+        "#setting-pdfProcessMode",
+      ) as HTMLElement;
 
       // 调试: 检查元素是否找到
       ztoolkit.log("[API Settings] Elements found:", {
@@ -553,8 +709,12 @@ export class ApiSettingsPage {
         model: !!modelEl,
       });
 
-      const provider = (providerEl as any)?.getValue ? (providerEl as any).getValue() : "openai";
-      const pdfProcessMode = (pdfModeEl as any)?.getValue ? (pdfModeEl as any).getValue() : "base64";
+      const provider = (providerEl as any)?.getValue
+        ? (providerEl as any).getValue()
+        : "openai";
+      const pdfProcessMode = (pdfModeEl as any)?.getValue
+        ? (pdfModeEl as any).getValue()
+        : "base64";
       const values = {
         provider,
         apiUrl: apiUrlEl?.value?.trim() || "",
@@ -595,7 +755,7 @@ export class ApiSettingsPage {
       if (missingFields.length > 0) {
         const errorMsg = `请填写以下必填项:\n\n• ${missingFields.join("\n• ")}`;
         ztoolkit.log("[API Settings] Validation failed:", missingFields);
-        
+
         new ztoolkit.ProgressWindow("API 配置", {
           closeTime: 4000,
         })
@@ -605,14 +765,14 @@ export class ApiSettingsPage {
       }
 
       // 保存到配置
-  setPref("provider", values.provider);
-  // 分别保存两套配置,互不覆盖
-  setPref("apiUrl", values.apiUrl);
-  setPref("apiKey", values.apiKey);
-  setPref("model", values.model);
-  setPref("geminiApiUrl", values.geminiApiUrl);
-  setPref("geminiApiKey", values.geminiApiKey);
-  setPref("geminiModel", values.geminiModel);
+      setPref("provider", values.provider);
+      // 分别保存两套配置,互不覆盖
+      setPref("apiUrl", values.apiUrl);
+      setPref("apiKey", values.apiKey);
+      setPref("model", values.model);
+      setPref("geminiApiUrl", values.geminiApiUrl);
+      setPref("geminiApiKey", values.geminiApiKey);
+      setPref("geminiModel", values.geminiModel);
       setPref("temperature", values.temperature);
       setPref("maxTokens", values.maxTokens);
       setPref("topP", values.topP);
@@ -631,7 +791,6 @@ export class ApiSettingsPage {
       })
         .createLine({ text: "✅ 设置已保存", type: "success" })
         .show();
-
     } catch (error: any) {
       ztoolkit.log(`[API Settings] Save error: ${error}`);
       new ztoolkit.ProgressWindow("API 配置", {
@@ -655,7 +814,7 @@ export class ApiSettingsPage {
     try {
       // 先保存当前设置,确保测试使用最新配置
       await this.saveSettings();
-      
+
       // 调用 LLMClient 的测试方法
       const result = await LLMClient.testConnection();
 
@@ -666,7 +825,6 @@ export class ApiSettingsPage {
       });
 
       setTimeout(() => progressWindow.close(), 3000);
-
     } catch (error: any) {
       progressWindow.changeLine({
         text: `❌ ${error.message}`,
@@ -685,7 +843,7 @@ export class ApiSettingsPage {
     const confirmed = Services.prompt.confirm(
       Zotero.getMainWindow() as any,
       "重置设置",
-      "确定要重置为默认设置吗?"
+      "确定要重置为默认设置吗?",
     );
 
     if (!confirmed) {
@@ -693,22 +851,22 @@ export class ApiSettingsPage {
     }
 
     // 重置为默认值
-  setPref("provider", "openai");
-  // OpenAI 默认
-  setPref("apiUrl", "https://api.openai.com/v1/chat/completions");
-  setPref("apiKey", "");
-  setPref("model", "gpt-3.5-turbo");
-  // Gemini 默认
-  setPref("geminiApiUrl", "https://generativelanguage.googleapis.com");
-  setPref("geminiApiKey", "");
-  setPref("geminiModel", "gemini-2.5-pro");
+    setPref("provider", "openai");
+    // OpenAI 默认
+    setPref("apiUrl", "https://api.openai.com/v1/chat/completions");
+    setPref("apiKey", "");
+    setPref("model", "gpt-3.5-turbo");
+    // Gemini 默认
+    setPref("geminiApiUrl", "https://generativelanguage.googleapis.com");
+    setPref("geminiApiKey", "");
+    setPref("geminiModel", "gemini-2.5-pro");
     setPref("temperature", "0.7");
     setPref("maxTokens", "4096");
     setPref("topP", "1.0");
     setPref("stream", true);
 
-  // 重新渲染
-  this.render();
+    // 重新渲染
+    this.render();
 
     new ztoolkit.ProgressWindow("API 配置")
       .createLine({ text: "已重置为默认设置", type: "success" })

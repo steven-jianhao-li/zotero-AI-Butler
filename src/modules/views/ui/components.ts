@@ -1,6 +1,6 @@
 /**
  * 通用 UI 组件工具
- * 
+ *
  * @file components.ts
  * @author AI Butler Team
  */
@@ -12,7 +12,7 @@ export type ButtonSize = "small" | "medium" | "large";
 
 /**
  * 创建带悬停效果的按钮
- * 
+ *
  * @param text 按钮文本（可包含 HTML，如 emoji）
  * @param color 按钮颜色
  * @param size 按钮尺寸：small(8px 16px)/medium(10px 20px)/large(15px)
@@ -21,11 +21,11 @@ export type ButtonSize = "small" | "medium" | "large";
 export function createStyledButton(
   text: string,
   color: string,
-  size: ButtonSize = "medium"
+  size: ButtonSize = "medium",
 ): HTMLButtonElement {
   const doc = Zotero.getMainWindow().document;
   const button = doc.createElement("button");
-  
+
   // 尺寸映射
   const sizeMap = {
     small: { padding: "8px 16px", fontSize: "12px" },
@@ -33,7 +33,7 @@ export function createStyledButton(
     large: { padding: "15px", fontSize: "14px" },
   };
   const sizeStyle = sizeMap[size];
-  
+
   // 初始样式
   const baseStyle = {
     padding: sizeStyle.padding,
@@ -50,14 +50,14 @@ export function createStyledButton(
     justifyContent: "center",
     gap: "10px",
   };
-  
+
   // 设置初始状态 - 白色背景，文字显示颜色
   Object.assign(button.style, {
     ...baseStyle,
     backgroundColor: "#ffffff",
     color: color,
   });
-  
+
   // 支持 HTML（如 emoji + 文本）
   button.innerHTML = text;
 
@@ -89,16 +89,20 @@ export function createStyledButton(
 
 /**
  * 创建表单组
- * 
+ *
  * @param label 标签文本
  * @param input 输入元素
  * @param description 描述文本
  * @returns 表单组元素
  */
-export function createFormGroup(label: string, input: HTMLElement, description?: string): HTMLElement {
+export function createFormGroup(
+  label: string,
+  input: HTMLElement,
+  description?: string,
+): HTMLElement {
   const doc = Zotero.getMainWindow().document;
   const group = doc.createElement("div");
-  
+
   Object.assign(group.style, {
     marginBottom: "24px",
   });
@@ -135,10 +139,10 @@ export function createFormGroup(label: string, input: HTMLElement, description?:
  * 创建输入框
  */
 export function createInput(
-  id: string, 
-  type: string, 
-  value: string, 
-  placeholder?: string
+  id: string,
+  type: string,
+  value: string,
+  placeholder?: string,
 ): HTMLInputElement {
   const doc = Zotero.getMainWindow().document;
   const input = doc.createElement("input");
@@ -146,7 +150,7 @@ export function createInput(
   input.id = `setting-${id}`;
   input.value = value || "";
   if (placeholder) input.placeholder = placeholder;
-  
+
   Object.assign(input.style, {
     width: "100%",
     padding: "10px 12px",
@@ -178,7 +182,7 @@ export function createTextarea(
   id: string,
   value: string,
   rows: number = 12,
-  placeholder?: string
+  placeholder?: string,
 ): HTMLTextAreaElement {
   const doc = Zotero.getMainWindow().document;
   const textarea = doc.createElement("textarea");
@@ -215,7 +219,7 @@ export function createTextarea(
 
 /**
  * 创建自定义下拉选择框 (适配 Zotero 环境)
- * 
+ *
  * 由于原生 <select> 在 Zotero XUL 中有兼容问题，
  * 这里使用纯 HTML/CSS/JS 实现一个自定义下拉框
  */
@@ -223,10 +227,10 @@ export function createSelect(
   id: string,
   options: Array<{ value: string; label: string }>,
   value: string,
-  onChange?: (newValue: string) => void
+  onChange?: (newValue: string) => void,
 ): HTMLElement {
   const doc = Zotero.getMainWindow().document;
-  
+
   // 容器
   const container = doc.createElement("div");
   container.id = `setting-${id}`;
@@ -239,7 +243,8 @@ export function createSelect(
 
   // 当前选中项显示框
   const display = doc.createElement("div");
-  const currentOption = options.find(opt => opt.value === value) || options[0];
+  const currentOption =
+    options.find((opt) => opt.value === value) || options[0];
   display.textContent = currentOption ? currentOption.label : "";
   display.className = "custom-select-display";
   Object.assign(display.style, {
@@ -289,7 +294,7 @@ export function createSelect(
   });
 
   // 创建选项
-  options.forEach(opt => {
+  options.forEach((opt) => {
     const item = doc.createElement("div");
     item.textContent = opt.label;
     item.setAttribute("data-value", opt.value);
@@ -303,12 +308,16 @@ export function createSelect(
 
     // 悬停效果
     item.addEventListener("mouseenter", () => {
-      if (item.getAttribute("data-value") !== container.getAttribute("data-value")) {
+      if (
+        item.getAttribute("data-value") !== container.getAttribute("data-value")
+      ) {
         item.style.backgroundColor = "#f5f5f5";
       }
     });
     item.addEventListener("mouseleave", () => {
-      if (item.getAttribute("data-value") !== container.getAttribute("data-value")) {
+      if (
+        item.getAttribute("data-value") !== container.getAttribute("data-value")
+      ) {
         item.style.backgroundColor = "#fff";
       }
     });
@@ -317,28 +326,29 @@ export function createSelect(
     item.addEventListener("click", (e) => {
       e.stopPropagation();
       const newValue = item.getAttribute("data-value")!;
-      
+
       // 更新容器的当前值
       container.setAttribute("data-value", newValue);
-      
+
       // 更新显示文本
       display.childNodes[0].textContent = opt.label;
-      
+
       // 更新所有选项的背景色
       dropdown.querySelectorAll("div").forEach((el: Element) => {
         const elValue = el.getAttribute("data-value");
-        (el as HTMLElement).style.backgroundColor = elValue === newValue ? "#e3f2fd" : "#fff";
+        (el as HTMLElement).style.backgroundColor =
+          elValue === newValue ? "#e3f2fd" : "#fff";
       });
-      
+
       // 关闭下拉框
       dropdown.style.display = "none";
       arrow.textContent = "▼";
-      
+
       // 触发回调
       if (onChange) {
         onChange(newValue);
       }
-      
+
       // 触发 change 事件（用于兼容原有代码）
       const event = new CustomEvent("change", { detail: { value: newValue } });
       container.dispatchEvent(event);
@@ -351,7 +361,7 @@ export function createSelect(
   display.addEventListener("click", (e) => {
     e.stopPropagation();
     const isOpen = dropdown.style.display === "block";
-    
+
     if (isOpen) {
       dropdown.style.display = "none";
       arrow.textContent = "▼";
@@ -362,10 +372,14 @@ export function createSelect(
   });
 
   // 点击外部关闭下拉框
-  doc.addEventListener("click", () => {
-    dropdown.style.display = "none";
-    arrow.textContent = "▼";
-  }, { capture: true });
+  doc.addEventListener(
+    "click",
+    () => {
+      dropdown.style.display = "none";
+      arrow.textContent = "▼";
+    },
+    { capture: true },
+  );
 
   // 聚焦样式
   display.addEventListener("mouseenter", () => {
@@ -383,13 +397,14 @@ export function createSelect(
   // 添加辅助方法到容器
   (container as any).getValue = () => container.getAttribute("data-value");
   (container as any).setValue = (newValue: string) => {
-    const opt = options.find(o => o.value === newValue);
+    const opt = options.find((o) => o.value === newValue);
     if (opt) {
       container.setAttribute("data-value", newValue);
       display.childNodes[0].textContent = opt.label;
       dropdown.querySelectorAll("div").forEach((el: Element) => {
         const elValue = el.getAttribute("data-value");
-        (el as HTMLElement).style.backgroundColor = elValue === newValue ? "#e3f2fd" : "#fff";
+        (el as HTMLElement).style.backgroundColor =
+          elValue === newValue ? "#e3f2fd" : "#fff";
       });
     }
   };
@@ -445,7 +460,7 @@ export function createSlider(
   min: number,
   max: number,
   step: number,
-  value: number
+  value: number,
 ): HTMLElement {
   const doc = Zotero.getMainWindow().document;
   const container = doc.createElement("div");
@@ -502,7 +517,10 @@ export function createSectionTitle(text: string): HTMLElement {
 }
 
 /** 信息条 */
-export function createNotice(html: string, type: "info"|"warn"|"error" = "info"): HTMLElement {
+export function createNotice(
+  html: string,
+  type: "info" | "warn" | "error" = "info",
+): HTMLElement {
   const el = Zotero.getMainWindow().document.createElement("div");
   const palette = {
     info: { bg: "#e3f2fd", bd: "#2196f3", fg: "#1565c0" },

@@ -1,6 +1,6 @@
 /**
  * 关于页面
- * 
+ *
  * @file AboutPage.ts
  * @author AI Butler Team
  */
@@ -16,9 +16,9 @@ export class AboutPage {
 
   public render(): void {
     this.container.innerHTML = "";
-    
+
     const doc = Zotero.getMainWindow().document;
-    
+
     // 标题
     const title = doc.createElement("h2");
     title.textContent = "ℹ️ 关于";
@@ -36,7 +36,7 @@ export class AboutPage {
       padding: "0",
       maxWidth: "800px",
     });
-    
+
     // 项目简介 - 从 README 获取
     const introSection = doc.createElement("div");
     Object.assign(introSection.style, {
@@ -46,7 +46,7 @@ export class AboutPage {
       borderRadius: "8px",
       borderLeft: "4px solid #59c0bc",
     });
-    
+
     introSection.innerHTML = `
       <blockquote style="margin: 0 0 15px 0; padding: 0; font-style: italic; color: #666; border-left: none;">
         <p style="margin: 5px 0; font-size: 15px;">文献下载一时爽，打开阅读火葬场。</p>
@@ -78,7 +78,7 @@ export class AboutPage {
     Object.assign(featuresSection.style, {
       marginBottom: "30px",
     });
-    
+
     const featuresTitle = doc.createElement("h3");
     featuresTitle.textContent = "核心功能";
     Object.assign(featuresTitle.style, {
@@ -88,7 +88,7 @@ export class AboutPage {
       color: "#333",
     });
     featuresSection.appendChild(featuresTitle);
-    
+
     const featuresList = doc.createElement("ol");
     Object.assign(featuresList.style, {
       fontSize: "14px",
@@ -96,27 +96,27 @@ export class AboutPage {
       lineHeight: "1.8",
       paddingLeft: "20px",
     });
-    
+
     const features = [
       {
         title: "自动巡视 (自动扫描)",
-        desc: "管家会在后台默默巡视您的文献库，一旦发现您丢进来了新论文（或是您积压已久的旧论文），只要还没有笔记，TA 就会自动开工。"
+        desc: "管家会在后台默默巡视您的文献库，一旦发现您丢进来了新论文（或是您积压已久的旧论文），只要还没有笔记，TA 就会自动开工。",
       },
       {
         title: "深度解析 (生成笔记)",
-        desc: "管家的核心任务——利用大模型将论文精读、揉碎、嚼烂后，整理成一份热腾腾、条理清晰的 Markdown 笔记塞进您的 Zotero 条目下。"
+        desc: "管家的核心任务——利用大模型将论文精读、揉碎、嚼烂后，整理成一份热腾腾、条理清晰的 Markdown 笔记塞进您的 Zotero 条目下。",
       },
       {
         title: "随时待命 (右键菜单)",
-        desc: "除了全自动托管，您也可以随时右键点击任何一篇论文，让管家现在、立刻、最高优先级地分析这篇文章。"
+        desc: "除了全自动托管，您也可以随时右键点击任何一篇论文，让管家现在、立刻、最高优先级地分析这篇文章。",
       },
       {
         title: "管家智能（无损阅读）",
-        desc: "管家会根据自己模型的多模态能力直接处理PDF文件，不经过本地OCR或文本提取，最大程度保留论文内容的完整性和准确性，图片、表格、公式等都不在话下！"
-      }
+        desc: "管家会根据自己模型的多模态能力直接处理PDF文件，不经过本地OCR或文本提取，最大程度保留论文内容的完整性和准确性，图片、表格、公式等都不在话下！",
+      },
     ];
-    
-    features.forEach(f => {
+
+    features.forEach((f) => {
       const li = doc.createElement("li");
       Object.assign(li.style, {
         marginBottom: "10px",
@@ -124,9 +124,9 @@ export class AboutPage {
       li.innerHTML = `<strong>${f.title}</strong>: ${f.desc}`;
       featuresList.appendChild(li);
     });
-    
+
     featuresSection.appendChild(featuresList);
-    
+
     const recommendation = doc.createElement("p");
     Object.assign(recommendation.style, {
       fontSize: "14px",
@@ -139,7 +139,7 @@ export class AboutPage {
     });
     recommendation.innerHTML = `💡 <strong>推荐使用 Google Gemini 2.5 pro 模型，Gemini读论文讲的很到位。</strong>`;
     featuresSection.appendChild(recommendation);
-    
+
     const slogan = doc.createElement("p");
     Object.assign(slogan.style, {
       fontSize: "15px",
@@ -151,9 +151,10 @@ export class AboutPage {
       backgroundColor: "#f0f9f8",
       borderRadius: "6px",
     });
-    slogan.textContent = "您只负责思考，Zotero-AI-Butler 负责为您的阅读扫清障碍！";
+    slogan.textContent =
+      "您只负责思考，Zotero-AI-Butler 负责为您的阅读扫清障碍！";
     featuresSection.appendChild(slogan);
-    
+
     aboutContent.appendChild(featuresSection);
 
     // 项目信息
@@ -164,10 +165,11 @@ export class AboutPage {
       backgroundColor: "#f5f5f5",
       borderRadius: "8px",
     });
-    
-    const repoUrl = repository?.url?.replace(/^git\+/, '').replace(/\.git$/, '') || 
-                    "https://github.com/steven-jianhao-li/zotero-AI-Butler";
-    
+
+    const repoUrl =
+      repository?.url?.replace(/^git\+/, "").replace(/\.git$/, "") ||
+      "https://github.com/steven-jianhao-li/zotero-AI-Butler";
+
     infoSection.innerHTML = `
       <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #333;">项目信息</h3>
       <p style="font-size: 14px; color: #666; margin: 8px 0;">
@@ -194,7 +196,7 @@ export class AboutPage {
       paddingTop: "20px",
       borderTop: "1px solid #e0e0e0",
     });
-        
+
     this.container.appendChild(aboutContent);
   }
 }

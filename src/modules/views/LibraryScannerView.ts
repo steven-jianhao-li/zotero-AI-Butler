@@ -2,17 +2,17 @@
  * ================================================================
  * 库扫描视图
  * ================================================================
- * 
+ *
  * 本模块提供一个嵌入式视图,用于扫描整个 Zotero 库,
  * 显示所有未分析的文献,并允许用户通过树形结构选择要分析的条目
- * 
+ *
  * 主要职责:
  * 1. 扫描所有收藏夹和条目
  * 2. 检测哪些条目缺少 AI 笔记
  * 3. 以树形结构展示扫描结果(支持多级目录)
  * 4. 提供父子联动的复选框选择逻辑
  * 5. 将用户选择的条目批量加入队列
- * 
+ *
  * @module LibraryScannerView
  * @author AI-Butler Team
  */
@@ -277,7 +277,7 @@ export class LibraryScannerView extends BaseView {
    * 构建收藏夹节点(递归)
    */
   private async buildCollectionNode(
-    collection: Zotero.Collection
+    collection: Zotero.Collection,
   ): Promise<TreeNode | null> {
     const node: TreeNode = {
       id: `col-${collection.id}`,
@@ -422,7 +422,7 @@ export class LibraryScannerView extends BaseView {
         // 创建全选根节点
         const selectAllNode = this.createSelectAllNode();
         this.treeContainer.appendChild(selectAllNode);
-        
+
         // 渲染树形结构
         this.renderTree(this.treeContainer, this.treeRoot);
       }
@@ -524,7 +524,7 @@ export class LibraryScannerView extends BaseView {
    */
   private toggleNodeRecursive(node: TreeNode, checked: boolean): void {
     node.checked = checked;
-    
+
     // 更新复选框 UI
     if (node.checkboxElement) {
       node.checkboxElement.checked = checked;
@@ -545,7 +545,11 @@ export class LibraryScannerView extends BaseView {
   /**
    * 渲染树形结构
    */
-  private renderTree(container: HTMLElement, nodes: TreeNode[], level: number = 0): void {
+  private renderTree(
+    container: HTMLElement,
+    nodes: TreeNode[],
+    level: number = 0,
+  ): void {
     for (const node of nodes) {
       const nodeElement = this.createTreeNode(node, level);
       container.appendChild(nodeElement);
@@ -734,9 +738,9 @@ export class LibraryScannerView extends BaseView {
           marginTop: "2px",
         },
       });
-      
+
       node.childrenContainer = childrenContainer; // 保存引用
-      
+
       this.renderTree(childrenContainer, node.children, level + 1);
       nodeWrapper.appendChild(childrenContainer);
     }
@@ -758,7 +762,7 @@ export class LibraryScannerView extends BaseView {
    */
   private toggleNode(node: TreeNode, checked: boolean): void {
     node.checked = checked;
-    
+
     // 更新复选框 UI
     if (node.checkboxElement) {
       node.checkboxElement.checked = checked;
@@ -768,7 +772,7 @@ export class LibraryScannerView extends BaseView {
     if (checked && node.type === "collection" && node.children.length > 0) {
       node.expanded = true;
       this.updateNodeVisibility(node);
-      
+
       // 更新展开图标
       const expandIcon = node.element?.querySelector("span") as HTMLElement;
       if (expandIcon && expandIcon.textContent) {
@@ -793,11 +797,11 @@ export class LibraryScannerView extends BaseView {
   private updateParentCheckState(node: TreeNode): void {
     const allChecked = node.children.every((child) => child.checked);
     const someChecked = node.children.some(
-      (child) => child.checked || this.hasCheckedChildren(child)
+      (child) => child.checked || this.hasCheckedChildren(child),
     );
 
     node.checked = allChecked || someChecked;
-    
+
     // 更新复选框 UI
     if (node.checkboxElement) {
       node.checkboxElement.checked = node.checked;
@@ -826,11 +830,14 @@ export class LibraryScannerView extends BaseView {
     }
 
     // 更新按钮状态
-    const confirmButton = this.container?.querySelector("#scanner-confirm-btn") as HTMLButtonElement;
+    const confirmButton = this.container?.querySelector(
+      "#scanner-confirm-btn",
+    ) as HTMLButtonElement;
     if (confirmButton) {
       confirmButton.disabled = this.selectedCount === 0;
       confirmButton.style.opacity = this.selectedCount === 0 ? "0.5" : "1";
-      confirmButton.style.cursor = this.selectedCount === 0 ? "not-allowed" : "pointer";
+      confirmButton.style.cursor =
+        this.selectedCount === 0 ? "not-allowed" : "pointer";
     }
   }
 

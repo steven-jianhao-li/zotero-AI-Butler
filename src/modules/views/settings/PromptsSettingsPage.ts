@@ -1,12 +1,15 @@
 /**
  * 提示词管理页
- * 
+ *
  * @file PromptsSettingsPage.ts
  */
 
 import { getPref, setPref, clearPref } from "../../../utils/prefs";
-import { getDefaultSummaryPrompt, PROMPT_VERSION } from "../../../utils/prompts";
-import { 
+import {
+  getDefaultSummaryPrompt,
+  PROMPT_VERSION,
+} from "../../../utils/prompts";
+import {
   createFormGroup,
   createInput,
   createTextarea,
@@ -48,10 +51,12 @@ export class PromptsSettingsPage {
     });
     this.container.appendChild(title);
 
-    this.container.appendChild(createNotice(
-      "提示: 支持预设模板、自定义编辑与变量插值预览。可用变量: <code>${title}</code>、<code>${authors}</code>、<code>${year}</code>。",
-      "info"
-    ));
+    this.container.appendChild(
+      createNotice(
+        "提示: 支持预设模板、自定义编辑与变量插值预览。可用变量: <code>${title}</code>、<code>${authors}</code>、<code>${year}</code>。",
+        "info",
+      ),
+    );
 
     // 左右布局
     const layout = Zotero.getMainWindow().document.createElement("div");
@@ -69,35 +74,62 @@ export class PromptsSettingsPage {
 
     // 预设选择
     const presets = this.getAllPresets();
-    const currentPrompt = (getPref("summaryPrompt") as string) || getDefaultSummaryPrompt();
-    const presetOptions = Object.keys(presets).map(name => ({ value: name, label: name }));
+    const currentPrompt =
+      (getPref("summaryPrompt") as string) || getDefaultSummaryPrompt();
+    const presetOptions = Object.keys(presets).map((name) => ({
+      value: name,
+      label: name,
+    }));
     this.presetSelect = createSelect(
-      "prompt-preset", 
-      presetOptions, 
+      "prompt-preset",
+      presetOptions,
       this.detectPresetName(currentPrompt, presets),
       (newValue) => {
         // 当下拉框值改变时，自动加载预设到编辑器
         this.loadPresetToEditor();
-      }
+      },
     ) as any;
-    left.appendChild(createFormGroup("选择预设", this.presetSelect, "选择后可在右侧编辑器中查看与修改"));
+    left.appendChild(
+      createFormGroup(
+        "选择预设",
+        this.presetSelect,
+        "选择后可在右侧编辑器中查看与修改",
+      ),
+    );
 
     // 预设按钮 - 竖向布局，避免文字溢出
     const presetBtnCol = Zotero.getMainWindow().document.createElement("div");
-    Object.assign(presetBtnCol.style, { display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" });
-    
+    Object.assign(presetBtnCol.style, {
+      display: "flex",
+      flexDirection: "column",
+      gap: "10px",
+      marginBottom: "16px",
+    });
+
     const btnApplyPreset = createStyledButton("📋 应用预设", "#2196f3");
-    Object.assign(btnApplyPreset.style, { width: "100%", padding: "12px 20px", fontSize: "14px" });
+    Object.assign(btnApplyPreset.style, {
+      width: "100%",
+      padding: "12px 20px",
+      fontSize: "14px",
+    });
     btnApplyPreset.addEventListener("click", () => this.loadPresetToEditor());
-    
+
     const btnSaveAsPreset = createStyledButton("💾 保存为新预设", "#4caf50");
-    Object.assign(btnSaveAsPreset.style, { width: "100%", padding: "12px 20px", fontSize: "14px" });
+    Object.assign(btnSaveAsPreset.style, {
+      width: "100%",
+      padding: "12px 20px",
+      fontSize: "14px",
+    });
     btnSaveAsPreset.addEventListener("click", () => this.saveAsPreset());
-    
+
     const btnDeletePreset = createStyledButton("🗑️ 删除预设", "#f44336");
-    Object.assign(btnDeletePreset.style, { width: "100%", padding: "12px 20px", fontSize: "14px" });
+    Object.assign(btnDeletePreset.style, {
+      width: "100%",
+      padding: "12px 20px",
+      fontSize: "14px",
+    });
     btnDeletePreset.addEventListener("click", () => this.deleteCustomPreset());
-    
+
     presetBtnCol.appendChild(btnApplyPreset);
     presetBtnCol.appendChild(btnSaveAsPreset);
     presetBtnCol.appendChild(btnDeletePreset);
@@ -105,9 +137,19 @@ export class PromptsSettingsPage {
 
     // 示例变量输入
     left.appendChild(createSectionTitle("示例元数据(用于预览)"));
-    this.sampleTitle = createInput("sample-title", "text", "A Great Paper", "论文标题");
+    this.sampleTitle = createInput(
+      "sample-title",
+      "text",
+      "A Great Paper",
+      "论文标题",
+    );
     left.appendChild(createFormGroup("标题", this.sampleTitle));
-    this.sampleAuthors = createInput("sample-authors", "text", "Alice; Bob", "作者,用分号分隔");
+    this.sampleAuthors = createInput(
+      "sample-authors",
+      "text",
+      "Alice; Bob",
+      "作者,用分号分隔",
+    );
     left.appendChild(createFormGroup("作者", this.sampleAuthors));
     this.sampleYear = createInput("sample-year", "text", "2024", "年份");
     left.appendChild(createFormGroup("年份", this.sampleYear));
@@ -116,12 +158,28 @@ export class PromptsSettingsPage {
     const right = Zotero.getMainWindow().document.createElement("div");
     layout.appendChild(right);
 
-    this.editor = createTextarea("prompt-editor", currentPrompt, 18, "在此编辑提示词模板...");
-    right.appendChild(createFormGroup("模板编辑器", this.editor, "可直接编辑; 支持变量 ${title}/${authors}/${year}"));
+    this.editor = createTextarea(
+      "prompt-editor",
+      currentPrompt,
+      18,
+      "在此编辑提示词模板...",
+    );
+    right.appendChild(
+      createFormGroup(
+        "模板编辑器",
+        this.editor,
+        "可直接编辑; 支持变量 ${title}/${authors}/${year}",
+      ),
+    );
 
     // 操作按钮
     const actionRow = Zotero.getMainWindow().document.createElement("div");
-    Object.assign(actionRow.style, { display: "flex", gap: "12px", marginTop: "8px", marginBottom: "16px" });
+    Object.assign(actionRow.style, {
+      display: "flex",
+      gap: "12px",
+      marginTop: "8px",
+      marginBottom: "16px",
+    });
     const btnSave = createStyledButton("💾 保存", "#4caf50");
     btnSave.addEventListener("click", () => this.saveCurrent());
     const btnReset = createStyledButton("🔄 恢复", "#9e9e9e");
@@ -145,7 +203,13 @@ export class PromptsSettingsPage {
       lineHeight: "1.5",
       minHeight: "120px",
     });
-    right.appendChild(createFormGroup("插值预览", this.previewBox, "展示变量替换后的实际请求内容片段"));
+    right.appendChild(
+      createFormGroup(
+        "插值预览",
+        this.previewBox,
+        "展示变量替换后的实际请求内容片段",
+      ),
+    );
 
     // 初次渲染时也做一次预览
     this.updatePreview();
@@ -155,8 +219,8 @@ export class PromptsSettingsPage {
   private getAllPresets(): PresetMap {
     const builtins: PresetMap = {
       默认模板: getDefaultSummaryPrompt(),
-      精简摘要: `你是一名学术助手。请用中文以简洁的要点方式总结论文主要问题、方法、关键结果与结论。文章信息: 标题=${'${title}'}; 作者=${'${authors}'}; 年份=${'${year}'}`,
-      结构化报告: `请以"背景/方法/结果/讨论/局限/结论"六部分结构化总结论文; 开头写:《${'${title}'}》(${ ' ${year} '}).`,
+      精简摘要: `你是一名学术助手。请用中文以简洁的要点方式总结论文主要问题、方法、关键结果与结论。文章信息: 标题=${"${title}"}; 作者=${"${authors}"}; 年份=${"${year}"}`,
+      结构化报告: `请以"背景/方法/结果/讨论/局限/结论"六部分结构化总结论文; 开头写:《${"${title}"}》(${" ${year} "}).`,
     };
 
     // 自定义预设
@@ -167,7 +231,7 @@ export class PromptsSettingsPage {
         const parsed = JSON.parse(raw);
         // 过滤掉空值，防止 null/undefined
         Object.entries(parsed).forEach(([k, v]) => {
-          if (v && typeof v === 'string') {
+          if (v && typeof v === "string") {
             custom[k] = v;
           }
         });
@@ -183,7 +247,7 @@ export class PromptsSettingsPage {
     // 防止 null/undefined 值导致错误
     if (!current) return "默认模板";
     const entry = Object.entries(presets).find(([, v]) => {
-      return v && typeof v === 'string' && v.trim() === current.trim();
+      return v && typeof v === "string" && v.trim() === current.trim();
     });
     return entry ? entry[0] : "默认模板";
   }
@@ -192,26 +256,39 @@ export class PromptsSettingsPage {
     const name = (this.presetSelect as any).getValue();
     const presets = this.getAllPresets();
     const tpl = presets[name];
-    if (tpl && typeof tpl === 'string') {
+    if (tpl && typeof tpl === "string") {
       this.editor.value = tpl;
-      new ztoolkit.ProgressWindow("提示词").createLine({ text: `已应用预设: ${name}`, type: "success" }).show();
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: `已应用预设: ${name}`, type: "success" })
+        .show();
       this.updatePreview();
     } else {
-      new ztoolkit.ProgressWindow("提示词").createLine({ text: "预设模板为空或无效", type: "fail" }).show();
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: "预设模板为空或无效", type: "fail" })
+        .show();
     }
   }
 
   private saveAsPreset(): void {
     const win = Zotero.getMainWindow() as any;
     let name = { value: "" } as any;
-    const ok = Services.prompt.prompt(win, "保存为新预设", "请输入预设名称:", name, "", { value: false });
+    const ok = Services.prompt.prompt(
+      win,
+      "保存为新预设",
+      "请输入预设名称:",
+      name,
+      "",
+      { value: false },
+    );
     if (!ok || !name.value || !name.value.trim()) return;
 
     const presetName = name.value.trim();
     const editorValue = this.editor.value || "";
 
     if (!editorValue.trim()) {
-      new ztoolkit.ProgressWindow("提示词").createLine({ text: "❌ 模板内容为空", type: "fail" }).show();
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: "❌ 模板内容为空", type: "fail" })
+        .show();
       return;
     }
 
@@ -222,7 +299,7 @@ export class PromptsSettingsPage {
         const parsed = JSON.parse(raw);
         // 过滤空值
         Object.entries(parsed).forEach(([k, v]) => {
-          if (v && typeof v === 'string') custom[k] = v;
+          if (v && typeof v === "string") custom[k] = v;
         });
       }
     } catch (e) {
@@ -231,16 +308,18 @@ export class PromptsSettingsPage {
 
     custom[presetName] = editorValue;
     setPref("customPrompts", JSON.stringify(custom));
-    
+
     // 重新渲染整个页面来更新下拉框选项
     this.render();
-    
+
     // 设置下拉框为新保存的预设
     setTimeout(() => {
       (this.presetSelect as any).setValue(presetName);
     }, 0);
-    
-    new ztoolkit.ProgressWindow("提示词").createLine({ text: `✅ 预设已保存: ${presetName}` , type: "success"}).show();
+
+    new ztoolkit.ProgressWindow("提示词")
+      .createLine({ text: `✅ 预设已保存: ${presetName}`, type: "success" })
+      .show();
   }
 
   private deleteCustomPreset(): void {
@@ -252,7 +331,7 @@ export class PromptsSettingsPage {
       if (raw && raw.trim()) {
         const parsed = JSON.parse(raw);
         Object.entries(parsed).forEach(([k, v]) => {
-          if (v && typeof v === 'string') custom[k] = v;
+          if (v && typeof v === "string") custom[k] = v;
         });
       }
     } catch (e) {
@@ -260,45 +339,64 @@ export class PromptsSettingsPage {
     }
 
     if (!(name in custom)) {
-      new ztoolkit.ProgressWindow("提示词").createLine({ text: "只能删除自定义预设", type: "default"}).show();
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: "只能删除自定义预设", type: "default" })
+        .show();
       return;
     }
-    const ok = Services.prompt.confirm(Zotero.getMainWindow() as any, "删除预设", `确定删除自定义预设: ${name} ?`);
+    const ok = Services.prompt.confirm(
+      Zotero.getMainWindow() as any,
+      "删除预设",
+      `确定删除自定义预设: ${name} ?`,
+    );
     if (!ok) return;
     delete custom[name];
     setPref("customPrompts", JSON.stringify(custom));
-    
+
     // 更新下拉选项而不是完全重新渲染
     const presets = this.getAllPresets();
-    const presetOptions = Object.keys(presets).map(n => ({ value: n, label: n }));
-    
+    const presetOptions = Object.keys(presets).map((n) => ({
+      value: n,
+      label: n,
+    }));
+
     this.presetSelect.innerHTML = "";
-    presetOptions.forEach(opt => {
+    presetOptions.forEach((opt) => {
       const option = Zotero.getMainWindow().document.createElement("option");
       option.value = opt.value;
       option.textContent = opt.label;
       this.presetSelect.appendChild(option);
     });
-    
-    new ztoolkit.ProgressWindow("提示词").createLine({ text: `✅ 已删除预设: ${name}`, type: "success" }).show();
+
+    new ztoolkit.ProgressWindow("提示词")
+      .createLine({ text: `✅ 已删除预设: ${name}`, type: "success" })
+      .show();
   }
 
   private saveCurrent(): void {
     const text = this.editor.value || getDefaultSummaryPrompt();
     setPref("summaryPrompt", text);
     // 保存当前模板即视为用户自定义,这里不动 promptVersion
-    new ztoolkit.ProgressWindow("提示词").createLine({ text: "✅ 当前模板已保存", type: "success"}).show();
+    new ztoolkit.ProgressWindow("提示词")
+      .createLine({ text: "✅ 当前模板已保存", type: "success" })
+      .show();
   }
 
   private resetDefault(): void {
-    const ok = Services.prompt.confirm(Zotero.getMainWindow() as any, "恢复默认", "确定将模板恢复为默认吗?");
+    const ok = Services.prompt.confirm(
+      Zotero.getMainWindow() as any,
+      "恢复默认",
+      "确定将模板恢复为默认吗?",
+    );
     if (!ok) return;
     const def = getDefaultSummaryPrompt();
     setPref("summaryPrompt", def);
     setPref("promptVersion" as any, PROMPT_VERSION as any);
     this.editor.value = def;
     this.updatePreview();
-    new ztoolkit.ProgressWindow("提示词").createLine({ text: "已恢复为默认模板", type: "success"}).show();
+    new ztoolkit.ProgressWindow("提示词")
+      .createLine({ text: "已恢复为默认模板", type: "success" })
+      .show();
   }
 
   private updatePreview(): void {
@@ -312,6 +410,9 @@ export class PromptsSettingsPage {
   }
 
   private interpolate(tpl: string, vars: Record<string, string>): string {
-    return tpl.replace(/\$\{(title|authors|year)\}/g, (_, k) => vars[k as keyof typeof vars] || "");
+    return tpl.replace(
+      /\$\{(title|authors|year)\}/g,
+      (_, k) => vars[k as keyof typeof vars] || "",
+    );
   }
 }

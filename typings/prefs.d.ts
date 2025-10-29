@@ -7,8 +7,32 @@
 declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
-      "enable": boolean;
-      "input": string;
+      "provider": string;
+      "apiKey": string;
+      "apiUrl": string;
+      "model": string;
+      "geminiApiUrl": string;
+      "geminiApiKey": string;
+      "geminiModel": string;
+      "temperature": string;
+      "maxTokens": string;
+      "topP": string;
+      "stream": boolean;
+      "summaryPrompt": string;
+      "customPrompts": string;
+      "maxRetries": string;
+      "batchSize": string;
+      "batchInterval": string;
+      "autoScan": boolean;
+      "scanInterval": string;
+      "pdfProcessMode": string;
+      "theme": string;
+      "fontSize": string;
+      "autoScroll": boolean;
+      "windowWidth": string;
+      "windowHeight": string;
+      "notePrefix": string;
+      "noteStrategy": string;
     };
   }
 }

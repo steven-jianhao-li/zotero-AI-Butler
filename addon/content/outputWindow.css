@@ -1,0 +1,40 @@
+/* AI Butler Output Window Custom Styles */
+
+#ai-butler-stop-button {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  padding: 12px 32px !important;
+  background-color: #ff5722 !important;
+  color: #1a1a1a !important; /* 默认深色文字（适合浅色主题） */
+  border: none !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  min-width: 140px !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.15) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  line-height: normal !important;
+  font-family: system-ui, -apple-system, sans-serif !important;
+  outline: none !important;
+  text-decoration: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+}
+
+#ai-butler-stop-button:hover:not(:disabled) {
+  background-color: #f44336 !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2) !important;
+}
+
+#ai-butler-stop-button:disabled {
+  background-color: #9e9e9e !important;
+  color: #ffffff !important;
+  cursor: not-allowed !important;
+  opacity: 0.8 !important;
+  transform: none !important;
+}

@@ -1,10 +1,10 @@
-startup-begin = Addon is loading
-startup-finish = Addon is ready
-menuitem-label = Addon Template: Helper Examples
-menupopup-label = Addon Template: Menupopup
-menuitem-submenulabel = Addon Template
+startup-begin = Plugin Zotero-AI-Butler is loading
+startup-finish = Plugin Zotero-AI-Butler is ready
+menuitem-label = Zotero-AI-Butler
+menupopup-label = Zotero-AI-Butler: Popup Menu
+menuitem-submenulabel = Zotero-AI-Butler: Submenu
 menuitem-filemenulabel = Addon Template: File Menuitem
-prefs-title = Template
+prefs-title = Zotero-AI-Butler
 prefs-table-title = Title
 prefs-table-detail = Detail
 tabpanel-lib-tab-label = Lib Tab

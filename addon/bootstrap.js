@@ -1,8 +1,7 @@
 /**
- * Most of this code is from Zotero team's official Make It Red example[1]
- * or the Zotero 7 documentation[2].
- * [1] https://github.com/zotero/make-it-red
- * [2] https://www.zotero.org/support/dev/zotero_7_for_developers
+ * @file 插件启动引导脚本
+ * @description 负责管理 Zotero 插件的生命周期，包括安装、启动、卸载等。
+ * 本文件是基于 Zotero 官方开发文档编写的。
  */
 
 var chromeHandle;
@@ -19,10 +18,10 @@ async function startup({ id, version, resourceURI, rootURI }, reason) {
   ]);
 
   /**
-   * Global variables for plugin code.
-   * The `_globalThis` is the global root variable of the plugin sandbox environment
-   * and all child variables assigned to it is globally accessible.
-   * See `src/index.ts` for details.
+   * 为插件代码设置全局变量。
+   * `_globalThis` 是插件沙盒环境的全局根变量，
+   * 赋值给它的所有子变量都可以在全局范围内访问。
+   * 详细信息请参阅 `src/index.ts`。
    */
   const ctx = { rootURI };
   ctx._globalThis = ctx;

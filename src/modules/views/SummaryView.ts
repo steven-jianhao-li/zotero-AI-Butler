@@ -182,15 +182,19 @@ export class SummaryView extends BaseView {
         fontWeight: "700",
         padding: "12px 32px",
         backgroundColor: "#3f51b5",
-        color: "#ffffff",
+        color: "#000000ff",
         border: "none",
         borderRadius: "6px",
         cursor: "pointer",
         transition: "all 0.2s ease",
         minWidth: "180px",
         boxShadow: "0 2px 4px rgba(0,0,0,0.15)",
+        // 垂直居中
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
       },
-      innerHTML: "� 返回任务队列",
+      innerHTML: "📋 返回任务队列",
     }) as HTMLButtonElement;
     this.queueButton = queueButton;
     this.updateQueueButton("ready");

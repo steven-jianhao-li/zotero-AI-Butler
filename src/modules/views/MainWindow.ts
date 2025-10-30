@@ -98,6 +98,12 @@ export class MainWindow {
     this.settingsView = new SettingsView();
     this.libraryScannerView = new LibraryScannerView();
 
+    // 为总结视图设置默认的“返回任务队列”行为，避免未设置回调时按钮无效
+    // 当外部未覆盖回调时，点击按钮将直接切换到任务队列标签页
+    this.summaryView.setQueueButtonHandler(() => {
+      this.switchTab("tasks");
+    });
+
     // 注册视图
     this.views.set("dashboard", this.dashboardView);
     this.views.set("summary", this.summaryView);

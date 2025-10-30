@@ -66,7 +66,7 @@ export const PROMPT_VERSION = 1;
  *
  * @const {string} DEFAULT_SUMMARY_PROMPT 默认提示词文本
  */
-export const DEFAULT_SUMMARY_PROMPT = `帮我用中文讲一下这篇论文，讲的越详细越好，我有通用计算机专业基础，但是没有这个小方向的基础。`;
+export const DEFAULT_SUMMARY_PROMPT = `帮我用中文讲一下这篇论文，讲的越详细越好，我有这个领域的通用基础，但是没有这个小方向的基础。输出的时候只包含关于论文的讲解，不要包含寒暄的内容。开始时先用一段话总结这篇论文的核心内容。`;
 
 /**
  * 系统角色提示词

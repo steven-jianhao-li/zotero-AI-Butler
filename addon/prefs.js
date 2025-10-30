@@ -17,7 +17,7 @@ pref(
 pref("__prefsPrefix__.geminiApiKey", "");
 pref("__prefsPrefix__.geminiModel", "gemini-2.5-pro");
 pref("__prefsPrefix__.temperature", "0.7");
-pref("__prefsPrefix__.maxTokens", "4096");
+pref("__prefsPrefix__.maxTokens", "8192");
 pref("__prefsPrefix__.topP", "1.0");
 pref("__prefsPrefix__.stream", true);
 

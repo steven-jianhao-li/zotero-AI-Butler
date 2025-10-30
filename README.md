@@ -1,4 +1,4 @@
-# zotero-AI-Butler
+# zotero-AI-Butler(Zotero插件)
 
 <!-- Badges -->
 <p>

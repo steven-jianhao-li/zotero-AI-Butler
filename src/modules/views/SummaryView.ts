@@ -104,6 +104,13 @@ export class SummaryView extends BaseView {
   /** 是否正在处理追问 */
   private isChatting: boolean = false;
 
+  /** 已保存的追问对（仅限后续追问，不含首轮“提示词+总结”） */
+  private chatPairs: Array<{ id: string; user: string; assistant: string }> =
+    [];
+
+  /** 递增的对话对 ID 计数器 */
+  private pairIdCounter: number = 0;
+
   /**
    * 构造函数
    */
@@ -457,8 +464,8 @@ export class SummaryView extends BaseView {
       content: userMessage,
     });
 
-    // 显示用户消息
-    this.appendChatMessage("user", userMessage);
+    // 显示用户消息（先单独渲染，后续会与助手回复一起包装成卡片）
+    const userMessageElement = this.appendChatMessage("user", userMessage);
 
     // 清空输入框
     this.chatInput.value = "";
@@ -466,6 +473,57 @@ export class SummaryView extends BaseView {
 
     // 创建助手消息容器
     const assistantMessageContainer = this.appendChatMessage("assistant", "");
+
+    // 将“用户+助手”两条消息包装为一张卡片，便于整体删除与管理
+    let pairContainer: HTMLElement | null = null;
+    const pairId = this.generatePairId();
+    if (
+      this.outputContainer &&
+      userMessageElement &&
+      assistantMessageContainer
+    ) {
+      pairContainer = this.createElement("div", {
+        className: "ai-butler-chat-pair",
+        styles: {
+          position: "relative",
+          marginBottom: "18px",
+          padding: "4px 8px 8px 8px",
+          border: "1px solid #e0e0e0",
+          borderRadius: "10px",
+          backgroundColor: "#fafafa",
+        },
+      });
+      (pairContainer as any).setAttribute("data-pair-id", pairId);
+
+      // 删除按钮
+      const deleteBtn = this.createElement("button", {
+        styles: {
+          position: "absolute",
+          top: "6px",
+          right: "8px",
+          border: "none",
+          background: "transparent",
+          color: "#d32f2f",
+          cursor: "pointer",
+          fontSize: "14px",
+        },
+        innerHTML: "🗑️",
+      }) as HTMLButtonElement;
+      deleteBtn.title = "删除该提问-响应对";
+      deleteBtn.addEventListener("click", async () => {
+        await this.deleteChatPair(pairId);
+      });
+
+      // 将刚刚渲染的两条消息移动到卡片中
+      try {
+        pairContainer.appendChild(userMessageElement);
+        pairContainer.appendChild(assistantMessageContainer);
+        this.outputContainer.appendChild(pairContainer);
+        pairContainer.appendChild(deleteBtn);
+      } catch (e) {
+        ztoolkit.log("[AI-Butler] 包装聊天卡片失败:", e);
+      }
+    }
 
     try {
       // 导入 LLMClient
@@ -500,9 +558,20 @@ export class SummaryView extends BaseView {
         content: fullResponse,
       });
 
+      // 记录该追问对（不含首轮“提示词+总结”）
+      this.chatPairs.push({
+        id: pairId,
+        user: userMessage,
+        assistant: fullResponse,
+      });
+
       // 如果开启了保存对话历史,保存到笔记
       if (getPref("saveChatHistory") && this.currentItemId) {
-        await this.saveChatToNote(userMessage, fullResponse);
+        await this.saveChatPairToSeparateNote(
+          pairId,
+          userMessage,
+          fullResponse,
+        );
       }
     } catch (error: any) {
       // 显示错误
@@ -584,58 +653,156 @@ export class SummaryView extends BaseView {
     userMessage: string,
     assistantMessage: string,
   ): Promise<void> {
+    // 为兼容旧方法保留，但不再使用。后续追问改为保存到独立笔记。
     if (!this.currentItemId) return;
+    try {
+      await this.saveChatPairToSeparateNote(
+        this.generatePairId(),
+        userMessage,
+        assistantMessage,
+      );
+    } catch (error) {
+      ztoolkit.log("[AI-Butler] 兼容保存对话到独立笔记失败:", error);
+    }
+  }
 
+  /**
+   * 生成唯一的对话对 ID
+   */
+  private generatePairId(): string {
+    this.pairIdCounter += 1;
+    return `pair_${Date.now()}_${this.pairIdCounter}`;
+  }
+
+  /**
+   * 获取或创建“AI管家-后续追问-论文名”独立笔记
+   */
+  private async getOrCreateChatNote(item: Zotero.Item): Promise<Zotero.Item> {
+    const title = (item.getField("title") as string) || "文献";
+
+    // 查找已有的聊天笔记：条件为包含我们约定的标题标识或带有专属标签
+    const noteIDs = (item as any).getNotes?.() || [];
+    for (const nid of noteIDs) {
+      try {
+        const n = await Zotero.Items.getAsync(nid);
+        if (!n) continue;
+        const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
+        const hasChatTag = tags.some((t) => t.tag === "AI-Butler-Chat");
+        const html: string = (n as any).getNote?.() || "";
+        const titleMatch = /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(html);
+        if (hasChatTag || titleMatch) {
+          return n as Zotero.Item;
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+
+    // 创建新笔记
+    const note = new Zotero.Item("note");
+    note.parentID = item.id;
+    const header = `<h2>AI 管家 - 后续追问 - ${this.escapeHtml(title)}</h2>`;
+    note.setNote(header);
+    note.addTag("AI-Butler-Chat");
+    await note.saveTx();
+    return note;
+  }
+
+  /**
+   * 将对话对追加到独立笔记（带可解析标记，便于恢复）
+   */
+  private async saveChatPairToSeparateNote(
+    pairId: string,
+    userMessage: string,
+    assistantMessage: string,
+  ): Promise<void> {
+    if (!this.currentItemId) return;
     try {
       const item = await Zotero.Items.getAsync(this.currentItemId);
       if (!item) return;
+      const note = await this.getOrCreateChatNote(item);
+      let noteHtml = (note as any).getNote?.() || "";
 
-      // 查找AI管家笔记
-      const noteIDs = (item as any).getNotes?.() || [];
-      let targetNote: any = null;
-
-      for (const nid of noteIDs) {
-        try {
-          const n = await Zotero.Items.getAsync(nid);
-          if (!n) continue;
-          const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-          const hasTag = tags.some((t) => t.tag === "AI-Generated");
-          if (hasTag) {
-            targetNote = n;
-            break;
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-
-      if (!targetNote) return;
-
-      // 获取现有笔记内容
-      let noteHtml = (targetNote as any).getNote?.() || "";
-
-      // 追加对话记录
-      const chatRecord = `
-<div style="margin-top: 20px; border-top: 2px solid #ccc; padding-top: 10px;">
-  <h3>追问记录 - ${new Date().toLocaleString("zh-CN")}</h3>
-  <div style="background-color: #e3f2fd; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
-    <strong>👤 用户:</strong> ${this.escapeHtml(userMessage)}
-  </div>
-  <div style="background-color: #f5f5f5; padding: 10px; border-radius: 5px;">
-    <strong>🤖 AI管家:</strong><br/>
-    ${SummaryView.convertMarkdownToHTMLCore(assistantMessage)}
-  </div>
+      const jsonMarker = `<!-- AI_BUTLER_CHAT_JSON: ${JSON.stringify({ id: pairId, user: userMessage, assistant: assistantMessage })} -->`;
+      const block = `
+<!-- AI_BUTLER_CHAT_PAIR_START id=${this.escapeHtml(pairId)} -->
+${jsonMarker}
+<div id="ai-butler-pair-${this.escapeHtml(pairId)}" style="margin-top:14px; padding-top:8px; border-top:1px dashed #ccc;">
+  <div style="background-color:#e3f2fd; padding:10px; border-radius:6px; margin-bottom:8px;"><strong>👤 用户:</strong> ${this.escapeHtml(userMessage)}</div>
+  <div style="background-color:#f5f5f5; padding:10px; border-radius:6px;"><strong>🤖 AI管家:</strong><br/>${SummaryView.convertMarkdownToHTMLCore(assistantMessage)}</div>
+  <div style="font-size:11px; color:#999; margin-top:6px;">保存时间: ${new Date().toLocaleString("zh-CN")}</div>
 </div>
+<!-- AI_BUTLER_CHAT_PAIR_END id=${this.escapeHtml(pairId)} -->
 `;
 
-      noteHtml += chatRecord;
-      (targetNote as any).setNote(noteHtml);
-      await (targetNote as any).saveTx();
-
-      ztoolkit.log("[AI-Butler] 对话已保存到笔记");
-    } catch (error) {
-      ztoolkit.log("[AI-Butler] 保存对话到笔记失败:", error);
+      noteHtml += block;
+      (note as any).setNote(noteHtml);
+      await (note as any).saveTx();
+      ztoolkit.log("[AI-Butler] 追问对已保存到独立笔记");
+    } catch (e) {
+      ztoolkit.log("[AI-Butler] 保存追问对到独立笔记失败:", e);
     }
+  }
+
+  /**
+   * 从独立笔记中删除指定 pairId 的对话对
+   */
+  private async removeChatPairFromSeparateNote(pairId: string): Promise<void> {
+    if (!this.currentItemId) return;
+    try {
+      const item = await Zotero.Items.getAsync(this.currentItemId);
+      if (!item) return;
+      const note = await this.getOrCreateChatNote(item);
+      let noteHtml = (note as any).getNote?.() || "";
+
+      // 使用标记区间删除
+      const startMarker = `<!-- AI_BUTLER_CHAT_PAIR_START id=${pairId} -->`;
+      const endMarker = `<!-- AI_BUTLER_CHAT_PAIR_END id=${pairId} -->`;
+      const startIdx = noteHtml.indexOf(startMarker);
+      const endIdx = noteHtml.indexOf(endMarker);
+      if (startIdx !== -1 && endIdx !== -1) {
+        const removeUntil = endIdx + endMarker.length;
+        noteHtml = noteHtml.slice(0, startIdx) + noteHtml.slice(removeUntil);
+        (note as any).setNote(noteHtml);
+        await (note as any).saveTx();
+      }
+    } catch (e) {
+      ztoolkit.log("[AI-Butler] 从独立笔记删除追问对失败:", e);
+    }
+  }
+
+  /**
+   * 删除一张提问-响应卡片（UI + 内存 + 笔记）
+   */
+  private async deleteChatPair(pairId: string): Promise<void> {
+    // 1) UI 移除
+    try {
+      const pairNode = this.outputContainer?.querySelector(
+        `.ai-butler-chat-pair[data-pair-id="${pairId}"]`,
+      ) as HTMLElement | null;
+      if (pairNode && this.outputContainer) {
+        this.outputContainer.removeChild(pairNode);
+      }
+    } catch (e) {
+      ztoolkit.log("[AI-Butler] 移除聊天卡片 UI 失败:", e);
+    }
+
+    // 2) 内存数据移除
+    this.chatPairs = this.chatPairs.filter((p) => p.id !== pairId);
+
+    // 3) 重建 conversationHistory：保留首轮（若存在），然后拼接剩余对
+    const base: Array<{ role: string; content: string }> = [];
+    if (this.conversationHistory.length >= 2) {
+      base.push(this.conversationHistory[0], this.conversationHistory[1]);
+    }
+    for (const p of this.chatPairs) {
+      base.push({ role: "user", content: p.user });
+      base.push({ role: "assistant", content: p.assistant });
+    }
+    this.conversationHistory = base;
+
+    // 4) 从独立笔记移除
+    await this.removeChatPairFromSeparateNote(pairId);
   }
 
   /**
@@ -811,6 +978,16 @@ export class SummaryView extends BaseView {
             isBase64,
             aiSummaryText,
           );
+
+          // 载入并渲染已有的“后续追问”历史（如有），恢复为原生对话格式
+          try {
+            const itemObj = await Zotero.Items.getAsync(itemId);
+            if (itemObj) {
+              await this.loadExistingChatPairs(itemObj);
+            }
+          } catch (e) {
+            ztoolkit.log("[AI-Butler] 加载历史追问失败:", e);
+          }
         } else {
           // 没有PDF内容，不显示追问按钮
           this.clearPaperContext();
@@ -825,6 +1002,103 @@ export class SummaryView extends BaseView {
       this.appendContent("无法加载该条目的已保存总结。");
       this.finishItem();
       this.clearPaperContext();
+    }
+  }
+
+  /**
+   * 从独立笔记读取已保存的追问对，并恢复为卡片与会话历史
+   */
+  private async loadExistingChatPairs(item: Zotero.Item): Promise<void> {
+    try {
+      const note = await this.getOrCreateChatNote(item);
+      const html: string = (note as any).getNote?.() || "";
+      // 提取 JSON 标记
+      const regex = /<!--\s*AI_BUTLER_CHAT_JSON:\s*(\{[\s\S]*?\})\s*-->/g;
+      let m: RegExpExecArray | null;
+      const pairs: Array<{ id: string; user: string; assistant: string }> = [];
+      while ((m = regex.exec(html)) !== null) {
+        try {
+          const obj = JSON.parse(m[1]);
+          if (
+            obj &&
+            obj.id &&
+            obj.user !== undefined &&
+            obj.assistant !== undefined
+          ) {
+            pairs.push({
+              id: String(obj.id),
+              user: String(obj.user),
+              assistant: String(obj.assistant),
+            });
+          }
+        } catch (e) {
+          // 跳过解析失败的块
+          continue;
+        }
+      }
+
+      if (pairs.length === 0) return;
+
+      // 渲染到 UI，并重建 chatPairs 与 conversationHistory（保留首轮）
+      const base: Array<{ role: string; content: string }> = [];
+      if (this.conversationHistory.length >= 2) {
+        base.push(this.conversationHistory[0], this.conversationHistory[1]);
+      }
+
+      for (const p of pairs) {
+        // 渲染为卡片
+        const userEl = this.appendChatMessage("user", p.user);
+        const asstEl = this.appendChatMessage("assistant", p.assistant);
+        if (this.outputContainer && userEl && asstEl) {
+          const pairDiv = this.createElement("div", {
+            className: "ai-butler-chat-pair",
+            styles: {
+              position: "relative",
+              marginBottom: "18px",
+              padding: "4px 8px 8px 8px",
+              border: "1px solid #e0e0e0",
+              borderRadius: "10px",
+              backgroundColor: "#fafafa",
+            },
+          });
+          (pairDiv as any).setAttribute("data-pair-id", p.id);
+
+          const deleteBtn = this.createElement("button", {
+            styles: {
+              position: "absolute",
+              top: "6px",
+              right: "8px",
+              border: "none",
+              background: "transparent",
+              color: "#d32f2f",
+              cursor: "pointer",
+              fontSize: "14px",
+            },
+            innerHTML: "🗑️",
+          }) as HTMLButtonElement;
+          deleteBtn.title = "删除该提问-响应对";
+          deleteBtn.addEventListener("click", async () => {
+            await this.deleteChatPair(p.id);
+          });
+
+          try {
+            pairDiv.appendChild(userEl);
+            pairDiv.appendChild(asstEl);
+            this.outputContainer.appendChild(pairDiv);
+            pairDiv.appendChild(deleteBtn);
+          } catch (e) {
+            ztoolkit.log("[AI-Butler] 渲染历史聊天卡片失败:", e);
+          }
+        }
+
+        this.chatPairs.push({ id: p.id, user: p.user, assistant: p.assistant });
+        base.push({ role: "user", content: p.user });
+        base.push({ role: "assistant", content: p.assistant });
+      }
+
+      this.conversationHistory = base;
+    } catch (e) {
+      ztoolkit.log("[AI-Butler] 读取并恢复历史追问失败:", e);
     }
   }
 

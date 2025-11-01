@@ -26,7 +26,7 @@
 import { BaseView } from "./BaseView";
 import { marked } from "marked";
 import { getPref } from "../../utils/prefs";
-import { config } from "../../../package.json";
+import { createStyledButton } from "./ui/components";
 
 /**
  * AI 总结视图类
@@ -79,6 +79,30 @@ export class SummaryView extends BaseView {
 
   /** 加载开始时间 */
   private loadingStartTime: number = 0;
+
+  /** 当前论文的item ID (用于追问功能) */
+  private currentItemId: number | null = null;
+
+  /** 当前论文的PDF内容 (Base64或文本) */
+  private currentPdfContent: string = "";
+
+  /** 当前PDF是否为Base64编码 */
+  private currentIsBase64: boolean = false;
+
+  /** 对话历史 */
+  private conversationHistory: Array<{ role: string; content: string }> = [];
+
+  /** 追问容器 */
+  private chatContainer: HTMLElement | null = null;
+
+  /** 追问输入框 */
+  private chatInput: HTMLTextAreaElement | null = null;
+
+  /** 追问发送按钮 */
+  private chatSendButton: HTMLButtonElement | null = null;
+
+  /** 是否正在处理追问 */
+  private isChatting: boolean = false;
 
   /**
    * 构造函数
@@ -161,8 +185,47 @@ export class SummaryView extends BaseView {
         lineHeight: "1.6",
         wordWrap: "break-word", // 确保长文本换行
         overflowWrap: "break-word", // 兼容性换行
+        userSelect: "text", // 确保文本可以被选择
+        cursor: "text", // 鼠标样式提示可选择
       },
     });
+
+    // 允许容器可获取焦点，提升 Ctrl+C 复制的可靠性
+    try {
+      (this.outputContainer as any).setAttribute("tabindex", "0");
+      this.outputContainer.addEventListener("mousedown", () => {
+        // 鼠标在输出区域操作时，移除输入框的焦点，避免快捷键落到 textarea 上
+        try { this.chatInput?.blur(); } catch {}
+      });
+      this.outputContainer.addEventListener("mouseup", () => {
+        try { (this.outputContainer as any).focus(); } catch {}
+      });
+      // 全局复制快捷键兜底：若外层把焦点留在输入框，也尝试复制被选中文本
+      const copyHandler = (e: KeyboardEvent) => {
+        if ((e.ctrlKey || (e as any).metaKey) && (e.key === "c" || e.key === "C")) {
+          try {
+            const win: any = (Zotero && (Zotero as any).getMainWindow)
+              ? (Zotero as any).getMainWindow()
+              : (globalThis as any);
+            const sel = win?.getSelection ? win.getSelection() : null;
+            const text = sel ? String(sel) : "";
+            if (text && text.trim()) {
+              // 优先使用主窗口的剪贴板能力
+              if (win?.navigator?.clipboard?.writeText) {
+                win.navigator.clipboard.writeText(text).catch(() => {});
+              } else if (win?.document?.execCommand) {
+                try { win.document.execCommand("copy"); } catch {}
+              }
+            }
+          } catch {}
+        }
+      };
+      // 采用捕获阶段，尽量在 textarea 之前处理
+      const winAny: any = (Zotero && (Zotero as any).getMainWindow)
+        ? (Zotero as any).getMainWindow()
+        : (globalThis as any);
+      try { winAny.addEventListener("keydown", copyHandler, true); } catch {}
+    } catch {}
 
     // 创建初始提示
     this.showInitialHint();
@@ -209,11 +272,397 @@ export class SummaryView extends BaseView {
       children: [queueButton],
     });
 
+    // 创建追问容器 (默认隐藏)
+    this.chatContainer = this.createChatContainer();
+
     container.appendChild(header);
     container.appendChild(this.scrollContainer);
+    container.appendChild(this.chatContainer);
     container.appendChild(footer);
 
     return container;
+  }
+
+  /**
+   * 创建追问容器
+   * @private
+   */
+  private createChatContainer(): HTMLElement {
+    const container = this.createElement("div", {
+      id: "ai-butler-chat-container",
+      styles: {
+        display: "none", // 默认隐藏
+        flexDirection: "column",
+        padding: "15px 20px",
+        borderTop: "1px solid rgba(89, 192, 188, 0.3)",
+        backgroundColor: "#f9f9f9",
+        flexShrink: "0",
+      },
+    });
+
+    // 追问按钮 - 使用统一的按钮组件
+    const chatButton = createStyledButton("💬 后续追问", "#667eea", "medium");
+    chatButton.id = "ai-butler-chat-toggle-button";
+    Object.assign(chatButton.style, {
+      marginBottom: "12px",
+    });
+
+    chatButton.addEventListener("click", () => {
+      const inputArea = container.querySelector("#ai-butler-chat-input-area") as HTMLElement;
+      if (inputArea) {
+        if (inputArea.style.display === "none" || !inputArea.style.display) {
+          inputArea.style.display = "flex";
+          chatButton.innerHTML = "🔽 收起追问";
+        } else {
+          inputArea.style.display = "none";
+          chatButton.innerHTML = "💬 后续追问";
+        }
+      }
+    });
+
+    // 输入区域
+    const inputArea = this.createElement("div", {
+      id: "ai-butler-chat-input-area",
+      styles: {
+        display: "none", // 默认收起
+        flexDirection: "column",
+        gap: "10px",
+      },
+    });
+
+    // 输入框
+    this.chatInput = this.createElement("textarea", {
+      id: "ai-butler-chat-input",
+      styles: {
+        width: "100%",
+        minHeight: "80px",
+        maxHeight: "300px",
+        padding: "10px",
+        fontSize: "14px",
+        border: "1px solid #ddd",
+        borderRadius: "4px",
+        boxSizing: "border-box",
+        resize: "vertical",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+      },
+    }) as HTMLTextAreaElement;
+    this.chatInput.placeholder = "在这里输入您的问题...";
+
+    // 自动调整高度
+    this.chatInput.addEventListener("input", () => {
+      if (this.chatInput) {
+        this.chatInput.style.height = "auto";
+        this.chatInput.style.height = Math.min(this.chatInput.scrollHeight, 300) + "px";
+      }
+    });
+
+    // 发送按钮 - 使用统一的按钮组件
+    this.chatSendButton = createStyledButton("📤 发送", "#4caf50", "medium");
+    this.chatSendButton.id = "ai-butler-chat-send";
+    Object.assign(this.chatSendButton.style, {
+      alignSelf: "flex-end",
+    });
+
+    this.chatSendButton.addEventListener("click", () => {
+      this.handleChatSend();
+    });
+
+    // Enter发送, Shift+Enter换行
+    this.chatInput.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        this.handleChatSend();
+      }
+    });
+
+    inputArea.appendChild(this.chatInput);
+    inputArea.appendChild(this.chatSendButton);
+
+    container.appendChild(chatButton);
+    container.appendChild(inputArea);
+
+    return container;
+  }
+
+  /**
+   * 处理追问发送
+   * @private
+   */
+  private async handleChatSend(): Promise<void> {
+    if (!this.chatInput || !this.chatSendButton) return;
+    if (this.isChatting) return;
+
+    const userMessage = this.chatInput.value.trim();
+    if (!userMessage) {
+      new ztoolkit.ProgressWindow("追问", { closeTime: 2000 })
+        .createLine({ text: "请输入问题内容", type: "default" })
+        .show();
+      return;
+    }
+
+    // 检查是否有PDF内容
+    if (!this.currentPdfContent) {
+      new ztoolkit.ProgressWindow("追问", { closeTime: 3000 })
+        .createLine({ text: "没有可用的论文上下文,请先生成总结", type: "fail" })
+        .show();
+      return;
+    }
+
+    this.isChatting = true;
+    this.chatSendButton.disabled = true;
+    this.chatSendButton.innerHTML = "⏳ 发送中...";
+    this.chatSendButton.style.backgroundColor = "#9e9e9e";
+    this.chatInput.disabled = true;
+
+    // 添加用户消息到历史
+    this.conversationHistory.push({
+      role: "user",
+      content: userMessage,
+    });
+
+    // 显示用户消息
+    this.appendChatMessage("user", userMessage);
+
+    // 清空输入框
+    this.chatInput.value = "";
+    this.chatInput.style.height = "80px";
+
+    // 创建助手消息容器
+    const assistantMessageContainer = this.appendChatMessage("assistant", "");
+
+    try {
+      // 导入 LLMClient
+      const { default: LLMClient } = await import("../llmClient");
+
+      // 调用chat方法
+      let fullResponse = "";
+      await LLMClient.chat(
+        this.currentPdfContent,
+        this.currentIsBase64,
+        this.conversationHistory,
+        (chunk: string) => {
+          fullResponse += chunk;
+          // 更新助手消息显示
+          if (assistantMessageContainer) {
+            const contentDiv = assistantMessageContainer.querySelector(
+              ".chat-message-content",
+            ) as HTMLElement;
+            if (contentDiv) {
+              contentDiv.innerHTML = SummaryView.convertMarkdownToHTMLCore(fullResponse);
+            }
+          }
+          // 自动滚动
+          this.scrollToBottom();
+        },
+      );
+
+      // 添加助手回复到历史
+      this.conversationHistory.push({
+        role: "assistant",
+        content: fullResponse,
+      });
+
+      // 如果开启了保存对话历史,保存到笔记
+      if (getPref("saveChatHistory") && this.currentItemId) {
+        await this.saveChatToNote(userMessage, fullResponse);
+      }
+    } catch (error: any) {
+      // 显示错误
+      if (assistantMessageContainer) {
+        const contentDiv = assistantMessageContainer.querySelector(
+          ".chat-message-content",
+        ) as HTMLElement;
+        if (contentDiv) {
+          contentDiv.innerHTML = `<p style="color: #d32f2f;">❌ 错误: ${error?.message || String(error)}</p>`;
+        }
+      }
+    } finally {
+      this.isChatting = false;
+      if (this.chatSendButton) {
+        this.chatSendButton.disabled = false;
+        this.chatSendButton.innerHTML = "📤 发送";
+        this.chatSendButton.style.backgroundColor = "#4caf50";
+      }
+      if (this.chatInput) {
+        this.chatInput.disabled = false;
+        this.chatInput.focus();
+      }
+    }
+  }
+
+  /**
+   * 添加聊天消息到显示区域
+   * @private
+   */
+  private appendChatMessage(role: string, content: string): HTMLElement | null {
+    if (!this.outputContainer) return null;
+
+    const messageDiv = this.createElement("div", {
+      styles: {
+        marginBottom: "16px",
+        padding: "12px",
+        borderRadius: "8px",
+        backgroundColor: role === "user" ? "#e3f2fd" : "#f5f5f5",
+        borderLeft: `4px solid ${role === "user" ? "#2196f3" : "#4caf50"}`,
+      },
+    });
+
+    const roleLabel = this.createElement("div", {
+      styles: {
+        fontWeight: "bold",
+        marginBottom: "8px",
+        color: role === "user" ? "#1565c0" : "#2e7d32",
+      },
+      innerHTML: role === "user" ? "👤 您" : "🤖 AI管家",
+    });
+
+    const contentDiv = this.createElement("div", {
+      className: "chat-message-content",
+      styles: {
+        fontSize: "14px",
+        lineHeight: "1.6",
+        userSelect: "text", // 确保文本可以被选择
+        cursor: "text", // 鼠标样式提示可选择
+      },
+      innerHTML: content ? SummaryView.convertMarkdownToHTMLCore(content) : "<em>思考中...</em>",
+    });
+
+    messageDiv.appendChild(roleLabel);
+    messageDiv.appendChild(contentDiv);
+    this.outputContainer.appendChild(messageDiv);
+
+    this.scrollToBottom();
+
+    return messageDiv;
+  }
+
+  /**
+   * 保存对话到笔记
+   * @private
+   */
+  private async saveChatToNote(userMessage: string, assistantMessage: string): Promise<void> {
+    if (!this.currentItemId) return;
+
+    try {
+      const item = await Zotero.Items.getAsync(this.currentItemId);
+      if (!item) return;
+
+      // 查找AI管家笔记
+      const noteIDs = (item as any).getNotes?.() || [];
+      let targetNote: any = null;
+
+      for (const nid of noteIDs) {
+        try {
+          const n = await Zotero.Items.getAsync(nid);
+          if (!n) continue;
+          const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
+          const hasTag = tags.some((t) => t.tag === "AI-Generated");
+          if (hasTag) {
+            targetNote = n;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      if (!targetNote) return;
+
+      // 获取现有笔记内容
+      let noteHtml = (targetNote as any).getNote?.() || "";
+
+      // 追加对话记录
+      const chatRecord = `
+<div style="margin-top: 20px; border-top: 2px solid #ccc; padding-top: 10px;">
+  <h3>追问记录 - ${new Date().toLocaleString("zh-CN")}</h3>
+  <div style="background-color: #e3f2fd; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
+    <strong>👤 用户:</strong> ${this.escapeHtml(userMessage)}
+  </div>
+  <div style="background-color: #f5f5f5; padding: 10px; border-radius: 5px;">
+    <strong>🤖 AI管家:</strong><br/>
+    ${SummaryView.convertMarkdownToHTMLCore(assistantMessage)}
+  </div>
+</div>
+`;
+
+      noteHtml += chatRecord;
+      (targetNote as any).setNote(noteHtml);
+      await (targetNote as any).saveTx();
+
+      ztoolkit.log("[AI-Butler] 对话已保存到笔记");
+    } catch (error) {
+      ztoolkit.log("[AI-Butler] 保存对话到笔记失败:", error);
+    }
+  }
+
+  /**
+   * HTML转义
+   * @private
+   */
+  private escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  /**
+   * 设置当前论文上下文 (用于追问)
+   * @param itemId 文献条目ID
+   * @param pdfContent PDF内容(Base64或文本)
+   * @param isBase64 是否为Base64编码
+   * @param aiSummary 已生成的AI总结内容(可选)
+   */
+  public setCurrentPaperContext(
+    itemId: number,
+    pdfContent: string,
+    isBase64: boolean,
+    aiSummary?: string,
+  ): void {
+    this.currentItemId = itemId;
+    this.currentPdfContent = pdfContent;
+    this.currentIsBase64 = isBase64;
+    
+    // 初始化对话历史:第一轮是用户提示词和AI回复
+    this.conversationHistory = [];
+    
+    // 如果提供了AI总结内容,将其作为第一轮对话
+    if (aiSummary && aiSummary.trim()) {
+      // 获取用户的提示词
+      const summaryPrompt = (getPref("summaryPrompt") as string) || "请分析这篇论文";
+      
+      this.conversationHistory.push({
+        role: "user",
+        content: summaryPrompt,
+      });
+      
+      this.conversationHistory.push({
+        role: "assistant",
+        content: aiSummary,
+      });
+    }
+
+    // 显示追问容器
+    if (this.chatContainer) {
+      this.chatContainer.style.display = "flex";
+    }
+  }
+
+  /**
+   * 清除论文上下文
+   */
+  public clearPaperContext(): void {
+    this.currentItemId = null;
+    this.currentPdfContent = "";
+    this.currentIsBase64 = false;
+    this.conversationHistory = [];
+
+    // 隐藏追问容器
+    if (this.chatContainer) {
+      this.chatContainer.style.display = "none";
+    }
   }
 
   /**
@@ -284,11 +733,48 @@ export class SummaryView extends BaseView {
         contentElement.innerHTML = html;
       }
       this.finishItem();
+
+      // 提取AI总结的纯文本内容(去除HTML标签)
+      const aiSummaryText = html
+        .replace(/<style[^>]*>.*?<\/style>/gis, "")
+        .replace(/<script[^>]*>.*?<\/script>/gis, "")
+        .replace(/<[^>]+>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .trim();
+
+      // 获取PDF内容以支持后续追问
+      try {
+        const { PDFExtractor } = await import("../pdfExtractor");
+        const pdfProcessMode = (getPref("pdfProcessMode") as string) || "base64";
+        const isBase64 = pdfProcessMode === "base64";
+
+        let pdfContent = "";
+        if (isBase64) {
+          pdfContent = await PDFExtractor.extractBase64FromItem(item);
+        } else {
+          pdfContent = await PDFExtractor.extractTextFromItem(item);
+        }
+
+        if (pdfContent) {
+          // 设置论文上下文，传入AI总结内容
+          this.setCurrentPaperContext(itemId, pdfContent, isBase64, aiSummaryText);
+        } else {
+          // 没有PDF内容，不显示追问按钮
+          this.clearPaperContext();
+        }
+      } catch (err) {
+        ztoolkit.log("[AI-Butler] 获取PDF内容失败，无法启用追问功能:", err);
+        this.clearPaperContext();
+      }
     } catch (err) {
       this.hideLoading();
       this.startItem("加载失败");
       this.appendContent("无法加载该条目的已保存总结。");
       this.finishItem();
+      this.clearPaperContext();
     }
   }
 
@@ -634,6 +1120,8 @@ export class SummaryView extends BaseView {
       styles: {
         whiteSpace: "pre-wrap",
         wordWrap: "break-word",
+        userSelect: "text", // 确保文本可以被选择
+        cursor: "text", // 鼠标样式提示可选择
       },
     });
 

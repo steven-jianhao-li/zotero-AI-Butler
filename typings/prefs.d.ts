@@ -14,10 +14,14 @@ declare namespace _ZoteroTypes {
       "geminiApiUrl": string;
       "geminiApiKey": string;
       "geminiModel": string;
+      "anthropicApiUrl": string;
+      "anthropicApiKey": string;
+      "anthropicModel": string;
       "temperature": string;
       "maxTokens": string;
       "topP": string;
       "stream": boolean;
+      "requestTimeout": string;
       "summaryPrompt": string;
       "customPrompts": string;
       "maxRetries": string;
@@ -31,6 +35,7 @@ declare namespace _ZoteroTypes {
       "autoScroll": boolean;
       "windowWidth": string;
       "windowHeight": string;
+      "saveChatHistory": boolean;
       "notePrefix": string;
       "noteStrategy": string;
     };

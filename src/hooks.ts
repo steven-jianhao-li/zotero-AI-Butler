@@ -318,18 +318,18 @@ function registerContextMenuItem() {
       if (!selectedItems || selectedItems.length !== 1) {
         return false;
       }
-      
+
       const item = selectedItems[0];
       // 判断是否是 AI 笔记
       if (!item.isNote()) {
         return false;
       }
-      
+
       const tags: Array<{ tag: string }> = (item as any).getTags?.() || [];
       const hasTag = tags.some((t: any) => t.tag === "AI-Generated");
       const noteHtml: string = (item as any).getNote?.() || "";
       const titleMatch = /<h2>\s*AI 管家\s*-/.test(noteHtml);
-      
+
       return hasTag || titleMatch;
     },
   });
@@ -337,15 +337,15 @@ function registerContextMenuItem() {
 
 /**
  * 处理 AI 笔记的后续追问
- * 
+ *
  * 当用户在 AI 笔记上右键点击"后续追问"时触发
- * 
+ *
  * 执行流程:
  * 1. 获取选中的 AI 笔记
  * 2. 找到笔记对应的父文献条目
  * 3. 打开主窗口并切换到摘要视图
  * 4. 加载该文献的 AI 笔记并显示聊天界面
- * 
+ *
  * 错误处理:
  * - 笔记无父条目:提示用户笔记已损坏
  * - 找不到父条目:提示用户数据异常
@@ -368,7 +368,7 @@ async function handleChatWithAI() {
 
     const note = selectedItems[0];
     const parentItemID = (note as any).parentItemID;
-    
+
     if (!parentItemID) {
       new ztoolkit.ProgressWindow("AI Butler", {
         closeOnClick: true,
@@ -399,7 +399,7 @@ async function handleChatWithAI() {
     // 打开主窗口并切换到摘要视图
     const mainWin = MainWindow.getInstance();
     await mainWin.open("summary");
-    
+
     // 通过 SummaryView 加载该文献的笔记(会自动显示聊天界面)
     const summaryView = mainWin.getSummaryView();
     if (summaryView) {

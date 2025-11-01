@@ -301,6 +301,123 @@ function registerContextMenuItem() {
       return true; // 始终显示
     },
   });
+
+  // 注册"AI 管家-后续追问"菜单项
+  ztoolkit.Menu.register("item", {
+    tag: "menuitem",
+    label: getString("menuitem-chatWithAI"),
+    icon: menuIcon,
+
+    commandListener: async (ev) => {
+      await handleChatWithAI();
+    },
+
+    // 仅当选中单个 AI 笔记时显示
+    getVisibility: () => {
+      const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
+      if (!selectedItems || selectedItems.length !== 1) {
+        return false;
+      }
+      
+      const item = selectedItems[0];
+      // 判断是否是 AI 笔记
+      if (!item.isNote()) {
+        return false;
+      }
+      
+      const tags: Array<{ tag: string }> = (item as any).getTags?.() || [];
+      const hasTag = tags.some((t: any) => t.tag === "AI-Generated");
+      const noteHtml: string = (item as any).getNote?.() || "";
+      const titleMatch = /<h2>\s*AI 管家\s*-/.test(noteHtml);
+      
+      return hasTag || titleMatch;
+    },
+  });
+}
+
+/**
+ * 处理 AI 笔记的后续追问
+ * 
+ * 当用户在 AI 笔记上右键点击"后续追问"时触发
+ * 
+ * 执行流程:
+ * 1. 获取选中的 AI 笔记
+ * 2. 找到笔记对应的父文献条目
+ * 3. 打开主窗口并切换到摘要视图
+ * 4. 加载该文献的 AI 笔记并显示聊天界面
+ * 
+ * 错误处理:
+ * - 笔记无父条目:提示用户笔记已损坏
+ * - 找不到父条目:提示用户数据异常
+ */
+async function handleChatWithAI() {
+  try {
+    const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
+    if (!selectedItems || selectedItems.length !== 1) {
+      new ztoolkit.ProgressWindow("AI Butler", {
+        closeOnClick: true,
+        closeTime: 3000,
+      })
+        .createLine({
+          text: "请选择一个 AI 笔记",
+          type: "error",
+        })
+        .show();
+      return;
+    }
+
+    const note = selectedItems[0];
+    const parentItemID = (note as any).parentItemID;
+    
+    if (!parentItemID) {
+      new ztoolkit.ProgressWindow("AI Butler", {
+        closeOnClick: true,
+        closeTime: 3000,
+      })
+        .createLine({
+          text: "找不到笔记对应的文献条目",
+          type: "error",
+        })
+        .show();
+      return;
+    }
+
+    const parentItem = await Zotero.Items.getAsync(parentItemID);
+    if (!parentItem) {
+      new ztoolkit.ProgressWindow("AI Butler", {
+        closeOnClick: true,
+        closeTime: 3000,
+      })
+        .createLine({
+          text: "无法加载文献条目",
+          type: "error",
+        })
+        .show();
+      return;
+    }
+
+    // 打开主窗口并切换到摘要视图
+    const mainWin = MainWindow.getInstance();
+    await mainWin.open("summary");
+    
+    // 通过 SummaryView 加载该文献的笔记(会自动显示聊天界面)
+    const summaryView = mainWin.getSummaryView();
+    if (summaryView) {
+      // 调用 showSavedNoteForItem 需要传入条目ID
+      await (summaryView as any).showSavedNoteForItem(parentItemID);
+    }
+  } catch (error: any) {
+    ztoolkit.log("[AI-Butler] 打开聊天失败:", error);
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 3000,
+    })
+      .createLine({
+        text: `打开聊天失败: ${error.message || error}`,
+        type: "error",
+      })
+      .show();
+  }
 }
 
 /**

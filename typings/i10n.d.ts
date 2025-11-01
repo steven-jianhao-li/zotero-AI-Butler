@@ -21,6 +21,7 @@ export type FluentMessageId =
   | 'ai-butler-prefs-temperature-description'
   | 'error-noApiKey'
   | 'error-noItemsSelected'
+  | 'menuitem-chatWithAI'
   | 'menuitem-filemenulabel'
   | 'menuitem-generateSummary'
   | 'menuitem-label'

@@ -1,6 +1,7 @@
 menuitem-generateSummary = 召唤AI管家进行分析
-error-noItemsSelected = 抱歉，您尚未选择需要分析的文献。
-error-noApiKey = 抱歉，尚未配置API密钥，我无法开始工作。
+menuitem-chatWithAI = AI管家-后续追问
+error-noItemsSelected = 抱歉,您尚未选择需要分析的文献。
+error-noApiKey = 抱歉,尚未配置API密钥,我无法开始工作。
 success-allComplete = 所有任务已处理完毕！
 progress-extracting = 正在提取文献内容...
 progress-generating = 管家正在分析中...

@@ -67,6 +67,20 @@ export class UiSettingsPage {
       ),
     );
 
+    // 保存对话历史
+    const saveChatHistory = (getPref("saveChatHistory") as boolean) ?? false;
+    const saveChatHistoryBox = createCheckbox(
+      "saveChatHistory",
+      !!saveChatHistory,
+    );
+    form.appendChild(
+      createFormGroup(
+        "保存追问对话记录（试验性功能，谨慎启用）",
+        saveChatHistoryBox,
+        "开启后，追问对话的内容会自动保存到论文的 AI 管家笔记中",
+      ),
+    );
+
     // 笔记管理策略
     const policy = (
       (getPref("noteStrategy" as any) as string) || "skip"
@@ -105,12 +119,16 @@ export class UiSettingsPage {
       const autoScanVal =
         (form.querySelector("#setting-autoScan") as HTMLInputElement)
           ?.checked ?? true;
+      const saveChatHistoryVal =
+        (form.querySelector("#setting-saveChatHistory") as HTMLInputElement)
+          ?.checked ?? false;
       const policyVal = (policySelect as any).getValue
         ? (policySelect as any).getValue()
         : policy;
 
       setPref("autoScroll", !!autoVal as any);
       setPref("autoScan", !!autoScanVal as any);
+      setPref("saveChatHistory", !!saveChatHistoryVal as any);
       setPref("noteStrategy" as any, policyVal);
 
       // 重新加载自动扫描管理器
@@ -125,6 +143,7 @@ export class UiSettingsPage {
     btnReset.addEventListener("click", () => {
       setPref("autoScroll", true as any);
       setPref("autoScan", true as any);
+      setPref("saveChatHistory", false as any);
       setPref("noteStrategy" as any, "skip");
       AutoScanManager.getInstance().reload();
       this.render();

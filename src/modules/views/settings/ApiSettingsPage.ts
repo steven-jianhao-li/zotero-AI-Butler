@@ -76,6 +76,7 @@ export class ApiSettingsPage {
       [
         { value: "openai", label: "OpenAI" },
         { value: "google", label: "Google Gemini" },
+        { value: "anthropic", label: "Anthropic Claude" },
       ],
       providerValue,
       (newVal) => {
@@ -100,6 +101,25 @@ export class ApiSettingsPage {
             modelInput.value = "gemini-2.5-pro";
           }
         }
+        // 若切换到 Anthropic 且未填写，填充默认 URL 与模型
+        if (newVal === "anthropic") {
+          const curUrl = (getPref("anthropicApiUrl") as string) || "";
+          const urlInput = this.container.querySelector(
+            "#setting-anthropicApiUrl",
+          ) as HTMLInputElement;
+          const modelInput = this.container.querySelector(
+            "#setting-anthropicModel",
+          ) as HTMLInputElement;
+          if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
+            urlInput.value = "https://api.anthropic.com";
+          }
+          if (
+            modelInput &&
+            (!modelInput.value || modelInput.value.trim() === "")
+          ) {
+            modelInput.value = "claude-3-5-sonnet-20241022";
+          }
+        }
       },
     );
     form.appendChild(
@@ -113,6 +133,9 @@ export class ApiSettingsPage {
     // Provider 专属字段容器
     const sectionOpenAI = this.createElement("div", { id: "provider-openai" });
     const sectionGemini = this.createElement("div", { id: "provider-gemini" });
+    const sectionAnthropic = this.createElement("div", {
+      id: "provider-anthropic",
+    });
 
     // OpenAI 字段
     sectionOpenAI.appendChild(
@@ -188,15 +211,56 @@ export class ApiSettingsPage {
       ),
     );
 
+    // Anthropic 字段
+    sectionAnthropic.appendChild(
+      this.createFormGroup(
+        "API 基础地址 *",
+        this.createInput(
+          "anthropicApiUrl",
+          "text",
+          getPref("anthropicApiUrl") as string,
+          "https://api.anthropic.com",
+        ),
+        "【必填】Anthropic API 基础地址",
+      ),
+    );
+    sectionAnthropic.appendChild(
+      this.createFormGroup(
+        "API 密钥 *",
+        this.createPasswordInput(
+          "anthropicApiKey",
+          getPref("anthropicApiKey") as string,
+          "sk-ant-...",
+        ),
+        "【必填】您的 Anthropic API Key, 将通过 x-api-key 发送",
+      ),
+    );
+    sectionAnthropic.appendChild(
+      this.createFormGroup(
+        "模型 *",
+        this.createInput(
+          "anthropicModel",
+          "text",
+          getPref("anthropicModel") as string,
+          "claude-3-5-sonnet-20241022",
+        ),
+        "【必填】Claude 模型名称, 如 claude-3-5-sonnet-20241022",
+      ),
+    );
+
     form.appendChild(sectionOpenAI);
     form.appendChild(sectionGemini);
+    form.appendChild(sectionAnthropic);
 
     const renderProviderSections = (prov: string) => {
       const isGemini = prov === "google";
-      (sectionOpenAI as HTMLElement).style.display = isGemini
-        ? "none"
-        : "block";
+      const isAnthropic = prov === "anthropic";
+      (sectionOpenAI as HTMLElement).style.display =
+        isGemini || isAnthropic ? "none" : "block";
       (sectionGemini as HTMLElement).style.display = isGemini
+        ? "block"
+        : "none";
+      (sectionAnthropic as HTMLElement).style.display = isAnthropic
         ? "block"
         : "none";
     };
@@ -252,6 +316,20 @@ export class ApiSettingsPage {
         "流式输出",
         this.createCheckbox("stream", getPref("stream") as boolean),
         "启用后将实时显示生成过程",
+      ),
+    );
+
+    // 请求超时配置
+    form.appendChild(
+      this.createFormGroup(
+        "请求超时时间 (毫秒)",
+        this.createInput(
+          "requestTimeout",
+          "number",
+          getPref("requestTimeout") as string,
+          "300000",
+        ),
+        "API请求的超时时间,默认300000ms(5分钟),最小30000ms(30秒)",
       ),
     );
 
@@ -674,6 +752,16 @@ export class ApiSettingsPage {
       const gemModelEl = this.container.querySelector(
         "#setting-geminiModel",
       ) as HTMLInputElement;
+      // Anthropic
+      const anthUrlEl = this.container.querySelector(
+        "#setting-anthropicApiUrl",
+      ) as HTMLInputElement;
+      const anthKeyEl = this.container.querySelector(
+        "#setting-anthropicApiKey",
+      ) as HTMLInputElement;
+      const anthModelEl = this.container.querySelector(
+        "#setting-anthropicModel",
+      ) as HTMLInputElement;
       const temperatureEl = this.container.querySelector(
         "#setting-temperature",
       ) as HTMLInputElement;
@@ -723,10 +811,19 @@ export class ApiSettingsPage {
         geminiApiUrl: gemUrlEl?.value?.trim() || "",
         geminiApiKey: gemKeyEl?.value?.trim() || "",
         geminiModel: gemModelEl?.value?.trim() || "",
+        anthropicApiUrl: anthUrlEl?.value?.trim() || "",
+        anthropicApiKey: anthKeyEl?.value?.trim() || "",
+        anthropicModel: anthModelEl?.value?.trim() || "",
         temperature: temperatureEl?.value || "0.7",
         maxTokens: maxTokensEl?.value?.trim() || "4096",
         topP: topPEl?.value || "1.0",
         stream: streamEl?.checked ?? true,
+        requestTimeout:
+          (
+            this.container.querySelector(
+              "#setting-requestTimeout",
+            ) as HTMLInputElement
+          )?.value?.trim() || "300000",
         batchSize: batchSizeEl?.value?.trim() || "1",
         batchInterval: batchIntervalEl?.value?.trim() || "60",
         scanInterval: scanIntervalEl?.value?.trim() || "300",
@@ -746,6 +843,11 @@ export class ApiSettingsPage {
         if (!values.geminiApiUrl) missingFields.push("API 基础地址(Gemini)");
         if (!values.geminiApiKey) missingFields.push("API 密钥(Gemini)");
         if (!values.geminiModel) missingFields.push("模型名称(Gemini)");
+      } else if (provider === "anthropic") {
+        if (!values.anthropicApiUrl)
+          missingFields.push("API 基础地址(Anthropic)");
+        if (!values.anthropicApiKey) missingFields.push("API 密钥(Anthropic)");
+        if (!values.anthropicModel) missingFields.push("模型名称(Anthropic)");
       } else {
         if (!values.apiUrl) missingFields.push("API 地址");
         if (!values.apiKey) missingFields.push("API 密钥");
@@ -766,17 +868,21 @@ export class ApiSettingsPage {
 
       // 保存到配置
       setPref("provider", values.provider);
-      // 分别保存两套配置,互不覆盖
+      // 分别保存三套配置,互不覆盖
       setPref("apiUrl", values.apiUrl);
       setPref("apiKey", values.apiKey);
       setPref("model", values.model);
       setPref("geminiApiUrl", values.geminiApiUrl);
       setPref("geminiApiKey", values.geminiApiKey);
       setPref("geminiModel", values.geminiModel);
+      setPref("anthropicApiUrl", values.anthropicApiUrl);
+      setPref("anthropicApiKey", values.anthropicApiKey);
+      setPref("anthropicModel", values.anthropicModel);
       setPref("temperature", values.temperature);
       setPref("maxTokens", values.maxTokens);
       setPref("topP", values.topP);
       setPref("stream", values.stream);
+      setPref("requestTimeout", values.requestTimeout);
       // 调度配置
       setPref("batchSize", values.batchSize);
       setPref("batchInterval", values.batchInterval);
@@ -864,6 +970,7 @@ export class ApiSettingsPage {
     setPref("maxTokens", "4096");
     setPref("topP", "1.0");
     setPref("stream", true);
+    setPref("requestTimeout", "300000");
 
     // 重新渲染
     this.render();

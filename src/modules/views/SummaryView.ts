@@ -195,37 +195,71 @@ export class SummaryView extends BaseView {
       (this.outputContainer as any).setAttribute("tabindex", "0");
       this.outputContainer.addEventListener("mousedown", () => {
         // 鼠标在输出区域操作时，移除输入框的焦点，避免快捷键落到 textarea 上
-        try { this.chatInput?.blur(); } catch {}
+        try {
+          this.chatInput?.blur();
+        } catch (e) {
+          // 忽略失焦失败
+          void 0;
+        }
       });
       this.outputContainer.addEventListener("mouseup", () => {
-        try { (this.outputContainer as any).focus(); } catch {}
+        try {
+          (this.outputContainer as any).focus();
+        } catch (e) {
+          // 忽略聚焦失败
+          void 0;
+        }
       });
       // 全局复制快捷键兜底：若外层把焦点留在输入框，也尝试复制被选中文本
       const copyHandler = (e: KeyboardEvent) => {
-        if ((e.ctrlKey || (e as any).metaKey) && (e.key === "c" || e.key === "C")) {
+        if (
+          (e.ctrlKey || (e as any).metaKey) &&
+          (e.key === "c" || e.key === "C")
+        ) {
           try {
-            const win: any = (Zotero && (Zotero as any).getMainWindow)
-              ? (Zotero as any).getMainWindow()
-              : (globalThis as any);
+            const win: any =
+              Zotero && (Zotero as any).getMainWindow
+                ? (Zotero as any).getMainWindow()
+                : (globalThis as any);
             const sel = win?.getSelection ? win.getSelection() : null;
             const text = sel ? String(sel) : "";
             if (text && text.trim()) {
               // 优先使用主窗口的剪贴板能力
               if (win?.navigator?.clipboard?.writeText) {
-                win.navigator.clipboard.writeText(text).catch(() => {});
+                win.navigator.clipboard.writeText(text).catch((err: any) => {
+                  // 忽略剪贴板写入失败
+                  void 0;
+                });
               } else if (win?.document?.execCommand) {
-                try { win.document.execCommand("copy"); } catch {}
+                try {
+                  win.document.execCommand("copy");
+                } catch (e) {
+                  // 忽略旧式复制失败
+                  void 0;
+                }
               }
             }
-          } catch {}
+          } catch (e) {
+            // 忽略复制兜底逻辑异常
+            void 0;
+          }
         }
       };
       // 采用捕获阶段，尽量在 textarea 之前处理
-      const winAny: any = (Zotero && (Zotero as any).getMainWindow)
-        ? (Zotero as any).getMainWindow()
-        : (globalThis as any);
-      try { winAny.addEventListener("keydown", copyHandler, true); } catch {}
-    } catch {}
+      const winAny: any =
+        Zotero && (Zotero as any).getMainWindow
+          ? (Zotero as any).getMainWindow()
+          : (globalThis as any);
+      try {
+        winAny.addEventListener("keydown", copyHandler, true);
+      } catch (e) {
+        // 忽略事件绑定失败
+        void 0;
+      }
+    } catch (e) {
+      // 忽略初始化复制相关事件失败
+      void 0;
+    }
 
     // 创建初始提示
     this.showInitialHint();
@@ -308,7 +342,9 @@ export class SummaryView extends BaseView {
     });
 
     chatButton.addEventListener("click", () => {
-      const inputArea = container.querySelector("#ai-butler-chat-input-area") as HTMLElement;
+      const inputArea = container.querySelector(
+        "#ai-butler-chat-input-area",
+      ) as HTMLElement;
       if (inputArea) {
         if (inputArea.style.display === "none" || !inputArea.style.display) {
           inputArea.style.display = "flex";
@@ -352,7 +388,8 @@ export class SummaryView extends BaseView {
     this.chatInput.addEventListener("input", () => {
       if (this.chatInput) {
         this.chatInput.style.height = "auto";
-        this.chatInput.style.height = Math.min(this.chatInput.scrollHeight, 300) + "px";
+        this.chatInput.style.height =
+          Math.min(this.chatInput.scrollHeight, 300) + "px";
       }
     });
 
@@ -448,7 +485,8 @@ export class SummaryView extends BaseView {
               ".chat-message-content",
             ) as HTMLElement;
             if (contentDiv) {
-              contentDiv.innerHTML = SummaryView.convertMarkdownToHTMLCore(fullResponse);
+              contentDiv.innerHTML =
+                SummaryView.convertMarkdownToHTMLCore(fullResponse);
             }
           }
           // 自动滚动
@@ -524,7 +562,9 @@ export class SummaryView extends BaseView {
         userSelect: "text", // 确保文本可以被选择
         cursor: "text", // 鼠标样式提示可选择
       },
-      innerHTML: content ? SummaryView.convertMarkdownToHTMLCore(content) : "<em>思考中...</em>",
+      innerHTML: content
+        ? SummaryView.convertMarkdownToHTMLCore(content)
+        : "<em>思考中...</em>",
     });
 
     messageDiv.appendChild(roleLabel);
@@ -540,7 +580,10 @@ export class SummaryView extends BaseView {
    * 保存对话到笔记
    * @private
    */
-  private async saveChatToNote(userMessage: string, assistantMessage: string): Promise<void> {
+  private async saveChatToNote(
+    userMessage: string,
+    assistantMessage: string,
+  ): Promise<void> {
     if (!this.currentItemId) return;
 
     try {
@@ -624,20 +667,21 @@ export class SummaryView extends BaseView {
     this.currentItemId = itemId;
     this.currentPdfContent = pdfContent;
     this.currentIsBase64 = isBase64;
-    
+
     // 初始化对话历史:第一轮是用户提示词和AI回复
     this.conversationHistory = [];
-    
+
     // 如果提供了AI总结内容,将其作为第一轮对话
     if (aiSummary && aiSummary.trim()) {
       // 获取用户的提示词
-      const summaryPrompt = (getPref("summaryPrompt") as string) || "请分析这篇论文";
-      
+      const summaryPrompt =
+        (getPref("summaryPrompt") as string) || "请分析这篇论文";
+
       this.conversationHistory.push({
         role: "user",
         content: summaryPrompt,
       });
-      
+
       this.conversationHistory.push({
         role: "assistant",
         content: aiSummary,
@@ -748,7 +792,8 @@ export class SummaryView extends BaseView {
       // 获取PDF内容以支持后续追问
       try {
         const { PDFExtractor } = await import("../pdfExtractor");
-        const pdfProcessMode = (getPref("pdfProcessMode") as string) || "base64";
+        const pdfProcessMode =
+          (getPref("pdfProcessMode") as string) || "base64";
         const isBase64 = pdfProcessMode === "base64";
 
         let pdfContent = "";
@@ -760,7 +805,12 @@ export class SummaryView extends BaseView {
 
         if (pdfContent) {
           // 设置论文上下文，传入AI总结内容
-          this.setCurrentPaperContext(itemId, pdfContent, isBase64, aiSummaryText);
+          this.setCurrentPaperContext(
+            itemId,
+            pdfContent,
+            isBase64,
+            aiSummaryText,
+          );
         } else {
           // 没有PDF内容，不显示追问按钮
           this.clearPaperContext();

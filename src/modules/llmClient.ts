@@ -135,7 +135,7 @@ export class LLMClient {
     const provider = (
       (getPref("provider" as any) as string) || "openai"
     ).trim();
-    
+
     if (provider === "google" || provider.toLowerCase().includes("gemini")) {
       return await LLMClient.generateWithGemini(
         content,
@@ -144,7 +144,7 @@ export class LLMClient {
         onProgress,
       );
     }
-    
+
     if (provider === "anthropic" || provider.toLowerCase().includes("claude")) {
       return await LLMClient.generateWithAnthropic(
         content,
@@ -318,7 +318,10 @@ export class LLMClient {
               errorFromProgress = new Error("NetworkError: XHR onerror");
               try {
                 xmlhttp.abort();
-              } catch {}
+              } catch (e) {
+                // 忽略中止时可能抛出的异常，保持静默
+                void 0;
+              }
             };
 
             xmlhttp.ontimeout = () => {
@@ -328,7 +331,10 @@ export class LLMClient {
               );
               try {
                 xmlhttp.abort();
-              } catch {}
+              } catch (e) {
+                // 忽略中止时可能抛出的异常，保持静默
+                void 0;
+              }
             };
 
             xmlhttp.onloadend = () => {
@@ -586,9 +592,11 @@ export class LLMClient {
           // 网络错误与超时：如果已收到部分增量，则在外层允许返回部分内容
           xmlhttp.onerror = () => {
             // 让请求失败，外层根据 gotAnyDelta 决定是否返回部分内容
+            void 0;
           };
           xmlhttp.ontimeout = () => {
             // 让请求失败，外层根据 gotAnyDelta 决定是否返回部分内容
+            void 0;
           };
         },
       });
@@ -669,7 +677,8 @@ export class LLMClient {
     ).replace(/\/$/, "");
     const apiKey = ((getPref("anthropicApiKey" as any) as string) || "").trim();
     const model = (
-      (getPref("anthropicModel" as any) as string) || "claude-3-5-sonnet-20241022"
+      (getPref("anthropicModel" as any) as string) ||
+      "claude-3-5-sonnet-20241022"
     ).trim();
 
     const temperatureStr = (getPref("temperature") as string) || "0.7";
@@ -799,7 +808,7 @@ export class LLMClient {
                   if (!jsonStr) continue;
                   try {
                     const json = JSON.parse(jsonStr);
-                    // Anthropic 流式响应: 
+                    // Anthropic 流式响应:
                     // event: content_block_delta
                     // data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"增量文本"}}
                     if (json.type === "content_block_delta") {
@@ -833,9 +842,11 @@ export class LLMClient {
           // 网络错误与超时：如果已收到部分增量，则在外层允许返回部分内容
           xmlhttp.onerror = () => {
             // 让请求失败，外层根据 gotAnyDelta 决定是否返回部分内容
+            void 0;
           };
           xmlhttp.ontimeout = () => {
             // 让请求失败，外层根据 gotAnyDelta 决定是否返回部分内容
+            void 0;
           };
         },
       });
@@ -1026,7 +1037,7 @@ export class LLMClient {
     const provider = (
       (getPref("provider" as any) as string) || "openai"
     ).trim();
-    
+
     if (provider === "google" || provider.toLowerCase().includes("gemini")) {
       const baseUrl = (
         (getPref("geminiApiUrl" as any) as string) ||
@@ -1098,15 +1109,21 @@ export class LLMClient {
         throw new Error(errorMessage);
       }
     }
-    
-    if (provider === "anthropic" || provider.toLowerCase().indexOf("claude") !== -1) {
+
+    if (
+      provider === "anthropic" ||
+      provider.toLowerCase().indexOf("claude") !== -1
+    ) {
       const baseUrl = (
         (getPref("anthropicApiUrl" as any) as string) ||
         "https://api.anthropic.com"
       ).replace(/\/$/, "");
-      const apiKey = ((getPref("anthropicApiKey" as any) as string) || "").trim();
+      const apiKey = (
+        (getPref("anthropicApiKey" as any) as string) || ""
+      ).trim();
       const model = (
-        (getPref("anthropicModel" as any) as string) || "claude-3-5-sonnet-20241022"
+        (getPref("anthropicModel" as any) as string) ||
+        "claude-3-5-sonnet-20241022"
       ).trim();
       if (!baseUrl) throw new Error("Anthropic API URL 未配置");
       if (!apiKey) throw new Error("Anthropic API Key 未配置");
@@ -1137,8 +1154,7 @@ export class LLMClient {
             typeof response.response === "string"
               ? JSON.parse(response.response)
               : response.response;
-          const text =
-            json?.content?.[0]?.text || "";
+          const text = json?.content?.[0]?.text || "";
           return `✅ 连接成功!\n模型: ${model}\n响应: ${text}`;
         }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -1234,9 +1250,9 @@ export class LLMClient {
 
   /**
    * 多轮对话接口
-   * 
+   *
    * 用于后续追问功能,支持完整的对话历史和PDF上下文
-   * 
+   *
    * @param pdfContent PDF内容 (Base64或文本)
    * @param isBase64 是否为Base64编码
    * @param conversationHistory 对话历史 [{role: 'user'|'assistant', content: string}]
@@ -1253,7 +1269,10 @@ export class LLMClient {
       (getPref("provider" as any) as string) || "openai"
     ).trim();
 
-    if (provider === "google" || provider.toLowerCase().indexOf("gemini") !== -1) {
+    if (
+      provider === "google" ||
+      provider.toLowerCase().indexOf("gemini") !== -1
+    ) {
       return await LLMClient.chatWithGemini(
         pdfContent,
         isBase64,
@@ -1262,7 +1281,10 @@ export class LLMClient {
       );
     }
 
-    if (provider === "anthropic" || provider.toLowerCase().indexOf("claude") !== -1) {
+    if (
+      provider === "anthropic" ||
+      provider.toLowerCase().indexOf("claude") !== -1
+    ) {
       return await LLMClient.chatWithAnthropic(
         pdfContent,
         isBase64,
@@ -1305,14 +1327,13 @@ export class LLMClient {
     if (!apiKey) throw new Error("API Key 未配置");
 
     const savedPrompt = getPref("summaryPrompt") as string;
-    const summaryPrompt = savedPrompt && savedPrompt.trim()
-      ? savedPrompt
-      : getDefaultSummaryPrompt();
+    const summaryPrompt =
+      savedPrompt && savedPrompt.trim()
+        ? savedPrompt
+        : getDefaultSummaryPrompt();
 
     // 构造消息：始终保证第一条用户消息为“默认提示词+论文内容”，第二条为“AI总结”，其余原样
-    const messages: any[] = [
-      { role: "system", content: SYSTEM_ROLE_PROMPT },
-    ];
+    const messages: any[] = [{ role: "system", content: SYSTEM_ROLE_PROMPT }];
 
     if (conversationHistory && conversationHistory.length > 0) {
       const firstUserMsg = conversationHistory[0];
@@ -1347,9 +1368,9 @@ export class LLMClient {
     const chunks: string[] = [];
     let delivered = 0;
     let processedLength = 0;
-  let partialLine = "";
-  let abortError: Error | null = null; // 记录主动中止的错误
-  let gotAnyDelta = false; // 是否收到过增量
+    let partialLine = "";
+    let abortError: Error | null = null; // 记录主动中止的错误
+    let gotAnyDelta = false; // 是否收到过增量
 
     try {
       await Zotero.HTTP.request("POST", apiUrl, {
@@ -1372,12 +1393,20 @@ export class LLMClient {
                 const msg = err?.message || "请求失败";
                 const errorMessage = `${code}: ${msg}`;
                 abortError = new Error(errorMessage);
-                ztoolkit.log("[AI-Butler] OpenAI HTTP error:", { status, code, msg, response: errorResponse });
+                ztoolkit.log("[AI-Butler] OpenAI HTTP error:", {
+                  status,
+                  code,
+                  msg,
+                  response: errorResponse,
+                });
                 xmlhttp.abort();
               } catch (parseErr) {
                 const errorMessage = `HTTP ${status}: 请求失败`;
                 abortError = new Error(errorMessage);
-                ztoolkit.log("[AI-Butler] OpenAI HTTP error:", { status, parseErr });
+                ztoolkit.log("[AI-Butler] OpenAI HTTP error:", {
+                  status,
+                  parseErr,
+                });
                 xmlhttp.abort();
               }
               return;
@@ -1432,7 +1461,9 @@ export class LLMClient {
           };
           xmlhttp.ontimeout = () => {
             if (!abortError) {
-              abortError = new Error(`Timeout: 请求超过 ${LLMClient.getRequestTimeout()} ms`);
+              abortError = new Error(
+                `Timeout: 请求超过 ${LLMClient.getRequestTimeout()} ms`,
+              );
             }
           };
         },
@@ -1464,13 +1495,13 @@ export class LLMClient {
       } catch (e) {
         // 忽略解析错误
       }
-      
+
       ztoolkit.log("[AI-Butler] OpenAI request error:", {
         status: error?.xmlhttp?.status,
         statusText: error?.xmlhttp?.statusText,
         message: errorMessage,
       });
-      
+
       if (gotAnyDelta && chunks.length > 0) {
         return chunks.join("");
       }
@@ -1506,9 +1537,10 @@ export class LLMClient {
     const endpoint = `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
 
     const savedPrompt = getPref("summaryPrompt") as string;
-    const summaryPrompt = savedPrompt && savedPrompt.trim()
-      ? savedPrompt
-      : getDefaultSummaryPrompt();
+    const summaryPrompt =
+      savedPrompt && savedPrompt.trim()
+        ? savedPrompt
+        : getDefaultSummaryPrompt();
 
     // Gemini 格式: contents数组,交替user/model
     const contents: any[] = [];
@@ -1527,17 +1559,25 @@ export class LLMClient {
       } else {
         contents.push({
           role: "user",
-          parts: [{ text: buildUserMessage(firstUserMsg.content, pdfContent || "") }],
+          parts: [
+            { text: buildUserMessage(firstUserMsg.content, pdfContent || "") },
+          ],
         });
       }
 
       if (conversationHistory.length > 1) {
-        contents.push({ role: "model", parts: [{ text: conversationHistory[1].content }] });
+        contents.push({
+          role: "model",
+          parts: [{ text: conversationHistory[1].content }],
+        });
       }
 
       for (let i = 2; i < conversationHistory.length; i++) {
         const msg = conversationHistory[i];
-        contents.push({ role: msg.role === "user" ? "user" : "model", parts: [{ text: msg.content }] });
+        contents.push({
+          role: msg.role === "user" ? "user" : "model",
+          parts: [{ text: msg.content }],
+        });
       }
     }
 
@@ -1547,12 +1587,12 @@ export class LLMClient {
       systemInstruction: { parts: [{ text: SYSTEM_ROLE_PROMPT }] },
     };
 
-  const chunks: string[] = [];
-  let delivered = 0;
-  let processedLength = 0;
-  let partialLine = "";
-  let abortError: Error | null = null; // 记录主动中止的错误
-  let gotAnyDelta = false;
+    const chunks: string[] = [];
+    let delivered = 0;
+    let processedLength = 0;
+    let partialLine = "";
+    let abortError: Error | null = null; // 记录主动中止的错误
+    let gotAnyDelta = false;
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
@@ -1575,12 +1615,20 @@ export class LLMClient {
                 const msg = err?.message || "请求失败";
                 const errorMessage = `${code}: ${msg}`;
                 abortError = new Error(errorMessage);
-                ztoolkit.log("[AI-Butler] Gemini HTTP error:", { status, code, msg, response: errorResponse });
+                ztoolkit.log("[AI-Butler] Gemini HTTP error:", {
+                  status,
+                  code,
+                  msg,
+                  response: errorResponse,
+                });
                 xmlhttp.abort();
               } catch (parseErr) {
                 const errorMessage = `HTTP ${status}: 请求失败`;
                 abortError = new Error(errorMessage);
-                ztoolkit.log("[AI-Butler] Gemini HTTP error:", { status, parseErr });
+                ztoolkit.log("[AI-Butler] Gemini HTTP error:", {
+                  status,
+                  parseErr,
+                });
                 xmlhttp.abort();
               }
               return;
@@ -1628,11 +1676,14 @@ export class LLMClient {
             }
           };
           xmlhttp.onerror = () => {
-            if (!abortError) abortError = new Error("NetworkError: XHR onerror");
+            if (!abortError)
+              abortError = new Error("NetworkError: XHR onerror");
           };
           xmlhttp.ontimeout = () => {
             if (!abortError)
-              abortError = new Error(`Timeout: 请求超过 ${LLMClient.getRequestTimeout()} ms`);
+              abortError = new Error(
+                `Timeout: 请求超过 ${LLMClient.getRequestTimeout()} ms`,
+              );
           };
         },
       });
@@ -1663,13 +1714,13 @@ export class LLMClient {
       } catch (e) {
         // 忽略解析错误
       }
-      
+
       ztoolkit.log("[AI-Butler] Gemini request error:", {
         status: error?.xmlhttp?.status,
         statusText: error?.xmlhttp?.statusText,
         message: errorMessage,
       });
-      
+
       if (gotAnyDelta && chunks.length > 0) {
         return chunks.join("");
       }
@@ -1694,7 +1745,8 @@ export class LLMClient {
     ).replace(/\/$/, "");
     const apiKey = ((getPref("anthropicApiKey" as any) as string) || "").trim();
     const model = (
-      (getPref("anthropicModel" as any) as string) || "claude-3-5-sonnet-20241022"
+      (getPref("anthropicModel" as any) as string) ||
+      "claude-3-5-sonnet-20241022"
     ).trim();
     const temperatureStr = (getPref("temperature") as string) || "0.7";
     const maxTokensStr = (getPref("maxTokens") as string) || "4096";
@@ -1707,9 +1759,10 @@ export class LLMClient {
     const endpoint = `${baseUrl}/v1/messages`;
 
     const savedPrompt = getPref("summaryPrompt") as string;
-    const summaryPrompt = savedPrompt && savedPrompt.trim()
-      ? savedPrompt
-      : getDefaultSummaryPrompt();
+    const summaryPrompt =
+      savedPrompt && savedPrompt.trim()
+        ? savedPrompt
+        : getDefaultSummaryPrompt();
 
     // Anthropic 格式: messages数组,交替user/assistant
     const messages: any[] = [];
@@ -1718,7 +1771,7 @@ export class LLMClient {
     if (conversationHistory.length === 2 && pdfContent) {
       // 第一轮对话:需要在用户消息中添加PDF内容
       const firstUserMsg = conversationHistory[0];
-      
+
       if (isBase64) {
         // Base64模式:使用document类型
         messages.push({
@@ -1742,7 +1795,7 @@ export class LLMClient {
           content: buildUserMessage(firstUserMsg.content, pdfContent),
         });
       }
-      
+
       // AI的回复
       messages.push({
         role: "assistant",
@@ -1795,12 +1848,20 @@ export class LLMClient {
                 const msg = err?.message || "请求失败";
                 const errorMessage = `${code}: ${msg}`;
                 abortError = new Error(errorMessage);
-                ztoolkit.log("[AI-Butler] Anthropic HTTP error:", { status, code, msg, response: errorResponse });
+                ztoolkit.log("[AI-Butler] Anthropic HTTP error:", {
+                  status,
+                  code,
+                  msg,
+                  response: errorResponse,
+                });
                 xmlhttp.abort();
               } catch (parseErr) {
                 const errorMessage = `HTTP ${status}: 请求失败`;
                 abortError = new Error(errorMessage);
-                ztoolkit.log("[AI-Butler] Anthropic HTTP error:", { status, parseErr });
+                ztoolkit.log("[AI-Butler] Anthropic HTTP error:", {
+                  status,
+                  parseErr,
+                });
                 xmlhttp.abort();
               }
               return;
@@ -1874,13 +1935,13 @@ export class LLMClient {
       } catch (e) {
         // 忽略解析错误
       }
-      
+
       ztoolkit.log("[AI-Butler] Anthropic request error:", {
         status: error?.xmlhttp?.status,
         statusText: error?.xmlhttp?.statusText,
         message: errorMessage,
       });
-      
+
       throw new Error(errorMessage);
     }
 

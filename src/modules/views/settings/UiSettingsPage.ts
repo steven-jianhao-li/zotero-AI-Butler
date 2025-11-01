@@ -69,7 +69,10 @@ export class UiSettingsPage {
 
     // 保存对话历史
     const saveChatHistory = (getPref("saveChatHistory") as boolean) ?? false;
-    const saveChatHistoryBox = createCheckbox("saveChatHistory", !!saveChatHistory);
+    const saveChatHistoryBox = createCheckbox(
+      "saveChatHistory",
+      !!saveChatHistory,
+    );
     form.appendChild(
       createFormGroup(
         "保存追问对话记录（试验性功能，谨慎启用）",

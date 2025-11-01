@@ -133,7 +133,9 @@ export class ApiSettingsPage {
     // Provider 专属字段容器
     const sectionOpenAI = this.createElement("div", { id: "provider-openai" });
     const sectionGemini = this.createElement("div", { id: "provider-gemini" });
-    const sectionAnthropic = this.createElement("div", { id: "provider-anthropic" });
+    const sectionAnthropic = this.createElement("div", {
+      id: "provider-anthropic",
+    });
 
     // OpenAI 字段
     sectionOpenAI.appendChild(
@@ -253,9 +255,8 @@ export class ApiSettingsPage {
     const renderProviderSections = (prov: string) => {
       const isGemini = prov === "google";
       const isAnthropic = prov === "anthropic";
-      (sectionOpenAI as HTMLElement).style.display = isGemini || isAnthropic
-        ? "none"
-        : "block";
+      (sectionOpenAI as HTMLElement).style.display =
+        isGemini || isAnthropic ? "none" : "block";
       (sectionGemini as HTMLElement).style.display = isGemini
         ? "block"
         : "none";
@@ -817,7 +818,12 @@ export class ApiSettingsPage {
         maxTokens: maxTokensEl?.value?.trim() || "4096",
         topP: topPEl?.value || "1.0",
         stream: streamEl?.checked ?? true,
-        requestTimeout: (this.container.querySelector("#setting-requestTimeout") as HTMLInputElement)?.value?.trim() || "300000",
+        requestTimeout:
+          (
+            this.container.querySelector(
+              "#setting-requestTimeout",
+            ) as HTMLInputElement
+          )?.value?.trim() || "300000",
         batchSize: batchSizeEl?.value?.trim() || "1",
         batchInterval: batchIntervalEl?.value?.trim() || "60",
         scanInterval: scanIntervalEl?.value?.trim() || "300",
@@ -838,7 +844,8 @@ export class ApiSettingsPage {
         if (!values.geminiApiKey) missingFields.push("API 密钥(Gemini)");
         if (!values.geminiModel) missingFields.push("模型名称(Gemini)");
       } else if (provider === "anthropic") {
-        if (!values.anthropicApiUrl) missingFields.push("API 基础地址(Anthropic)");
+        if (!values.anthropicApiUrl)
+          missingFields.push("API 基础地址(Anthropic)");
         if (!values.anthropicApiKey) missingFields.push("API 密钥(Anthropic)");
         if (!values.anthropicModel) missingFields.push("模型名称(Anthropic)");
       } else {

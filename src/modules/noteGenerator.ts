@@ -87,50 +87,17 @@ export class NoteGenerator {
         if (policy === "skip") {
           progressCallback?.("已存在AI笔记，跳过", 100);
           return {
-            note: existing,
-            content: (existing as any).getNote?.() || "",
+            note: existing as Zotero.Item,
+            content: ((existing as any).getNote?.() as string) || "",
           };
         }
       }
 
       // 步骤 1: PDF 处理
-      // 通知进度回调开始提取 (10% 完成)
       progressCallback?.("正在处理PDF...", 10);
-
-      // 根据 Provider 自适应 PDF 处理模式
-      const provider = (
-        ((getPref as any)("provider") as string) || "openai"
-      ).toLowerCase();
+      // 尊重用户在设置中的 PDF 处理模式选择（不再根据 Provider 强制联动）
       const prefMode = (getPref("pdfProcessMode") as string) || "base64";
-      let effectiveMode = prefMode;
-      if (provider === "anthropic" || provider.includes("claude")) {
-        if (prefMode === "base64") {
-          effectiveMode = "text";
-          // 友好提示
-          new ztoolkit.ProgressWindow("AI Butler", {
-            closeOnClick: true,
-            closeTime: 4000,
-          })
-            .createLine({
-              text: "Anthropic 当前不支持 Base64 多模态，已自动切换为文本提取模式",
-              type: "warning",
-            })
-            .show();
-        }
-      } else if (provider === "google" || provider.includes("gemini")) {
-        if (prefMode !== "base64") {
-          effectiveMode = "base64";
-          new ztoolkit.ProgressWindow("AI Butler", {
-            closeOnClick: true,
-            closeTime: 4000,
-          })
-            .createLine({
-              text: "已为 Gemini 自动切换为 Base64 模式（推荐，支持多模态）",
-              type: "success",
-            })
-            .show();
-        }
-      }
+      const effectiveMode = prefMode;
 
       let pdfContent: string;
       let isBase64 = false;

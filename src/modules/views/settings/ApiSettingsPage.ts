@@ -82,55 +82,7 @@ export class ApiSettingsPage {
       (newVal) => {
         // 供应商切换时，动态刷新字段显示
         renderProviderSections(newVal);
-        // —— 新增：按 Provider 联动 PDF 处理模式，并弹出提示 ——
-        try {
-          const pdfModeEl = this.container.querySelector(
-            "#setting-pdfProcessMode",
-          ) as any;
-          if (
-            pdfModeEl &&
-            typeof pdfModeEl.getValue === "function" &&
-            typeof pdfModeEl.setValue === "function"
-          ) {
-            const cur = pdfModeEl.getValue();
-            let next = cur;
-            if (newVal === "anthropic") {
-              // Anthropic -> 强制文本提取
-              next = "text";
-              if (cur !== next) {
-                pdfModeEl.setValue(next);
-                new ztoolkit.ProgressWindow("AI Butler", {
-                  closeOnClick: true,
-                  closeTime: 4000,
-                })
-                  .createLine({
-                    text: "Anthropic 当前不支持 Base64 多模态，已将 PDF 处理模式切换为“文本提取(仅文字内容)”。",
-                    type: "warning",
-                  })
-                  .show();
-              }
-            } else if (newVal === "google") {
-              // Gemini -> 强制 Base64
-              next = "base64";
-              if (cur !== next) {
-                pdfModeEl.setValue(next);
-                new ztoolkit.ProgressWindow("AI Butler", {
-                  closeOnClick: true,
-                  closeTime: 4000,
-                })
-                  .createLine({
-                    text: "已为 Gemini 自动切换为“Base64 编码(推荐,支持多模态)”。",
-                    type: "success",
-                  })
-                  .show();
-              }
-            } else {
-              // OpenAI -> 不强制改动，保留现状
-            }
-          }
-        } catch (e) {
-          ztoolkit.log("[API Settings] Provider->PDF 模式联动失败:", e);
-        }
+        // 取消 Provider 与 PDF 模式的强制联动：用户自行选择 PDF 处理模式
         // 若切换到 Gemini 且未填写，填充默认 URL 与模型
         if (newVal === "google") {
           const curUrl = (getPref("geminiApiUrl") as string) || "";
@@ -960,32 +912,7 @@ export class ApiSettingsPage {
       // PDF 处理模式
       setPref("pdfProcessMode", values.pdfProcessMode);
 
-      // 保存后的一致性校验：根据 Provider 自动校正 PDF 模式（仅当不一致时提示并更正）
-      try {
-        let desired = values.pdfProcessMode;
-        if (values.provider === "anthropic") {
-          desired = "text";
-        } else if (values.provider === "google") {
-          desired = "base64";
-        }
-        if (desired !== values.pdfProcessMode) {
-          setPref("pdfProcessMode", desired);
-          new ztoolkit.ProgressWindow("API 配置", {
-            closeOnClick: true,
-            closeTime: 3500,
-          })
-            .createLine({
-              text: `已根据提供商自动将 PDF 模式调整为 ${desired === "base64" ? "Base64 编码(推荐,支持多模态)" : "文本提取(仅文字内容)"}`,
-              type: "warning",
-            })
-            .show();
-        }
-      } catch (e) {
-        ztoolkit.log(
-          "[API Settings] 保存后 Provider/PDF 模式一致性校验失败:",
-          e,
-        );
-      }
+      // 不再在保存时强制调整 PDF 模式
 
       ztoolkit.log("[API Settings] Settings saved successfully");
 
@@ -1064,7 +991,7 @@ export class ApiSettingsPage {
     setPref("geminiApiKey", "");
     setPref("geminiModel", "gemini-2.5-pro");
     setPref("temperature", "0.7");
-    setPref("maxTokens", "4096");
+    setPref("maxTokens", "8192");
     setPref("topP", "1.0");
     setPref("stream", true);
     setPref("requestTimeout", "300000");

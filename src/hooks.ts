@@ -452,12 +452,19 @@ async function handleGenerateSummary() {
   let apiKey: string | undefined;
   let providerName: string;
 
-  if (provider === "google" || provider === "gemini") {
+  const pLower = (provider || "").toLowerCase();
+  if (provider === "google" || pLower.includes("gemini")) {
     apiKey = Zotero.Prefs.get(
       `${config.prefsPrefix}.geminiApiKey`,
       true,
     ) as string;
     providerName = "Gemini";
+  } else if (provider === "anthropic" || pLower.includes("claude")) {
+    apiKey = Zotero.Prefs.get(
+      `${config.prefsPrefix}.anthropicApiKey`,
+      true,
+    ) as string;
+    providerName = "Anthropic";
   } else {
     apiKey = Zotero.Prefs.get(`${config.prefsPrefix}.apiKey`, true) as string;
     providerName = "OpenAI";
@@ -507,6 +514,13 @@ async function handleGenerateSummary() {
     // 打开主窗口并切换到任务队列标签页（使用单例）
     const mainWin = MainWindow.getInstance();
     await mainWin.open("tasks");
+    // 立即刷新一次，确保用户看到刚入队的任务，避免“空白”误解
+    try {
+      mainWin.getTaskQueueView().refresh();
+    } catch (e) {
+      // 安全兜底，不影响后续流程
+      ztoolkit.log("[AI-Butler] 刷新任务队列视图失败:", e);
+    }
 
     progressWin
       .createLine({

@@ -514,12 +514,46 @@ export class SummaryView extends BaseView {
         await this.deleteChatPair(pairId);
       });
 
-      // 将刚刚渲染的两条消息移动到卡片中
+      // 将刚刚渲染的两条消息移动到卡片中（折叠时仅折叠 AI 输出，用户请求子卡片常显）
       try {
+        // 先将“用户请求”直接挂到卡片容器（常显）
         pairContainer.appendChild(userMessageElement);
-        pairContainer.appendChild(assistantMessageContainer);
-        this.outputContainer.appendChild(pairContainer);
+
+        // 再创建仅包含“AI 输出”的可折叠区域
+        const asstBody = this.createElement("div", {
+          className: "ai-butler-card-body",
+        });
+        asstBody.appendChild(assistantMessageContainer);
+
+        // 折叠按钮
+        const collapseBtn = this.createElement("button", {
+          styles: {
+            position: "absolute",
+            top: "6px",
+            right: "36px",
+            border: "none",
+            background: "transparent",
+            color: "#555",
+            cursor: "pointer",
+            fontSize: "14px",
+          },
+          innerHTML: "▾",
+        }) as HTMLButtonElement;
+        collapseBtn.title = "折叠/展开";
+        collapseBtn.addEventListener("click", () => {
+          if ((asstBody as HTMLElement).style.display === "none") {
+            (asstBody as HTMLElement).style.display = "block";
+            collapseBtn.innerHTML = "▾";
+          } else {
+            (asstBody as HTMLElement).style.display = "none";
+            collapseBtn.innerHTML = "▸";
+          }
+        });
+
+        pairContainer.appendChild(collapseBtn);
         pairContainer.appendChild(deleteBtn);
+        pairContainer.appendChild(asstBody);
+        this.outputContainer.appendChild(pairContainer);
       } catch (e) {
         ztoolkit.log("[AI-Butler] 包装聊天卡片失败:", e);
       }
@@ -772,6 +806,110 @@ ${jsonMarker}
   }
 
   /**
+   * 追加一张“AI 总结”卡片（可折叠，仅展示助手内容，不参与对话历史与持久化）
+   */
+  private appendSummaryCard(aiSummary: string): void {
+    if (!this.outputContainer) return;
+
+    const card = this.createElement("div", {
+      className: "ai-butler-chat-pair",
+      styles: {
+        position: "relative",
+        marginBottom: "18px",
+        padding: "4px 8px 8px 8px",
+        border: "1px solid #e0e0e0",
+        borderRadius: "10px",
+        backgroundColor: "#fafafa",
+      },
+    });
+
+    // 头部（标题 + 摘要预览）
+    const header = this.createElement("div", {
+      styles: {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        padding: "6px 2px 4px 2px",
+      },
+    });
+    const titleEl = this.createElement("div", {
+      styles: {
+        fontWeight: "600",
+        color: "#2e7d32",
+      },
+      textContent: "📘 AI管家笔记",
+    });
+    // 预览：取前100字符，去掉换行
+    const previewText = (aiSummary || "").replace(/\s+/g, " ").slice(0, 100);
+    const previewEl = this.createElement("div", {
+      styles: {
+        fontSize: "12px",
+        color: "#777",
+        flex: "1",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      },
+      textContent: previewText
+        ? `摘要：${previewText}${aiSummary.length > 100 ? "…" : ""}`
+        : "",
+    }) as HTMLElement;
+    header.appendChild(titleEl);
+    header.appendChild(previewEl);
+
+    // 内容主体（仅助手）
+    const body = this.createElement("div", {
+      className: "ai-butler-card-body",
+    });
+    const collapseBtn = this.createElement("button", {
+      styles: {
+        position: "absolute",
+        top: "6px",
+        right: "8px",
+        border: "none",
+        background: "transparent",
+        color: "#555",
+        cursor: "pointer",
+        fontSize: "14px",
+      },
+      innerHTML: "▾",
+    }) as HTMLButtonElement;
+    collapseBtn.title = "折叠/展开";
+    collapseBtn.addEventListener("click", () => {
+      if ((body as HTMLElement).style.display === "none") {
+        (body as HTMLElement).style.display = "block";
+        collapseBtn.innerHTML = "▾";
+        // 展开时隐藏摘要预览
+        if (previewEl) previewEl.style.display = "none";
+      } else {
+        (body as HTMLElement).style.display = "none";
+        collapseBtn.innerHTML = "▸";
+        // 折叠时显示摘要预览
+        if (previewEl) previewEl.style.display = "inline";
+      }
+    });
+
+    // 内容（仅助手）
+    const assistantDiv = this.appendChatMessage("assistant", "") as HTMLElement;
+    const contentDiv = assistantDiv.querySelector(
+      ".chat-message-content",
+    ) as HTMLElement | null;
+    if (contentDiv) {
+      contentDiv.innerHTML = SummaryView.convertMarkdownToHTMLCore(aiSummary);
+    }
+    body.appendChild(assistantDiv);
+
+    // 初始：展开状态，隐藏预览
+    (body as HTMLElement).style.display = "block";
+    if (previewEl) previewEl.style.display = "none";
+
+    card.appendChild(header);
+    card.appendChild(collapseBtn);
+    card.appendChild(body);
+    this.outputContainer.appendChild(card);
+  }
+
+  /**
    * 删除一张提问-响应卡片（UI + 内存 + 笔记）
    */
   private async deleteChatPair(pairId: string): Promise<void> {
@@ -900,15 +1038,21 @@ ${jsonMarker}
       let targetNote: any = null;
 
       // 遍历寻找带有 AI-Generated 标签或标题包含“AI 管家”的最新笔记
+      // 注意：应排除“后续追问”聊天笔记，避免把聊天内容直接渲染到总结区
       for (const nid of noteIDs) {
         try {
           const n = await Zotero.Items.getAsync(nid);
           if (!n) continue;
           const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-          const hasTag = tags.some((t) => t.tag === "AI-Generated");
           const noteHtml: string = (n as any).getNote?.() || "";
-          const titleMatch = /<h2>\s*AI 管家\s*-/.test(noteHtml);
-          if (hasTag || titleMatch) {
+          const isChatNote =
+            tags.some((t) => t.tag === "AI-Butler-Chat") ||
+            /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(noteHtml);
+          const isAiSummaryNote =
+            tags.some((t) => t.tag === "AI-Generated") ||
+            (/<h2>\s*AI 管家\s*-/.test(noteHtml) && !isChatNote);
+
+          if (isAiSummaryNote) {
             if (!targetNote) {
               targetNote = n;
             } else {
@@ -934,15 +1078,10 @@ ${jsonMarker}
         return;
       }
 
-      // 渲染 HTML 内容
+      // 读取 HTML 内容，提取纯文本作为“AI 总结”卡片展示（不直接把整段 HTML 塞进总结区）
       const html = (targetNote as any).getNote?.() || "";
       this.startItem(title);
-      const contentElement = this.currentItemContainer?.querySelector(
-        ".item-content",
-      ) as HTMLElement | null;
-      if (contentElement) {
-        contentElement.innerHTML = html;
-      }
+      // 不直接渲染 html 到 item-content，改为在下方追加可折叠的“AI 总结”卡片
       this.finishItem();
 
       // 提取AI总结的纯文本内容(去除HTML标签)
@@ -959,9 +1098,43 @@ ${jsonMarker}
       // 获取PDF内容以支持后续追问
       try {
         const { PDFExtractor } = await import("../pdfExtractor");
-        const pdfProcessMode =
-          (getPref("pdfProcessMode") as string) || "base64";
-        const isBase64 = pdfProcessMode === "base64";
+        // 根据 Provider 自适应 PDF 处理模式：Anthropic 强制文本；Gemini 强制 Base64；OpenAI 保持设置
+        const provider = (
+          ((getPref as any)("provider") as string) || "openai"
+        ).toLowerCase();
+        const prefMode =
+          ((getPref as any)("pdfProcessMode") as string) || "base64";
+        let effectiveMode = prefMode;
+        if (provider === "anthropic" || provider.includes("claude")) {
+          if (prefMode === "base64") {
+            effectiveMode = "text";
+            // 友好提示：自动切换为文本提取
+            new ztoolkit.ProgressWindow("AI Butler", {
+              closeOnClick: true,
+              closeTime: 4000,
+            })
+              .createLine({
+                text: "Anthropic 当前不支持 Base64 多模态，已自动切换为文本提取模式",
+                type: "warning",
+              })
+              .show();
+          }
+        } else if (provider === "google" || provider.includes("gemini")) {
+          if (prefMode !== "base64") {
+            effectiveMode = "base64";
+            new ztoolkit.ProgressWindow("AI Butler", {
+              closeOnClick: true,
+              closeTime: 4000,
+            })
+              .createLine({
+                text: "已为 Gemini 自动切换为 Base64 模式（推荐，支持多模态）",
+                type: "success",
+              })
+              .show();
+          }
+        }
+
+        const isBase64 = effectiveMode === "base64";
 
         let pdfContent = "";
         if (isBase64) {
@@ -978,6 +1151,13 @@ ${jsonMarker}
             isBase64,
             aiSummaryText,
           );
+
+          // 在对话区域追加一张“AI 总结”卡片，默认可折叠
+          try {
+            this.appendSummaryCard(aiSummaryText);
+          } catch (e) {
+            ztoolkit.log("[AI-Butler] 渲染AI总结卡片失败:", e);
+          }
 
           // 载入并渲染已有的“后续追问”历史（如有），恢复为原生对话格式
           try {
@@ -1081,11 +1261,41 @@ ${jsonMarker}
             await this.deleteChatPair(p.id);
           });
 
+          // 结构：用户请求常显；AI 输出可折叠
+          pairDiv.appendChild(userEl);
+          const asstBody = this.createElement("div", {
+            className: "ai-butler-card-body",
+          });
+          asstBody.appendChild(asstEl);
+          const collapseBtn = this.createElement("button", {
+            styles: {
+              position: "absolute",
+              top: "6px",
+              right: "36px",
+              border: "none",
+              background: "transparent",
+              color: "#555",
+              cursor: "pointer",
+              fontSize: "14px",
+            },
+            innerHTML: "▾",
+          }) as HTMLButtonElement;
+          collapseBtn.title = "折叠/展开";
+          collapseBtn.addEventListener("click", () => {
+            if ((asstBody as HTMLElement).style.display === "none") {
+              (asstBody as HTMLElement).style.display = "block";
+              collapseBtn.innerHTML = "▾";
+            } else {
+              (asstBody as HTMLElement).style.display = "none";
+              collapseBtn.innerHTML = "▸";
+            }
+          });
+
           try {
-            pairDiv.appendChild(userEl);
-            pairDiv.appendChild(asstEl);
-            this.outputContainer.appendChild(pairDiv);
+            pairDiv.appendChild(collapseBtn);
             pairDiv.appendChild(deleteBtn);
+            pairDiv.appendChild(asstBody);
+            this.outputContainer.appendChild(pairDiv);
           } catch (e) {
             ztoolkit.log("[AI-Butler] 渲染历史聊天卡片失败:", e);
           }

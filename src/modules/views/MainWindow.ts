@@ -59,6 +59,18 @@ export class MainWindow {
 
   /** 窗口是否打开 */
   private isOpen: boolean = false;
+  /** 是否正在打开窗口（防抖并发 open）*/
+  private isOpening: boolean = false;
+
+  /** UI 初始化重试次数（用于等待异步渲染完成）*/
+  private initAttempts = 0;
+  /** UI 初始化最大重试次数 */
+  private readonly maxInitAttempts = 60; // ~3s 若按 50ms 重试，提升慢机稳定性
+
+  /** UI 是否已成功初始化（完成注入样式、创建按钮与渲染视图）*/
+  private uiInitialized: boolean = false;
+  /** 是否正在执行初始化，避免并发重复渲染 */
+  private uiInitializing: boolean = false;
 
   /** 当前激活的标签页 */
   private activeTab: TabType = "dashboard";
@@ -137,11 +149,25 @@ export class MainWindow {
       return;
     }
 
+    // 防止并发重复打开
+    if (this.isOpening) {
+      this.activeTab = initialTab;
+      return;
+    }
+    this.isOpening = true;
+
     this.activeTab = initialTab;
 
     const dialogData: { [key: string]: any } = {
       loadCallback: () => {
         this.onLoad();
+        // 确保在窗口真正完成加载后再初始化 UI
+        try {
+          this.initAttempts = 0;
+          this.initializeUI();
+        } catch (e) {
+          ztoolkit.log("[AI Butler] 初始化 UI 异常:", e);
+        }
       },
       unloadCallback: () => {
         this.onUnload();
@@ -200,12 +226,17 @@ export class MainWindow {
       });
 
     this.isOpen = true;
+    this.isOpening = false;
 
-    // 等待 DOM 完全加载
-    await Zotero.Promise.delay(100);
-
-    // 初始化界面
-    if (this.dialog && this.dialog.window) {
+    // 额外兜底：某些环境下 loadCallback 可能过早触发/或渲染延迟，这里再轻量兜底一次
+    await Zotero.Promise.delay(150);
+    if (
+      this.dialog &&
+      this.dialog.window &&
+      !this.uiInitialized &&
+      (!this.tabBar || !this.viewContainer)
+    ) {
+      this.initAttempts = 0;
       this.initializeUI();
     }
   }
@@ -216,28 +247,84 @@ export class MainWindow {
    * @private
    */
   private initializeUI(): void {
+    // 已初始化或正在初始化则直接返回，避免并发/重复
+    if (this.uiInitialized || this.uiInitializing) return;
+    this.uiInitializing = true;
+
     const doc = this.dialog.window.document;
+    const tryInit = () => {
+      // 获取容器引用
+      this.tabBar = doc.getElementById("tab-bar");
+      this.viewContainer = doc.getElementById("view-container");
 
-    // 获取容器引用
-    this.tabBar = doc.getElementById("tab-bar");
-    this.viewContainer = doc.getElementById("view-container");
+      if (!this.tabBar || !this.viewContainer) {
+        // 如果容器还未渲染出来，重试；达到上限后进行兜底创建
+        if (this.initAttempts < this.maxInitAttempts) {
+          this.initAttempts++;
+          setTimeout(tryInit, 50);
+          return;
+        }
 
-    if (!this.tabBar || !this.viewContainer) {
-      ztoolkit.log("[AI Butler] 无法找到容器元素");
-      return;
-    }
+        // 兜底：手动创建缺失的容器，避免出现空白窗口
+        const root = doc.getElementById("ai-butler-main-window");
+        if (root) {
+          if (!this.tabBar) {
+            const tab = doc.createElement("div");
+            tab.id = "tab-bar";
+            Object.assign(tab.style, {
+              display: "flex",
+              backgroundColor: "#fff",
+              borderBottom: "2px solid #e0e0e0",
+              flexShrink: "0",
+            } as Partial<CSSStyleDeclaration>);
+            root.appendChild(tab);
+            this.tabBar = tab;
+          }
+          if (!this.viewContainer) {
+            const container = doc.createElement("div");
+            container.id = "view-container";
+            Object.assign(container.style, {
+              flex: "1",
+              overflow: "hidden",
+              backgroundColor: "#fff",
+              display: "flex",
+              flexDirection: "column",
+            } as Partial<CSSStyleDeclaration>);
+            root.appendChild(container);
+            this.viewContainer = container;
+          }
+          ztoolkit.log("[AI Butler] 容器未按时渲染，已兜底创建");
+        } else {
+          ztoolkit.log("[AI Butler] 无法找到容器元素");
+        }
+      }
 
-    // 注入 CSS
-    this.injectStyles();
+      if (!this.tabBar || !this.viewContainer) {
+        // 兜底后仍失败，结束本次初始化尝试
+        this.uiInitializing = false;
+        return;
+      }
 
-    // 创建标签页按钮
-    this.createTabButtons();
+      // 注入 CSS（只在首次完成时执行）
+      this.injectStyles();
 
-    // 渲染所有视图
-    this.renderViews();
+      // 创建标签页按钮（只在首次完成时执行）
+      this.createTabButtons();
 
-    // 切换到初始标签页(强制显示)
-    this.switchTab(this.activeTab, true);
+      // 渲染所有视图（只在首次完成时执行）
+      this.renderViews();
+
+      // 切换到初始标签页(强制显示)
+      this.switchTab(this.activeTab, true);
+
+      // 标记完成
+      this.uiInitialized = true;
+      this.uiInitializing = false;
+    };
+
+    // 启动首次尝试
+    this.initAttempts = 0;
+    tryInit();
   }
 
   /**
@@ -457,6 +544,14 @@ export class MainWindow {
    */
   private onUnload(): void {
     this.isOpen = false;
+    this.isOpening = false;
+
+    // 重置初始化相关状态，防止下次打开复用旧引用
+    this.uiInitialized = false;
+    this.uiInitializing = false;
+    this.initAttempts = 0;
+    this.tabBar = null;
+    this.viewContainer = null;
 
     // 销毁所有视图
     this.views.forEach((view) => {

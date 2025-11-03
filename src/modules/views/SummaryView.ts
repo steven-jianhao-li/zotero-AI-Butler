@@ -1098,43 +1098,10 @@ ${jsonMarker}
       // 获取PDF内容以支持后续追问
       try {
         const { PDFExtractor } = await import("../pdfExtractor");
-        // 根据 Provider 自适应 PDF 处理模式：Anthropic 强制文本；Gemini 强制 Base64；OpenAI 保持设置
-        const provider = (
-          ((getPref as any)("provider") as string) || "openai"
-        ).toLowerCase();
+        // 尊重用户的 PDF 处理模式选择（不再根据 Provider 强制联动）
         const prefMode =
           ((getPref as any)("pdfProcessMode") as string) || "base64";
-        let effectiveMode = prefMode;
-        if (provider === "anthropic" || provider.includes("claude")) {
-          if (prefMode === "base64") {
-            effectiveMode = "text";
-            // 友好提示：自动切换为文本提取
-            new ztoolkit.ProgressWindow("AI Butler", {
-              closeOnClick: true,
-              closeTime: 4000,
-            })
-              .createLine({
-                text: "Anthropic 当前不支持 Base64 多模态，已自动切换为文本提取模式",
-                type: "warning",
-              })
-              .show();
-          }
-        } else if (provider === "google" || provider.includes("gemini")) {
-          if (prefMode !== "base64") {
-            effectiveMode = "base64";
-            new ztoolkit.ProgressWindow("AI Butler", {
-              closeOnClick: true,
-              closeTime: 4000,
-            })
-              .createLine({
-                text: "已为 Gemini 自动切换为 Base64 模式（推荐，支持多模态）",
-                type: "success",
-              })
-              .show();
-          }
-        }
-
-        const isBase64 = effectiveMode === "base64";
+        const isBase64 = prefMode === "base64";
 
         let pdfContent = "";
         if (isBase64) {

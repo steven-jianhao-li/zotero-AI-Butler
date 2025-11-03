@@ -737,7 +737,7 @@ export class LLMClient {
         stream: true,
       };
     } else {
-      // 文本模式: 使用文本内容
+      // 文本模式: 使用文本内容（以 Anthropic content blocks 明确传递文本，避免服务端丢失 <Paper> 正文）
       const userContent = buildUserMessage(summaryPrompt, content);
       payload = {
         model,
@@ -747,7 +747,12 @@ export class LLMClient {
         messages: [
           {
             role: "user",
-            content: userContent,
+            content: [
+              {
+                type: "text",
+                text: userContent,
+              },
+            ],
           },
         ],
         stream: true,
@@ -1767,13 +1772,10 @@ export class LLMClient {
     // Anthropic 格式: messages数组,交替user/assistant
     const messages: any[] = [];
 
-    // 处理对话历史
-    if (conversationHistory.length === 2 && pdfContent) {
-      // 第一轮对话:需要在用户消息中添加PDF内容
+    // 始终保证第一条为“提示词+论文内容”
+    if (conversationHistory && conversationHistory.length > 0) {
       const firstUserMsg = conversationHistory[0];
-
       if (isBase64) {
-        // Base64模式:使用document类型
         messages.push({
           role: "user",
           content: [
@@ -1789,21 +1791,28 @@ export class LLMClient {
           ],
         });
       } else {
-        // 文本模式:拼接文本
         messages.push({
           role: "user",
-          content: buildUserMessage(firstUserMsg.content, pdfContent),
+          content: [
+            {
+              type: "text",
+              text: buildUserMessage(firstUserMsg.content, pdfContent || ""),
+            },
+          ],
         });
       }
 
-      // AI的回复
-      messages.push({
-        role: "assistant",
-        content: conversationHistory[1].content,
-      });
-    } else {
-      // 后续对话:直接转换
-      for (const msg of conversationHistory) {
+      // 第二条（如果存在）为 AI 总结
+      if (conversationHistory.length > 1) {
+        messages.push({
+          role: "assistant",
+          content: conversationHistory[1].content,
+        });
+      }
+
+      // 从第三条开始，按原始角色逐条附加
+      for (let i = 2; i < conversationHistory.length; i++) {
+        const msg = conversationHistory[i];
         messages.push({
           role: msg.role === "user" ? "user" : "assistant",
           content: msg.content,

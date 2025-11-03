@@ -864,6 +864,14 @@ export class TaskQueueView extends BaseView {
     this.renderTaskList();
   }
 
+  /** 手动刷新任务列表（供外部在入队后立即触发） */
+  public refresh(): void {
+    if (!this.manager) {
+      this.manager = TaskQueueManager.getInstance();
+    }
+    this.syncFromManager();
+  }
+
   /**
    * 附着到队列管理器,注册回调,并进行初始同步
    */

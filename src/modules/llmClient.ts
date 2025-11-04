@@ -154,12 +154,7 @@ export class LLMClient {
       );
     }
 
-    // OpenAI 模式只支持文本,如果传入Base64则提示错误
-    if (isBase64) {
-      throw new Error(
-        "OpenAI 模式不支持 Base64 PDF 处理,请切换到 Google Gemini/Anthropic 或使用文本提取模式",
-      );
-    }
+    // OpenAI 模式：支持文本与多模态（Base64 PDF 通过 Responses API 传入）
     // ⚡ 动态读取配置 - 每次调用都会重新获取最新设置
     // 这确保了用户在设置页面修改后立即生效,无需重启 Zotero
     const apiKey = ((getPref("apiKey" as any) as string) || "").trim();
@@ -170,6 +165,8 @@ export class LLMClient {
 
     const temperatureStr = (getPref("temperature") as string) || "0.7";
     const temperature = parseFloat(temperatureStr) || 0.7;
+    const enableTemperature = ((getPref("enableTemperature") as any) ??
+      true) as boolean;
 
     // 获取提示词,优先使用参数传入的,其次使用配置的,最后使用默认值
     const savedPrompt = getPref("summaryPrompt") as string;
@@ -192,15 +189,222 @@ export class LLMClient {
       throw new Error("API Key 未配置");
     }
 
-    // 构造 Chat Completions API 请求消息数组
-    const messages = LLMClient.buildMessages(summaryPrompt, content);
+    // OpenAI + Base64: 使用 Responses API + SSE 流式
+    if (isBase64) {
+      // 尽量从用户填写的 URL 推断出 responses 端点
+      const responsesUrl = /\/v1\/.+$/i.test(apiUrl)
+        ? apiUrl.replace(/\/v1\/.+$/i, "/v1/responses")
+        : apiUrl.endsWith("/v1/responses")
+          ? apiUrl
+          : apiUrl.replace(/\/?$/, "/v1/responses");
+
+      const input: any[] = [
+        {
+          role: "system",
+          content: [{ type: "input_text", text: SYSTEM_ROLE_PROMPT }],
+        },
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: summaryPrompt },
+            {
+              type: "input_file",
+              filename: "paper.pdf",
+              file_data: `data:application/pdf;base64,${content}`,
+            },
+          ],
+        },
+      ];
+
+      const basePayload: any = {
+        model,
+        input,
+      };
+
+      // 若开启流式并提供 onProgress，则走 SSE
+      if (((getPref("stream") as boolean) ?? true) && onProgress) {
+        const payload = { ...basePayload, stream: true } as any;
+
+        const chunks: string[] = [];
+        let delivered = 0;
+        let processedLength = 0;
+        let partialLine = "";
+        let gotAnyDelta = false;
+        let abortError: Error | null = null;
+
+        try {
+          await Zotero.HTTP.request("POST", responsesUrl, {
+            headers: {
+              "Content-Type": "application/json",
+              ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+            },
+            body: JSON.stringify(payload),
+            responseType: "text",
+            timeout: LLMClient.getRequestTimeout(),
+            requestObserver: (xmlhttp: XMLHttpRequest) => {
+              xmlhttp.onprogress = (e: any) => {
+                const status = e.target.status;
+                if (status >= 400) {
+                  try {
+                    const errorResponse = e.target.response;
+                    const parsed = errorResponse
+                      ? JSON.parse(errorResponse)
+                      : null;
+                    const err = parsed?.error || parsed || {};
+                    const code = err?.code || `HTTP ${status}`;
+                    const msg = err?.message || "请求失败";
+                    abortError = new Error(`${code}: ${msg}`);
+                    xmlhttp.abort();
+                  } catch {
+                    abortError = new Error(`HTTP ${status}: 请求失败`);
+                    xmlhttp.abort();
+                  }
+                  return;
+                }
+
+                try {
+                  const resp: string = e.target.response || "";
+                  if (resp.length > processedLength) {
+                    const slice = partialLine + resp.slice(processedLength);
+                    processedLength = resp.length;
+                    const parts = slice.split(/\r?\n/);
+                    partialLine =
+                      parts[parts.length - 1].indexOf("data:") === 0 &&
+                      slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                        ? ""
+                        : parts.pop() || "";
+
+                    for (const raw of parts) {
+                      if (raw.indexOf("data:") !== 0) continue;
+                      const jsonStr = raw.replace(/^data:\s*/, "").trim();
+                      if (!jsonStr || jsonStr === "[DONE]") continue;
+                      try {
+                        const evt = JSON.parse(jsonStr);
+                        const t = evt?.type as string;
+                        if (
+                          t === "response.output_text.delta" &&
+                          typeof evt.delta === "string"
+                        ) {
+                          gotAnyDelta = true;
+                          chunks.push(evt.delta.replace(/\n+/g, "\n"));
+                          const current = chunks.join("");
+                          if (onProgress && current.length > delivered) {
+                            const newChunk = current.slice(delivered);
+                            delivered = current.length;
+                            Promise.resolve(onProgress(newChunk)).catch((err) =>
+                              ztoolkit.log(
+                                "[AI-Butler] onProgress error (OpenAI Responses SSE):",
+                                err,
+                              ),
+                            );
+                          }
+                        } else if (t === "response.completed") {
+                          // 正常结束
+                        }
+                      } catch {
+                        // 无法解析的行忽略
+                      }
+                    }
+                  }
+                } catch (err) {
+                  ztoolkit.log(
+                    "[AI-Butler] OpenAI Responses SSE parse error:",
+                    err,
+                  );
+                }
+              };
+              xmlhttp.onerror = () => {
+                if (!abortError)
+                  abortError = new Error("NetworkError: XHR onerror");
+              };
+              xmlhttp.ontimeout = () => {
+                if (!abortError)
+                  abortError = new Error(
+                    `Timeout: 请求超过 ${LLMClient.getRequestTimeout()} ms`,
+                  );
+              };
+            },
+          });
+        } catch (error: any) {
+          if (abortError) {
+            if (gotAnyDelta && chunks.length > 0) return chunks.join("");
+            throw abortError;
+          }
+          // 解析错误响应
+          let errorMessage = error?.message || "OpenAI Responses 请求失败";
+          try {
+            const responseText =
+              error?.xmlhttp?.response || error?.xmlhttp?.responseText;
+            if (responseText) {
+              const parsed =
+                typeof responseText === "string"
+                  ? JSON.parse(responseText)
+                  : responseText;
+              const err = parsed?.error || parsed;
+              const code = err?.code || "Error";
+              const msg = err?.message || error?.message || String(error);
+              errorMessage = `${code}: ${msg}`;
+            }
+          } catch {
+            /* ignore parse error */
+          }
+          if (gotAnyDelta && chunks.length > 0) return chunks.join("");
+          throw new Error(errorMessage);
+        }
+
+        return chunks.join("");
+      }
+
+      // 非流式回退
+      try {
+        const res = await Zotero.HTTP.request("POST", responsesUrl, {
+          headers: {
+            "Content-Type": "application/json",
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          },
+          body: JSON.stringify(basePayload),
+          responseType: "json",
+          timeout: LLMClient.getRequestTimeout(),
+        });
+        const data = res.response || res;
+        const text = (data?.output_text as string) || "";
+        if (onProgress && text) await onProgress(text);
+        return text;
+      } catch (e: any) {
+        let errorMessage = e?.message || "OpenAI Responses 请求失败";
+        try {
+          const responseText = e?.xmlhttp?.response || e?.xmlhttp?.responseText;
+          if (responseText) {
+            const parsed =
+              typeof responseText === "string"
+                ? JSON.parse(responseText)
+                : responseText;
+            const err = parsed?.error || parsed;
+            const code = err?.code || "Error";
+            const msg = err?.message || e?.message || String(e);
+            errorMessage = `${code}: ${msg}`;
+          }
+        } catch {
+          /* ignore parse error */
+        }
+        throw new Error(errorMessage);
+      }
+    }
+
+    // 构造 Chat Completions API 请求消息数组（文本模式）
+    const messages: any[] = [
+      { role: "system", content: SYSTEM_ROLE_PROMPT },
+      { role: "user", content: buildUserMessage(summaryPrompt, content) },
+    ];
 
     // 构造请求载荷的基础部分
-    const basePayload = {
+    const basePayload: any = {
       model,
       messages,
-      temperature: Number(temperature),
-    } as any;
+    };
+    if (enableTemperature) {
+      basePayload.temperature = Number(temperature);
+    }
 
     // 允许自定义服务直接使用配置的完整 URL（兼容 OpenAI/DeepSeek/OpenAI兼容服务）
     // 如果用户配置错误的末尾斜杠，不做强制修正，保持“照搬”逻辑
@@ -440,6 +644,11 @@ export class LLMClient {
     const temperature = parseFloat(temperatureStr) || 0.7;
     const topP = parseFloat(topPStr) || 1.0;
     const maxTokens = parseInt(maxTokensStr) || 4096;
+    const enableTemperature = ((getPref("enableTemperature") as any) ??
+      true) as boolean;
+    const enableTopP = ((getPref("enableTopP") as any) ?? true) as boolean;
+    const enableMaxTokens = ((getPref("enableMaxTokens") as any) ??
+      true) as boolean;
 
     // 提示词
     const savedPrompt = getPref("summaryPrompt") as string;
@@ -465,12 +674,12 @@ export class LLMClient {
 
     if (isBase64) {
       // Base64 模式: 使用 inlineData 发送 PDF
+      const generationConfig: any = {};
+      if (enableTemperature) generationConfig.temperature = temperature;
+      if (enableTopP) generationConfig.topP = topP;
+      if (enableMaxTokens) generationConfig.maxOutputTokens = maxTokens;
       payload = {
-        generationConfig: {
-          temperature,
-          topP,
-          maxOutputTokens: maxTokens,
-        },
+        generationConfig,
         contents: [
           {
             role: "user",
@@ -492,12 +701,12 @@ export class LLMClient {
     } else {
       // 文本模式: 使用文本内容
       const userContent = buildUserMessage(summaryPrompt, content);
+      const generationConfig2: any = {};
+      if (enableTemperature) generationConfig2.temperature = temperature;
+      if (enableTopP) generationConfig2.topP = topP;
+      if (enableMaxTokens) generationConfig2.maxOutputTokens = maxTokens;
       payload = {
-        generationConfig: {
-          temperature,
-          topP,
-          maxOutputTokens: maxTokens,
-        },
+        generationConfig: generationConfig2,
         contents: [
           {
             role: "user",
@@ -685,6 +894,10 @@ export class LLMClient {
     const maxTokensStr = (getPref("maxTokens") as string) || "4096";
     const temperature = parseFloat(temperatureStr) || 0.7;
     const maxTokens = parseInt(maxTokensStr) || 4096;
+    const enableTemperature = ((getPref("enableTemperature") as any) ??
+      true) as boolean;
+    const enableMaxTokens = ((getPref("enableMaxTokens") as any) ??
+      true) as boolean;
 
     // 提示词
     const savedPrompt = getPref("summaryPrompt") as string;
@@ -712,8 +925,8 @@ export class LLMClient {
       // Base64 模式: 使用 document 发送 PDF
       payload = {
         model,
-        max_tokens: maxTokens,
-        temperature,
+        max_tokens: maxTokens, // Anthropic 必填
+        ...(enableTemperature ? { temperature } : {}),
         system: SYSTEM_ROLE_PROMPT,
         messages: [
           {
@@ -741,8 +954,8 @@ export class LLMClient {
       const userContent = buildUserMessage(summaryPrompt, content);
       payload = {
         model,
-        max_tokens: maxTokens,
-        temperature,
+        max_tokens: maxTokens, // Anthropic 必填
+        ...(enableTemperature ? { temperature } : {}),
         system: SYSTEM_ROLE_PROMPT,
         messages: [
           {
@@ -1187,31 +1400,38 @@ export class LLMClient {
       }
     }
 
-    // OpenAI / 兼容 实现（原有逻辑）
+    // OpenAI / 兼容 实现（使用 Responses 新接口）
     const apiKey = ((getPref("apiKey" as any) as string) || "").trim();
     const apiUrl = ((getPref("apiUrl" as any) as string) || "").trim();
-    const model = (
-      (getPref("model" as any) as string) || "gpt-3.5-turbo"
-    ).trim();
+    const model = ((getPref("model" as any) as string) || "gpt-5").trim();
 
     if (!apiUrl) throw new Error("API URL 未配置");
     if (!apiKey) throw new Error("API Key 未配置");
 
+    const responsesUrl = /\/v1\/.+$/i.test(apiUrl)
+      ? apiUrl.replace(/\/v1\/.+$/i, "/v1/responses")
+      : apiUrl.endsWith("/v1/responses")
+        ? apiUrl
+        : apiUrl.replace(/\/?$/, "/v1/responses");
+
     const payload = {
       model,
-      messages: [
+      input: [
         {
           role: "user",
-          content: "Hello! Please respond with 'OK' to confirm connection.",
+          content: [
+            {
+              type: "input_text",
+              text: "Hello! Please respond with 'OK' to confirm connection.",
+            },
+          ],
         },
       ],
-      max_tokens: 10,
-      temperature: 0.1,
       stream: false,
-    };
+    } as any;
 
     try {
-      const response = await Zotero.HTTP.request("POST", apiUrl, {
+      const response = await Zotero.HTTP.request("POST", responsesUrl, {
         headers: {
           "Content-Type": "application/json",
           ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
@@ -1225,7 +1445,7 @@ export class LLMClient {
           typeof response.response === "string"
             ? JSON.parse(response.response)
             : response.response;
-        const content = json?.choices?.[0]?.message?.content || "";
+        const content = json?.output_text || "";
         return `✅ 连接成功!\n模型: ${model}\n响应: ${content}`;
       }
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -1298,15 +1518,11 @@ export class LLMClient {
       );
     }
 
-    // OpenAI 不支持 Base64 PDF
-    if (isBase64) {
-      throw new Error(
-        "OpenAI 模式不支持 Base64 PDF 处理,请切换到 Google Gemini/Anthropic 或使用文本提取模式",
-      );
-    }
+    // OpenAI：支持 Base64（Responses SSE）与文本（Chat Completions SSE）
 
     return await LLMClient.chatWithOpenAI(
       pdfContent,
+      isBase64,
       conversationHistory,
       onProgress,
     );
@@ -1317,6 +1533,7 @@ export class LLMClient {
    */
   private static async chatWithOpenAI(
     pdfContent: string,
+    isBase64: boolean,
     conversationHistory: Array<{ role: string; content: string }>,
     onProgress?: ProgressCb,
   ): Promise<string> {
@@ -1327,6 +1544,8 @@ export class LLMClient {
     ).trim();
     const temperatureStr = (getPref("temperature") as string) || "0.7";
     const temperature = parseFloat(temperatureStr) || 0.7;
+    const enableTemperature = ((getPref("enableTemperature") as any) ??
+      true) as boolean;
 
     if (!apiUrl) throw new Error("API URL 未配置");
     if (!apiKey) throw new Error("API Key 未配置");
@@ -1337,15 +1556,200 @@ export class LLMClient {
         ? savedPrompt
         : getDefaultSummaryPrompt();
 
-    // 构造消息：始终保证第一条用户消息为“默认提示词+论文内容”，第二条为“AI总结”，其余原样
+    // Base64 论文：使用 Responses API（SSE 流式）
+    if (isBase64) {
+      const responsesUrl = /\/v1\/.+$/i.test(apiUrl)
+        ? apiUrl.replace(/\/v1\/.+$/i, "/v1/responses")
+        : apiUrl.endsWith("/v1/responses")
+          ? apiUrl
+          : apiUrl.replace(/\/?$/, "/v1/responses");
+
+      const inputs: any[] = [
+        {
+          role: "system",
+          content: [{ type: "input_text", text: SYSTEM_ROLE_PROMPT }],
+        },
+      ];
+
+      if (conversationHistory && conversationHistory.length > 0) {
+        const firstUser = conversationHistory[0];
+        const extraHistoryText = conversationHistory
+          .slice(1)
+          .map(
+            (m) => `${m.role === "assistant" ? "助手" : "用户"}: ${m.content}`,
+          )
+          .join("\n\n");
+
+        const userParts: any[] = [
+          { type: "input_text", text: firstUser.content },
+          {
+            type: "input_file",
+            filename: "paper.pdf",
+            file_data: `data:application/pdf;base64,${pdfContent}`,
+          },
+        ];
+        if (extraHistoryText) {
+          userParts.push({
+            type: "input_text",
+            text: `以下为过往对话供参考：\n${extraHistoryText}`,
+          });
+        }
+        inputs.push({ role: "user", content: userParts });
+      }
+
+      const payload: any = { model, input: inputs, stream: true };
+
+      const chunks: string[] = [];
+      let delivered = 0;
+      let processedLength = 0;
+      let partialLine = "";
+      let gotAnyDelta = false;
+      let abortError: Error | null = null;
+
+      try {
+        await Zotero.HTTP.request("POST", responsesUrl, {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(payload),
+          responseType: "text",
+          timeout: LLMClient.getRequestTimeout(),
+          requestObserver: (xmlhttp: XMLHttpRequest) => {
+            xmlhttp.onprogress = (e: any) => {
+              const status = e.target.status;
+              if (status >= 400) {
+                try {
+                  const errorResponse = e.target.response;
+                  const parsed = errorResponse
+                    ? JSON.parse(errorResponse)
+                    : null;
+                  const err = parsed?.error || parsed || {};
+                  const code = err?.code || `HTTP ${status}`;
+                  const msg = err?.message || "请求失败";
+                  abortError = new Error(`${code}: ${msg}`);
+                  xmlhttp.abort();
+                } catch {
+                  abortError = new Error(`HTTP ${status}: 请求失败`);
+                  xmlhttp.abort();
+                }
+                return;
+              }
+
+              try {
+                const resp: string = e.target.response || "";
+                if (resp.length > processedLength) {
+                  const slice = partialLine + resp.slice(processedLength);
+                  processedLength = resp.length;
+                  const parts = slice.split(/\r?\n/);
+                  partialLine =
+                    parts[parts.length - 1].indexOf("data:") === 0 &&
+                    slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                      ? ""
+                      : parts.pop() || "";
+
+                  for (const raw of parts) {
+                    if (raw.indexOf("data:") !== 0) continue;
+                    const jsonStr = raw.replace(/^data:\s*/, "").trim();
+                    if (!jsonStr || jsonStr === "[DONE]") continue;
+                    try {
+                      const evt = JSON.parse(jsonStr);
+                      const t = evt?.type as string;
+                      if (
+                        t === "response.output_text.delta" &&
+                        typeof evt.delta === "string"
+                      ) {
+                        gotAnyDelta = true;
+                        chunks.push(evt.delta.replace(/\n+/g, "\n"));
+                        const current = chunks.join("");
+                        if (onProgress && current.length > delivered) {
+                          const newChunk = current.slice(delivered);
+                          delivered = current.length;
+                          Promise.resolve(onProgress(newChunk)).catch((err) =>
+                            ztoolkit.log(
+                              "[AI-Butler] onProgress error (OpenAI Responses chat SSE):",
+                              err,
+                            ),
+                          );
+                        }
+                      }
+                    } catch {
+                      // 忽略解析失败的行
+                    }
+                  }
+                }
+              } catch (err) {
+                ztoolkit.log(
+                  "[AI-Butler] OpenAI Responses chat SSE parse error:",
+                  err,
+                );
+              }
+            };
+            xmlhttp.onerror = () => {
+              if (!abortError)
+                abortError = new Error("NetworkError: XHR onerror");
+            };
+            xmlhttp.ontimeout = () => {
+              if (!abortError)
+                abortError = new Error(
+                  `Timeout: 请求超过 ${LLMClient.getRequestTimeout()} ms`,
+                );
+            };
+          },
+        });
+      } catch (error: any) {
+        if (abortError) {
+          if (gotAnyDelta && chunks.length > 0) return chunks.join("");
+          throw abortError;
+        }
+        let errorMessage = error?.message || "OpenAI Responses 请求失败";
+        try {
+          const responseText =
+            error?.xmlhttp?.response || error?.xmlhttp?.responseText;
+          if (responseText) {
+            const parsed =
+              typeof responseText === "string"
+                ? JSON.parse(responseText)
+                : responseText;
+            const err = parsed?.error || parsed;
+            const code = err?.code || "Error";
+            const msg = err?.message || error?.message || String(error);
+            errorMessage = `${code}: ${msg}`;
+          }
+        } catch {
+          /* ignore parse error */
+        }
+        if (gotAnyDelta && chunks.length > 0) return chunks.join("");
+        throw new Error(errorMessage);
+      }
+
+      return chunks.join("");
+    }
+
+    // 构造消息：文本模式：始终保证第一条用户消息为“默认提示词+论文内容”，第二条为“AI总结”，其余原样
     const messages: any[] = [{ role: "system", content: SYSTEM_ROLE_PROMPT }];
 
     if (conversationHistory && conversationHistory.length > 0) {
       const firstUserMsg = conversationHistory[0];
-      messages.push({
-        role: "user",
-        content: buildUserMessage(firstUserMsg.content, pdfContent || ""),
-      });
+      if (isBase64) {
+        messages.push({
+          role: "user",
+          content: [
+            { type: "text", text: firstUserMsg.content },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:application/pdf;base64,${pdfContent}`,
+              },
+            },
+          ],
+        });
+      } else {
+        messages.push({
+          role: "user",
+          content: buildUserMessage(firstUserMsg.content, pdfContent || ""),
+        });
+      }
 
       if (conversationHistory.length > 1) {
         messages.push({
@@ -1535,6 +1939,8 @@ export class LLMClient {
     ).trim();
     const temperatureStr = (getPref("temperature") as string) || "0.7";
     const temperature = parseFloat(temperatureStr) || 0.7;
+    const enableTemperature = ((getPref("enableTemperature") as any) ??
+      true) as boolean;
 
     if (!baseUrl) throw new Error("Gemini API URL 未配置");
     if (!apiKey) throw new Error("Gemini API Key 未配置");
@@ -1586,8 +1992,10 @@ export class LLMClient {
       }
     }
 
-    const payload = {
-      generationConfig: { temperature },
+    const genCfg: any = {};
+    if (enableTemperature) genCfg.temperature = temperature;
+    const payload: any = {
+      generationConfig: genCfg,
       contents,
       systemInstruction: { parts: [{ text: SYSTEM_ROLE_PROMPT }] },
     };
@@ -1757,6 +2165,8 @@ export class LLMClient {
     const maxTokensStr = (getPref("maxTokens") as string) || "4096";
     const temperature = parseFloat(temperatureStr) || 0.7;
     const maxTokens = parseInt(maxTokensStr) || 4096;
+    const enableTemperature = ((getPref("enableTemperature") as any) ??
+      true) as boolean;
 
     if (!baseUrl) throw new Error("Anthropic API URL 未配置");
     if (!apiKey) throw new Error("Anthropic API Key 未配置");
@@ -1820,10 +2230,10 @@ export class LLMClient {
       }
     }
 
-    const payload = {
+    const payload: any = {
       model,
-      max_tokens: maxTokens,
-      temperature,
+      max_tokens: maxTokens, // Anthropic 必填
+      ...(enableTemperature ? { temperature } : {}),
       system: SYSTEM_ROLE_PROMPT,
       messages,
       stream: true,

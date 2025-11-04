@@ -149,8 +149,11 @@ export class DataSettingsPage {
       "geminiApiKey",
       "geminiModel",
       "temperature",
+      "enableTemperature",
       "maxTokens",
+      "enableMaxTokens",
       "topP",
+      "enableTopP",
       "stream",
       "summaryPrompt",
       "customPrompts",
@@ -266,6 +269,9 @@ export class DataSettingsPage {
     setPref("temperature", "0.7");
     setPref("maxTokens", "4096");
     setPref("topP", "1.0");
+    setPref("enableTemperature", true as any);
+    setPref("enableMaxTokens", true as any);
+    setPref("enableTopP", true as any);
     setPref("stream", true as any);
     setPref("theme", "system");
     setPref("fontSize", "14");

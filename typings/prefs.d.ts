@@ -18,8 +18,11 @@ declare namespace _ZoteroTypes {
       "anthropicApiKey": string;
       "anthropicModel": string;
       "temperature": string;
+      "enableTemperature": boolean;
       "maxTokens": string;
+      "enableMaxTokens": boolean;
       "topP": string;
+      "enableTopP": boolean;
       "stream": boolean;
       "requestTimeout": string;
       "summaryPrompt": string;

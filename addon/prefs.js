@@ -20,8 +20,11 @@ pref("__prefsPrefix__.anthropicApiUrl", "https://api.anthropic.com");
 pref("__prefsPrefix__.anthropicApiKey", "");
 pref("__prefsPrefix__.anthropicModel", "claude-3-5-sonnet-20241022");
 pref("__prefsPrefix__.temperature", "0.7");
+pref("__prefsPrefix__.enableTemperature", true);
 pref("__prefsPrefix__.maxTokens", "8192");
+pref("__prefsPrefix__.enableMaxTokens", true);
 pref("__prefsPrefix__.topP", "1.0");
+pref("__prefsPrefix__.enableTopP", true);
 pref("__prefsPrefix__.stream", true);
 pref("__prefsPrefix__.requestTimeout", "300000"); // 5分钟超时
 

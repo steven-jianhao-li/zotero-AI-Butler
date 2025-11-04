@@ -146,9 +146,9 @@ export class ApiSettingsPage {
           "apiUrl",
           "text",
           getPref("apiUrl") as string,
-          "https://api.openai.com/v1/chat/completions",
+          "https://api.openai.com/v1/responses",
         ),
-        "【必填】API 端点地址 (OpenAI 兼容接口)",
+        "【必填】OpenAI官方最新地址：https://api.openai.com/v1/responses",
       ),
     );
     sectionOpenAI.appendChild(
@@ -165,15 +165,26 @@ export class ApiSettingsPage {
     sectionOpenAI.appendChild(
       this.createFormGroup(
         "模型 *",
-        this.createInput(
-          "model",
-          "text",
-          getPref("model") as string,
-          "gpt-3.5-turbo",
-        ),
+        this.createInput("model", "text", getPref("model") as string, "gpt-5"),
         "【必填】要使用的模型名称",
       ),
     );
+
+    // OpenAI 旧方式提示
+    const openaiNote = this.createElement("div", {
+      innerHTML:
+        "⚠️ <strong>提示</strong>：OpenAI 服务商不再支持旧的调用方式。请使用 <code>/v1/responses</code> 接口。",
+      styles: {
+        padding: "10px 12px",
+        backgroundColor: "#fff8e1",
+        border: "1px solid #ffe082",
+        borderRadius: "6px",
+        color: "#8d6e63",
+        fontSize: "13px",
+        marginBottom: "16px",
+      },
+    });
+    sectionOpenAI.appendChild(openaiNote);
 
     // Gemini 字段
     sectionGemini.appendChild(
@@ -267,47 +278,125 @@ export class ApiSettingsPage {
     };
     renderProviderSections(providerValue);
 
-    // Temperature 参数
+    // Temperature 参数（可选启用）
+    const tempContainer = this.createElement("div", {
+      styles: { display: "flex", alignItems: "center", gap: "12px" },
+    });
+    const enableTemp = ((getPref("enableTemperature") as any) ??
+      true) as boolean;
+    const tempToggle = this.createCheckbox("enableTemperature", enableTemp);
+    const tempSlider = this.createSlider(
+      "temperature",
+      0,
+      2,
+      0.1,
+      parseFloat((getPref("temperature") as string) || "0.7"),
+    );
+    // 控制禁用状态
+    setTimeout(() => {
+      const sliderEl = tempSlider.querySelector(
+        "#setting-temperature",
+      ) as HTMLInputElement;
+      const cbEl = tempToggle.querySelector(
+        "#setting-enableTemperature",
+      ) as HTMLInputElement;
+      if (sliderEl && cbEl) {
+        sliderEl.disabled = !cbEl.checked;
+        cbEl.addEventListener("change", () => {
+          sliderEl.disabled = !cbEl.checked;
+        });
+      }
+    }, 0);
+    tempContainer.appendChild(tempToggle);
+    tempContainer.appendChild(tempSlider);
     form.appendChild(
       this.createFormGroup(
         "Temperature",
-        this.createSlider(
-          "temperature",
-          0,
-          2,
-          0.1,
-          parseFloat(getPref("temperature") as string),
-        ),
-        "控制输出的随机性 (0-2),值越高输出越随机",
+        tempContainer,
+        "控制输出的随机性 (0-2),值越高输出越随机；未勾选时将不发送该参数",
       ),
     );
 
-    // Max Tokens 参数
+    // Max Tokens 参数（可选启用）
+    const maxContainer = this.createElement("div", {
+      styles: {
+        display: "flex",
+        alignItems: "center",
+        gap: "12px",
+        flexWrap: "nowrap",
+      },
+    });
+    const enableMax = ((getPref("enableMaxTokens") as any) ?? true) as boolean;
+    const maxToggle = this.createCheckbox("enableMaxTokens", enableMax);
+    const maxInput = this.createInput(
+      "maxTokens",
+      "number",
+      ((getPref("maxTokens") as string) || "4096") as string,
+      "4096",
+    );
+    // 缩短输入框，保持与 Temperature 行一致的紧凑布局
+    Object.assign(maxInput.style, {
+      width: "180px",
+      flex: "0 0 180px",
+    });
+    setTimeout(() => {
+      const inputEl = this.container.querySelector(
+        "#setting-maxTokens",
+      ) as HTMLInputElement;
+      const cbEl = maxToggle.querySelector(
+        "#setting-enableMaxTokens",
+      ) as HTMLInputElement;
+      if (inputEl && cbEl) {
+        inputEl.disabled = !cbEl.checked;
+        cbEl.addEventListener("change", () => {
+          inputEl.disabled = !cbEl.checked;
+        });
+      }
+    }, 0);
+    maxContainer.appendChild(maxToggle);
+    maxContainer.appendChild(maxInput);
     form.appendChild(
       this.createFormGroup(
         "Max Tokens",
-        this.createInput(
-          "maxTokens",
-          "number",
-          getPref("maxTokens") as string,
-          "4096",
-        ),
-        "生成内容的最大 token 数",
+        maxContainer,
+        "生成内容的最大 token 数；未勾选时将不发送该参数（某些服务可选）",
       ),
     );
 
-    // Top P 参数
+    // Top P 参数（可选启用）
+    const topPContainer = this.createElement("div", {
+      styles: { display: "flex", alignItems: "center", gap: "12px" },
+    });
+    const enableTopP = ((getPref("enableTopP") as any) ?? true) as boolean;
+    const topPToggle = this.createCheckbox("enableTopP", enableTopP);
+    const topPSlider = this.createSlider(
+      "topP",
+      0,
+      1,
+      0.05,
+      parseFloat((getPref("topP") as string) || "1.0"),
+    );
+    setTimeout(() => {
+      const sliderEl = topPSlider.querySelector(
+        "#setting-topP",
+      ) as HTMLInputElement;
+      const cbEl = topPToggle.querySelector(
+        "#setting-enableTopP",
+      ) as HTMLInputElement;
+      if (sliderEl && cbEl) {
+        sliderEl.disabled = !cbEl.checked;
+        cbEl.addEventListener("change", () => {
+          sliderEl.disabled = !cbEl.checked;
+        });
+      }
+    }, 0);
+    topPContainer.appendChild(topPToggle);
+    topPContainer.appendChild(topPSlider);
     form.appendChild(
       this.createFormGroup(
         "Top P",
-        this.createSlider(
-          "topP",
-          0,
-          1,
-          0.05,
-          parseFloat(getPref("topP") as string),
-        ),
-        "核采样参数 (0-1),控制输出的多样性",
+        topPContainer,
+        "核采样参数 (0-1),控制输出的多样性；未勾选时将不发送该参数",
       ),
     );
 
@@ -793,6 +882,15 @@ export class ApiSettingsPage {
       const topPEl = this.container.querySelector(
         "#setting-topP",
       ) as HTMLInputElement;
+      const enableTempEl = this.container.querySelector(
+        "#setting-enableTemperature",
+      ) as HTMLInputElement;
+      const enableMaxEl = this.container.querySelector(
+        "#setting-enableMaxTokens",
+      ) as HTMLInputElement;
+      const enableTopPEl = this.container.querySelector(
+        "#setting-enableTopP",
+      ) as HTMLInputElement;
       const streamEl = this.container.querySelector(
         "#setting-stream",
       ) as HTMLInputElement;
@@ -839,6 +937,9 @@ export class ApiSettingsPage {
         temperature: temperatureEl?.value || "0.7",
         maxTokens: maxTokensEl?.value?.trim() || "4096",
         topP: topPEl?.value || "1.0",
+        enableTemperature: enableTempEl?.checked ?? true,
+        enableMaxTokens: enableMaxEl?.checked ?? true,
+        enableTopP: enableTopPEl?.checked ?? true,
         stream: streamEl?.checked ?? true,
         requestTimeout:
           (
@@ -903,6 +1004,9 @@ export class ApiSettingsPage {
       setPref("temperature", values.temperature);
       setPref("maxTokens", values.maxTokens);
       setPref("topP", values.topP);
+      setPref("enableTemperature", values.enableTemperature as any);
+      setPref("enableMaxTokens", values.enableMaxTokens as any);
+      setPref("enableTopP", values.enableTopP as any);
       setPref("stream", values.stream);
       setPref("requestTimeout", values.requestTimeout);
       // 调度配置
@@ -982,17 +1086,24 @@ export class ApiSettingsPage {
 
     // 重置为默认值
     setPref("provider", "openai");
-    // OpenAI 默认
-    setPref("apiUrl", "https://api.openai.com/v1/chat/completions");
+    // OpenAI 默认（已改为新接口）
+    setPref("apiUrl", "https://api.openai.com/v1/responses");
     setPref("apiKey", "");
-    setPref("model", "gpt-3.5-turbo");
+    setPref("model", "gpt-5");
     // Gemini 默认
     setPref("geminiApiUrl", "https://generativelanguage.googleapis.com");
     setPref("geminiApiKey", "");
     setPref("geminiModel", "gemini-2.5-pro");
+    // Anthropic 默认
+    setPref("anthropicApiUrl", "https://api.anthropic.com");
+    setPref("anthropicApiKey", "");
+    setPref("anthropicModel", "claude-3-5-sonnet-20241022");
     setPref("temperature", "0.7");
     setPref("maxTokens", "8192");
     setPref("topP", "1.0");
+    setPref("enableTemperature", true as any);
+    setPref("enableMaxTokens", true as any);
+    setPref("enableTopP", true as any);
     setPref("stream", true);
     setPref("requestTimeout", "300000");
 

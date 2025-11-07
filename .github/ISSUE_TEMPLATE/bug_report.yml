@@ -40,7 +40,7 @@ body:
     id: zotero-version
     attributes:
       label: 📚 Zotero 版本
-      description: 你正在使用的 Zotero 版本是多少？ (例如: 7.0.1)
+      description: "你正在使用的 Zotero 版本是多少？(例如: 7.0.1)"
       placeholder: "7.0.1"
     validations:
       required: true
@@ -61,14 +61,12 @@ body:
       description: 你期望发生什么？
       placeholder: 插件应该开始分析，并在几分钟后生成一篇笔记。
 
-
   - type: textarea
     id: actual-result
     attributes:
       label: 😲 实际的结果
       description: 实际发生了什么？
       placeholder: 任务队列中显示任务失败，或者插件界面崩溃。
-
 
   - type: textarea
     id: logs

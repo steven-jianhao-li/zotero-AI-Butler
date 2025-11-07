@@ -1,7 +1,7 @@
 name: 💡 改进建议
-title: '[feat] '
+title: "[feat] "
 description: 你有什么好的灵感？
-labels: ['type: feat']
+labels: ["type: feat"]
 
 body:
   - type: textarea

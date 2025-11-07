@@ -43,6 +43,14 @@ import {
   SYSTEM_ROLE_PROMPT,
   buildUserMessage,
 } from "../utils/prompts";
+import { ProviderRegistry } from "./llmproviders/ProviderRegistry";
+// 侧效导入，确保各 Provider 自注册到注册表
+import "./llmproviders";
+import type {
+  LLMOptions,
+  ProgressCb as ProviderProgressCb,
+  ConversationMessage,
+} from "./llmproviders/types";
 
 /**
  * 进度回调函数类型定义
@@ -53,6 +61,10 @@ import {
  * @returns Promise 或 void,支持异步和同步回调
  */
 type ProgressCb = (chunk: string) => Promise<void> | void;
+type BaseOpts = Pick<
+  LLMOptions,
+  "stream" | "temperature" | "topP" | "maxTokens" | "requestTimeoutMs"
+>;
 
 /**
  * LLM 客户端类
@@ -69,6 +81,50 @@ export class LLMClient {
     const timeoutStr = (getPref("requestTimeout") as string) || "300000";
     const timeout = parseInt(timeoutStr) || 300000;
     return Math.max(timeout, 30000); // 最小30秒
+  }
+
+  /**
+   * 根据 providerId 读取对应 URL/Key/Model，并合并通用选项
+   */
+  private static buildOptionsForProvider(
+    providerId: string,
+    base: BaseOpts,
+  ): LLMOptions {
+    const id = providerId.toLowerCase();
+    if (id === "google" || id.includes("gemini")) {
+      return {
+        apiUrl: (
+          (getPref("geminiApiUrl" as any) as string) ||
+          "https://generativelanguage.googleapis.com"
+        ).replace(/\/$/, ""),
+        apiKey: ((getPref("geminiApiKey" as any) as string) || "").trim(),
+        model: (
+          (getPref("geminiModel" as any) as string) || "gemini-2.5-pro"
+        ).trim(),
+        ...base,
+      };
+    }
+    if (id === "anthropic" || id.includes("claude")) {
+      return {
+        apiUrl: (
+          (getPref("anthropicApiUrl" as any) as string) ||
+          "https://api.anthropic.com"
+        ).replace(/\/$/, ""),
+        apiKey: ((getPref("anthropicApiKey" as any) as string) || "").trim(),
+        model: (
+          (getPref("anthropicModel" as any) as string) ||
+          "claude-3-5-sonnet-20241022"
+        ).trim(),
+        ...base,
+      };
+    }
+    // 默认 openai/兼容
+    return {
+      apiUrl: ((getPref("apiUrl" as any) as string) || "").trim(),
+      apiKey: ((getPref("apiKey" as any) as string) || "").trim(),
+      model: ((getPref("model" as any) as string) || "gpt-3.5-turbo").trim(),
+      ...base,
+    };
   }
 
   /**
@@ -131,495 +187,47 @@ export class LLMClient {
     prompt?: string,
     onProgress?: ProgressCb,
   ): Promise<string> {
-    // Provider 分支: 判断使用哪个供应商
-    const provider = (
+    const providerId = (
       (getPref("provider" as any) as string) || "openai"
     ).trim();
-
-    if (provider === "google" || provider.toLowerCase().includes("gemini")) {
-      return await LLMClient.generateWithGemini(
-        content,
-        isBase64,
-        prompt,
-        onProgress,
-      );
+    const provider =
+      ProviderRegistry.get(providerId) || ProviderRegistry.get("openai");
+    if (!provider) {
+      const list = ProviderRegistry.list().join(", ");
+      const msg = `未知的供应商: ${providerId}。请在设置中选择以下之一: ${list}`;
+      LLMClient.notifyError(msg);
+      throw new Error(msg);
     }
 
-    if (provider === "anthropic" || provider.toLowerCase().includes("claude")) {
-      return await LLMClient.generateWithAnthropic(
-        content,
-        isBase64,
-        prompt,
-        onProgress,
-      );
-    }
-
-    // OpenAI 模式：支持文本与多模态（Base64 PDF 通过 Responses API 传入）
-    // ⚡ 动态读取配置 - 每次调用都会重新获取最新设置
-    // 这确保了用户在设置页面修改后立即生效,无需重启 Zotero
-    const apiKey = ((getPref("apiKey" as any) as string) || "").trim();
-    const apiUrl = ((getPref("apiUrl" as any) as string) || "").trim();
-    const model = (
-      (getPref("model" as any) as string) || "gpt-3.5-turbo"
-    ).trim();
-
-    const temperatureStr = (getPref("temperature") as string) || "0.7";
-    const temperature = parseFloat(temperatureStr) || 0.7;
-    const enableTemperature = ((getPref("enableTemperature") as any) ??
-      true) as boolean;
-
-    // 获取提示词,优先使用参数传入的,其次使用配置的,最后使用默认值
     const savedPrompt = getPref("summaryPrompt") as string;
     const summaryPrompt =
       prompt ||
       (savedPrompt && savedPrompt.trim()
         ? savedPrompt
         : getDefaultSummaryPrompt());
-    const streamEnabled = (getPref("stream") as boolean) ?? true;
 
-    // 基本配置验证
-    if (!apiUrl) {
-      LLMClient.notifyError("API URL 未配置");
-      throw new Error("API URL 未配置");
-    }
-    // 大多数 LLM 服务需要 API Key
-    // 如果您的服务不需要,可以在配置界面留空并移除此检查
-    if (!apiKey) {
-      LLMClient.notifyError("API Key 未配置");
-      throw new Error("API Key 未配置");
-    }
+    const stream = (getPref("stream") as boolean) ?? true;
+    const temperature =
+      parseFloat((getPref("temperature") as string) || "0.7") || 0.7;
+    const topP = parseFloat((getPref("topP") as string) || "1.0") || 1.0;
+    const maxTokens =
+      parseInt((getPref("maxTokens") as string) || "4096") || 4096;
 
-    // OpenAI + Base64: 使用 Responses API + SSE 流式
-    if (isBase64) {
-      // 尽量从用户填写的 URL 推断出 responses 端点
-      const responsesUrl = /\/v1\/.+$/i.test(apiUrl)
-        ? apiUrl.replace(/\/v1\/.+$/i, "/v1/responses")
-        : apiUrl.endsWith("/v1/responses")
-          ? apiUrl
-          : apiUrl.replace(/\/?$/, "/v1/responses");
+    const opts: LLMOptions = this.buildOptionsForProvider(providerId, {
+      stream,
+      temperature,
+      topP,
+      maxTokens,
+      requestTimeoutMs: LLMClient.getRequestTimeout(),
+    });
 
-      const input: any[] = [
-        {
-          role: "system",
-          content: [{ type: "input_text", text: SYSTEM_ROLE_PROMPT }],
-        },
-        {
-          role: "user",
-          content: [
-            { type: "input_text", text: summaryPrompt },
-            {
-              type: "input_file",
-              filename: "paper.pdf",
-              file_data: `data:application/pdf;base64,${content}`,
-            },
-          ],
-        },
-      ];
-
-      const basePayload: any = {
-        model,
-        input,
-      };
-
-      // 若开启流式并提供 onProgress，则走 SSE
-      if (((getPref("stream") as boolean) ?? true) && onProgress) {
-        const payload = { ...basePayload, stream: true } as any;
-
-        const chunks: string[] = [];
-        let delivered = 0;
-        let processedLength = 0;
-        let partialLine = "";
-        let gotAnyDelta = false;
-        let abortError: Error | null = null;
-
-        try {
-          await Zotero.HTTP.request("POST", responsesUrl, {
-            headers: {
-              "Content-Type": "application/json",
-              ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-            },
-            body: JSON.stringify(payload),
-            responseType: "text",
-            timeout: LLMClient.getRequestTimeout(),
-            requestObserver: (xmlhttp: XMLHttpRequest) => {
-              xmlhttp.onprogress = (e: any) => {
-                const status = e.target.status;
-                if (status >= 400) {
-                  try {
-                    const errorResponse = e.target.response;
-                    const parsed = errorResponse
-                      ? JSON.parse(errorResponse)
-                      : null;
-                    const err = parsed?.error || parsed || {};
-                    const code = err?.code || `HTTP ${status}`;
-                    const msg = err?.message || "请求失败";
-                    abortError = new Error(`${code}: ${msg}`);
-                    xmlhttp.abort();
-                  } catch {
-                    abortError = new Error(`HTTP ${status}: 请求失败`);
-                    xmlhttp.abort();
-                  }
-                  return;
-                }
-
-                try {
-                  const resp: string = e.target.response || "";
-                  if (resp.length > processedLength) {
-                    const slice = partialLine + resp.slice(processedLength);
-                    processedLength = resp.length;
-                    const parts = slice.split(/\r?\n/);
-                    partialLine =
-                      parts[parts.length - 1].indexOf("data:") === 0 &&
-                      slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                        ? ""
-                        : parts.pop() || "";
-
-                    for (const raw of parts) {
-                      if (raw.indexOf("data:") !== 0) continue;
-                      const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                      if (!jsonStr || jsonStr === "[DONE]") continue;
-                      try {
-                        const evt = JSON.parse(jsonStr);
-                        const t = evt?.type as string;
-                        if (
-                          t === "response.output_text.delta" &&
-                          typeof evt.delta === "string"
-                        ) {
-                          gotAnyDelta = true;
-                          chunks.push(evt.delta.replace(/\n+/g, "\n"));
-                          const current = chunks.join("");
-                          if (onProgress && current.length > delivered) {
-                            const newChunk = current.slice(delivered);
-                            delivered = current.length;
-                            Promise.resolve(onProgress(newChunk)).catch((err) =>
-                              ztoolkit.log(
-                                "[AI-Butler] onProgress error (OpenAI Responses SSE):",
-                                err,
-                              ),
-                            );
-                          }
-                        } else if (t === "response.completed") {
-                          // 正常结束
-                        }
-                      } catch {
-                        // 无法解析的行忽略
-                      }
-                    }
-                  }
-                } catch (err) {
-                  ztoolkit.log(
-                    "[AI-Butler] OpenAI Responses SSE parse error:",
-                    err,
-                  );
-                }
-              };
-              xmlhttp.onerror = () => {
-                if (!abortError)
-                  abortError = new Error("NetworkError: XHR onerror");
-              };
-              xmlhttp.ontimeout = () => {
-                if (!abortError)
-                  abortError = new Error(
-                    `Timeout: 请求超过 ${LLMClient.getRequestTimeout()} ms`,
-                  );
-              };
-            },
-          });
-        } catch (error: any) {
-          if (abortError) {
-            if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-            throw abortError;
-          }
-          // 解析错误响应
-          let errorMessage = error?.message || "OpenAI Responses 请求失败";
-          try {
-            const responseText =
-              error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-            if (responseText) {
-              const parsed =
-                typeof responseText === "string"
-                  ? JSON.parse(responseText)
-                  : responseText;
-              const err = parsed?.error || parsed;
-              const code = err?.code || "Error";
-              const msg = err?.message || error?.message || String(error);
-              errorMessage = `${code}: ${msg}`;
-            }
-          } catch {
-            /* ignore parse error */
-          }
-          if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-          throw new Error(errorMessage);
-        }
-
-        return chunks.join("");
-      }
-
-      // 非流式回退
-      try {
-        const res = await Zotero.HTTP.request("POST", responsesUrl, {
-          headers: {
-            "Content-Type": "application/json",
-            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-          },
-          body: JSON.stringify(basePayload),
-          responseType: "json",
-          timeout: LLMClient.getRequestTimeout(),
-        });
-        const data = res.response || res;
-        const text = (data?.output_text as string) || "";
-        if (onProgress && text) await onProgress(text);
-        return text;
-      } catch (e: any) {
-        let errorMessage = e?.message || "OpenAI Responses 请求失败";
-        try {
-          const responseText = e?.xmlhttp?.response || e?.xmlhttp?.responseText;
-          if (responseText) {
-            const parsed =
-              typeof responseText === "string"
-                ? JSON.parse(responseText)
-                : responseText;
-            const err = parsed?.error || parsed;
-            const code = err?.code || "Error";
-            const msg = err?.message || e?.message || String(e);
-            errorMessage = `${code}: ${msg}`;
-          }
-        } catch {
-          /* ignore parse error */
-        }
-        throw new Error(errorMessage);
-      }
-    }
-
-    // 构造 Chat Completions API 请求消息数组（文本模式）
-    const messages: any[] = [
-      { role: "system", content: SYSTEM_ROLE_PROMPT },
-      { role: "user", content: buildUserMessage(summaryPrompt, content) },
-    ];
-
-    // 构造请求载荷的基础部分
-    const basePayload: any = {
-      model,
-      messages,
-    };
-    if (enableTemperature) {
-      basePayload.temperature = Number(temperature);
-    }
-
-    // 允许自定义服务直接使用配置的完整 URL（兼容 OpenAI/DeepSeek/OpenAI兼容服务）
-    // 如果用户配置错误的末尾斜杠，不做强制修正，保持“照搬”逻辑
-
-    // 累积结果与增量下发
-    // 分支：流式 or 非流式
-    if (streamEnabled && onProgress) {
-      const body = JSON.stringify({ ...basePayload, stream: true });
-      const chunks: string[] = [];
-      let delivered = 0; // 已下发给 onProgress 的字符长度
-      let gotAnyDelta = false;
-      let processedLength = 0; // 已处理的响应长度，避免重复解析
-      let partialLine = ""; // 进度事件之间可能存在被截断的半行 JSON
-      let streamComplete = false; // 流是否正常结束
-      let abortedDueToError = false; // 是否因错误而中止
-      let errorFromProgress: Error | null = null; // 从 onprogress 中捕获的错误
-
-      try {
-        await Zotero.HTTP.request("POST", apiUrl, {
-          headers: {
-            "Content-Type": "application/json",
-            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-          },
-          body,
-          responseType: "text",
-          timeout: LLMClient.getRequestTimeout(),
-          requestObserver: (xmlhttp: XMLHttpRequest) => {
-            xmlhttp.onprogress = (e: any) => {
-              const status = e.target.status;
-
-              // 检查 HTTP 状态码，如果是错误状态，尝试解析错误信息
-              if (status >= 400) {
-                try {
-                  const errorResponse = e.target.response;
-                  if (errorResponse) {
-                    // 尝试解析错误 JSON
-                    const parsed = JSON.parse(errorResponse);
-                    const err = parsed?.error || parsed;
-                    const code = err?.code || `HTTP ${status}`;
-                    const msg = err?.message || "请求失败";
-                    const errorMessage = `${code}: ${msg}`;
-                    LLMClient.notifyError(errorMessage);
-                    // 设置错误标志
-                    abortedDueToError = true;
-                    errorFromProgress = new Error(errorMessage);
-                    // 中止请求
-                    xmlhttp.abort();
-                  }
-                } catch (parseErr) {
-                  const errorMessage = `HTTP ${status}: 请求失败`;
-                  LLMClient.notifyError(errorMessage);
-                  abortedDueToError = true;
-                  errorFromProgress = new Error(errorMessage);
-                  xmlhttp.abort();
-                }
-                return;
-              }
-
-              try {
-                const resp: string = e.target.response || "";
-                if (resp.length > processedLength) {
-                  // 仅处理新增的响应文本，拼接上一次遗留的半行
-                  const slice = partialLine + resp.slice(processedLength);
-                  processedLength = resp.length;
-                  const parts = slice.split(/\r?\n/);
-                  // 若最后一段不是完整行，则缓存为 partial，下次继续
-                  partialLine =
-                    parts[parts.length - 1].indexOf("data: ") === 0 &&
-                    slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                      ? ""
-                      : parts.pop() || "";
-
-                  for (const raw of parts) {
-                    if (raw.indexOf("data: ") !== 0) continue;
-                    const jsonStr = raw.replace(/^data:\s*/, "").trim();
-
-                    if (jsonStr === "[DONE]") {
-                      // 收到结束信号：标记完成
-                      streamComplete = true;
-                      return;
-                    }
-
-                    try {
-                      const json = JSON.parse(jsonStr);
-                      // OpenAI/DeepSeek 兼容：choices[0].delta.content
-                      const delta = json?.choices?.[0]?.delta?.content;
-                      if (typeof delta === "string" && delta.length > 0) {
-                        gotAnyDelta = true;
-                        chunks.push(delta.replace(/\n+/g, "\n"));
-                        const current = chunks.join("");
-                        if (onProgress && current.length > delivered) {
-                          const newChunk = current.slice(delivered);
-                          delivered = current.length;
-                          Promise.resolve(onProgress(newChunk)).catch((err) => {
-                            ztoolkit.log(
-                              "[AI-Butler] onProgress callback error:",
-                              err,
-                            );
-                          });
-                        }
-                      }
-                    } catch {
-                      // 忽略无法解析的行
-                    }
-                  }
-                }
-              } catch (err) {
-                ztoolkit.log("[AI-Butler] stream parse error:", err);
-              }
-            };
-
-            // 网络错误与超时：如果已收到部分增量，则允许在外层以“部分结果”方式返回
-            xmlhttp.onerror = () => {
-              abortedDueToError = true;
-              errorFromProgress = new Error("NetworkError: XHR onerror");
-              try {
-                xmlhttp.abort();
-              } catch (e) {
-                // 忽略中止时可能抛出的异常，保持静默
-                void 0;
-              }
-            };
-
-            xmlhttp.ontimeout = () => {
-              abortedDueToError = true;
-              errorFromProgress = new Error(
-                `Timeout: 请求超过 ${LLMClient.getRequestTimeout()} ms`,
-              );
-              try {
-                xmlhttp.abort();
-              } catch (e) {
-                // 忽略中止时可能抛出的异常，保持静默
-                void 0;
-              }
-            };
-
-            xmlhttp.onloadend = () => {
-              const status = xmlhttp.status;
-
-              // 检查 HTTP 状态码
-              if (status >= 400) {
-                // 错误会在外层 catch 中处理
-                return;
-              }
-            };
-          },
-        });
-      } catch (error: any) {
-        // 检查是否是因为错误而主动中止的
-        if (abortedDueToError && errorFromProgress) {
-          throw errorFromProgress;
-        }
-
-        // 检查是否是正常的流结束（有些API在收到[DONE]后会关闭连接导致"错误"）
-        if (streamComplete && gotAnyDelta) {
-          return chunks.join("");
-        }
-
-        // 如果虽然发生错误，但已经接收到部分内容，则返回已接收内容
-        if (gotAnyDelta && chunks.length > 0) {
-          return chunks.join("");
-        }
-
-        // 真正的错误 - 记录完整错误信息
-        ztoolkit.log("[AI-Butler] Stream request failed:", {
-          status: error?.xmlhttp?.status,
-          statusText: error?.xmlhttp?.statusText,
-          response: error?.xmlhttp?.response,
-          message: error?.message,
-        });
-
-        // 解析并显示错误
-        let errorMessage = "未知错误";
-        try {
-          const responseText =
-            error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-          if (responseText) {
-            const parsed = JSON.parse(responseText);
-            const err = parsed?.error || parsed;
-            const code = err?.code || "Error";
-            const msg = err?.message || error?.message || String(error);
-            errorMessage = `${code}: ${msg}`;
-          } else {
-            errorMessage = error?.message || String(error);
-          }
-        } catch (parseError) {
-          errorMessage =
-            error?.message || error?.xmlhttp?.statusText || String(error);
-        }
-
-        LLMClient.notifyError(errorMessage);
-        throw new Error(errorMessage);
-      }
-
-      const streamed = chunks.join("");
-      if (gotAnyDelta && streamed) {
-        return streamed;
-      }
-
-      // 若未拿到任何增量，回退到非流式
-      return await LLMClient.nonStreamCompletion(
-        apiUrl,
-        apiKey,
-        basePayload,
-        onProgress,
-      );
-    } else {
-      // 非流式：一次性拿到完整文本（也传递 onProgress 以支持弹出窗口显示）
-      return await LLMClient.nonStreamCompletion(
-        apiUrl,
-        apiKey,
-        basePayload,
-        onProgress,
-      );
-    }
+    return await provider.generateSummary(
+      content,
+      isBase64,
+      summaryPrompt,
+      opts,
+      onProgress as ProviderProgressCb,
+    );
   }
 
   /** 使用 Google Gemini 生成总结(流式优先,SSE) */
@@ -1252,225 +860,19 @@ export class LLMClient {
    * @throws API 错误或网络异常
    */
   static async testConnection(): Promise<string> {
-    const provider = (
+    const providerId = (
       (getPref("provider" as any) as string) || "openai"
     ).trim();
-
-    if (provider === "google" || provider.toLowerCase().includes("gemini")) {
-      const baseUrl = (
-        (getPref("geminiApiUrl" as any) as string) ||
-        "https://generativelanguage.googleapis.com"
-      ).replace(/\/$/, "");
-      const apiKey = ((getPref("geminiApiKey" as any) as string) || "").trim();
-      const model = (
-        (getPref("geminiModel" as any) as string) || "gemini-2.5-pro"
-      ).trim();
-      if (!baseUrl) throw new Error("Gemini API URL 未配置");
-      if (!apiKey) throw new Error("Gemini API Key 未配置");
-      const url = `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-      const payload = {
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: "Hello! Please respond with 'OK' to confirm connection.",
-              },
-            ],
-          },
-        ],
-        systemInstruction: { parts: [{ text: SYSTEM_ROLE_PROMPT }] },
-        generationConfig: { temperature: 0.1, topP: 1.0, maxOutputTokens: 16 },
-      };
-      try {
-        const response = await Zotero.HTTP.request("POST", url, {
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": apiKey,
-          },
-          body: JSON.stringify(payload),
-          responseType: "json",
-          timeout: 30000,
-        });
-        if (response.status === 200) {
-          const json =
-            typeof response.response === "string"
-              ? JSON.parse(response.response)
-              : response.response;
-          const text =
-            json?.candidates?.[0]?.content?.parts
-              ?.map((p: any) => p?.text || "")
-              .join("") || "";
-          return `✅ 连接成功!\n模型: ${model}\n响应: ${text}`;
-        }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      } catch (error: any) {
-        let errorMessage = error?.message || "连接失败";
-        try {
-          const errorResponse =
-            error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-          if (errorResponse) {
-            const parsed =
-              typeof errorResponse === "string"
-                ? JSON.parse(errorResponse)
-                : errorResponse;
-            const err = parsed?.error || parsed;
-            const code =
-              err?.code || `HTTP ${error?.xmlhttp?.status || "Unknown"}`;
-            const msg = err?.message || "请求失败";
-            errorMessage = `${code}: ${msg}`;
-          }
-        } catch (e) {
-          // 忽略错误响应解析失败，使用默认错误信息
-          ztoolkit.log("[AI-Butler] Failed to parse testConnection error");
-        }
-        throw new Error(errorMessage);
-      }
+    const provider =
+      ProviderRegistry.get(providerId) || ProviderRegistry.get("openai");
+    if (!provider) {
+      const list = ProviderRegistry.list().join(", ");
+      throw new Error(`未知的供应商: ${providerId}。可用: ${list}`);
     }
-
-    if (
-      provider === "anthropic" ||
-      provider.toLowerCase().indexOf("claude") !== -1
-    ) {
-      const baseUrl = (
-        (getPref("anthropicApiUrl" as any) as string) ||
-        "https://api.anthropic.com"
-      ).replace(/\/$/, "");
-      const apiKey = (
-        (getPref("anthropicApiKey" as any) as string) || ""
-      ).trim();
-      const model = (
-        (getPref("anthropicModel" as any) as string) ||
-        "claude-3-5-sonnet-20241022"
-      ).trim();
-      if (!baseUrl) throw new Error("Anthropic API URL 未配置");
-      if (!apiKey) throw new Error("Anthropic API Key 未配置");
-      const url = `${baseUrl}/v1/messages`;
-      const payload = {
-        model,
-        max_tokens: 16,
-        messages: [
-          {
-            role: "user",
-            content: "Hello! Please respond with 'OK' to confirm connection.",
-          },
-        ],
-      };
-      try {
-        const response = await Zotero.HTTP.request("POST", url, {
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify(payload),
-          responseType: "json",
-          timeout: 30000,
-        });
-        if (response.status === 200) {
-          const json =
-            typeof response.response === "string"
-              ? JSON.parse(response.response)
-              : response.response;
-          const text = json?.content?.[0]?.text || "";
-          return `✅ 连接成功!\n模型: ${model}\n响应: ${text}`;
-        }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      } catch (error: any) {
-        let errorMessage = error?.message || "连接失败";
-        try {
-          const errorResponse =
-            error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-          if (errorResponse) {
-            const parsed =
-              typeof errorResponse === "string"
-                ? JSON.parse(errorResponse)
-                : errorResponse;
-            const err = parsed?.error || parsed;
-            const code =
-              err?.type || `HTTP ${error?.xmlhttp?.status || "Unknown"}`;
-            const msg = err?.message || "请求失败";
-            errorMessage = `${code}: ${msg}`;
-          }
-        } catch (e) {
-          // 忽略错误响应解析失败，使用默认错误信息
-          ztoolkit.log("[AI-Butler] Failed to parse testConnection error");
-        }
-        throw new Error(errorMessage);
-      }
-    }
-
-    // OpenAI / 兼容 实现（使用 Responses 新接口）
-    const apiKey = ((getPref("apiKey" as any) as string) || "").trim();
-    const apiUrl = ((getPref("apiUrl" as any) as string) || "").trim();
-    const model = ((getPref("model" as any) as string) || "gpt-5").trim();
-
-    if (!apiUrl) throw new Error("API URL 未配置");
-    if (!apiKey) throw new Error("API Key 未配置");
-
-    const responsesUrl = /\/v1\/.+$/i.test(apiUrl)
-      ? apiUrl.replace(/\/v1\/.+$/i, "/v1/responses")
-      : apiUrl.endsWith("/v1/responses")
-        ? apiUrl
-        : apiUrl.replace(/\/?$/, "/v1/responses");
-
-    const payload = {
-      model,
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: "Hello! Please respond with 'OK' to confirm connection.",
-            },
-          ],
-        },
-      ],
-      stream: false,
-    } as any;
-
-    try {
-      const response = await Zotero.HTTP.request("POST", responsesUrl, {
-        headers: {
-          "Content-Type": "application/json",
-          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-        },
-        body: JSON.stringify(payload),
-        responseType: "json",
-        timeout: 30000,
-      });
-      if (response.status === 200) {
-        const json =
-          typeof response.response === "string"
-            ? JSON.parse(response.response)
-            : response.response;
-        const content = json?.output_text || "";
-        return `✅ 连接成功!\n模型: ${model}\n响应: ${content}`;
-      }
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    } catch (error: any) {
-      let errorMessage = "连接失败";
-      try {
-        const errorResponse = error?.xmlhttp?.response;
-        if (errorResponse) {
-          const parsed =
-            typeof errorResponse === "string"
-              ? JSON.parse(errorResponse)
-              : errorResponse;
-          const err = parsed?.error || parsed;
-          const code =
-            err?.code || `HTTP ${error?.xmlhttp?.status || "Unknown"}`;
-          const msg = err?.message || "请求失败";
-          errorMessage = `${code}: ${msg}`;
-        } else {
-          errorMessage = error?.message || String(error);
-        }
-      } catch (parseError) {
-        errorMessage = error?.message || String(error);
-      }
-      throw new Error(errorMessage);
-    }
+    const opts = this.buildOptionsForProvider(providerId, {
+      requestTimeoutMs: LLMClient.getRequestTimeout(),
+    });
+    return provider.testConnection(opts);
   }
 
   /**
@@ -1490,41 +892,41 @@ export class LLMClient {
     conversationHistory: Array<{ role: string; content: string }>,
     onProgress?: ProgressCb,
   ): Promise<string> {
-    const provider = (
+    const providerId = (
       (getPref("provider" as any) as string) || "openai"
     ).trim();
-
-    if (
-      provider === "google" ||
-      provider.toLowerCase().indexOf("gemini") !== -1
-    ) {
-      return await LLMClient.chatWithGemini(
-        pdfContent,
-        isBase64,
-        conversationHistory,
-        onProgress,
-      );
+    const provider =
+      ProviderRegistry.get(providerId) || ProviderRegistry.get("openai");
+    if (!provider) {
+      const list = ProviderRegistry.list().join(", ");
+      const msg = `未知的供应商: ${providerId}。请在设置中选择以下之一: ${list}`;
+      LLMClient.notifyError(msg);
+      throw new Error(msg);
     }
+    // 构建通用 options
+    const stream = (getPref("stream") as boolean) ?? true;
+    const temperature =
+      parseFloat((getPref("temperature") as string) || "0.7") || 0.7;
+    const topP = parseFloat((getPref("topP") as string) || "1.0") || 1.0;
+    const maxTokens =
+      parseInt((getPref("maxTokens") as string) || "4096") || 4096;
+    const opts: LLMOptions = this.buildOptionsForProvider(providerId, {
+      stream,
+      temperature,
+      topP,
+      maxTokens,
+      requestTimeoutMs: LLMClient.getRequestTimeout(),
+    });
 
-    if (
-      provider === "anthropic" ||
-      provider.toLowerCase().indexOf("claude") !== -1
-    ) {
-      return await LLMClient.chatWithAnthropic(
-        pdfContent,
-        isBase64,
-        conversationHistory,
-        onProgress,
-      );
-    }
-
-    // OpenAI：支持 Base64（Responses SSE）与文本（Chat Completions SSE）
-
-    return await LLMClient.chatWithOpenAI(
+    // 类型对齐
+    const convo =
+      (conversationHistory as unknown as ConversationMessage[]) || [];
+    return provider.chat(
       pdfContent,
       isBase64,
-      conversationHistory,
-      onProgress,
+      convo,
+      opts,
+      onProgress as ProviderProgressCb,
     );
   }
 
@@ -2367,6 +1769,5 @@ export class LLMClient {
     return chunks.join("");
   }
 }
-
 // 导出默认类
 export default LLMClient;

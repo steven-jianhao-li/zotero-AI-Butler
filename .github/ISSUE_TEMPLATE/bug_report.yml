@@ -1,0 +1,103 @@
+name: 🐞 提交 Bug
+title: "[BUG] - "
+description: 详细地报告一个 Bug，帮助我们更快地修复它。
+labels: ["type: bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 感谢您提交 Bug！请先阅读以下内容：
+        1.  请先搜索 [zotero-AI-Butler/issues](https://github.com/steven-jianhao-li/zotero-AI-Butler/issues) 确保此问题尚未被报告。
+        2.  尝试下载[最新版本](https://github.com/steven-jianhao-li/zotero-AI-Butler/releases/latest)的 Zotero AI Butler 并测试是否还存在此问题。
+        3.  请确保这是插件本身的问题，而不是由 AI 模型（如 API key、网络超时）或本地代理设置引起的。
+        4.  请按照下方的模板详细描述 Bug，提供全面的信息。
+        5.  请在社区内友善发言，互相尊重。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 🐞 Bug 描述
+      description: 请清晰、简洁地描述你遇到的问题。
+      placeholder: 例如：当我对一篇中文论文使用右键分析时，插件卡住并且没有生成笔记。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: 👣 重现步骤
+      description: 请详细列出重现这个 Bug 的步骤。
+      placeholder: |
+        1. 选中一篇...
+        2. 右键点击...
+        3. 选择 '召唤AI管家进行分析'
+        4. 观察到...
+    validations:
+      required: true
+
+  - type: input
+    id: zotero-version
+    attributes:
+      label: 📚 Zotero 版本
+      description: 你正在使用的 Zotero 版本是多少？ (例如: 7.0.1)
+      placeholder: "7.0.1"
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: 🤖 Zotero AI Butler 版本
+      description: 你当前使用的 Zotero AI Butler 版本是多少？
+      placeholder: "e.g., 1.0.0 (请在 AI管家仪表盘-仪表盘 页面查看)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-result
+    attributes:
+      label: 🤔 期望的结果
+      description: 你期望发生什么？
+      placeholder: 插件应该开始分析，并在几分钟后生成一篇笔记。
+
+
+  - type: textarea
+    id: actual-result
+    attributes:
+      label: 😲 实际的结果
+      description: 实际发生了什么？
+      placeholder: 任务队列中显示任务失败，或者插件界面崩溃。
+
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 📄 错误信息 / 日志
+      description: |
+        请提供完整的错误信息或堆栈跟踪。
+        你可以在 Zotero 顶部菜单 > 工具 > 开发者 > Error Console 中找到与Zotero-AI-Butler相关的报错日志。
+      placeholder: "将错误日志粘贴在这里..."
+      render: shell
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 📷 截图 / 视频
+      description: |
+        如果可能，请提供截图或录屏来更直观地展示问题。
+        你可以直接将图片或 GIF 拖拽到这个文本框中。
+        如果与API调用相关，请上传API配置页面的截图。
+      placeholder: "将截图或视频粘贴在这里..."
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 💡 其他上下文
+      description: 还有其他关于这个问题的上下文吗？
+      placeholder: |
+        - 你正在使用的 AI 平台 (e.g., Gemini, OpenAI)
+        - 使用的 AI 模型 (e.g., Gemini 2.5 Pro)
+        - 是否使用第三方中转API服务，问题是否来自中转服务？
+        - PDF 处理方式 (e.g., 多模态 Base64 还是 文本提取)
+        - 论文 PDF 是扫描版还是文本版？

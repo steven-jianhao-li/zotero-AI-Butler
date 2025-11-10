@@ -7,9 +7,15 @@
 
 // ==================== API 配置 ====================
 pref("__prefsPrefix__.provider", "openai");
-pref("__prefsPrefix__.apiKey", "");
-pref("__prefsPrefix__.apiUrl", "https://api.openai.com/v1/chat/completions");
-pref("__prefsPrefix__.model", "gpt-3.5-turbo");
+pref("__prefsPrefix__.openaiApiKey", "");
+pref("__prefsPrefix__.openaiApiUrl", "https://api.openai.com/v1/responses");
+pref("__prefsPrefix__.openaiApiModel", "gpt-3.5-turbo");
+pref("__prefsPrefix__.openaiCompatApiKey", "");
+pref(
+  "__prefsPrefix__.openaiCompatApiUrl",
+  "https://api.openai.com/v1/chat/completions",
+);
+pref("__prefsPrefix__.openaiCompatModel", "gpt-3.5-turbo");
 pref(
   "__prefsPrefix__.geminiApiUrl",
   "https://generativelanguage.googleapis.com",

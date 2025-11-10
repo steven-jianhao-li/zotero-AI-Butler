@@ -97,3 +97,115 @@ TA 是您7x24小时待命、不知疲倦且绝对忠诚的私人管家。
 - 修改zotero profile： `./zotero.exe -p`(在Windows zotero安装目录下运行)
 - 统一代码格式：`npx prettier --write .`
 - 检查代码格式：`npm run lint:check`
+
+## 🧠 LLM Provider 架构深入
+
+系统采用“统一门面 + Provider 自注册”模式：
+
+- `LLMClient` (文件 `src/modules/llmClient.ts`)：组装通用 `LLMOptions` 后调用具体 Provider；不包含任意 Vendor 专属流式解析代码。
+- `ProviderRegistry`：集中管理注册的 Provider，通过 id 查找；新增 Provider 不需修改已有文件。
+- Provider 能力标记：在类上定义 `capabilities`，例如 `supportsStreaming`、`supportsPdfBase64`，测试与界面可据此自适应。
+
+### 新增 Provider 步骤
+
+```powershell
+node scripts/create-provider.mjs myNewProvider
+```
+
+脚本自动：
+
+1. 生成模板文件（含接口占位实现与注册样例）。
+2. 在 `test/` 添加对应测试骨架。
+3. 将密钥与端点占位写入 `.env`（如 `MYNEWPROVIDER_API_KEY=`）。
+
+然后你需要：
+
+- 实现核心方法：`generateSummary(options)`、`chat(messages, options)`、`testConnection()`。
+- 根据是否支持多模态，决定是否实现 Base64 PDF 注入逻辑。
+- 针对流式：使用 `ReadableStream`/事件分块解析 SSE 或 Websocket（根据服务端协议）。
+- 错误处理：统一抛出带 `code`/`message` 的 Error，门面会捕获并调用 `notifyError`。
+
+### 选项传递约定 (LLMOptions)
+
+| 字段           | 说明              | 是否必填         |
+| -------------- | ----------------- | ---------------- |
+| provider       | Provider id       | 是               |
+| temperature    | 采样温度          | 否               |
+| stream         | 请求流式输出      | 否               |
+| maxTokens      | 最大输出长度      | 否               |
+| pdfMode        | `base64` / `text` | 是（由偏好决定） |
+| promptTemplate | 提示词模板名      | 是               |
+| timeoutMs      | 请求超时时间      | 否               |
+
+Provider 若不支持某字段（例如不支持 `temperature`），应忽略而非报错，保证兼容性。
+
+## 🔐 环境变量注入与测试机制
+
+测试前置脚本 `scripts/gen-env-setup.mjs` 会读取 `.env` 并生成 `test/00.env-setup.test.ts` 将键值写入 Zotero 偏好。关键变量示例：
+
+```
+ACTIVE_LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-xxxxx
+OPENAI_BASE_URL=https://api.openai.com/v1
+GEMINI_API_KEY=ya29.xxxxx
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com
+ANTHROPIC_API_KEY=sk-ant-xxxxx
+ANTHROPIC_BASE_URL=https://api.anthropic.com
+TEMPERATURE=0.7
+STREAM=true
+MAX_TOKENS=4096
+PDF_MODE=base64
+```
+
+### ACTIVE_LLM_PROVIDER 作用
+
+- 仅对该 Provider 执行耗时的摘要/多模态测试。
+- 其它 Provider 标记 `pending`，并记录原因（inactive 或缺少密钥）。
+- 避免 CI 中出现大量由于未配置而失败的用例。
+
+### Base64 PDF 测试说明
+
+当 `PDF_MODE=base64` 且 Provider 声明 `supportsPdfBase64`：
+
+1. 测试构造（或读取）一个小型 PDF（未来可替换为固定 fixture）。
+2. 将其 Base64 写入请求数据结构中（不同服务字段可能不同）。
+3. 验证返回是否含有结构化摘要（至少包含几个 Markdown 标题）。
+4. 不支持时直接 `this.skip()`。
+
+## 🧪 测试分层策略
+
+| 层级               | 内容                            | 目的                                |
+| ------------------ | ------------------------------- | ----------------------------------- |
+| 连接测试           | `testConnection`                | 校验密钥/端点正确性与错误提示可读性 |
+| 文本摘要（流式）   | `generateSummary(stream=true)`  | 校验分块拼接与最终完整性            |
+| 文本摘要（非流式） | `generateSummary(stream=false)` | 验证降级路径逻辑                    |
+| Base64 PDF         | `pdfMode=base64`                | 多模态能力验证/自动跳过             |
+
+## 🔄 错误与重试策略（扩展）
+
+建议 Provider 内部：
+
+- 识别速率限制 (`429`) → 抛出带 `code='rate_limit'` 的错误，由队列层决定是否重试。
+- 识别网络超时 → 抛出 `code='timeout'`。
+- JSON 解析失败 → 附加原始片段便于调试。
+
+## 🧪 本地调试小贴士
+
+- 仅调试某 Provider：直接改 `.env` 的 `ACTIVE_LLM_PROVIDER`。
+- 临时禁用流式：设置 `STREAM=false`。
+- 快速验证 token 限制：将 `MAX_TOKENS` 调低，比如 256，观察截断行为。
+
+## 📝 提示词模板扩展
+
+新增模板步骤：
+
+1. 在 `src/utils/prompts.ts` 中添加模板结构。
+2. 在偏好/设置页面增加下拉选项。
+3. （可选）在测试中添加一个使用新模板的 smoke case。
+
+## ✅ 质量门控建议
+
+- 构建：`npm run build` 应无类型错误。
+- 测试：活动 Provider 全部通过，非活动仅 pending。
+- Lint：`npm run lint:check` 通过。
+- 后续可引入：Provider 契约的 API 变更 diff 检测（利用 TypeScript `dts` 输出）。

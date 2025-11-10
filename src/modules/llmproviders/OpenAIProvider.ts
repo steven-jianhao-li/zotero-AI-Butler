@@ -32,7 +32,7 @@ export class OpenAIProvider implements ILlmProvider {
 
       const input: any[] = [
         {
-          role: "system",
+          role: "developer",
           content: [{ type: "input_text", text: SYSTEM_ROLE_PROMPT }],
         },
         {
@@ -216,14 +216,14 @@ export class OpenAIProvider implements ILlmProvider {
     }
 
     // 文本 Chat Completions
-    const messages: any[] = [
-      { role: "system", content: SYSTEM_ROLE_PROMPT },
+    const input: any[] = [
+      { role: "developer", content: SYSTEM_ROLE_PROMPT },
       { role: "user", content: buildUserMessage(prompt || "", content) },
     ];
 
     const basePayload: any = {
       model,
-      messages,
+      input,
     };
     if (options.temperature !== undefined)
       basePayload.temperature = Number(temperature);
@@ -409,7 +409,7 @@ export class OpenAIProvider implements ILlmProvider {
 
       const inputs: any[] = [
         {
-          role: "system",
+          role: "developer",
           content: [{ type: "input_text", text: SYSTEM_ROLE_PROMPT }],
         },
       ];
@@ -568,11 +568,11 @@ export class OpenAIProvider implements ILlmProvider {
     }
 
     // 文本模式
-    const messages: any[] = [{ role: "system", content: SYSTEM_ROLE_PROMPT }];
+    const input: any[] = [{ role: "developer", content: SYSTEM_ROLE_PROMPT }];
     if (conversation && conversation.length > 0) {
       const firstUserMsg = conversation[0];
       if (isBase64) {
-        messages.push({
+        input.push({
           role: "user",
           content: [
             { type: "text", text: firstUserMsg.content },
@@ -583,24 +583,24 @@ export class OpenAIProvider implements ILlmProvider {
           ],
         });
       } else {
-        messages.push({
+        input.push({
           role: "user",
           content: buildUserMessage(firstUserMsg.content, pdfContent || ""),
         });
       }
       if (conversation.length > 1) {
-        messages.push({ role: "assistant", content: conversation[1].content });
+        input.push({ role: "assistant", content: conversation[1].content });
       }
       for (let i = 2; i < conversation.length; i++) {
         const msg = conversation[i];
-        messages.push({
+        input.push({
           role: msg.role === "user" ? "user" : "assistant",
           content: msg.content,
         });
       }
     }
 
-    const payload = { model, messages, temperature, stream: true } as any;
+    const payload = { model, input, temperature, stream: true } as any;
 
     const chunks: string[] = [];
     let delivered = 0;

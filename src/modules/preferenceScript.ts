@@ -28,13 +28,13 @@ export async function registerPrefsScripts(_window: Window) {
 function updatePrefsUI(win: Window) {
   const doc = win.document;
   const apiKeyInput = doc.getElementById(
-    "zotero-prefpane-ai-butler-apiKey",
+    "zotero-prefpane-ai-butler-openaiApiKey",
   ) as HTMLInputElement | null;
   const apiUrlInput = doc.getElementById(
-    "zotero-prefpane-ai-butler-apiUrl",
+    "zotero-prefpane-ai-butler-openaiApiUrl",
   ) as HTMLInputElement | null;
   const modelInput = doc.getElementById(
-    "zotero-prefpane-ai-butler-model",
+    "zotero-prefpane-ai-butler-openaiApiModel",
   ) as HTMLInputElement | null;
   const temperatureInput = doc.getElementById(
     "zotero-prefpane-ai-butler-temperature",
@@ -46,19 +46,19 @@ function updatePrefsUI(win: Window) {
     "zotero-prefpane-ai-butler-stream",
   ) as HTMLInputElement | null;
 
-  const apiKey = (getPref("apiKey") as string) || "";
-  const apiUrl =
-    (getPref("apiUrl") as string) ||
-    "https://api.openai.com/v1/chat/completions";
-  const model = (getPref("model") as string) || "gpt-3.5-turbo";
+  const openaiApiKey = (getPref("openaiApiKey") as string) || "";
+  const openaiApiUrl =
+    (getPref("openaiApiUrl") as string) ||
+    "https://api.openai.com/v1/responses";
+  const openaiApiModel = (getPref("openaiApiModel") as string) || "gpt-5";
   const temperature = (getPref("temperature") as string) || "0.7";
   const defaultPrompt = getDefaultSummaryPrompt();
   const savedPrompt = getPref("summaryPrompt") as string;
   const stream = (getPref("stream") as boolean) ?? true;
 
-  if (apiKeyInput) apiKeyInput.value = apiKey;
-  if (apiUrlInput) apiUrlInput.value = apiUrl;
-  if (modelInput) modelInput.value = model;
+  if (apiKeyInput) apiKeyInput.value = openaiApiKey;
+  if (apiUrlInput) apiUrlInput.value = openaiApiUrl;
+  if (modelInput) modelInput.value = openaiApiModel;
   if (temperatureInput) temperatureInput.value = temperature;
   if (promptTextarea) {
     // 如果没有保存的 prompt 或者是 undefined/空字符串，使用默认值
@@ -80,13 +80,13 @@ function updatePrefsUI(win: Window) {
 function bindPrefEvents(win: Window) {
   const doc = win.document;
   const apiKeyInput = doc.getElementById(
-    "zotero-prefpane-ai-butler-apiKey",
+    "zotero-prefpane-ai-butler-openaiApiKey",
   ) as HTMLInputElement | null;
   const apiUrlInput = doc.getElementById(
-    "zotero-prefpane-ai-butler-apiUrl",
+    "zotero-prefpane-ai-butler-openaiApiUrl",
   ) as HTMLInputElement | null;
   const modelInput = doc.getElementById(
-    "zotero-prefpane-ai-butler-model",
+    "zotero-prefpane-ai-butler-openaiApiModel",
   ) as HTMLInputElement | null;
   const temperatureInput = doc.getElementById(
     "zotero-prefpane-ai-butler-temperature",
@@ -99,19 +99,19 @@ function bindPrefEvents(win: Window) {
   ) as HTMLInputElement | null;
 
   if (apiKeyInput) {
-    const save = () => setPref("apiKey", apiKeyInput.value || "");
+    const save = () => setPref("openaiApiKey", apiKeyInput.value || "");
     apiKeyInput.addEventListener("input", save);
     apiKeyInput.addEventListener("blur", save);
     apiKeyInput.addEventListener("change", save);
   }
   if (apiUrlInput) {
-    const save = () => setPref("apiUrl", apiUrlInput.value || "");
+    const save = () => setPref("openaiApiUrl", apiUrlInput.value || "");
     apiUrlInput.addEventListener("input", save);
     apiUrlInput.addEventListener("blur", save);
     apiUrlInput.addEventListener("change", save);
   }
   if (modelInput) {
-    const save = () => setPref("model", modelInput.value || "");
+    const save = () => setPref("openaiApiModel", modelInput.value || "");
     modelInput.addEventListener("input", save);
     modelInput.addEventListener("blur", save);
     modelInput.addEventListener("change", save);
@@ -144,9 +144,9 @@ function bindPrefEvents(win: Window) {
 
   // flush on unload to persist any in-focus edits
   win.addEventListener("unload", () => {
-    if (apiKeyInput) setPref("apiKey", apiKeyInput.value || "");
-    if (apiUrlInput) setPref("apiUrl", apiUrlInput.value || "");
-    if (modelInput) setPref("model", modelInput.value || "");
+    if (apiKeyInput) setPref("openaiApiKey", apiKeyInput.value || "");
+    if (apiUrlInput) setPref("openaiApiUrl", apiUrlInput.value || "");
+    if (modelInput) setPref("openaiApiModel", modelInput.value || "");
     if (temperatureInput)
       setPref("temperature", temperatureInput.value || "0.7");
     if (promptTextarea)
@@ -166,9 +166,9 @@ function bindPrefEvents(win: Window) {
  */
 function initializeDefaultPrefs() {
   const defaults: Record<string, any> = {
-    apiKey: "",
-    apiUrl: "https://api.openai.com/v1/chat/completions",
-    model: "gpt-3.5-turbo",
+    openaiApiKey: "",
+    openaiApiUrl: "https://api.openai.com/v1/responses",
+    openaiApiModel: "gpt-5",
     temperature: "0.7",
     stream: true,
     summaryPrompt: getDefaultSummaryPrompt(),
@@ -232,9 +232,9 @@ function diagnosePrefs() {
   ztoolkit.log("[AI-Butler][Prefs] ========== 配置诊断开始 ==========");
 
   const keys = [
-    "apiKey",
-    "apiUrl",
-    "model",
+    "openaiApiKey",
+    "openaiApiUrl",
+    "openaiApiModel",
     "temperature",
     "stream",
     "summaryPrompt",
@@ -286,17 +286,17 @@ function migrateToGlobalOnce() {
       return undefined;
     };
 
-    const apiKey = pick("apiKey") || "";
-    const apiUrl =
-      pick("apiUrl") || "https://api.openai.com/v1/chat/completions";
-    const model = pick("model") || "gpt-3.5-turbo";
+    const openaiApiKey = pick("openaiApiKey") || "";
+    const openaiApiUrl =
+      pick("openaiApiUrl") || "https://api.openai.com/v1/responses";
+    const openaiApiModel = pick("openaiApiModel") || "gpt-5";
 
-    setPref("apiKey", apiKey);
-    setPref("apiUrl", apiUrl);
-    setPref("model", model);
+    setPref("openaiApiKey", openaiApiKey);
+    setPref("openaiApiUrl", openaiApiUrl);
+    setPref("openaiApiModel", openaiApiModel);
 
     for (const p of ["openai", "deepseek", "custom", "customed"]) {
-      for (const k of ["apiKey", "apiUrl", "model"]) {
+      for (const k of ["openaiApiKey", "openaiApiUrl", "openaiApiModel"]) {
         clearPref(`${p}_${k}`);
       }
     }

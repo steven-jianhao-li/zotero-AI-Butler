@@ -8,9 +8,9 @@ declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
       "provider": string;
-      "apiKey": string;
-      "apiUrl": string;
-      "model": string;
+      "openaiApiKey": string;
+      "openaiApiUrl": string;
+      "openaiApiModel": string;
       "geminiApiUrl": string;
       "geminiApiKey": string;
       "geminiModel": string;

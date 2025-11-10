@@ -143,9 +143,9 @@ export class ApiSettingsPage {
       this.createFormGroup(
         "API 地址 *",
         this.createInput(
-          "apiUrl",
+          "openaiApiUrl",
           "text",
-          getPref("apiUrl") as string,
+          getPref("openaiApiUrl") as string,
           "https://api.openai.com/v1/responses",
         ),
         "【必填】OpenAI官方最新地址：https://api.openai.com/v1/responses",
@@ -155,8 +155,8 @@ export class ApiSettingsPage {
       this.createFormGroup(
         "API 密钥 *",
         this.createPasswordInput(
-          "apiKey",
-          getPref("apiKey") as string,
+          "openaiApiKey",
+          getPref("openaiApiKey") as string,
           "sk-...",
         ),
         "【必填】您的 API 密钥,将安全存储在本地",
@@ -165,7 +165,12 @@ export class ApiSettingsPage {
     sectionOpenAI.appendChild(
       this.createFormGroup(
         "模型 *",
-        this.createInput("model", "text", getPref("model") as string, "gpt-5"),
+        this.createInput(
+          "openaiApiModel",
+          "text",
+          getPref("openaiApiModel") as string,
+          "gpt-5",
+        ),
         "【必填】要使用的模型名称",
       ),
     );
@@ -845,13 +850,13 @@ export class ApiSettingsPage {
       ) as HTMLElement;
       // OpenAI
       const apiUrlEl = this.container.querySelector(
-        "#setting-apiUrl",
+        "#setting-openaiApiUrl",
       ) as HTMLInputElement;
       const apiKeyEl = this.container.querySelector(
-        "#setting-apiKey",
+        "#setting-openaiApiKey",
       ) as HTMLInputElement;
       const modelEl = this.container.querySelector(
-        "#setting-model",
+        "#setting-openaiApiModel",
       ) as HTMLInputElement;
       // Gemini
       const gemUrlEl = this.container.querySelector(
@@ -912,9 +917,9 @@ export class ApiSettingsPage {
       // 调试: 检查元素是否找到
       ztoolkit.log("[API Settings] Elements found:", {
         provider: !!providerEl,
-        apiUrl: !!apiUrlEl,
-        apiKey: !!apiKeyEl,
-        model: !!modelEl,
+        openaiApiUrl: !!apiUrlEl,
+        openaiApiKey: !!apiKeyEl,
+        openaiApiModel: !!modelEl,
       });
 
       const provider = (providerEl as any)?.getValue
@@ -925,9 +930,9 @@ export class ApiSettingsPage {
         : "base64";
       const values = {
         provider,
-        apiUrl: apiUrlEl?.value?.trim() || "",
-        apiKey: apiKeyEl?.value?.trim() || "",
-        model: modelEl?.value?.trim() || "",
+        openaiApiUrl: apiUrlEl?.value?.trim() || "",
+        openaiApiKey: apiKeyEl?.value?.trim() || "",
+        openaiApiModel: modelEl?.value?.trim() || "",
         geminiApiUrl: gemUrlEl?.value?.trim() || "",
         geminiApiKey: gemKeyEl?.value?.trim() || "",
         geminiModel: gemModelEl?.value?.trim() || "",
@@ -955,9 +960,9 @@ export class ApiSettingsPage {
 
       // 调试: 检查获取到的值
       ztoolkit.log("[API Settings] Values:", {
-        apiUrl: values.apiUrl || "(空)",
-        apiKey: values.apiKey ? "(已设置)" : "(空)",
-        model: values.model || "(空)",
+        openaiApiUrl: values.openaiApiUrl || "(空)",
+        openaiApiKey: values.openaiApiKey ? "(已设置)" : "(空)",
+        openaiApiModel: values.openaiApiModel || "(空)",
       });
 
       // 验证必填项 - 详细提示哪些字段缺失
@@ -972,9 +977,9 @@ export class ApiSettingsPage {
         if (!values.anthropicApiKey) missingFields.push("API 密钥(Anthropic)");
         if (!values.anthropicModel) missingFields.push("模型名称(Anthropic)");
       } else {
-        if (!values.apiUrl) missingFields.push("API 地址");
-        if (!values.apiKey) missingFields.push("API 密钥");
-        if (!values.model) missingFields.push("模型名称");
+        if (!values.openaiApiUrl) missingFields.push("API 地址");
+        if (!values.openaiApiKey) missingFields.push("API 密钥");
+        if (!values.openaiApiModel) missingFields.push("模型名称");
       }
 
       if (missingFields.length > 0) {
@@ -992,9 +997,9 @@ export class ApiSettingsPage {
       // 保存到配置
       setPref("provider", values.provider);
       // 分别保存三套配置,互不覆盖
-      setPref("apiUrl", values.apiUrl);
-      setPref("apiKey", values.apiKey);
-      setPref("model", values.model);
+      setPref("openaiApiUrl", values.openaiApiUrl);
+      setPref("openaiApiKey", values.openaiApiKey);
+      setPref("openaiApiModel", values.openaiApiModel);
       setPref("geminiApiUrl", values.geminiApiUrl);
       setPref("geminiApiKey", values.geminiApiKey);
       setPref("geminiModel", values.geminiModel);
@@ -1087,9 +1092,9 @@ export class ApiSettingsPage {
     // 重置为默认值
     setPref("provider", "openai");
     // OpenAI 默认（已改为新接口）
-    setPref("apiUrl", "https://api.openai.com/v1/responses");
-    setPref("apiKey", "");
-    setPref("model", "gpt-5");
+    setPref("openaiApiUrl", "https://api.openai.com/v1/responses");
+    setPref("openaiApiKey", "");
+    setPref("openaiApiModel", "gpt-5");
     // Gemini 默认
     setPref("geminiApiUrl", "https://generativelanguage.googleapis.com");
     setPref("geminiApiKey", "");

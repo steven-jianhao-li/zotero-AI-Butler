@@ -142,9 +142,9 @@ export class DataSettingsPage {
     // 采集 prefs.d.ts 中声明的键
     const keys = [
       "provider",
-      "apiKey",
-      "apiUrl",
-      "model",
+      "openaiApiKey",
+      "openaiApiUrl",
+      "openaiApiModel",
       "geminiApiUrl",
       "geminiApiKey",
       "geminiModel",
@@ -263,9 +263,9 @@ export class DataSettingsPage {
     // 恢复常用项
     setPref("summaryPrompt", getDefaultSummaryPrompt());
     setPref("provider", "openai");
-    setPref("apiUrl", "https://api.openai.com/v1/chat/completions");
-    setPref("apiKey", "");
-    setPref("model", "gpt-3.5-turbo");
+    setPref("openaiApiUrl", "https://api.openai.com/v1/responses");
+    setPref("openaiApiKey", "");
+    setPref("openaiApiModel", "gpt-5");
     setPref("temperature", "0.7");
     setPref("maxTokens", "4096");
     setPref("topP", "1.0");

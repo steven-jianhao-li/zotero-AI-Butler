@@ -11,73 +11,27 @@
     // topP
     Zotero?.Prefs?.set?.("extensions.zotero.aiButler.topP", "1.0", true);
     // maxTokens
-    Zotero?.Prefs?.set?.(
-      "extensions.zotero.aiButler.maxTokens",
-      "4096# Usage:",
-      true,
-    );
+    Zotero?.Prefs?.set?.("extensions.zotero.aiButler.maxTokens", "4096# Usage:", true);
     // requestTimeout
-    Zotero?.Prefs?.set?.(
-      "extensions.zotero.aiButler.requestTimeout",
-      "15000",
-      true,
-    );
+    Zotero?.Prefs?.set?.("extensions.zotero.aiButler.requestTimeout", "15000", true);
     // openaiApiUrl
-    Zotero?.Prefs?.set?.(
-      "extensions.zotero.aiButler.openaiApiUrl",
-      "REDACTED/v1/responses",
-      true,
-    );
+    Zotero?.Prefs?.set?.("extensions.zotero.aiButler.openaiApiUrl", "REDACTED/v1/responses", true);
     // openaiApiKey
-    Zotero?.Prefs?.set?.(
-      "extensions.zotero.aiButler.openaiApiKey",
-      "REDACTED",
-      true,
-    );
+    Zotero?.Prefs?.set?.("extensions.zotero.aiButler.openaiApiKey", "REDACTED", true);
     // openaiApiModel
-    Zotero?.Prefs?.set?.(
-      "extensions.zotero.aiButler.openaiApiModel",
-      "gpt-5",
-      true,
-    );
+    Zotero?.Prefs?.set?.("extensions.zotero.aiButler.openaiApiModel", "gpt-5", true);
     // geminiApiUrl
-    Zotero?.Prefs?.set?.(
-      "extensions.zotero.aiButler.geminiApiUrl",
-      "http://geminibalance.269700369.xyz:5878",
-      true,
-    );
+    Zotero?.Prefs?.set?.("extensions.zotero.aiButler.geminiApiUrl", "http://geminibalance.269700369.xyz:5878", true);
     // geminiApiKey
-    Zotero?.Prefs?.set?.(
-      "extensions.zotero.aiButler.geminiApiKey",
-      "sk-azurekorea20250706zvuzxcduqsc",
-      true,
-    );
+    Zotero?.Prefs?.set?.("extensions.zotero.aiButler.geminiApiKey", "sk-azurekorea20250706zvuzxcduqsc", true);
     // geminiModel
-    Zotero?.Prefs?.set?.(
-      "extensions.zotero.aiButler.geminiModel",
-      "gemini-2.5-pro",
-      true,
-    );
+    Zotero?.Prefs?.set?.("extensions.zotero.aiButler.geminiModel", "gemini-2.5-pro", true);
     // anthropicApiUrl
-    Zotero?.Prefs?.set?.(
-      "extensions.zotero.aiButler.anthropicApiUrl",
-      "REDACTED",
-      true,
-    );
+    Zotero?.Prefs?.set?.("extensions.zotero.aiButler.anthropicApiUrl", "REDACTED", true);
     // anthropicApiKey
-    Zotero?.Prefs?.set?.(
-      "extensions.zotero.aiButler.anthropicApiKey",
-      "REDACTED",
-      true,
-    );
+    Zotero?.Prefs?.set?.("extensions.zotero.aiButler.anthropicApiKey", "REDACTED", true);
     // anthropicModel
-    Zotero?.Prefs?.set?.(
-      "extensions.zotero.aiButler.anthropicModel",
-      "claude-sonnet-4-5-20250929",
-      true,
-    );
-  } catch (e) {
-    /* ignore in non-test env */
-  }
+    Zotero?.Prefs?.set?.("extensions.zotero.aiButler.anthropicModel", "claude-sonnet-4-5-20250929", true);
+  } catch (e) { /* ignore in non-test env */ }
 })();
 export {};

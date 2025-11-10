@@ -11,6 +11,9 @@ declare namespace _ZoteroTypes {
       "openaiApiKey": string;
       "openaiApiUrl": string;
       "openaiApiModel": string;
+      "openaiCompatApiKey": string;
+      "openaiCompatApiUrl": string;
+      "openaiCompatModel": string;
       "geminiApiUrl": string;
       "geminiApiKey": string;
       "geminiModel": string;

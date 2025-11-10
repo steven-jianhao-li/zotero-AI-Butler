@@ -74,7 +74,8 @@ export class ApiSettingsPage {
     const providerSelect = createSelect(
       "provider",
       [
-        { value: "openai", label: "OpenAI" },
+        { value: "openai", label: "OpenAI (Responses 新接口)" },
+        { value: "openai-compat", label: "OpenAI兼容 (旧 ChatCompletions / 第三方)" },
         { value: "google", label: "Google Gemini" },
         { value: "anthropic", label: "Anthropic Claude" },
       ],
@@ -132,13 +133,14 @@ export class ApiSettingsPage {
     );
 
     // Provider 专属字段容器
-    const sectionOpenAI = this.createElement("div", { id: "provider-openai" });
+  const sectionOpenAI = this.createElement("div", { id: "provider-openai" });
+  const sectionOpenAICompat = this.createElement("div", { id: "provider-openai-compat" });
     const sectionGemini = this.createElement("div", { id: "provider-gemini" });
     const sectionAnthropic = this.createElement("div", {
       id: "provider-anthropic",
     });
 
-    // OpenAI 字段
+    // OpenAI 字段（Responses 新接口）
     sectionOpenAI.appendChild(
       this.createFormGroup(
         "API 地址 *",
@@ -175,21 +177,72 @@ export class ApiSettingsPage {
       ),
     );
 
-    // OpenAI 旧方式提示
+    // OpenAI 新接口说明
     const openaiNote = this.createElement("div", {
       innerHTML:
-        "⚠️ <strong>提示</strong>：OpenAI 服务商不再支持旧的调用方式。请使用 <code>/v1/responses</code> 接口。",
+        "ℹ️ <strong>说明</strong>：当前配置使用 OpenAI 官方新接口 <code>/v1/responses</code>（多模态统一）。如果你需要兼容第三方旧的 Chat Completions 服务（如 SiliconFlow 代理），请选择上方下拉中的 <strong>OpenAI兼容</strong> 提供商。",
       styles: {
         padding: "10px 12px",
-        backgroundColor: "#fff8e1",
-        border: "1px solid #ffe082",
+        backgroundColor: "#e8f5e9",
+        border: "1px solid #a5d6a7",
         borderRadius: "6px",
-        color: "#8d6e63",
+        color: "#2e7d32",
         fontSize: "13px",
         marginBottom: "16px",
       },
     });
     sectionOpenAI.appendChild(openaiNote);
+
+    // OpenAI 兼容（旧 Chat Completions / 第三方）字段
+    sectionOpenAICompat.appendChild(
+      this.createFormGroup(
+        "兼容 API 地址 *",
+        this.createInput(
+          "openaiCompatApiUrl",
+          "text",
+          (getPref("openaiCompatApiUrl") as string) || "https://api.openai.com/v1/chat/completions",
+          "https://api.openai.com/v1/chat/completions",
+        ),
+        "【必填】旧版 Chat Completions 完整端点。例如 SiliconFlow: https://api.siliconflow.cn/v1/chat/completions",
+      ),
+    );
+    sectionOpenAICompat.appendChild(
+      this.createFormGroup(
+        "兼容 API 密钥 *",
+        this.createPasswordInput(
+          "openaiCompatApiKey",
+          (getPref("openaiCompatApiKey") as string) || (getPref("openaiApiKey") as string),
+          "sk-...",
+        ),
+        "【必填】对应第三方服务的密钥（格式同 Bearer Token）",
+      ),
+    );
+    sectionOpenAICompat.appendChild(
+      this.createFormGroup(
+        "兼容模型 *",
+        this.createInput(
+          "openaiCompatModel",
+          "text",
+          (getPref("openaiCompatModel") as string) || (getPref("openaiApiModel") as string) || "gpt-3.5-turbo",
+          "gpt-3.5-turbo",
+        ),
+        "【必填】第三方提供的模型名称，如 Qwen/QwQ-32B、deepseek-ai/DeepSeek-V3 等",
+      ),
+    );
+    const openaiCompatNote = this.createElement("div", {
+      innerHTML:
+        '⚠️ <strong>用途</strong>：用于兼容旧的 <code>/v1/chat/completions</code> 格式，适配第三方聚合/代理服务（SiliconFlow、OpenAI 兼容网关等）。<br/>若使用官方 OpenAI，请选择 <strong>OpenAI (Responses 新接口)</strong>。<br/>若第三方不支持PDF Base64多模态处理方式，请在 PDF 处理配置中改为"文本提取"模式。',
+      styles: {
+        padding: "10px 12px",
+        backgroundColor: "#fff8e1",
+        border: "1px solid #ffe082",
+        borderRadius: "6px",
+        color: "#795548",
+        fontSize: "13px",
+        marginBottom: "16px",
+      },
+    });
+    sectionOpenAICompat.appendChild(openaiCompatNote);
 
     // Gemini 字段
     sectionGemini.appendChild(
@@ -265,21 +318,20 @@ export class ApiSettingsPage {
       ),
     );
 
-    form.appendChild(sectionOpenAI);
+  form.appendChild(sectionOpenAI);
+  form.appendChild(sectionOpenAICompat);
     form.appendChild(sectionGemini);
     form.appendChild(sectionAnthropic);
 
     const renderProviderSections = (prov: string) => {
       const isGemini = prov === "google";
       const isAnthropic = prov === "anthropic";
+      const isOpenAICompat = prov === "openai-compat";
       (sectionOpenAI as HTMLElement).style.display =
-        isGemini || isAnthropic ? "none" : "block";
-      (sectionGemini as HTMLElement).style.display = isGemini
-        ? "block"
-        : "none";
-      (sectionAnthropic as HTMLElement).style.display = isAnthropic
-        ? "block"
-        : "none";
+        isGemini || isAnthropic || isOpenAICompat ? "none" : "block";
+      (sectionOpenAICompat as HTMLElement).style.display = isOpenAICompat ? "block" : "none";
+      (sectionGemini as HTMLElement).style.display = isGemini ? "block" : "none";
+      (sectionAnthropic as HTMLElement).style.display = isAnthropic ? "block" : "none";
     };
     renderProviderSections(providerValue);
 
@@ -858,6 +910,16 @@ export class ApiSettingsPage {
       const modelEl = this.container.querySelector(
         "#setting-openaiApiModel",
       ) as HTMLInputElement;
+      // OpenAI 兼容（旧接口）
+      const compatUrlEl = this.container.querySelector(
+        "#setting-openaiCompatApiUrl",
+      ) as HTMLInputElement;
+      const compatKeyEl = this.container.querySelector(
+        "#setting-openaiCompatApiKey",
+      ) as HTMLInputElement;
+      const compatModelEl = this.container.querySelector(
+        "#setting-openaiCompatModel",
+      ) as HTMLInputElement;
       // Gemini
       const gemUrlEl = this.container.querySelector(
         "#setting-geminiApiUrl",
@@ -933,6 +995,9 @@ export class ApiSettingsPage {
         openaiApiUrl: apiUrlEl?.value?.trim() || "",
         openaiApiKey: apiKeyEl?.value?.trim() || "",
         openaiApiModel: modelEl?.value?.trim() || "",
+        openaiCompatApiUrl: compatUrlEl?.value?.trim() || "",
+        openaiCompatApiKey: compatKeyEl?.value?.trim() || "",
+        openaiCompatModel: compatModelEl?.value?.trim() || "",
         geminiApiUrl: gemUrlEl?.value?.trim() || "",
         geminiApiKey: gemKeyEl?.value?.trim() || "",
         geminiModel: gemModelEl?.value?.trim() || "",
@@ -976,6 +1041,13 @@ export class ApiSettingsPage {
           missingFields.push("API 基础地址(Anthropic)");
         if (!values.anthropicApiKey) missingFields.push("API 密钥(Anthropic)");
         if (!values.anthropicModel) missingFields.push("模型名称(Anthropic)");
+      } else if (provider === "openai-compat") {
+        if (!values.openaiCompatApiUrl)
+          missingFields.push("兼容 API 地址(OpenAI兼容)");
+        if (!values.openaiCompatApiKey)
+          missingFields.push("兼容 API 密钥(OpenAI兼容)");
+        if (!values.openaiCompatModel)
+          missingFields.push("兼容 模型名称(OpenAI兼容)");
       } else {
         if (!values.openaiApiUrl) missingFields.push("API 地址");
         if (!values.openaiApiKey) missingFields.push("API 密钥");
@@ -994,10 +1066,14 @@ export class ApiSettingsPage {
         return;
       }
 
-      // 保存到配置
+    // 保存到配置
       setPref("provider", values.provider);
       // 分别保存三套配置,互不覆盖
-      setPref("openaiApiUrl", values.openaiApiUrl);
+    setPref("openaiApiUrl", values.openaiApiUrl);
+    // OpenAI 兼容配置保存
+    setPref("openaiCompatApiUrl", values.openaiCompatApiUrl);
+    setPref("openaiCompatApiKey", values.openaiCompatApiKey);
+    setPref("openaiCompatModel", values.openaiCompatModel);
       setPref("openaiApiKey", values.openaiApiKey);
       setPref("openaiApiModel", values.openaiApiModel);
       setPref("geminiApiUrl", values.geminiApiUrl);
@@ -1095,6 +1171,10 @@ export class ApiSettingsPage {
     setPref("openaiApiUrl", "https://api.openai.com/v1/responses");
     setPref("openaiApiKey", "");
     setPref("openaiApiModel", "gpt-5");
+  // OpenAI 兼容默认
+  setPref("openaiCompatApiUrl", "https://api.openai.com/v1/chat/completions");
+  setPref("openaiCompatApiKey", "");
+  setPref("openaiCompatModel", "gpt-3.5-turbo");
     // Gemini 默认
     setPref("geminiApiUrl", "https://generativelanguage.googleapis.com");
     setPref("geminiApiKey", "");

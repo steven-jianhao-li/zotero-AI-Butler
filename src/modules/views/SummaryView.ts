@@ -24,6 +24,7 @@
  */
 
 import { BaseView } from "./BaseView";
+import { MainWindow } from "./MainWindow";
 import { marked } from "marked";
 import { getPref } from "../../utils/prefs";
 import { createStyledButton } from "./ui/components";
@@ -44,8 +45,8 @@ export class SummaryView extends BaseView {
   /** 当前条目的内容缓冲区 */
   private currentItemBuffer: string = "";
 
-  /** 返回任务队列按钮回调函数 */
-  private onQueueButtonCallback: (() => void) | null = null;
+  /** 返回任务队列按钮回调函数 (支持 Promise, 以便外部执行异步逻辑) */
+  private onQueueButtonCallback: (() => void | Promise<void>) | null = null;
 
   /** 返回任务队列按钮元素 */
   private queueButton: HTMLButtonElement | null = null;
@@ -1300,8 +1301,54 @@ ${jsonMarker}
           button.style.opacity = "0.8";
         }
 
-        if (this.onQueueButtonCallback) {
-          this.onQueueButtonCallback();
+        // 尝试执行外部注册的回调(可能是同步或异步)
+        let p: void | Promise<void> | undefined;
+        try {
+          if (this.onQueueButtonCallback) {
+            p = this.onQueueButtonCallback();
+          }
+        } catch (err) {
+          ztoolkit.log("[AI Butler] 返回任务队列回调执行异常:", err);
+        }
+
+        // 兜底强制导航：避免在流式大输出/渲染阻塞下标签未切换
+        const ensureNavigate = () => {
+          try {
+            const mw = MainWindow.getInstance();
+            // 若当前活动标签仍是 summary 或任务视图未显示，则强制切换
+            const taskContainer = mw.getTaskQueueView().getContainer();
+            const taskVisible =
+              !!taskContainer && taskContainer.style.display !== "none";
+            if (!taskVisible) {
+              mw.switchTab("tasks", true);
+            }
+          } catch (e) {
+            ztoolkit.log("[AI Butler] 兜底导航失败:", e);
+          }
+        };
+
+        // 主动安排两个时间点的兜底，兼顾同步与异步/渲染阻塞场景
+        setTimeout(ensureNavigate, 60); // 短延时：等待可能的同步 DOM 操作完成
+        setTimeout(ensureNavigate, 600); // 次级延时：处理潜在的长时间流式/重绘阻塞
+
+        // 若回调是 Promise，完成后再尝试更新按钮状态
+        if (p && typeof (p as any).then === "function") {
+          (p as Promise<void>)
+            .then(() => {
+              this.updateQueueButton("ready");
+            })
+            .catch((err) => {
+              ztoolkit.log("[AI Butler] 返回任务队列异步回调失败:", err);
+              this.updateQueueButton("error");
+            });
+        } else {
+          // 同步情况：立即交还按钮可用状态(回调内部也可能已调用 updateQueueButton 改写)
+          setTimeout(() => {
+            // 若外部没有特别状态更新，则恢复 ready
+            if (this.queueButton && this.queueButton.disabled) {
+              this.updateQueueButton("ready");
+            }
+          }, 120);
         }
       });
     }
@@ -1809,14 +1856,14 @@ ${jsonMarker}
   /**
    * 设置返回任务队列按钮的回调
    */
-  public setQueueButtonHandler(callback: () => void): void {
+  public setQueueButtonHandler(callback: () => void | Promise<void>): void {
     this.onQueueButtonCallback = callback;
   }
 
   /**
    * 为兼容旧调用保留的别名
    */
-  public setOnStop(callback: () => void): void {
+  public setOnStop(callback: () => void | Promise<void>): void {
     this.setQueueButtonHandler(callback);
   }
 

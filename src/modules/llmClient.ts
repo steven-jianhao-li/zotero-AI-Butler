@@ -58,6 +58,11 @@ export class LLMClient {
         (getPref("anthropicModel" as any) as string) ||
         "claude-3-5-sonnet-20241022"
       ).trim();
+    } else if (id === "openai-compat") {
+      // 旧 Chat Completions 兼容
+      common.apiUrl = ((getPref("openaiCompatApiUrl" as any) as string) || "https://api.openai.com/v1/chat/completions").trim();
+      common.apiKey = ((getPref("openaiCompatApiKey" as any) as string) || (getPref("openaiApiKey" as any) as string) || "").trim();
+      common.model = ((getPref("openaiCompatModel" as any) as string) || (getPref("openaiApiModel" as any) as string) || "gpt-3.5-turbo").trim();
     } else {
       common.apiUrl = ((getPref("openaiApiUrl" as any) as string) || "").trim();
       common.apiKey = ((getPref("openaiApiKey" as any) as string) || "").trim();

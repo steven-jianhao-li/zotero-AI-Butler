@@ -191,6 +191,10 @@ function initializeDefaultPrefsOnStartup() {
     openaiApiKey: "", // API 密钥默认为空,需用户配置
     openaiApiUrl: "https://api.openai.com/v1/responses", // 默认使用 OpenAI API 端点
     openaiApiModel: "gpt-5", // 默认模型
+    // OpenAI 兼容（旧 Chat Completions）默认
+    openaiCompatApiUrl: "https://api.openai.com/v1/chat/completions",
+    openaiCompatApiKey: "",
+    openaiCompatModel: "gpt-3.5-turbo",
     temperature: "0.7", // 默认温度参数,平衡创造性和准确性
     stream: true, // 默认启用流式输出,提供更好的用户体验
     summaryPrompt: getDefaultSummaryPrompt(), // 加载默认提示词模板

@@ -37,6 +37,8 @@ interface TreeNode {
   element?: HTMLElement; // DOM 元素引用
   childrenContainer?: HTMLElement; // 子节点容器引用
   checkboxElement?: HTMLInputElement; // 复选框元素引用
+  // 是否已将子节点渲染到 DOM (用于大数据量的懒渲染)
+  childrenRendered?: boolean;
 }
 
 /**
@@ -647,6 +649,9 @@ export class LibraryScannerView extends BaseView {
         node.expanded = !node.expanded;
         expandIcon!.textContent = node.expanded ? "▼" : "▶";
         this.updateNodeVisibility(node);
+        if (node.expanded) {
+          this.renderChildren(node, level + 1);
+        }
       });
     }
 
@@ -720,6 +725,9 @@ export class LibraryScannerView extends BaseView {
             expandIcon.textContent = node.expanded ? "▼" : "▶";
           }
           this.updateNodeVisibility(node);
+          if (node.expanded) {
+            this.renderChildren(node, level + 1);
+          }
         } else {
           // 叶子节点: 切换选中状态
           checkbox.checked = !checkbox.checked;
@@ -730,19 +738,19 @@ export class LibraryScannerView extends BaseView {
 
     nodeWrapper.appendChild(nodeContent);
 
-    // 递归渲染子节点
+    // 懒渲染: 初次不生成所有子节点 DOM, 仅创建占位容器, 展开时再渲染
     if (node.children.length > 0) {
       const childrenContainer = this.createElement("div", {
         styles: {
-          display: node.expanded ? "block" : "none", // 根据展开状态显示/隐藏
+          display: node.expanded ? "block" : "none",
           marginTop: "2px",
         },
       });
-
-      node.childrenContainer = childrenContainer; // 保存引用
-
-      this.renderTree(childrenContainer, node.children, level + 1);
+      node.childrenContainer = childrenContainer;
       nodeWrapper.appendChild(childrenContainer);
+      if (node.expanded) {
+        this.renderChildren(node, level + 1);
+      }
     }
 
     return nodeWrapper;
@@ -754,7 +762,37 @@ export class LibraryScannerView extends BaseView {
   private updateNodeVisibility(node: TreeNode): void {
     if (node.childrenContainer) {
       node.childrenContainer.style.display = node.expanded ? "block" : "none";
+      if (node.expanded) {
+        this.renderChildren(node, this.getNodeDepth(node));
+      }
     }
+  }
+
+  /**
+   * 懒渲染子节点列表
+   */
+  private renderChildren(node: TreeNode, level: number): void {
+    if (!node.childrenContainer || node.childrenRendered) return;
+    const frag = Zotero.getMainWindow().document.createDocumentFragment();
+    for (const child of node.children) {
+      const el = this.createTreeNode(child, level);
+      frag.appendChild(el);
+    }
+    node.childrenContainer.appendChild(frag);
+    node.childrenRendered = true;
+  }
+
+  /**
+   * 计算节点深度 (用于懒渲染时子节点缩进)
+   */
+  private getNodeDepth(node: TreeNode): number {
+    let depth = 0;
+    let current = node.parentNode;
+    while (current) {
+      depth++;
+      current = current.parentNode;
+    }
+    return depth + 1; // 子节点深度 = 父节点深度 + 1
   }
 
   /**
@@ -772,12 +810,13 @@ export class LibraryScannerView extends BaseView {
     if (checked && node.type === "collection" && node.children.length > 0) {
       node.expanded = true;
       this.updateNodeVisibility(node);
-
       // 更新展开图标
       const expandIcon = node.element?.querySelector("span") as HTMLElement;
       if (expandIcon && expandIcon.textContent) {
         expandIcon.textContent = "▼";
       }
+      // 展开时进行懒渲染
+      this.renderChildren(node, this.getNodeDepth(node));
     }
 
     // 递归处理所有子节点

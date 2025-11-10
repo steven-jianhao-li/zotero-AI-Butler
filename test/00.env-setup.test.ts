@@ -29,11 +29,7 @@
       true,
     );
     // openaiApiKey
-    Zotero?.Prefs?.set?.(
-      "extensions.zotero.aiButler.openaiApiKey",
-      "",
-      true,
-    );
+    Zotero?.Prefs?.set?.("extensions.zotero.aiButler.openaiApiKey", "", true);
     // openaiApiModel
     Zotero?.Prefs?.set?.(
       "extensions.zotero.aiButler.openaiApiModel",
@@ -47,11 +43,7 @@
       true,
     );
     // geminiApiKey
-    Zotero?.Prefs?.set?.(
-      "extensions.zotero.aiButler.geminiApiKey",
-      "",
-      true,
-    );
+    Zotero?.Prefs?.set?.("extensions.zotero.aiButler.geminiApiKey", "", true);
     // geminiModel
     Zotero?.Prefs?.set?.(
       "extensions.zotero.aiButler.geminiModel",

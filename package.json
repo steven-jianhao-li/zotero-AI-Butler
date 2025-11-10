@@ -26,7 +26,9 @@
     "lint:check": "prettier --check . && eslint .",
     "lint:fix": "prettier --write . && eslint . --fix",
     "release": "zotero-plugin release",
+    "pretest": "node ./scripts/gen-env-setup.mjs",
     "test": "zotero-plugin test",
+    "scaffold:provider": "node ./scripts/create-provider.mjs",
     "update-deps": "npm update --save"
   },
   "dependencies": {

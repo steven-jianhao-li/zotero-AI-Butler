@@ -177,9 +177,9 @@ function registerPrefsPane() {
  * 4. 特殊处理提示词版本升级逻辑
  *
  * 配置项说明:
- * - apiKey: API 访问密钥(敏感信息,默认为空)
- * - apiUrl: 大模型 API 端点地址
- * - model: 使用的模型名称
+ * - openaiApiKey: API 访问密钥(敏感信息,默认为空)
+ * - openaiApiUrl: 大模型 API 端点地址
+ * - openaiApiModel: 使用的模型名称
  * - temperature: 模型温度参数(控制输出随机性)
  * - stream: 是否启用流式输出
  * - summaryPrompt: 论文总结提示词模板
@@ -188,9 +188,9 @@ function registerPrefsPane() {
 function initializeDefaultPrefsOnStartup() {
   // 定义所有配置项的默认值
   const defaults: Record<string, any> = {
-    apiKey: "", // API 密钥默认为空,需用户配置
-    apiUrl: "https://api.openai.com/v1/chat/completions", // 默认使用 OpenAI API 端点
-    model: "gpt-3.5-turbo", // 默认模型
+    openaiApiKey: "", // API 密钥默认为空,需用户配置
+    openaiApiUrl: "https://api.openai.com/v1/responses", // 默认使用 OpenAI API 端点
+    openaiApiModel: "gpt-5", // 默认模型
     temperature: "0.7", // 默认温度参数,平衡创造性和准确性
     stream: true, // 默认启用流式输出,提供更好的用户体验
     summaryPrompt: getDefaultSummaryPrompt(), // 加载默认提示词模板
@@ -449,28 +449,31 @@ async function handleGenerateSummary() {
   const provider =
     (Zotero.Prefs.get(`${config.prefsPrefix}.provider`, true) as string) ||
     "openai";
-  let apiKey: string | undefined;
+  let openaiApiKey: string | undefined;
   let providerName: string;
 
   const pLower = (provider || "").toLowerCase();
   if (provider === "google" || pLower.includes("gemini")) {
-    apiKey = Zotero.Prefs.get(
+    openaiApiKey = Zotero.Prefs.get(
       `${config.prefsPrefix}.geminiApiKey`,
       true,
     ) as string;
     providerName = "Gemini";
   } else if (provider === "anthropic" || pLower.includes("claude")) {
-    apiKey = Zotero.Prefs.get(
+    openaiApiKey = Zotero.Prefs.get(
       `${config.prefsPrefix}.anthropicApiKey`,
       true,
     ) as string;
     providerName = "Anthropic";
   } else {
-    apiKey = Zotero.Prefs.get(`${config.prefsPrefix}.apiKey`, true) as string;
+    openaiApiKey = Zotero.Prefs.get(
+      `${config.prefsPrefix}.openaiApiKey`,
+      true,
+    ) as string;
     providerName = "OpenAI";
   }
 
-  if (!apiKey) {
+  if (!openaiApiKey) {
     // API 未配置,显示友好的错误提示
     new ztoolkit.ProgressWindow("AI Butler", {
       closeOnClick: true,

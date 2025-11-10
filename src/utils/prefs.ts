@@ -18,13 +18,13 @@
  * 使用示例:
  * ```typescript
  * // 读取配置
- * const apiKey = getPref("apiKey");
+ * const openaiApiKey = getPref("openaiApiKey");
  *
  * // 设置配置
- * setPref("apiKey", "sk-xxxxx");
+ * setPref("openaiApiKey", "sk-xxxxx");
  *
  * // 清除配置
- * clearPref("apiKey");
+ * clearPref("openaiApiKey");
  * ```
  *
  * @module prefs
@@ -42,7 +42,7 @@ type PluginPrefsMap = _ZoteroTypes.Prefs["PluginPrefsMap"];
 /**
  * 配置键前缀
  * 所有配置项都会自动添加此前缀,形成完整的配置键
- * 例如: "ai-butler.apiKey"
+ * 例如: "ai-butler.openaiApiKey"
  */
 const PREFS_PREFIX = config.prefsPrefix;
 
@@ -66,7 +66,7 @@ const PREFS_PREFIX = config.prefsPrefix;
  * @example
  * ```typescript
  * // 读取 API 密钥(类型: string)
- * const apiKey = getPref("apiKey");
+ * const openaiApiKey = getPref("openaiApiKey");
  *
  * // 读取流式开关(类型: boolean)
  * const streamEnabled = getPref("stream");
@@ -97,10 +97,10 @@ export function getPref<K extends keyof PluginPrefsMap>(key: K) {
  * @example
  * ```typescript
  * // 设置 API 密钥
- * setPref("apiKey", "sk-xxxxx");
+ * setPref("openaiApiKey", "sk-xxxxx");
  *
  * // 设置模型名称
- * setPref("model", "gpt-4");
+ * setPref("openaiApiModel", "gpt-4");
  *
  * // 设置流式开关
  * setPref("stream", true);
@@ -133,7 +133,7 @@ export function setPref<K extends keyof PluginPrefsMap>(
  * @example
  * ```typescript
  * // 清除 API 密钥
- * clearPref("apiKey");
+ * clearPref("openaiApiKey");
  *
  * // 清除自定义提示词(恢复到默认提示词)
  * clearPref("summaryPrompt");

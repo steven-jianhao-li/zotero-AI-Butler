@@ -17,7 +17,9 @@ export class OpenAICompatProvider implements ILlmProvider {
   readonly id = "openai-compat"; // 供偏好使用的唯一标识
 
   private ensureUrlAndKey(options: LLMOptions) {
-    const apiUrl = (options.apiUrl || "https://api.openai.com/v1/chat/completions").trim();
+    const apiUrl = (
+      options.apiUrl || "https://api.openai.com/v1/chat/completions"
+    ).trim();
     const apiKey = (options.apiKey || "").trim();
     if (!apiUrl) throw new Error("API URL 未配置");
     if (!apiKey) throw new Error("API Key 未配置");
@@ -33,7 +35,8 @@ export class OpenAICompatProvider implements ILlmProvider {
 
   private buildGenParams(options: LLMOptions) {
     const params: any = {};
-    if (options.temperature !== undefined) params.temperature = options.temperature;
+    if (options.temperature !== undefined)
+      params.temperature = options.temperature;
     if (options.topP !== undefined) params.top_p = options.topP;
     if (options.maxTokens !== undefined) params.max_tokens = options.maxTokens;
     return params;
@@ -51,9 +54,12 @@ export class OpenAICompatProvider implements ILlmProvider {
     const streamEnabled = options.stream ?? true;
 
     // Chat Completions 的消息结构
-    const messages: Array<{ role: "system" | "user" | "assistant"; content: any }> = [];
+    const messages: Array<{
+      role: "system" | "user" | "assistant";
+      content: any;
+    }> = [];
     messages.push({ role: "system", content: SYSTEM_ROLE_PROMPT });
-    
+
     if (isBase64) {
       // 尝试使用多模态格式（某些兼容服务支持 image_url 或 vision）
       messages.push({
@@ -98,7 +104,9 @@ export class OpenAICompatProvider implements ILlmProvider {
               if (status >= 400) {
                 try {
                   const errorResponse = e.target.response;
-                  const parsed = errorResponse ? JSON.parse(errorResponse) : null;
+                  const parsed = errorResponse
+                    ? JSON.parse(errorResponse)
+                    : null;
                   const err = parsed?.error || parsed || {};
                   const code = err?.code || `HTTP ${status}`;
                   const msg = err?.message || "请求失败";
@@ -155,7 +163,8 @@ export class OpenAICompatProvider implements ILlmProvider {
               }
             };
             xmlhttp.onerror = () => {
-              if (!abortError) abortError = new Error("NetworkError: XHR onerror");
+              if (!abortError)
+                abortError = new Error("NetworkError: XHR onerror");
             };
             xmlhttp.ontimeout = () => {
               if (!abortError)
@@ -172,10 +181,13 @@ export class OpenAICompatProvider implements ILlmProvider {
         }
         let errorMessage = error?.message || "OpenAI 兼容请求失败";
         try {
-          const responseText = error?.xmlhttp?.response || error?.xmlhttp?.responseText;
+          const responseText =
+            error?.xmlhttp?.response || error?.xmlhttp?.responseText;
           if (responseText) {
             const parsed =
-              typeof responseText === "string" ? JSON.parse(responseText) : responseText;
+              typeof responseText === "string"
+                ? JSON.parse(responseText)
+                : responseText;
             const err = parsed?.error || parsed;
             const code = err?.code || "Error";
             const msg = err?.message || error?.message || String(error);
@@ -209,7 +221,10 @@ export class OpenAICompatProvider implements ILlmProvider {
       try {
         const responseText = e?.xmlhttp?.response || e?.xmlhttp?.responseText;
         if (responseText) {
-          const parsed = typeof responseText === "string" ? JSON.parse(responseText) : responseText;
+          const parsed =
+            typeof responseText === "string"
+              ? JSON.parse(responseText)
+              : responseText;
           const err = parsed?.error || parsed;
           const code = err?.code || "Error";
           const msg = err?.message || e?.message || String(e);
@@ -232,9 +247,10 @@ export class OpenAICompatProvider implements ILlmProvider {
     const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
     const model = (options.model || "gpt-3.5-turbo").trim();
 
-    const messages: Array<{ role: "system" | "user" | "assistant"; content: any }> = [
-      { role: "system", content: SYSTEM_ROLE_PROMPT },
-    ];
+    const messages: Array<{
+      role: "system" | "user" | "assistant";
+      content: any;
+    }> = [{ role: "system", content: SYSTEM_ROLE_PROMPT }];
 
     if (conversation && conversation.length > 0) {
       for (const msg of conversation) {
@@ -339,11 +355,15 @@ export class OpenAICompatProvider implements ILlmProvider {
                 }
               }
             } catch (err) {
-              ztoolkit.log("[AI-Butler] OpenAI Compat chat SSE parse error:", err);
+              ztoolkit.log(
+                "[AI-Butler] OpenAI Compat chat SSE parse error:",
+                err,
+              );
             }
           };
           xmlhttp.onerror = () => {
-            if (!abortError) abortError = new Error("NetworkError: XHR onerror");
+            if (!abortError)
+              abortError = new Error("NetworkError: XHR onerror");
           };
           xmlhttp.ontimeout = () => {
             if (!abortError)
@@ -360,9 +380,13 @@ export class OpenAICompatProvider implements ILlmProvider {
       }
       let errorMessage = error?.message || "OpenAI 兼容请求失败";
       try {
-        const responseText = error?.xmlhttp?.response || error?.xmlhttp?.responseText;
+        const responseText =
+          error?.xmlhttp?.response || error?.xmlhttp?.responseText;
         if (responseText) {
-          const parsed = typeof responseText === "string" ? JSON.parse(responseText) : responseText;
+          const parsed =
+            typeof responseText === "string"
+              ? JSON.parse(responseText)
+              : responseText;
           const err = parsed?.error || parsed;
           const code = err?.code || "Error";
           const msg = err?.message || error?.message || String(error);

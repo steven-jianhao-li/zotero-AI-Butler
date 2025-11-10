@@ -75,7 +75,10 @@ export class ApiSettingsPage {
       "provider",
       [
         { value: "openai", label: "OpenAI (Responses 新接口)" },
-        { value: "openai-compat", label: "OpenAI兼容 (旧 ChatCompletions / 第三方)" },
+        {
+          value: "openai-compat",
+          label: "OpenAI兼容 (旧 ChatCompletions / 第三方)",
+        },
         { value: "google", label: "Google Gemini" },
         { value: "anthropic", label: "Anthropic Claude" },
       ],
@@ -133,8 +136,10 @@ export class ApiSettingsPage {
     );
 
     // Provider 专属字段容器
-  const sectionOpenAI = this.createElement("div", { id: "provider-openai" });
-  const sectionOpenAICompat = this.createElement("div", { id: "provider-openai-compat" });
+    const sectionOpenAI = this.createElement("div", { id: "provider-openai" });
+    const sectionOpenAICompat = this.createElement("div", {
+      id: "provider-openai-compat",
+    });
     const sectionGemini = this.createElement("div", { id: "provider-gemini" });
     const sectionAnthropic = this.createElement("div", {
       id: "provider-anthropic",
@@ -200,7 +205,8 @@ export class ApiSettingsPage {
         this.createInput(
           "openaiCompatApiUrl",
           "text",
-          (getPref("openaiCompatApiUrl") as string) || "https://api.openai.com/v1/chat/completions",
+          (getPref("openaiCompatApiUrl") as string) ||
+            "https://api.openai.com/v1/chat/completions",
           "https://api.openai.com/v1/chat/completions",
         ),
         "【必填】旧版 Chat Completions 完整端点。例如 SiliconFlow: https://api.siliconflow.cn/v1/chat/completions",
@@ -211,7 +217,8 @@ export class ApiSettingsPage {
         "兼容 API 密钥 *",
         this.createPasswordInput(
           "openaiCompatApiKey",
-          (getPref("openaiCompatApiKey") as string) || (getPref("openaiApiKey") as string),
+          (getPref("openaiCompatApiKey") as string) ||
+            (getPref("openaiApiKey") as string),
           "sk-...",
         ),
         "【必填】对应第三方服务的密钥（格式同 Bearer Token）",
@@ -223,7 +230,9 @@ export class ApiSettingsPage {
         this.createInput(
           "openaiCompatModel",
           "text",
-          (getPref("openaiCompatModel") as string) || (getPref("openaiApiModel") as string) || "gpt-3.5-turbo",
+          (getPref("openaiCompatModel") as string) ||
+            (getPref("openaiApiModel") as string) ||
+            "gpt-3.5-turbo",
           "gpt-3.5-turbo",
         ),
         "【必填】第三方提供的模型名称，如 Qwen/QwQ-32B、deepseek-ai/DeepSeek-V3 等",
@@ -318,8 +327,8 @@ export class ApiSettingsPage {
       ),
     );
 
-  form.appendChild(sectionOpenAI);
-  form.appendChild(sectionOpenAICompat);
+    form.appendChild(sectionOpenAI);
+    form.appendChild(sectionOpenAICompat);
     form.appendChild(sectionGemini);
     form.appendChild(sectionAnthropic);
 
@@ -329,9 +338,15 @@ export class ApiSettingsPage {
       const isOpenAICompat = prov === "openai-compat";
       (sectionOpenAI as HTMLElement).style.display =
         isGemini || isAnthropic || isOpenAICompat ? "none" : "block";
-      (sectionOpenAICompat as HTMLElement).style.display = isOpenAICompat ? "block" : "none";
-      (sectionGemini as HTMLElement).style.display = isGemini ? "block" : "none";
-      (sectionAnthropic as HTMLElement).style.display = isAnthropic ? "block" : "none";
+      (sectionOpenAICompat as HTMLElement).style.display = isOpenAICompat
+        ? "block"
+        : "none";
+      (sectionGemini as HTMLElement).style.display = isGemini
+        ? "block"
+        : "none";
+      (sectionAnthropic as HTMLElement).style.display = isAnthropic
+        ? "block"
+        : "none";
     };
     renderProviderSections(providerValue);
 
@@ -1066,14 +1081,14 @@ export class ApiSettingsPage {
         return;
       }
 
-    // 保存到配置
+      // 保存到配置
       setPref("provider", values.provider);
       // 分别保存三套配置,互不覆盖
-    setPref("openaiApiUrl", values.openaiApiUrl);
-    // OpenAI 兼容配置保存
-    setPref("openaiCompatApiUrl", values.openaiCompatApiUrl);
-    setPref("openaiCompatApiKey", values.openaiCompatApiKey);
-    setPref("openaiCompatModel", values.openaiCompatModel);
+      setPref("openaiApiUrl", values.openaiApiUrl);
+      // OpenAI 兼容配置保存
+      setPref("openaiCompatApiUrl", values.openaiCompatApiUrl);
+      setPref("openaiCompatApiKey", values.openaiCompatApiKey);
+      setPref("openaiCompatModel", values.openaiCompatModel);
       setPref("openaiApiKey", values.openaiApiKey);
       setPref("openaiApiModel", values.openaiApiModel);
       setPref("geminiApiUrl", values.geminiApiUrl);
@@ -1171,10 +1186,10 @@ export class ApiSettingsPage {
     setPref("openaiApiUrl", "https://api.openai.com/v1/responses");
     setPref("openaiApiKey", "");
     setPref("openaiApiModel", "gpt-5");
-  // OpenAI 兼容默认
-  setPref("openaiCompatApiUrl", "https://api.openai.com/v1/chat/completions");
-  setPref("openaiCompatApiKey", "");
-  setPref("openaiCompatModel", "gpt-3.5-turbo");
+    // OpenAI 兼容默认
+    setPref("openaiCompatApiUrl", "https://api.openai.com/v1/chat/completions");
+    setPref("openaiCompatApiKey", "");
+    setPref("openaiCompatModel", "gpt-3.5-turbo");
     // Gemini 默认
     setPref("geminiApiUrl", "https://generativelanguage.googleapis.com");
     setPref("geminiApiKey", "");

@@ -453,31 +453,40 @@ async function handleGenerateSummary() {
   const provider =
     (Zotero.Prefs.get(`${config.prefsPrefix}.provider`, true) as string) ||
     "openai";
-  let openaiApiKey: string | undefined;
+  let selectedApiKey: string | undefined;
   let providerName: string;
 
   const pLower = (provider || "").toLowerCase();
   if (provider === "google" || pLower.includes("gemini")) {
-    openaiApiKey = Zotero.Prefs.get(
+    selectedApiKey = Zotero.Prefs.get(
       `${config.prefsPrefix}.geminiApiKey`,
       true,
     ) as string;
     providerName = "Gemini";
   } else if (provider === "anthropic" || pLower.includes("claude")) {
-    openaiApiKey = Zotero.Prefs.get(
+    selectedApiKey = Zotero.Prefs.get(
       `${config.prefsPrefix}.anthropicApiKey`,
       true,
     ) as string;
     providerName = "Anthropic";
+  } else if (pLower === "openai-compat") {
+    // 支持 OpenAI 兼容接口 (旧 /v1/chat/completions)，优先读取专用密钥，回退到 OpenAI 密钥
+    selectedApiKey =
+      (Zotero.Prefs.get(
+        `${config.prefsPrefix}.openaiCompatApiKey`,
+        true,
+      ) as string) ||
+      (Zotero.Prefs.get(`${config.prefsPrefix}.openaiApiKey`, true) as string);
+    providerName = "OpenAI 兼容"; // 提示更明确
   } else {
-    openaiApiKey = Zotero.Prefs.get(
+    selectedApiKey = Zotero.Prefs.get(
       `${config.prefsPrefix}.openaiApiKey`,
       true,
     ) as string;
     providerName = "OpenAI";
   }
 
-  if (!openaiApiKey) {
+  if (!selectedApiKey) {
     // API 未配置,显示友好的错误提示
     new ztoolkit.ProgressWindow("AI Butler", {
       closeOnClick: true,

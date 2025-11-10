@@ -261,7 +261,11 @@ ProviderRegistry.register(new VendorNameProvider());
 - 调用 `LLMClient.testConnection()` 验证连接；
 - 通过 UI 进行一次流式与一次非流式的冒烟测试，确认 onProgress 行为一致。
 
-完成以上 5 步，新增供应商无需改动核心逻辑。
+6. 在hooks.ts中注册新供应商
+
+- 在 `src/modules/hooks.ts` 中`handleGenerateSummary`函数里添加对新供应商的支持，新增对provider和pLower的判断逻辑。
+
+完成以上 6 步，新增供应商无需改动核心逻辑。
 
 ## 迁移计划（从现有实现到新架构）
 
@@ -312,3 +316,7 @@ ProviderRegistry.register(new VendorNameProvider());
 - 新增供应商时有清晰模板与注册点；
 - 通用参数一致传递，差异映射在适配层内闭环；
 - `llmClient.ts` 变为稳定门面，上层调用无需跟随变动。
+
+```
+
+```

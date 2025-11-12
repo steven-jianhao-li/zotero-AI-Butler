@@ -111,9 +111,9 @@ export class TaskQueueView extends BaseView {
       },
     });
 
-  // 头部区域
-  const header = this.createHeader();
-  // 统计信息区域
+    // 头部区域
+    const header = this.createHeader();
+    // 统计信息区域
     this.statsContainer = this.createStatsSection();
     // 筛选和操作按钮区域
     const filterBar = this.createFilterBar();
@@ -433,14 +433,14 @@ export class TaskQueueView extends BaseView {
     const taskStatus = this.createElement("span", {
       className: `ai-pill ${
         task.status === TaskStatus.COMPLETED
-          ? 'ai-pill--success'
+          ? "ai-pill--success"
           : task.status === TaskStatus.FAILED
-          ? 'ai-pill--error'
-          : task.status === TaskStatus.PROCESSING
-          ? 'ai-pill--info'
-          : task.status === TaskStatus.PRIORITY
-          ? 'ai-pill--warn'
-          : ''
+            ? "ai-pill--error"
+            : task.status === TaskStatus.PROCESSING
+              ? "ai-pill--info"
+              : task.status === TaskStatus.PRIORITY
+                ? "ai-pill--warn"
+                : ""
       }`,
       styles: {
         fontSize: "12px",

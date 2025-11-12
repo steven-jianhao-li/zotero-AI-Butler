@@ -190,7 +190,7 @@ export abstract class BaseView {
 
     // 在 Zotero 环境中检测暗色模式的多种方法
     let isDark = false;
-    
+
     try {
       // 方法1: 检查 Zotero 7+ 的暗色模式偏好
       try {
@@ -198,7 +198,7 @@ export abstract class BaseView {
       } catch (e1) {
         // 如果不存在,尝试其他方法
       }
-      
+
       // 方法2: 检查系统暗色模式
       if (!isDark) {
         try {
@@ -207,7 +207,7 @@ export abstract class BaseView {
           // 继续尝试其他方法
         }
       }
-      
+
       // 方法3: 检查窗口的 prefers-color-scheme
       if (!isDark) {
         try {
@@ -226,15 +226,19 @@ export abstract class BaseView {
       ztoolkit.log("[AI Butler] 检测暗色模式失败:", e);
     }
 
-    ztoolkit.log(`[AI Butler] 暗色模式检测结果: ${isDark}, 视图: ${this.viewId}`);
-    
+    ztoolkit.log(
+      `[AI Butler] 暗色模式检测结果: ${isDark}, 视图: ${this.viewId}`,
+    );
+
     // 统一改为类切换，使用全局 CSS 变量生效
     try {
       // 确保容器具备主题作用域（若根上已添加 ai-butler-root，也可不必）
       if (!this.container.classList.contains("ai-butler-root")) {
         this.container.classList.add("ai-butler-root");
       }
-    } catch {}
+    } catch {
+      // Ignored
+    }
 
     if (isDark) {
       this.container.classList.add("ai-butler-dark");
@@ -274,7 +278,7 @@ export abstract class BaseView {
    */
   protected isDarkMode(): boolean {
     let isDark = false;
-    
+
     try {
       // 方法1: 检查 Zotero 7+ 的暗色模式偏好
       try {
@@ -282,7 +286,7 @@ export abstract class BaseView {
       } catch (e1) {
         // 如果不存在,尝试其他方法
       }
-      
+
       // 方法2: 检查系统暗色模式
       if (!isDark) {
         try {
@@ -291,7 +295,7 @@ export abstract class BaseView {
           // 继续尝试其他方法
         }
       }
-      
+
       // 方法3: 检查窗口的 prefers-color-scheme
       if (!isDark) {
         try {
@@ -309,7 +313,7 @@ export abstract class BaseView {
     } catch (e) {
       // 忽略错误
     }
-    
+
     return isDark;
   }
 

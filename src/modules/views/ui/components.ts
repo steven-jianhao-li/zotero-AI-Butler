@@ -10,8 +10,10 @@
  */
 function isDarkMode(): boolean {
   try {
-    return Services.prefs.getBoolPref("zotero.theme.dark", false) ||
-           Services.prefs.getBoolPref("ui.systemUsesDarkTheme", false);
+    return (
+      Services.prefs.getBoolPref("zotero.theme.dark", false) ||
+      Services.prefs.getBoolPref("ui.systemUsesDarkTheme", false)
+    );
   } catch (e) {
     return false;
   }
@@ -84,12 +86,13 @@ export function createStyledButton(
     // 检测暗色模式
     let isDark = false;
     try {
-      isDark = Services.prefs.getBoolPref("zotero.theme.dark", false) ||
-               Services.prefs.getBoolPref("ui.systemUsesDarkTheme", false);
+      isDark =
+        Services.prefs.getBoolPref("zotero.theme.dark", false) ||
+        Services.prefs.getBoolPref("ui.systemUsesDarkTheme", false);
     } catch (e) {
       // 使用默认值
     }
-    
+
     button.style.backgroundColor = isDark ? "#2b2b2b" : "#ffffff";
     button.style.color = color;
     button.style.transform = "translateY(0)";
@@ -260,7 +263,7 @@ export function createSelect(
   onChange?: (newValue: string) => void,
 ): HTMLElement {
   const doc = Zotero.getMainWindow().document;
-  let currentIsDark = isDarkMode();
+  const currentIsDark = isDarkMode();
 
   // 容器
   const container = doc.createElement("div");
@@ -330,14 +333,16 @@ export function createSelect(
     const item = doc.createElement("div");
     item.textContent = opt.label;
     item.setAttribute("data-value", opt.value);
-    
+
     const isSelected = opt.value === value;
     Object.assign(item.style, {
       padding: "10px 12px",
       cursor: "pointer",
       fontSize: "14px",
       transition: "background-color 0.15s",
-      backgroundColor: isSelected ? "var(--ai-accent-tint)" : "var(--ai-surface)",
+      backgroundColor: isSelected
+        ? "var(--ai-accent-tint)"
+        : "var(--ai-surface)",
       color: "var(--ai-text)",
     });
 
@@ -580,11 +585,11 @@ export function createNotice(
 export type CardType = "stat" | "activity" | "generic";
 
 interface CardOptions {
-  accentColor?: string;          // 统计卡片左侧或主色（可选）
-  icon?: string;                 // 右上角或背景图标
-  value?: string;                // 主数值（stat）
-  extra?: HTMLElement | string;  // 右侧附加内容（如按钮/徽标）
-  classes?: string[];            // 额外类名
+  accentColor?: string; // 统计卡片左侧或主色（可选）
+  icon?: string; // 右上角或背景图标
+  value?: string; // 主数值（stat）
+  extra?: HTMLElement | string; // 右侧附加内容（如按钮/徽标）
+  classes?: string[]; // 额外类名
 }
 
 /**

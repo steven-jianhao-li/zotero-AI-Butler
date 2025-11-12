@@ -287,8 +287,8 @@ export class SummaryView extends BaseView {
         fontSize: "16px",
         fontWeight: "700",
         padding: "12px 32px",
-  backgroundColor: "var(--ai-accent)",
-  color: "#ffffff",
+        backgroundColor: "var(--ai-accent)",
+        color: "#ffffff",
         border: "none",
         borderRadius: "6px",
         cursor: "pointer",
@@ -530,14 +530,14 @@ export class SummaryView extends BaseView {
         asstBody.appendChild(assistantMessageContainer);
 
         // 折叠按钮
-             const collapseBtn = this.createElement("button", {
+        const collapseBtn = this.createElement("button", {
           styles: {
             position: "absolute",
             top: "6px",
             right: "36px",
             border: "none",
             background: "transparent",
-                 color: "var(--ai-text-muted)",
+            color: "var(--ai-text-muted)",
             cursor: "pointer",
             fontSize: "14px",
           },
@@ -626,8 +626,8 @@ export class SummaryView extends BaseView {
       if (this.chatSendButton) {
         this.chatSendButton.disabled = false;
         this.chatSendButton.innerHTML = "📤 发送";
-  this.chatSendButton.style.backgroundColor = "var(--ai-accent)";
-  this.chatSendButton.style.color = "#ffffff";
+        this.chatSendButton.style.backgroundColor = "var(--ai-accent)";
+        this.chatSendButton.style.color = "#ffffff";
       }
       if (this.chatInput) {
         this.chatInput.disabled = false;
@@ -915,7 +915,7 @@ ${jsonMarker}
     card.appendChild(collapseBtn);
     card.appendChild(body);
     this.outputContainer.appendChild(card);
-    
+
     // 应用主题到新添加的总结卡片
     this.applyTheme();
   }
@@ -1285,7 +1285,7 @@ ${jsonMarker}
       }
 
       this.conversationHistory = base;
-      
+
       // 应用主题到新加载的历史聊天卡片
       this.applyTheme();
     } catch (e) {
@@ -1797,10 +1797,10 @@ ${jsonMarker}
     });
 
     this.outputContainer.appendChild(errorContainer);
-    
+
     // 应用主题到新添加的元素
     this.applyTheme();
-    
+
     this.scrollToBottom();
   }
 
@@ -1832,10 +1832,10 @@ ${jsonMarker}
     });
 
     this.outputContainer.appendChild(completeElement);
-    
+
     // 应用主题到新添加的元素
     this.applyTheme();
-    
+
     this.scrollToBottom();
   }
 
@@ -1869,7 +1869,7 @@ ${jsonMarker}
     });
 
     this.outputContainer.appendChild(stoppedElement);
-    
+
     // 应用主题到新添加的元素
     this.applyTheme();
     this.scrollToBottom();

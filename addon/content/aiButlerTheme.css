@@ -1,0 +1,186 @@
+/* AI Butler 统一主题变量与基础组件样式 */
+
+/* 亮色变量（作用域：根容器）*/
+.ai-butler-root {
+  --ai-bg: #f5f5f5;
+  --ai-surface: #ffffff;
+  --ai-surface-2: #fafafa;
+  --ai-text: #333333;
+  --ai-text-muted: #666666;
+  --ai-border: #e0e0e0;
+  --ai-accent: #59c0bc;
+  --ai-accent-contrast: #0e5a58;
+  --ai-accent-tint: rgba(89, 192, 188, 0.10);
+  --ai-hover: rgba(0, 0, 0, 0.03);
+  --ai-input-bg: #ffffff;
+  --ai-input-border: #d9d9d9;
+  --ai-input-text: #333333;
+}
+
+/* 暗色变量（作用域：根容器 + 备用直接应用场景）*/
+.ai-butler-root.ai-butler-dark,
+.ai-butler-dark {
+  --ai-bg: #141414;
+  --ai-surface: #1e1e1e;
+  --ai-surface-2: #232323;
+  --ai-text: #e0e0e0;
+  --ai-text-muted: #b0b0b0;
+  --ai-border: #333333;
+  --ai-accent: #59c0bc;
+  --ai-accent-contrast: #9be1de;
+  --ai-accent-tint: rgba(89, 192, 188, 0.15);
+  --ai-hover: rgba(255, 255, 255, 0.04);
+  --ai-input-bg: #2a2a2a;
+  --ai-input-border: #444444;
+  --ai-input-text: #e0e0e0;
+}
+
+/* 基础容器着色（尽量使用变量，避免硬编码）*/
+.ai-butler-root,
+.ai-butler-dark {
+  color: var(--ai-text);
+}
+
+#ai-butler-main-window {
+  background: var(--ai-bg) !important;
+}
+
+#tab-bar {
+  background: var(--ai-surface) !important;
+  border-bottom: 2px solid var(--ai-border) !important;
+}
+
+#view-container {
+  background: var(--ai-surface) !important;
+}
+
+/* 标签按钮 */
+.tab-button {
+  color: var(--ai-text-muted) !important;
+}
+.tab-button:hover {
+  background: var(--ai-accent-tint) !important;
+}
+.tab-button.active {
+  color: var(--ai-accent) !important;
+  background: var(--ai-accent-tint) !important;
+  border-bottom-color: var(--ai-accent) !important;
+}
+
+/* 表单控件（输入、选择、文本域）*/
+.ai-butler-root input,
+.ai-butler-root select,
+.ai-butler-root textarea,
+.ai-butler-dark input,
+.ai-butler-dark select,
+.ai-butler-dark textarea {
+  background: var(--ai-input-bg) !important;
+  color: var(--ai-input-text) !important;
+  border-color: var(--ai-input-border) !important;
+}
+
+/* 卡片基础样式（后续视图可复用）*/
+.ai-card {
+  background: var(--ai-surface);
+  border: 1px solid var(--ai-border);
+  border-radius: 8px;
+  padding: 16px;
+  box-sizing: border-box;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+/* 有强调色时的左侧强调条 */
+.ai-card--accented { 
+  border-left: 4px solid var(--ai-card-accent, var(--ai-accent));
+}
+
+/* 卡片：类型修饰 */
+.ai-card--stat {
+  border-left: 4px solid var(--ai-card-accent, var(--ai-accent));
+  background: var(--ai-surface);
+}
+
+.ai-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.ai-card__title {
+  font-size: 12px;
+  color: var(--ai-text-muted);
+}
+
+/* 任务卡片标题加强（论文名醒目） */
+.task-item .ai-card__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ai-text);
+}
+.ai-card__body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ai-card__value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--ai-card-accent, var(--ai-accent));
+}
+.ai-card__icon {
+  font-size: 24px;
+  opacity: 0.28;
+}
+
+/* 状态胶囊（任务/标签）*/
+.ai-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid transparent;
+  background: var(--ai-surface-2);
+  color: var(--ai-text);
+}
+.ai-pill--success { background: rgba(76, 175, 80, 0.15); color: #4caf50; border-color: rgba(76,175,80,0.35); }
+.ai-pill--warn    { background: rgba(255, 152, 0, 0.15); color: #ff9800; border-color: rgba(255,152,0,0.35); }
+.ai-pill--error   { background: rgba(244, 67, 54, 0.15); color: #f44336; border-color: rgba(244,67,54,0.35); }
+.ai-pill--info    { background: var(--ai-accent-tint); color: var(--ai-accent); border-color: rgba(89,192,188,0.35); }
+
+/* 消息气泡（用于摘要/聊天）*/
+.ai-msg-user {
+  background: var(--ai-accent-tint);
+  color: var(--ai-text);
+}
+.ai-msg-assistant {
+  background: var(--ai-surface-2);
+  color: var(--ai-text);
+}
+
+/* 任务卡片:使用次级表面色,避免纯白/纯黑 */
+.task-item {
+  background: var(--ai-surface-2);
+}
+
+/* 活动卡片(仪表盘最近活动) */
+.activity-item {
+  background: var(--ai-surface) !important;
+  border-color: var(--ai-border) !important;
+}
+
+/* 通用标题样式(section heading) */
+.ai-butler-root h3,
+.ai-butler-dark h3 {
+  color: var(--ai-text) !important;
+}
+
+/* 表单组标签 */
+.ai-butler-root label,
+.ai-butler-dark label {
+  color: var(--ai-text) !important;
+}
+
+/* 表单组描述文字 */
+.ai-butler-root .form-description,
+.ai-butler-dark .form-description {
+  color: var(--ai-text-muted) !important;
+}

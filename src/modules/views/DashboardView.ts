@@ -28,7 +28,7 @@ import { TaskQueueManager, QueueStats, TaskStatus } from "../taskQueue";
 import { MainWindow } from "./MainWindow";
 import { AutoScanManager } from "../autoScanManager";
 import { getPref, setPref } from "../../utils/prefs";
-import { createStyledButton } from "./ui/components";
+import { createCard, createStyledButton } from "./ui/components";
 
 /**
  * 管家状态枚举
@@ -139,6 +139,9 @@ export class DashboardView extends BaseView {
 
     // 立即刷新一次数据
     this.refreshData();
+
+    // 应用主题
+    this.applyTheme();
   }
 
   /**
@@ -321,46 +324,15 @@ export class DashboardView extends BaseView {
     color: string,
     icon: string,
   ): HTMLElement {
-    return this.createElement("div", {
-      id: `stat-${id}`,
-      className: "stat-card",
-      styles: {
-        padding: "20px",
-        backgroundColor: "rgba(89, 192, 188, 0.05)",
-        borderRadius: "8px",
-        borderLeft: `4px solid ${color}`,
-        position: "relative",
-      },
-      children: [
-        this.createElement("div", {
-          styles: {
-            fontSize: "24px",
-            position: "absolute",
-            right: "15px",
-            top: "15px",
-            opacity: "0.3",
-          },
-          textContent: icon,
-        }),
-        this.createElement("div", {
-          styles: {
-            fontSize: "12px",
-            color: "#666",
-            marginBottom: "8px",
-          },
-          textContent: label,
-        }),
-        this.createElement("div", {
-          className: "stat-value",
-          styles: {
-            fontSize: "28px",
-            fontWeight: "700",
-            color: color,
-          },
-          textContent: value,
-        }),
-      ],
+    const card = createCard("stat", label, undefined, {
+      accentColor: color,
+      value,
+      icon,
+      classes: ["stat-card"],
     });
+    // 设置元素 id，便于后续更新
+    card.id = `stat-${id}`;
+    return card;
   }
 
   /**
@@ -379,7 +351,7 @@ export class DashboardView extends BaseView {
       styles: {
         margin: "0 0 15px 0",
         fontSize: "16px",
-        color: "#333",
+        color: "var(--ai-text)",
       },
       textContent: "⚡ 快捷操作",
     });
@@ -438,7 +410,7 @@ export class DashboardView extends BaseView {
       styles: {
         margin: "0 0 15px 0",
         fontSize: "16px",
-        color: "#333",
+        color: "var(--ai-text)",
       },
       textContent: "🕒 最近活动",
     });
@@ -609,7 +581,6 @@ export class DashboardView extends BaseView {
         styles: {
           padding: "12px",
           marginBottom: "8px",
-          backgroundColor: "#fff",
           borderRadius: "6px",
           borderLeft: `3px solid ${activity.status === "success" ? "#4caf50" : "#f44336"}`,
           display: "flex",
@@ -629,7 +600,7 @@ export class DashboardView extends BaseView {
           fontSize: "13px",
           fontWeight: "600",
           marginBottom: "4px",
-          color: "#333",
+          color: "var(--ai-text)",
         },
         textContent: activity.title,
       });
@@ -637,7 +608,7 @@ export class DashboardView extends BaseView {
       const time = this.createElement("div", {
         styles: {
           fontSize: "11px",
-          color: "#999",
+          color: "var(--ai-text-muted)",
         },
         textContent: this.formatTime(activity.timestamp),
       });
@@ -656,7 +627,7 @@ export class DashboardView extends BaseView {
       const duration = this.createElement("span", {
         styles: {
           fontSize: "11px",
-          color: "#666",
+          color: "var(--ai-text-muted)",
         },
         textContent: `${activity.duration}s`,
       });

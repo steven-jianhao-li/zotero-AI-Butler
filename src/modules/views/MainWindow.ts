@@ -165,6 +165,30 @@ export class MainWindow {
         try {
           this.initAttempts = 0;
           this.initializeUI();
+          // 初始化主题根类与暗色切换
+          try {
+            const root = this.dialog?.window?.document?.getElementById("ai-butler-main-window");
+            if (root && !root.classList.contains("ai-butler-root")) {
+              root.classList.add("ai-butler-root");
+            }
+            let isDark = false;
+            try { isDark = Services.prefs.getBoolPref("zotero.theme.dark", false); } catch {}
+            if (!isDark) { try { isDark = Services.prefs.getBoolPref("ui.systemUsesDarkTheme", false); } catch {} }
+            const win = Zotero.getMainWindow();
+            if (!isDark && win && typeof win.matchMedia === "function") {
+              try {
+                const mq = win.matchMedia("(prefers-color-scheme: dark)");
+                if (mq) {
+                  isDark = mq.matches;
+                }
+              } catch {}
+            }
+            if (root) {
+              if (isDark) root.classList.add("ai-butler-dark"); else root.classList.remove("ai-butler-dark");
+            }
+          } catch (e2) {
+            ztoolkit.log("[AI Butler] 初始化主题类失败", e2);
+          }
         } catch (e) {
           ztoolkit.log("[AI Butler] 初始化 UI 异常:", e);
         }
@@ -188,7 +212,7 @@ export class MainWindow {
           display: "flex",
           flexDirection: "column",
           fontFamily: "system-ui, -apple-system, sans-serif",
-          backgroundColor: "#f5f5f5",
+          backgroundColor: "var(--ai-bg)",
         },
         children: [
           // 标签页导航栏
@@ -197,8 +221,8 @@ export class MainWindow {
             id: "tab-bar",
             styles: {
               display: "flex",
-              backgroundColor: "#fff",
-              borderBottom: "2px solid #e0e0e0",
+              backgroundColor: "var(--ai-surface)",
+              borderBottom: "2px solid var(--ai-border)",
               flexShrink: "0",
             },
           },
@@ -209,7 +233,7 @@ export class MainWindow {
             styles: {
               flex: "1",
               overflow: "hidden",
-              backgroundColor: "#fff",
+              backgroundColor: "var(--ai-surface)",
               // 移除 position: relative，让子视图使用正常布局
               display: "flex",
               flexDirection: "column",
@@ -334,11 +358,18 @@ export class MainWindow {
    */
   private injectStyles(): void {
     if (!this.dialog || !this.dialog.window) return;
-
-    const cssLink = this.dialog.window.document.createElement("link");
-    cssLink.rel = "stylesheet";
-    cssLink.href = `chrome://${config.addonRef}/content/outputWindow.css`;
-    this.dialog.window.document.head.appendChild(cssLink);
+    const doc = this.dialog.window.document;
+    const baseLink = doc.createElement("link");
+    baseLink.rel = "stylesheet";
+    baseLink.href = `chrome://${config.addonRef}/content/outputWindow.css`;
+    doc.head.appendChild(baseLink);
+    if (!doc.getElementById("ai-butler-theme-css")) {
+      const themeLink = doc.createElement("link");
+      themeLink.id = "ai-butler-theme-css";
+      themeLink.rel = "stylesheet";
+      themeLink.href = `chrome://${config.addonRef}/content/aiButlerTheme.css`;
+      doc.head.appendChild(themeLink);
+    }
   }
 
   /**
@@ -367,7 +398,7 @@ export class MainWindow {
         padding: "12px 20px", // 恢复均衡的内边距
         border: "none",
         backgroundColor: "transparent",
-        color: "#666",
+        color: "var(--ai-text-muted)",
         fontSize: "14px",
         fontWeight: "600",
         cursor: "pointer",
@@ -385,7 +416,7 @@ export class MainWindow {
 
       button.addEventListener("mouseenter", () => {
         if (this.activeTab !== tab.id) {
-          button.style.backgroundColor = "rgba(89, 192, 188, 0.05)";
+          button.style.backgroundColor = "var(--ai-accent-tint)";
         }
       });
 
@@ -469,13 +500,15 @@ export class MainWindow {
       const tabId = btn.id.replace("tab-", "") as TabType;
 
       if (tabId === this.activeTab) {
-        btn.style.color = "#59c0bc";
-        btn.style.backgroundColor = "rgba(89, 192, 188, 0.1)";
-        btn.style.borderBottomColor = "#59c0bc";
+        btn.style.color = "var(--ai-accent)";
+        btn.style.backgroundColor = "var(--ai-accent-tint)";
+        btn.style.borderBottomColor = "var(--ai-accent)";
+        btn.classList.add("active");
       } else {
-        btn.style.color = "#666";
+        btn.style.color = "var(--ai-text-muted)";
         btn.style.backgroundColor = "transparent";
         btn.style.borderBottomColor = "transparent";
+        btn.classList.remove("active");
       }
     });
   }

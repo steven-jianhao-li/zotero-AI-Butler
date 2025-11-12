@@ -149,8 +149,9 @@ export class SummaryView extends BaseView {
           styles: {
             margin: "0 0 20px 0",
             fontSize: "20px",
-            borderBottom: "2px solid #59c0bc",
+            borderBottom: "2px solid var(--ai-accent)",
             paddingBottom: "10px",
+            color: "var(--ai-text)",
           },
           innerHTML: "AI 总结输出",
         }),
@@ -286,8 +287,8 @@ export class SummaryView extends BaseView {
         fontSize: "16px",
         fontWeight: "700",
         padding: "12px 32px",
-        backgroundColor: "#3f51b5",
-        color: "#000000ff",
+  backgroundColor: "var(--ai-accent)",
+  color: "#ffffff",
         border: "none",
         borderRadius: "6px",
         cursor: "pointer",
@@ -307,7 +308,7 @@ export class SummaryView extends BaseView {
     const footer = this.createElement("div", {
       styles: {
         padding: "15px 20px 20px 20px",
-        borderTop: "1px solid rgba(89, 192, 188, 0.3)",
+        borderTop: "1px solid var(--ai-border)",
         textAlign: "center",
         flexShrink: "0",
       },
@@ -336,8 +337,8 @@ export class SummaryView extends BaseView {
         display: "none", // 默认隐藏
         flexDirection: "column",
         padding: "15px 20px",
-        borderTop: "1px solid rgba(89, 192, 188, 0.3)",
-        backgroundColor: "#f9f9f9",
+        borderTop: "1px solid var(--ai-border)",
+        backgroundColor: "var(--ai-surface-2)",
         flexShrink: "0",
       },
     });
@@ -383,11 +384,13 @@ export class SummaryView extends BaseView {
         maxHeight: "300px",
         padding: "10px",
         fontSize: "14px",
-        border: "1px solid #ddd",
+        border: "1px solid var(--ai-input-border)",
         borderRadius: "4px",
         boxSizing: "border-box",
         resize: "vertical",
         fontFamily: "system-ui, -apple-system, sans-serif",
+        backgroundColor: "var(--ai-input-bg)",
+        color: "var(--ai-input-text)",
       },
     }) as HTMLTextAreaElement;
     this.chatInput.placeholder = "在这里输入您的问题...";
@@ -489,9 +492,9 @@ export class SummaryView extends BaseView {
           position: "relative",
           marginBottom: "18px",
           padding: "4px 8px 8px 8px",
-          border: "1px solid #e0e0e0",
+          border: "1px solid var(--ai-border)",
           borderRadius: "10px",
-          backgroundColor: "#fafafa",
+          backgroundColor: "var(--ai-surface-2)",
         },
       });
       (pairContainer as any).setAttribute("data-pair-id", pairId);
@@ -527,14 +530,14 @@ export class SummaryView extends BaseView {
         asstBody.appendChild(assistantMessageContainer);
 
         // 折叠按钮
-        const collapseBtn = this.createElement("button", {
+             const collapseBtn = this.createElement("button", {
           styles: {
             position: "absolute",
             top: "6px",
             right: "36px",
             border: "none",
             background: "transparent",
-            color: "#555",
+                 color: "var(--ai-text-muted)",
             cursor: "pointer",
             fontSize: "14px",
           },
@@ -623,7 +626,8 @@ export class SummaryView extends BaseView {
       if (this.chatSendButton) {
         this.chatSendButton.disabled = false;
         this.chatSendButton.innerHTML = "📤 发送";
-        this.chatSendButton.style.backgroundColor = "#4caf50";
+  this.chatSendButton.style.backgroundColor = "var(--ai-accent)";
+  this.chatSendButton.style.color = "#ffffff";
       }
       if (this.chatInput) {
         this.chatInput.disabled = false;
@@ -640,12 +644,12 @@ export class SummaryView extends BaseView {
     if (!this.outputContainer) return null;
 
     const messageDiv = this.createElement("div", {
+      className: role === "user" ? "ai-msg-user" : "ai-msg-assistant",
       styles: {
         marginBottom: "16px",
         padding: "12px",
         borderRadius: "8px",
-        backgroundColor: role === "user" ? "#e3f2fd" : "#f5f5f5",
-        borderLeft: `4px solid ${role === "user" ? "#2196f3" : "#4caf50"}`,
+        borderLeft: `4px solid var(--ai-accent)`,
       },
     });
 
@@ -653,7 +657,7 @@ export class SummaryView extends BaseView {
       styles: {
         fontWeight: "bold",
         marginBottom: "8px",
-        color: role === "user" ? "#1565c0" : "#2e7d32",
+        color: "var(--ai-text)",
       },
       innerHTML: role === "user" ? "👤 您" : "🤖 AI管家",
     });
@@ -674,6 +678,9 @@ export class SummaryView extends BaseView {
     messageDiv.appendChild(roleLabel);
     messageDiv.appendChild(contentDiv);
     this.outputContainer.appendChild(messageDiv);
+
+    // 应用主题到新添加的元素
+    this.applyTheme();
 
     this.scrollToBottom();
 
@@ -818,9 +825,9 @@ ${jsonMarker}
         position: "relative",
         marginBottom: "18px",
         padding: "4px 8px 8px 8px",
-        border: "1px solid #e0e0e0",
+        border: "1px solid var(--ai-border)",
         borderRadius: "10px",
-        backgroundColor: "#fafafa",
+        backgroundColor: "var(--ai-surface-2)",
       },
     });
 
@@ -836,7 +843,7 @@ ${jsonMarker}
     const titleEl = this.createElement("div", {
       styles: {
         fontWeight: "600",
-        color: "#2e7d32",
+        color: "var(--ai-accent)",
       },
       textContent: "📘 AI管家笔记",
     });
@@ -845,7 +852,7 @@ ${jsonMarker}
     const previewEl = this.createElement("div", {
       styles: {
         fontSize: "12px",
-        color: "#777",
+        color: "var(--ai-text-muted)",
         flex: "1",
         whiteSpace: "nowrap",
         overflow: "hidden",
@@ -908,6 +915,9 @@ ${jsonMarker}
     card.appendChild(collapseBtn);
     card.appendChild(body);
     this.outputContainer.appendChild(card);
+    
+    // 应用主题到新添加的总结卡片
+    this.applyTheme();
   }
 
   /**
@@ -1204,9 +1214,9 @@ ${jsonMarker}
               position: "relative",
               marginBottom: "18px",
               padding: "4px 8px 8px 8px",
-              border: "1px solid #e0e0e0",
+              border: "1px solid var(--ai-border)",
               borderRadius: "10px",
-              backgroundColor: "#fafafa",
+              backgroundColor: "var(--ai-surface-2)",
             },
           });
           (pairDiv as any).setAttribute("data-pair-id", p.id);
@@ -1275,6 +1285,9 @@ ${jsonMarker}
       }
 
       this.conversationHistory = base;
+      
+      // 应用主题到新加载的历史聊天卡片
+      this.applyTheme();
     } catch (e) {
       ztoolkit.log("[AI-Butler] 读取并恢复历史追问失败:", e);
     }
@@ -1519,8 +1532,8 @@ ${jsonMarker}
             width: "40px",
             height: "40px",
             margin: "0 auto 20px",
-            border: "4px solid rgba(89, 192, 188, 0.2)",
-            borderTop: "4px solid #59c0bc",
+            border: "4px solid var(--ai-accent-tint)",
+            borderTop: "4px solid var(--ai-accent)",
             borderRadius: "50%",
             animation: "spin 1s linear infinite",
           },
@@ -1530,7 +1543,7 @@ ${jsonMarker}
           className: "loading-message",
           styles: {
             fontSize: "16px",
-            color: "#59c0bc",
+            color: "var(--ai-accent)",
             marginBottom: "10px",
             fontWeight: "600",
           },
@@ -1655,7 +1668,7 @@ ${jsonMarker}
     // 添加标题
     const titleElement = this.createElement("h3", {
       styles: {
-        color: "#59c0bc",
+        color: "var(--ai-accent)",
         marginBottom: "15px",
         fontSize: "16px",
       },
@@ -1676,6 +1689,9 @@ ${jsonMarker}
     this.currentItemContainer.appendChild(titleElement);
     this.currentItemContainer.appendChild(contentElement);
     this.outputContainer.appendChild(this.currentItemContainer);
+
+    // 应用主题到新添加的元素
+    this.applyTheme();
 
     // 重置缓冲区
     this.currentItemBuffer = "";
@@ -1781,6 +1797,10 @@ ${jsonMarker}
     });
 
     this.outputContainer.appendChild(errorContainer);
+    
+    // 应用主题到新添加的元素
+    this.applyTheme();
+    
     this.scrollToBottom();
   }
 
@@ -1802,16 +1822,20 @@ ${jsonMarker}
       styles: {
         marginTop: "20px",
         padding: "15px",
-        backgroundColor: "rgba(76, 175, 80, 0.1)",
+        backgroundColor: "var(--ai-accent-tint)",
         borderRadius: "6px",
         textAlign: "center",
-        color: "#4caf50",
+        color: "var(--ai-accent)",
         fontWeight: "600",
       },
       textContent: message,
     });
 
     this.outputContainer.appendChild(completeElement);
+    
+    // 应用主题到新添加的元素
+    this.applyTheme();
+    
     this.scrollToBottom();
   }
 
@@ -1845,6 +1869,9 @@ ${jsonMarker}
     });
 
     this.outputContainer.appendChild(stoppedElement);
+    
+    // 应用主题到新添加的元素
+    this.applyTheme();
     this.scrollToBottom();
   }
 
@@ -1885,20 +1912,24 @@ ${jsonMarker}
     switch (state) {
       case "stopped":
         button.innerHTML = "⏹️ 已中断, 查看任务队列";
-        button.style.backgroundColor = "#ff9800";
+        button.style.backgroundColor = "var(--ai-accent-tint)";
+        button.style.color = "var(--ai-accent)";
         break;
       case "completed":
         button.innerHTML = "✅ 查看任务队列";
-        button.style.backgroundColor = "#4caf50";
+        button.style.backgroundColor = "var(--ai-accent-tint)";
+        button.style.color = "var(--ai-accent)";
         break;
       case "error":
         button.innerHTML = "⚠️ 查看任务队列";
-        button.style.backgroundColor = "#f44336";
+        button.style.backgroundColor = "var(--ai-accent-tint)";
+        button.style.color = "var(--ai-accent)";
         break;
       case "ready":
       default:
         button.innerHTML = "📋 返回任务队列";
-        button.style.backgroundColor = "#3f51b5";
+        button.style.backgroundColor = "var(--ai-accent)";
+        button.style.color = "#ffffff";
         break;
     }
   }

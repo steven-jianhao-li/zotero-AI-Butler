@@ -56,7 +56,8 @@ export class SettingsView extends BaseView {
         flexDirection: "column",
         width: "100%",
         height: "100%",
-        backgroundColor: "#f9f9f9",
+        // 使用主题变量替换硬编码背景
+        backgroundColor: "var(--ai-bg)",
         overflow: "hidden",
       },
     });
@@ -83,7 +84,8 @@ export class SettingsView extends BaseView {
         overflowY: "auto",
         padding: "20px",
         boxSizing: "border-box",
-        backgroundColor: "#fff",
+        // 使用主表面色
+        backgroundColor: "var(--ai-surface)",
       },
     });
     mainContainer.appendChild(this.settingsContainer);
@@ -104,9 +106,9 @@ export class SettingsView extends BaseView {
       styles: {
         width: "200px",
         height: "100%",
-        borderRight: "1px solid #e0e0e0",
+        borderRight: "1px solid var(--ai-border)",
         padding: "20px 0",
-        backgroundColor: "#fafafa",
+        backgroundColor: "var(--ai-surface-2)",
         boxSizing: "border-box",
       },
     });
@@ -149,7 +151,7 @@ export class SettingsView extends BaseView {
         padding: "14px 20px",
         border: "none",
         backgroundColor: "transparent",
-        color: "#666",
+        color: "var(--ai-text-muted)",
         textAlign: "left",
         cursor: "pointer",
         fontSize: "14px",
@@ -163,7 +165,7 @@ export class SettingsView extends BaseView {
     // 悬停效果
     button.addEventListener("mouseenter", () => {
       if (button !== this.activeButton) {
-        button.style.backgroundColor = "rgba(89, 192, 188, 0.08)";
+        button.style.backgroundColor = "var(--ai-accent-tint)";
       }
     });
 
@@ -188,13 +190,13 @@ export class SettingsView extends BaseView {
    */
   private setButtonActive(button: HTMLElement, active: boolean): void {
     if (active) {
-      button.style.backgroundColor = "rgba(89, 192, 188, 0.15)";
-      button.style.color = "#59c0bc";
-      button.style.borderLeftColor = "#59c0bc";
+      button.style.backgroundColor = "var(--ai-accent-tint)";
+      button.style.color = "var(--ai-accent)";
+      button.style.borderLeftColor = "var(--ai-accent)";
       button.style.fontWeight = "600";
     } else {
       button.style.backgroundColor = "transparent";
-      button.style.color = "#666";
+      button.style.color = "var(--ai-text-muted)";
       button.style.borderLeftColor = "transparent";
       button.style.fontWeight = "normal";
     }
@@ -267,6 +269,16 @@ export class SettingsView extends BaseView {
   }
 
   /**
+   * 视图挂载时的回调
+   *
+   * @protected
+   */
+  protected onMount(): void {
+    // 应用主题
+    this.applyTheme();
+  }
+
+  /**
    * 视图显示时的回调
    *
    * @protected
@@ -276,6 +288,8 @@ export class SettingsView extends BaseView {
     ztoolkit.log(`[SettingsView] 视图显示 - 当前分类: ${this.currentCategory}`);
     // 重新渲染当前页面，确保显示最新的设置值（例如从仪表盘快捷操作修改后）
     this.renderSettings(this.currentCategory);
+    // 重新应用主题(防止动态内容未应用主题)
+    this.applyTheme();
   }
 
   /**

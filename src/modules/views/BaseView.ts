@@ -188,22 +188,129 @@ export abstract class BaseView {
   protected applyTheme(): void {
     if (!this.container) return;
 
-    // 在 Zotero 环境中需要通过全局 Services 检测主题
+    // 在 Zotero 环境中检测暗色模式的多种方法
+    let isDark = false;
+    
     try {
-      const isDark = Services.prefs.getBoolPref(
-        "ui.systemUsesDarkTheme",
-        false,
-      );
-
-      if (isDark) {
-        this.container.classList.add("dark-theme");
-      } else {
-        this.container.classList.remove("dark-theme");
+      // 方法1: 检查 Zotero 7+ 的暗色模式偏好
+      try {
+        isDark = Services.prefs.getBoolPref("zotero.theme.dark", false);
+      } catch (e1) {
+        // 如果不存在,尝试其他方法
+      }
+      
+      // 方法2: 检查系统暗色模式
+      if (!isDark) {
+        try {
+          isDark = Services.prefs.getBoolPref("ui.systemUsesDarkTheme", false);
+        } catch (e2) {
+          // 继续尝试其他方法
+        }
+      }
+      
+      // 方法3: 检查窗口的 prefers-color-scheme
+      if (!isDark) {
+        try {
+          const win = Zotero.getMainWindow();
+          if (win && win.matchMedia && typeof win.matchMedia === "function") {
+            const mediaQuery = win.matchMedia("(prefers-color-scheme: dark)");
+            if (mediaQuery) {
+              isDark = mediaQuery.matches;
+            }
+          }
+        } catch (e3) {
+          // 继续
+        }
       }
     } catch (e) {
-      // 降级方案:默认浅色主题
-      this.container.classList.remove("dark-theme");
+      ztoolkit.log("[AI Butler] 检测暗色模式失败:", e);
     }
+
+    ztoolkit.log(`[AI Butler] 暗色模式检测结果: ${isDark}, 视图: ${this.viewId}`);
+    
+    // 统一改为类切换，使用全局 CSS 变量生效
+    try {
+      // 确保容器具备主题作用域（若根上已添加 ai-butler-root，也可不必）
+      if (!this.container.classList.contains("ai-butler-root")) {
+        this.container.classList.add("ai-butler-root");
+      }
+    } catch {}
+
+    if (isDark) {
+      this.container.classList.add("ai-butler-dark");
+      ztoolkit.log(`[AI Butler] 已应用暗色主题到 ${this.viewId}`);
+    } else {
+      this.container.classList.remove("ai-butler-dark");
+      ztoolkit.log(`[AI Butler] 已应用亮色主题到 ${this.viewId}`);
+    }
+  }
+
+  /**
+   * 应用暗色主题样式
+   *
+   * @protected
+   * @param element 要应用样式的元素
+   */
+  protected applyDarkThemeStyles(element: HTMLElement): void {
+    // 已废弃: 现在通过 CSS 变量与类选择器统一处理
+  }
+
+  /**
+   * 应用亮色主题样式
+   *
+   * @protected
+   * @param element 要应用样式的元素
+   */
+  protected applyLightThemeStyles(element: HTMLElement): void {
+    // 亮色模式保持原样,不需要特殊处理
+    // 此方法预留用于未来可能的亮色主题定制
+  }
+
+  /**
+   * 检测当前是否为暗色模式
+   *
+   * @protected
+   * @returns 是否为暗色模式
+   */
+  protected isDarkMode(): boolean {
+    let isDark = false;
+    
+    try {
+      // 方法1: 检查 Zotero 7+ 的暗色模式偏好
+      try {
+        isDark = Services.prefs.getBoolPref("zotero.theme.dark", false);
+      } catch (e1) {
+        // 如果不存在,尝试其他方法
+      }
+      
+      // 方法2: 检查系统暗色模式
+      if (!isDark) {
+        try {
+          isDark = Services.prefs.getBoolPref("ui.systemUsesDarkTheme", false);
+        } catch (e2) {
+          // 继续尝试其他方法
+        }
+      }
+      
+      // 方法3: 检查窗口的 prefers-color-scheme
+      if (!isDark) {
+        try {
+          const win = Zotero.getMainWindow();
+          if (win && win.matchMedia && typeof win.matchMedia === "function") {
+            const mediaQuery = win.matchMedia("(prefers-color-scheme: dark)");
+            if (mediaQuery) {
+              isDark = mediaQuery.matches;
+            }
+          }
+        } catch (e3) {
+          // 继续
+        }
+      }
+    } catch (e) {
+      // 忽略错误
+    }
+    
+    return isDark;
   }
 
   /**

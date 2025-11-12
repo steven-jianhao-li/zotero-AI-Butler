@@ -33,6 +33,7 @@
 import { BaseView } from "./BaseView";
 import { MainWindow } from "./MainWindow";
 import { TaskQueueManager, TaskItem, TaskStatus } from "../taskQueue";
+import { createCard } from "./ui/components";
 
 // 使用任务队列模块中定义的类型,避免重复定义导致的偏差
 
@@ -103,16 +104,16 @@ export class TaskQueueView extends BaseView {
         position: "sticky", // 使用 sticky 定位实现冻结效果
         top: "0", // 固定在容器顶部
         flexShrink: "0", // 不允许收缩
-        backgroundColor: "#fff",
+        backgroundColor: "var(--ai-surface)",
         // 防止下方滚动内容透出
         boxShadow: "0 2px 4px rgba(0,0,0,0.08)",
         zIndex: "10", // 提高层级确保在滚动内容之上
       },
     });
 
-    // 头部区域
-    const header = this.createHeader();
-    // 统计信息区域
+  // 头部区域
+  const header = this.createHeader();
+  // 统计信息区域
     this.statsContainer = this.createStatsSection();
     // 筛选和操作按钮区域
     const filterBar = this.createFilterBar();
@@ -199,35 +200,14 @@ export class TaskQueueView extends BaseView {
     value: string,
     color: string,
   ): HTMLElement {
-    return this.createElement("div", {
-      id: `stat-${id}`,
-      className: "stat-card",
-      styles: {
-        padding: "15px",
-        backgroundColor: "rgba(89, 192, 188, 0.05)",
-        borderRadius: "8px",
-        borderLeft: `4px solid ${color}`,
-      },
-      children: [
-        this.createElement("div", {
-          styles: {
-            fontSize: "12px",
-            color: "#666",
-            marginBottom: "5px",
-          },
-          textContent: label,
-        }),
-        this.createElement("div", {
-          className: "stat-value",
-          styles: {
-            fontSize: "24px",
-            fontWeight: "700",
-            color: color,
-          },
-          textContent: value,
-        }),
-      ],
+    const card = createCard("stat", label, undefined, {
+      accentColor: color,
+      value,
+      icon: undefined,
+      classes: ["stat-card"],
     });
+    card.id = `stat-${id}`;
+    return card;
   }
 
   /**
@@ -262,10 +242,10 @@ export class TaskQueueView extends BaseView {
         className: `filter-btn ${btn.value === this.filterStatus ? "active" : ""}`,
         styles: {
           padding: "8px 16px",
-          border: "1px solid #59c0bc",
+          border: "1px solid var(--ai-accent)",
           borderRadius: "4px",
-          backgroundColor: isActive ? "#59c0bc" : "transparent",
-          color: isActive ? "#062d75ff" : "#59c0bc",
+          backgroundColor: isActive ? "var(--ai-accent-tint)" : "transparent",
+          color: isActive ? "var(--ai-accent)" : "var(--ai-accent)",
           fontWeight: isActive ? "1000" : "600",
           cursor: "pointer",
           transition: "all 0.2s",
@@ -300,9 +280,11 @@ export class TaskQueueView extends BaseView {
         flex: "1",
         minWidth: "200px",
         padding: "8px 12px",
-        border: "1px solid #ddd",
+        border: "1px solid var(--ai-input-border)",
         borderRadius: "4px",
         fontSize: "12px",
+        backgroundColor: "var(--ai-input-bg)",
+        color: "var(--ai-input-text)",
       },
       attributes: {
         placeholder: "搜索标题...",
@@ -320,10 +302,10 @@ export class TaskQueueView extends BaseView {
       styles: {
         marginLeft: "auto",
         padding: "8px 16px",
-        border: "1px solid #9e9e9e",
+        border: "1px solid var(--ai-border)",
         borderRadius: "4px",
         backgroundColor: "transparent",
-        color: "#9e9e9e",
+        color: "var(--ai-text-muted)",
         cursor: "pointer",
         transition: "all 0.2s",
         display: "flex",
@@ -430,16 +412,12 @@ export class TaskQueueView extends BaseView {
       [TaskStatus.PRIORITY]: "🔥 优先处理",
     };
 
-    const taskItem = this.createElement("div", {
-      className: "task-item",
-      styles: {
-        padding: "15px",
-        marginBottom: "10px",
-        backgroundColor: "rgba(89, 192, 188, 0.05)",
-        borderRadius: "8px",
-        borderLeft: `4px solid ${statusColors[task.status]}`,
-      },
+    // 使用 card 标题作为唯一标题，移除重复显示；内容区域留空（后续信息在下方独立元素）
+    const taskItem = createCard("generic", task.title, undefined, {
+      accentColor: statusColors[task.status],
+      classes: ["task-item"],
     });
+    taskItem.style.marginBottom = "10px";
 
     // 任务头部
     const taskHeader = this.createElement("div", {
@@ -451,34 +429,31 @@ export class TaskQueueView extends BaseView {
       },
     });
 
-    const taskTitle = this.createElement("div", {
-      styles: {
-        fontWeight: "600",
-        fontSize: "14px",
-        flex: "1",
-      },
-      textContent: task.title,
-    });
-
+    // 删除任务标题的重复显示，仅保留 pill 和后续信息
     const taskStatus = this.createElement("span", {
+      className: `ai-pill ${
+        task.status === TaskStatus.COMPLETED
+          ? 'ai-pill--success'
+          : task.status === TaskStatus.FAILED
+          ? 'ai-pill--error'
+          : task.status === TaskStatus.PROCESSING
+          ? 'ai-pill--info'
+          : task.status === TaskStatus.PRIORITY
+          ? 'ai-pill--warn'
+          : ''
+      }`,
       styles: {
         fontSize: "12px",
-        padding: "4px 12px",
-        borderRadius: "12px",
-        backgroundColor: statusColors[task.status],
-        color: "#fff",
       },
       textContent: statusLabels[task.status],
     });
-
-    taskHeader.appendChild(taskTitle);
     taskHeader.appendChild(taskStatus);
 
     // 任务信息
     const taskInfo = this.createElement("div", {
       styles: {
         fontSize: "12px",
-        color: "#666",
+        color: "var(--ai-text-muted)",
         marginBottom: "10px",
       },
       innerHTML: `
@@ -525,10 +500,10 @@ export class TaskQueueView extends BaseView {
     const detailBtn = this.createElement("button", {
       styles: {
         padding: "6px 12px",
-        border: "1px solid #59c0bc",
+        border: "1px solid var(--ai-accent)",
         borderRadius: "4px",
         backgroundColor: "transparent",
-        color: "#59c0bc",
+        color: "var(--ai-accent)",
         cursor: "pointer",
         fontSize: "12px",
       },
@@ -660,11 +635,13 @@ export class TaskQueueView extends BaseView {
 
     // 组装任务项
     taskItem.appendChild(taskHeader);
-    taskItem.appendChild(taskInfo);
+    const body = taskItem.querySelector(".ai-card__body") as HTMLElement | null;
+    const target = body ?? taskItem;
+    target.appendChild(taskInfo);
     if (progressBar) {
-      taskItem.appendChild(progressBar);
+      target.appendChild(progressBar);
     }
-    taskItem.appendChild(actions);
+    target.appendChild(actions);
 
     return taskItem;
   }
@@ -717,20 +694,14 @@ export class TaskQueueView extends BaseView {
         const active = String(status) === String(s);
         if (active) {
           el.classList.add("active");
-          el.style.backgroundColor = "#59c0bc";
-          el.style.color = "#062d75ff";
+          el.style.backgroundColor = "var(--ai-accent-tint)";
+          el.style.color = "var(--ai-accent)";
           el.style.fontWeight = "1000";
-          el.style.display = "flex";
-          el.style.alignItems = "center";
-          el.style.justifyContent = "center";
         } else {
           el.classList.remove("active");
           el.style.backgroundColor = "transparent";
-          el.style.color = "#59c0bc";
+          el.style.color = "var(--ai-accent)";
           el.style.fontWeight = "600";
-          el.style.display = "flex";
-          el.style.alignItems = "center";
-          el.style.justifyContent = "center";
         }
       });
     }
@@ -854,6 +825,16 @@ export class TaskQueueView extends BaseView {
   }
 
   /**
+   * 视图挂载时的回调
+   *
+   * @protected
+   */
+  protected onMount(): void {
+    // 应用主题
+    this.applyTheme();
+  }
+
+  /**
    * 视图显示时的回调
    *
    * @protected
@@ -862,6 +843,8 @@ export class TaskQueueView extends BaseView {
     this.attachToManager();
     this.updateStats();
     this.renderTaskList();
+    // 重新应用主题(防止动态内容未应用主题)
+    this.applyTheme();
   }
 
   /** 手动刷新任务列表（供外部在入队后立即触发） */

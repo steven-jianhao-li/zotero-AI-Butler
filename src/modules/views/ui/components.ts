@@ -6,6 +6,18 @@
  */
 
 /**
+ * 检测是否为暗色模式
+ */
+function isDarkMode(): boolean {
+  try {
+    return Services.prefs.getBoolPref("zotero.theme.dark", false) ||
+           Services.prefs.getBoolPref("ui.systemUsesDarkTheme", false);
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * 按钮尺寸配置
  */
 export type ButtonSize = "small" | "medium" | "large";
@@ -69,7 +81,16 @@ export function createStyledButton(
   });
 
   button.addEventListener("mouseleave", () => {
-    button.style.backgroundColor = "#ffffff";
+    // 检测暗色模式
+    let isDark = false;
+    try {
+      isDark = Services.prefs.getBoolPref("zotero.theme.dark", false) ||
+               Services.prefs.getBoolPref("ui.systemUsesDarkTheme", false);
+    } catch (e) {
+      // 使用默认值
+    }
+    
+    button.style.backgroundColor = isDark ? "#2b2b2b" : "#ffffff";
     button.style.color = color;
     button.style.transform = "translateY(0)";
     button.style.boxShadow = "none";
@@ -114,7 +135,7 @@ export function createFormGroup(
     marginBottom: "8px",
     fontSize: "14px",
     fontWeight: "600",
-    color: "#333",
+    color: "var(--ai-text)",
   });
   group.appendChild(labelElement);
 
@@ -122,11 +143,12 @@ export function createFormGroup(
 
   if (description) {
     const desc = doc.createElement("div");
+    desc.className = "form-description";
     desc.textContent = description;
     Object.assign(desc.style, {
       marginTop: "6px",
       fontSize: "12px",
-      color: "#666",
+      color: "var(--ai-text-muted)",
       lineHeight: "1.4",
     });
     group.appendChild(desc);
@@ -151,12 +173,15 @@ export function createInput(
   input.value = value || "";
   if (placeholder) input.placeholder = placeholder;
 
+  const currentIsDark = isDarkMode();
   Object.assign(input.style, {
     width: "100%",
     padding: "10px 12px",
     fontSize: "14px",
-    border: "1px solid #ddd",
+    border: currentIsDark ? "1px solid #444" : "1px solid #ddd",
     borderRadius: "4px",
+    backgroundColor: currentIsDark ? "#2a2a2a" : "#fff",
+    color: currentIsDark ? "#e0e0e0" : "#333",
     boxSizing: "border-box",
     transition: "border-color 0.2s",
   });
@@ -168,7 +193,8 @@ export function createInput(
   });
 
   input.addEventListener("blur", () => {
-    input.style.borderColor = "#ddd";
+    const isDark = isDarkMode();
+    input.style.borderColor = isDark ? "#444" : "#ddd";
     input.style.boxShadow = "none";
   });
 
@@ -191,12 +217,15 @@ export function createTextarea(
   textarea.rows = rows;
   if (placeholder) textarea.placeholder = placeholder;
 
+  const currentIsDark = isDarkMode();
   Object.assign(textarea.style, {
     width: "100%",
     padding: "10px 12px",
     fontSize: "14px",
-    border: "1px solid #ddd",
+    border: currentIsDark ? "1px solid #444" : "1px solid #ddd",
     borderRadius: "4px",
+    backgroundColor: currentIsDark ? "#2a2a2a" : "#fff",
+    color: currentIsDark ? "#e0e0e0" : "#333",
     boxSizing: "border-box",
     fontFamily: "Consolas, Menlo, monospace",
     lineHeight: "1.5",
@@ -210,7 +239,8 @@ export function createTextarea(
   });
 
   textarea.addEventListener("blur", () => {
-    textarea.style.borderColor = "#ddd";
+    const isDark = isDarkMode();
+    textarea.style.borderColor = isDark ? "#444" : "#ddd";
     textarea.style.boxShadow = "none";
   });
 
@@ -230,6 +260,7 @@ export function createSelect(
   onChange?: (newValue: string) => void,
 ): HTMLElement {
   const doc = Zotero.getMainWindow().document;
+  let currentIsDark = isDarkMode();
 
   // 容器
   const container = doc.createElement("div");
@@ -251,9 +282,10 @@ export function createSelect(
     width: "100%",
     padding: "10px 30px 10px 12px",
     fontSize: "14px",
-    border: "1px solid #ddd",
+    border: "1px solid var(--ai-input-border)",
     borderRadius: "4px",
-    backgroundColor: "#fff",
+    backgroundColor: "var(--ai-input-bg)",
+    color: "var(--ai-input-text)",
     cursor: "pointer",
     boxSizing: "border-box",
     position: "relative",
@@ -269,7 +301,7 @@ export function createSelect(
     top: "50%",
     transform: "translateY(-50%)",
     fontSize: "10px",
-    color: "#666",
+    color: "var(--ai-text-muted)",
     pointerEvents: "none",
   });
   display.appendChild(arrow);
@@ -283,8 +315,8 @@ export function createSelect(
     left: "0",
     right: "0",
     marginTop: "4px",
-    backgroundColor: "#fff",
-    border: "1px solid #ddd",
+    backgroundColor: "var(--ai-surface)",
+    border: "1px solid var(--ai-border)",
     borderRadius: "4px",
     boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
     maxHeight: "240px",
@@ -298,12 +330,15 @@ export function createSelect(
     const item = doc.createElement("div");
     item.textContent = opt.label;
     item.setAttribute("data-value", opt.value);
+    
+    const isSelected = opt.value === value;
     Object.assign(item.style, {
       padding: "10px 12px",
       cursor: "pointer",
       fontSize: "14px",
       transition: "background-color 0.15s",
-      backgroundColor: opt.value === value ? "#e3f2fd" : "#fff",
+      backgroundColor: isSelected ? "var(--ai-accent-tint)" : "var(--ai-surface)",
+      color: "var(--ai-text)",
     });
 
     // 悬停效果
@@ -311,14 +346,14 @@ export function createSelect(
       if (
         item.getAttribute("data-value") !== container.getAttribute("data-value")
       ) {
-        item.style.backgroundColor = "#f5f5f5";
+        item.style.backgroundColor = "var(--ai-hover)";
       }
     });
     item.addEventListener("mouseleave", () => {
       if (
         item.getAttribute("data-value") !== container.getAttribute("data-value")
       ) {
-        item.style.backgroundColor = "#fff";
+        item.style.backgroundColor = "var(--ai-surface)";
       }
     });
 
@@ -337,7 +372,7 @@ export function createSelect(
       dropdown.querySelectorAll("div").forEach((el: Element) => {
         const elValue = el.getAttribute("data-value");
         (el as HTMLElement).style.backgroundColor =
-          elValue === newValue ? "#e3f2fd" : "#fff";
+          elValue === newValue ? "var(--ai-accent-tint)" : "var(--ai-surface)";
       });
 
       // 关闭下拉框
@@ -404,7 +439,7 @@ export function createSelect(
       dropdown.querySelectorAll("div").forEach((el: Element) => {
         const elValue = el.getAttribute("data-value");
         (el as HTMLElement).style.backgroundColor =
-          elValue === newValue ? "#e3f2fd" : "#fff";
+          elValue === newValue ? "var(--ai-accent-tint)" : "var(--ai-surface)";
       });
     }
   };
@@ -439,7 +474,7 @@ export function createCheckbox(id: string, checked: boolean): HTMLElement {
   label.textContent = checked ? "已启用" : "已禁用";
   Object.assign(label.style, {
     fontSize: "14px",
-    color: "#666",
+    color: "var(--ai-text-muted)",
   });
 
   checkbox.addEventListener("change", () => {
@@ -511,7 +546,7 @@ export function createSectionTitle(text: string): HTMLElement {
   Object.assign(el.style, {
     marginTop: "12px",
     marginBottom: "12px",
-    color: "#333",
+    color: "var(--ai-text)",
   });
   return el;
 }
@@ -539,4 +574,91 @@ export function createNotice(
   });
   el.innerHTML = html;
   return el;
+}
+
+/** 卡片类型 */
+export type CardType = "stat" | "activity" | "generic";
+
+interface CardOptions {
+  accentColor?: string;          // 统计卡片左侧或主色（可选）
+  icon?: string;                 // 右上角或背景图标
+  value?: string;                // 主数值（stat）
+  extra?: HTMLElement | string;  // 右侧附加内容（如按钮/徽标）
+  classes?: string[];            // 额外类名
+}
+
+/**
+ * 创建统一卡片组件
+ * 根据类型与传入参数自动渲染结构, 使用全局主题变量.
+ */
+export function createCard(
+  type: CardType,
+  title: string,
+  content?: string | HTMLElement,
+  opts: CardOptions = {},
+): HTMLElement {
+  const doc = Zotero.getMainWindow().document;
+  const card = doc.createElement("div");
+  card.className = "ai-card ai-card--" + type;
+  if (opts.classes) card.classList.add(...opts.classes);
+  if (opts.accentColor) {
+    card.style.setProperty("--ai-card-accent", opts.accentColor);
+    card.classList.add("ai-card--accented");
+  }
+
+  // Header
+  const header = doc.createElement("div");
+  header.className = "ai-card__header";
+  const titleEl = doc.createElement("div");
+  titleEl.className = "ai-card__title";
+  titleEl.textContent = title;
+  header.appendChild(titleEl);
+
+  if (opts.extra) {
+    if (typeof opts.extra === "string") {
+      const wrap = doc.createElement("div");
+      wrap.innerHTML = opts.extra;
+      header.appendChild(wrap);
+    } else {
+      header.appendChild(opts.extra);
+    }
+  }
+
+  // Body
+  const body = doc.createElement("div");
+  body.className = "ai-card__body";
+
+  if (type === "stat") {
+    const valueEl = doc.createElement("div");
+    // 兼容旧选择器 .stat-value，避免现有视图更新逻辑失效
+    valueEl.className = "ai-card__value stat-value";
+    valueEl.textContent = opts.value || "-";
+    body.appendChild(valueEl);
+  } else if (content) {
+    if (typeof content === "string") {
+      const c = doc.createElement("div");
+      c.textContent = content;
+      body.appendChild(c);
+    } else {
+      body.appendChild(content);
+    }
+  }
+
+  if (opts.icon) {
+    const iconEl = doc.createElement("div");
+    iconEl.className = "ai-card__icon";
+    iconEl.textContent = opts.icon;
+    body.appendChild(iconEl);
+  }
+
+  card.appendChild(header);
+  card.appendChild(body);
+
+  // 便捷访问更新数值的方法
+  (card as any).setValue = (val: string) => {
+    const v = card.querySelector(".ai-card__value");
+    if (v) v.textContent = val;
+  };
+
+  return card;
 }

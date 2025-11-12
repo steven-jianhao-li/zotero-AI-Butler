@@ -632,6 +632,102 @@ export class ApiSettingsPage {
     buttonGroup.appendChild(resetButton);
 
     form.appendChild(buttonGroup);
+
+    // 测试结果展示区域（防止进度窗文本过长被截断）
+    const resultBox = this.createElement("div", {
+      id: "api-test-result",
+      styles: {
+        display: "none",
+        marginTop: "12px",
+        padding: "12px 14px",
+        borderRadius: "6px",
+        backgroundColor: "#fff8e1",
+        border: "1px solid #ffe082",
+      },
+    });
+    // 标题 + 复制按钮
+    const resultTitle = this.createElement("div", {
+      styles: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "8px",
+        marginBottom: "6px",
+      },
+    });
+    const resultTitleText = this.createElement("span", {
+      textContent: "API 连接测试结果",
+      styles: { fontSize: "13px", fontWeight: "600" },
+    });
+    const copyBtn = this.createElement("button", {
+      textContent: "复制详情",
+      styles: {
+        border: "1px solid #ddd",
+        background: "#fff",
+        color: "#333",
+        borderRadius: "4px",
+        padding: "4px 8px",
+        cursor: "pointer",
+        fontSize: "12px",
+      },
+    });
+    copyBtn.addEventListener("click", async () => {
+      const text = (resultPre.textContent || "").toString();
+      const win = Zotero.getMainWindow() as any;
+      const doc = win?.document as Document | undefined;
+      const nav = (win as any)?.navigator as any;
+      try {
+        // 优先使用标准剪贴板 API（在 Zotero/Firefox 环境下可能可用）
+        if (nav?.clipboard?.writeText) {
+          await nav.clipboard.writeText(text);
+        } else {
+          throw new Error("clipboard api unavailable");
+        }
+        new ztoolkit.ProgressWindow("API 连接测试", { closeTime: 1500 })
+          .createLine({ text: "已复制错误详情", type: "success" })
+          .show();
+      } catch {
+        try {
+          if (!doc) throw new Error("no document");
+          // 退化为选中复制
+          const tmp = doc.createElement("textarea");
+          tmp.value = text;
+          (tmp.style as any).position = "fixed";
+          (tmp.style as any).left = "-9999px";
+          (doc.documentElement || doc.body || doc).appendChild(tmp);
+          (tmp as any).select?.();
+          (doc as any).execCommand?.("copy");
+          (tmp as any).remove?.();
+          new ztoolkit.ProgressWindow("API 连接测试", { closeTime: 1500 })
+            .createLine({ text: "已复制错误详情", type: "success" })
+            .show();
+        } catch {
+          new ztoolkit.ProgressWindow("API 连接测试", { closeTime: 2500 })
+            .createLine({ text: "复制失败，可手动选择文本复制", type: "default" })
+            .show();
+        }
+      }
+    });
+    resultTitle.appendChild(resultTitleText);
+    resultTitle.appendChild(copyBtn);
+    const resultPre = this.createElement("pre", {
+      id: "api-test-result-text",
+      styles: {
+        margin: "0",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-all",
+        maxHeight: "240px",
+        overflow: "auto",
+        fontFamily:
+          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+        fontSize: "12px",
+        lineHeight: "1.5",
+        color: "#5d4037",
+      },
+    });
+    resultBox.appendChild(resultTitle);
+    resultBox.appendChild(resultPre);
+    form.appendChild(resultBox);
     this.container.appendChild(form);
   }
 
@@ -1141,6 +1237,20 @@ export class ApiSettingsPage {
     progressWindow.createLine({ text: "正在测试连接...", type: "default" });
     progressWindow.show();
 
+    // 页面内结果区域（避免进度窗文本截断）
+    const resultBox = this.container.querySelector(
+      "#api-test-result",
+    ) as HTMLElement | null;
+    const resultPre = this.container.querySelector(
+      "#api-test-result-text",
+    ) as HTMLElement | null;
+    if (resultBox && resultPre) {
+      resultBox.style.display = "block";
+      resultBox.style.backgroundColor = "#fff8e1";
+      resultBox.style.border = "1px solid #ffe082";
+      resultPre.textContent = "正在测试连接…\n请稍候。";
+    }
+
     try {
       // 先保存当前设置,确保测试使用最新配置
       await this.saveSettings();
@@ -1154,13 +1264,32 @@ export class ApiSettingsPage {
         progress: 100,
       });
 
+      if (resultBox && resultPre) {
+        resultBox.style.display = "block";
+        // 成功样式
+        resultBox.style.backgroundColor = "#e8f5e9";
+        resultBox.style.border = "1px solid #a5d6a7";
+        resultPre.style.color = "#1b5e20";
+        resultPre.textContent = result;
+      }
+
       setTimeout(() => progressWindow.close(), 3000);
     } catch (error: any) {
+      const fullMsg = (error?.stack || error?.message || String(error)) as string;
       progressWindow.changeLine({
-        text: `❌ ${error.message}`,
+        text: `❌ ${error?.message || "连接失败"}`,
         type: "fail",
         progress: 100,
       });
+
+      if (resultBox && resultPre) {
+        resultBox.style.display = "block";
+        // 失败样式
+        resultBox.style.backgroundColor = "#ffebee";
+        resultBox.style.border = "1px solid #ffcdd2";
+        resultPre.style.color = "#b71c1c";
+        resultPre.textContent = fullMsg;
+      }
 
       setTimeout(() => progressWindow.close(), 5000);
     }

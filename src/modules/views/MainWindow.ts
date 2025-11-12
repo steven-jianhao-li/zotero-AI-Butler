@@ -167,13 +167,28 @@ export class MainWindow {
           this.initializeUI();
           // 初始化主题根类与暗色切换
           try {
-            const root = this.dialog?.window?.document?.getElementById("ai-butler-main-window");
+            const root = this.dialog?.window?.document?.getElementById(
+              "ai-butler-main-window",
+            );
             if (root && !root.classList.contains("ai-butler-root")) {
               root.classList.add("ai-butler-root");
             }
             let isDark = false;
-            try { isDark = Services.prefs.getBoolPref("zotero.theme.dark", false); } catch {}
-            if (!isDark) { try { isDark = Services.prefs.getBoolPref("ui.systemUsesDarkTheme", false); } catch {} }
+            try {
+              isDark = Services.prefs.getBoolPref("zotero.theme.dark", false);
+            } catch {
+              // Ignored
+            }
+            if (!isDark) {
+              try {
+                isDark = Services.prefs.getBoolPref(
+                  "ui.systemUsesDarkTheme",
+                  false,
+                );
+              } catch {
+                // Ignored
+              }
+            }
             const win = Zotero.getMainWindow();
             if (!isDark && win && typeof win.matchMedia === "function") {
               try {
@@ -181,10 +196,13 @@ export class MainWindow {
                 if (mq) {
                   isDark = mq.matches;
                 }
-              } catch {}
+              } catch {
+                // Ignored
+              }
             }
             if (root) {
-              if (isDark) root.classList.add("ai-butler-dark"); else root.classList.remove("ai-butler-dark");
+              if (isDark) root.classList.add("ai-butler-dark");
+              else root.classList.remove("ai-butler-dark");
             }
           } catch (e2) {
             ztoolkit.log("[AI Butler] 初始化主题类失败", e2);

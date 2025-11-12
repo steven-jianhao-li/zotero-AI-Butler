@@ -10,7 +10,7 @@
   --ai-border: #e0e0e0;
   --ai-accent: #59c0bc;
   --ai-accent-contrast: #0e5a58;
-  --ai-accent-tint: rgba(89, 192, 188, 0.10);
+  --ai-accent-tint: rgba(89, 192, 188, 0.1);
   --ai-hover: rgba(0, 0, 0, 0.03);
   --ai-input-bg: #ffffff;
   --ai-input-border: #d9d9d9;
@@ -86,11 +86,11 @@
   border-radius: 8px;
   padding: 16px;
   box-sizing: border-box;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 /* 有强调色时的左侧强调条 */
-.ai-card--accented { 
+.ai-card--accented {
   border-left: 4px solid var(--ai-card-accent, var(--ai-accent));
 }
 
@@ -141,10 +141,26 @@
   background: var(--ai-surface-2);
   color: var(--ai-text);
 }
-.ai-pill--success { background: rgba(76, 175, 80, 0.15); color: #4caf50; border-color: rgba(76,175,80,0.35); }
-.ai-pill--warn    { background: rgba(255, 152, 0, 0.15); color: #ff9800; border-color: rgba(255,152,0,0.35); }
-.ai-pill--error   { background: rgba(244, 67, 54, 0.15); color: #f44336; border-color: rgba(244,67,54,0.35); }
-.ai-pill--info    { background: var(--ai-accent-tint); color: var(--ai-accent); border-color: rgba(89,192,188,0.35); }
+.ai-pill--success {
+  background: rgba(76, 175, 80, 0.15);
+  color: #4caf50;
+  border-color: rgba(76, 175, 80, 0.35);
+}
+.ai-pill--warn {
+  background: rgba(255, 152, 0, 0.15);
+  color: #ff9800;
+  border-color: rgba(255, 152, 0, 0.35);
+}
+.ai-pill--error {
+  background: rgba(244, 67, 54, 0.15);
+  color: #f44336;
+  border-color: rgba(244, 67, 54, 0.35);
+}
+.ai-pill--info {
+  background: var(--ai-accent-tint);
+  color: var(--ai-accent);
+  border-color: rgba(89, 192, 188, 0.35);
+}
 
 /* 消息气泡（用于摘要/聊天）*/
 .ai-msg-user {

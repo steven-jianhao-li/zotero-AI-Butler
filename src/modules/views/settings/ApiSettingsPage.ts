@@ -703,7 +703,10 @@ export class ApiSettingsPage {
             .show();
         } catch {
           new ztoolkit.ProgressWindow("API 连接测试", { closeTime: 2500 })
-            .createLine({ text: "复制失败，可手动选择文本复制", type: "default" })
+            .createLine({
+              text: "复制失败，可手动选择文本复制",
+              type: "default",
+            })
             .show();
         }
       }
@@ -1275,7 +1278,9 @@ export class ApiSettingsPage {
 
       setTimeout(() => progressWindow.close(), 3000);
     } catch (error: any) {
-      const fullMsg = (error?.stack || error?.message || String(error)) as string;
+      const fullMsg = (error?.stack ||
+        error?.message ||
+        String(error)) as string;
       progressWindow.changeLine({
         text: `❌ ${error?.message || "连接失败"}`,
         type: "fail",

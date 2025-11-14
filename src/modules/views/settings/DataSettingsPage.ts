@@ -7,6 +7,7 @@ import {
   createFormGroup,
   createStyledButton,
   createNotice,
+  createCard,
 } from "../ui/components";
 import { TaskQueueManager } from "../../taskQueue";
 import { getDefaultSummaryPrompt } from "../../../utils/prompts";
@@ -48,21 +49,22 @@ export class DataSettingsPage {
       gap: "12px",
       marginBottom: "16px",
     });
-    [
-      { label: "总任务", val: stats.total },
-      { label: "已完成", val: stats.completed },
-      { label: "失败", val: stats.failed },
-    ].forEach((s) => {
-      const card = Zotero.getMainWindow().document.createElement("div");
-      Object.assign(card.style, {
-        padding: "12px",
-        border: "1px solid #eee",
-        borderRadius: "6px",
-        background: "#fff",
+
+    const statConfigs = [
+      { label: "总任务", val: stats.total.toString(), icon: "📊" },
+      { label: "已完成", val: stats.completed.toString(), icon: "✅" },
+      { label: "失败", val: stats.failed.toString(), icon: "⚠️" },
+    ];
+
+    statConfigs.forEach((s) => {
+      const card = createCard("stat", s.label, undefined, {
+        value: s.val,
+        icon: s.icon,
+        accentColor: "#59c0bc",
       });
-      card.innerHTML = `<div style="font-size:12px;color:#666">${s.label}</div><div style="font-size:18px;font-weight:700;color:#59c0bc">${s.val}</div>`;
       statsBox.appendChild(card);
     });
+
     section.appendChild(statsBox);
 
     // 操作按钮行

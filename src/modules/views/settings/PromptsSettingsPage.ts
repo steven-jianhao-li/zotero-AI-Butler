@@ -191,13 +191,14 @@ export class PromptsSettingsPage {
     actionRow.appendChild(btnPreview);
     right.appendChild(actionRow);
 
-    // 预览框
+    // 预览框：改为与模板编辑器风格一致，适配明暗主题
     this.previewBox = Zotero.getMainWindow().document.createElement("div");
     Object.assign(this.previewBox.style, {
-      border: "1px dashed #ccc",
+      border: "1px dashed var(--ai-input-border)",
       borderRadius: "6px",
       padding: "12px",
-      background: "#fafafa",
+      background: "var(--ai-input-bg)",
+      color: "var(--ai-input-text)",
       whiteSpace: "pre-wrap",
       fontFamily: "Consolas, Menlo, monospace",
       lineHeight: "1.5",

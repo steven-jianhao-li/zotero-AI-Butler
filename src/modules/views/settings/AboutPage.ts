@@ -6,6 +6,7 @@
  */
 
 import { version, config, repository } from "../../../../package.json";
+import { createCard, createNotice } from "../ui/components";
 
 export class AboutPage {
   private container: HTMLElement;
@@ -35,19 +36,14 @@ export class AboutPage {
     Object.assign(aboutContent.style, {
       padding: "0",
       maxWidth: "800px",
+      display: "flex",
+      flexDirection: "column",
+      gap: "16px",
     });
 
     // 项目简介 - 从 README 获取
-    const introSection = doc.createElement("div");
-    Object.assign(introSection.style, {
-      marginBottom: "30px",
-      padding: "20px",
-      backgroundColor: "#f9f9f9",
-      borderRadius: "8px",
-      borderLeft: "4px solid #59c0bc",
-    });
-
-    introSection.innerHTML = `
+    const introContent = doc.createElement("div");
+    introContent.innerHTML = `
       <blockquote style="margin: 0 0 15px 0; padding: 0; font-style: italic; color: #666; border-left: none;">
         <p style="margin: 5px 0; font-size: 15px;">文献下载一时爽，打开阅读火葬场。</p>
         <p style="margin: 5px 0; font-size: 15px;">天书难啃骨头硬，管家嚼碎再喂粮。</p>
@@ -71,28 +67,21 @@ export class AboutPage {
         管家会自动帮您精读论文，将文章揉碎了总结为笔记，让您"十分钟完全了解"这篇论文！
       </p>
     `;
+    const introSection = createCard("generic", "", introContent, {
+      accentColor: "#59c0bc",
+    });
     aboutContent.appendChild(introSection);
 
     // 核心功能
-    const featuresSection = doc.createElement("div");
-    Object.assign(featuresSection.style, {
-      marginBottom: "30px",
-    });
-
-    const featuresTitle = doc.createElement("h3");
-    featuresTitle.textContent = "核心功能";
-    Object.assign(featuresTitle.style, {
-      fontSize: "16px",
-      fontWeight: "600",
-      marginBottom: "12px",
-      color: "#333",
-    });
-    featuresSection.appendChild(featuresTitle);
+    const featuresSection = createCard("generic", "核心功能");
+    const featuresBody = featuresSection.querySelector(
+      ".ai-card__body",
+    ) as HTMLElement;
 
     const featuresList = doc.createElement("ol");
     Object.assign(featuresList.style, {
       fontSize: "14px",
-      color: "#666",
+      color: "var(--ai-text-muted)",
       lineHeight: "1.8",
       paddingLeft: "20px",
     });
@@ -125,78 +114,78 @@ export class AboutPage {
       featuresList.appendChild(li);
     });
 
-    featuresSection.appendChild(featuresList);
-
-    const recommendation = doc.createElement("p");
-    Object.assign(recommendation.style, {
-      fontSize: "14px",
-      color: "#666",
-      lineHeight: "1.6",
-      marginTop: "15px",
-      padding: "10px",
-      backgroundColor: "#fffbea",
-      borderRadius: "4px",
-    });
-    recommendation.innerHTML = `💡 <strong>推荐使用 Google Gemini 2.5 pro 模型，Gemini读论文讲的很到位。</strong>`;
-    featuresSection.appendChild(recommendation);
-
-    const slogan = doc.createElement("p");
-    Object.assign(slogan.style, {
-      fontSize: "15px",
-      color: "#59c0bc",
-      fontWeight: "600",
-      textAlign: "center",
-      marginTop: "20px",
-      padding: "15px",
-      backgroundColor: "#f0f9f8",
-      borderRadius: "6px",
-    });
-    slogan.textContent =
-      "您只负责思考，Zotero-AI-Butler 负责为您的阅读扫清障碍！";
-    featuresSection.appendChild(slogan);
+    featuresBody.appendChild(featuresList);
 
     aboutContent.appendChild(featuresSection);
 
-    // 项目信息
-    const infoSection = doc.createElement("div");
-    Object.assign(infoSection.style, {
-      marginBottom: "30px",
-      padding: "20px",
-      backgroundColor: "#f5f5f5",
-      borderRadius: "8px",
+    // Slogan 单独作为一行 Callout，略微悬浮效果
+    const sloganWrapper = doc.createElement("div");
+    Object.assign(sloganWrapper.style, {
+      display: "flex",
+      justifyContent: "center",
+      marginTop: "4px",
     });
 
+    const slogan = doc.createElement("div");
+    Object.assign(slogan.style, {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "8px",
+      fontSize: "13px",
+      color: "var(--ai-text-muted)",
+      padding: "8px 14px",
+      borderRadius: "999px",
+      background:
+        "linear-gradient(135deg, rgba(89,192,188,0.14), rgba(89,192,188,0.02))",
+      border: "1px solid rgba(89,192,188,0.25)",
+      boxShadow: "0 4px 12px rgba(0,0,0,0.24)",
+      backdropFilter: "blur(12px)",
+      maxWidth: "420px",
+      whiteSpace: "nowrap",
+    });
+
+    const sloganIcon = doc.createElement("span");
+    sloganIcon.textContent = "✨";
+    sloganIcon.style.color = "#59c0bc";
+
+    const sloganText = doc.createElement("span");
+    sloganText.textContent =
+      "您只负责思考，Zotero‑AI‑Butler 负责为您的阅读扫清障碍";
+
+    slogan.appendChild(sloganIcon);
+    slogan.appendChild(sloganText);
+    sloganWrapper.appendChild(slogan);
+
+    aboutContent.appendChild(sloganWrapper);
+
+    // 项目信息
     const repoUrl =
       repository?.url?.replace(/^git\+/, "").replace(/\.git$/, "") ||
       "https://github.com/steven-jianhao-li/zotero-AI-Butler";
 
-    infoSection.innerHTML = `
-      <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #333;">项目信息</h3>
-      <p style="font-size: 14px; color: #666; margin: 8px 0;">
+    const infoBody = doc.createElement("div");
+    infoBody.innerHTML = `
+      <p style="font-size: 14px; color: var(--ai-text-muted); margin: 8px 0;">
         <strong>名称:</strong> ${config.addonName || "Zotero AI Butler"}
       </p>
-      <p style="font-size: 14px; color: #666; margin: 8px 0;">
+      <p style="font-size: 14px; color: var(--ai-text-muted); margin: 8px 0;">
         <strong>版本:</strong> ${version || "1.0.0"}
       </p>
-      <p style="font-size: 14px; color: #666; margin: 8px 0;">
+      <p style="font-size: 14px; color: var(--ai-text-muted); margin: 8px 0;">
         <strong>作者:</strong> Steven Jianhao Li
       </p>
-      <p style="font-size: 14px; color: #666; margin: 8px 0;">
+      <p style="font-size: 14px; color: var(--ai-text-muted); margin: 8px 0;">
         <strong>GitHub:</strong> <a href="${repoUrl}" target="_blank" style="color: #59c0bc; text-decoration: none;">${repoUrl}</a>
       </p>
-      <p style="font-size: 14px; color: #666; margin: 8px 0;">
+      <p style="font-size: 14px; color: var(--ai-text-muted); margin: 8px 0;">
         <strong>问题反馈:</strong> <a href="${repoUrl}/issues" target="_blank" style="color: #59c0bc; text-decoration: none;">${repoUrl}/issues</a>
       </p>
     `;
+
+    const infoSection = createCard("generic", "项目信息", infoBody);
     aboutContent.appendChild(infoSection);
 
     // 致谢
-    const thanksSection = doc.createElement("div");
-    Object.assign(thanksSection.style, {
-      paddingTop: "20px",
-      borderTop: "1px solid #e0e0e0",
-    });
-
     this.container.appendChild(aboutContent);
   }
 }

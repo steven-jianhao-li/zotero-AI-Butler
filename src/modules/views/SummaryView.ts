@@ -280,29 +280,18 @@ export class SummaryView extends BaseView {
     // 保存 scrollArea 的引用,用于滚动控制
     this.scrollArea = scrollArea;
 
-    // 底部按钮区域
-    const queueButton = this.createElement("button", {
-      id: "ai-butler-queue-button",
-      styles: {
-        fontSize: "16px",
-        fontWeight: "700",
-        padding: "12px 32px",
-        backgroundColor: "var(--ai-accent)",
-        color: "#ffffff",
-        border: "none",
-        borderRadius: "6px",
-        cursor: "pointer",
-        transition: "all 0.2s ease",
-        minWidth: "180px",
-        boxShadow: "0 2px 4px rgba(0,0,0,0.15)",
-        // 垂直居中
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      },
-      innerHTML: "📋 返回任务队列",
-    }) as HTMLButtonElement;
-    this.queueButton = queueButton;
+    // 底部按钮区域：统一使用 createStyledButton，适配明暗主题
+    const queueButton = createStyledButton(
+      "📋 返回任务队列",
+      "#59c0bc",
+      "medium",
+    );
+    queueButton.id = "ai-butler-queue-button";
+    Object.assign(queueButton.style, {
+      fontSize: "16px",
+      minWidth: "180px",
+    });
+    this.queueButton = queueButton as HTMLButtonElement;
     this.updateQueueButton("ready");
 
     const footer = this.createElement("div", {
@@ -1929,7 +1918,7 @@ ${jsonMarker}
       default:
         button.innerHTML = "📋 返回任务队列";
         button.style.backgroundColor = "var(--ai-accent)";
-        button.style.color = "#ffffff";
+        button.style.color = "var(--ai-accent)";
         break;
     }
   }

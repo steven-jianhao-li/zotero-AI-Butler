@@ -30,6 +30,12 @@ import { LLMClient } from "./llmClient";
 import { SummaryView } from "./views/SummaryView";
 import { getPref } from "../utils/prefs";
 import { MainWindow } from "./views/MainWindow";
+import {
+  parseMultiRoundPrompts,
+  getDefaultMultiRoundFinalPrompt,
+  type MultiRoundPromptItem,
+  type SummaryMode,
+} from "../utils/prompts";
 
 /**
  * AI 笔记生成器类
@@ -114,8 +120,17 @@ export class NoteGenerator {
       }
 
       // 步骤 2: AI 模型总结生成
+      // 读取总结模式配置
+      const summaryMode = ((getPref("summaryMode" as any) as string) ||
+        "single") as SummaryMode;
+
       // 通知进度回调开始 AI 分析 (40% 完成)
-      progressCallback?.("正在生成AI总结...", 40);
+      progressCallback?.(
+        summaryMode === "single"
+          ? "正在生成AI总结..."
+          : `正在进行多轮对话分析 (模式: ${summaryMode === "multi_concat" ? "拼接" : "总结"})...`,
+        40,
+      );
 
       // 如果有输出窗口,开始显示当前处理的条目
       if (outputWindow) {
@@ -123,36 +138,44 @@ export class NoteGenerator {
         outputWindow.showLoadingState(`正在分析「${itemTitle}」`);
       }
 
-      // 定义流式输出回调函数
-      // 每接收到 AI 返回的增量内容,就追加到 fullContent 和输出窗口
-      const onProgress = async (chunk: string) => {
-        fullContent += chunk;
-        // 将增量通过外部 streamCallback 也广播出去(用于任务队列的流式详情)
-        try {
-          streamCallback?.(chunk);
-        } catch (e) {
-          // 避免空的 catch：记录并忽略外部回调错误
-          ztoolkit.log("[AI Butler] streamCallback error:", e);
-        }
-        if (outputWindow) {
-          // 第一次收到内容时,开始显示条目(会自动隐藏加载状态)
-          if (fullContent === chunk) {
-            outputWindow.startItem(itemTitle);
+      // 根据总结模式选择不同的生成策略
+      if (summaryMode === "single") {
+        // 单次对话模式：使用传统的单次总结
+        // 定义流式输出回调函数
+        const onProgress = async (chunk: string) => {
+          fullContent += chunk;
+          try {
+            streamCallback?.(chunk);
+          } catch (e) {
+            ztoolkit.log("[AI Butler] streamCallback error:", e);
           }
-          outputWindow.appendContent(chunk);
-        }
-      };
+          if (outputWindow) {
+            if (fullContent === chunk) {
+              outputWindow.startItem(itemTitle);
+            }
+            outputWindow.appendContent(chunk);
+          }
+        };
 
-      // 调用 LLM 客户端生成总结
-      const summary = await LLMClient.generateSummary(
-        pdfContent,
-        isBase64,
-        undefined,
-        onProgress,
-      );
-
-      // 确保使用完整的总结内容
-      fullContent = summary;
+        const summary = await LLMClient.generateSummary(
+          pdfContent,
+          isBase64,
+          undefined,
+          onProgress,
+        );
+        fullContent = summary;
+      } else {
+        // 多轮对话模式
+        fullContent = await this.generateMultiRoundContent(
+          pdfContent,
+          isBase64,
+          itemTitle,
+          summaryMode,
+          outputWindow,
+          progressCallback,
+          streamCallback,
+        );
+      }
 
       // 步骤 3: 创建/更新笔记
       // 通知进度回调开始创建笔记 (80% 完成)
@@ -410,6 +433,208 @@ export class NoteGenerator {
     await note.saveTx();
 
     return note;
+  }
+
+  /**
+   * 执行多轮对话并生成内容
+   *
+   * 根据配置的多轮提示词依次进行对话，支持两种模式：
+   * - multi_concat: 将所有对话内容拼接（最详细）
+   * - multi_summarize: 基于对话生成最终总结（均衡）
+   *
+   * @param pdfContent PDF内容（Base64或文本）
+   * @param isBase64 是否为Base64编码
+   * @param itemTitle 文献标题
+   * @param mode 总结模式
+   * @param outputWindow 输出窗口
+   * @param progressCallback 进度回调
+   * @param streamCallback 流式输出回调
+   * @returns 生成的内容
+   */
+  private static async generateMultiRoundContent(
+    pdfContent: string,
+    isBase64: boolean,
+    itemTitle: string,
+    mode: SummaryMode,
+    outputWindow?: SummaryView,
+    progressCallback?: (message: string, progress: number) => void,
+    streamCallback?: (chunk: string) => void,
+  ): Promise<string> {
+    // 读取多轮提示词配置
+    const multiRoundPromptsJson = getPref("multiRoundPrompts" as any) as string;
+    const prompts = parseMultiRoundPrompts(multiRoundPromptsJson);
+    const totalRounds = prompts.length;
+
+    // 存储每轮对话的问答内容
+    const roundResults: Array<{
+      title: string;
+      question: string;
+      answer: string;
+    }> = [];
+
+    // 维护对话历史（用于上下文）
+    const conversationHistory: Array<{
+      role: "user" | "assistant";
+      content: string;
+    }> = [];
+
+    // 显示标题
+    if (outputWindow) {
+      outputWindow.startItem(itemTitle);
+      outputWindow.appendContent(
+        `**[多轮对话模式: ${mode === "multi_concat" ? "拼接" : "总结"}]**\n\n`,
+      );
+    }
+
+    // 依次执行每轮对话
+    for (let i = 0; i < totalRounds; i++) {
+      const currentPrompt = prompts[i];
+      const roundNum = i + 1;
+      const progressPercent = 40 + Math.floor((i / totalRounds) * 40); // 40% - 80%
+
+      progressCallback?.(
+        `正在进行第 ${roundNum}/${totalRounds} 轮对话: ${currentPrompt.title}`,
+        progressPercent,
+      );
+
+      // 在输出窗口显示当前轮次标题
+      if (outputWindow) {
+        outputWindow.appendContent(
+          `\n## 第 ${roundNum} 轮: ${currentPrompt.title}\n\n`,
+        );
+        outputWindow.appendContent(`**提问:** ${currentPrompt.prompt}\n\n`);
+        outputWindow.appendContent(`**回答:**\n`);
+      }
+
+      // 构建当前对话消息
+      conversationHistory.push({
+        role: "user",
+        content: currentPrompt.prompt,
+      });
+
+      // 收集当前轮次的回答
+      let currentAnswer = "";
+      const onRoundProgress = async (chunk: string) => {
+        currentAnswer += chunk;
+        streamCallback?.(chunk);
+        if (outputWindow) {
+          outputWindow.appendContent(chunk);
+        }
+      };
+
+      try {
+        // 调用 LLM 进行对话
+        const answer = await LLMClient.chat(
+          pdfContent,
+          isBase64,
+          conversationHistory,
+          onRoundProgress,
+        );
+        currentAnswer = answer;
+
+        // 将助手回复加入对话历史
+        conversationHistory.push({
+          role: "assistant",
+          content: answer,
+        });
+
+        // 记录本轮结果
+        roundResults.push({
+          title: currentPrompt.title,
+          question: currentPrompt.prompt,
+          answer: answer,
+        });
+
+        if (outputWindow) {
+          outputWindow.appendContent("\n\n---\n");
+        }
+      } catch (error: any) {
+        ztoolkit.log(`[AI Butler] 第 ${roundNum} 轮对话失败:`, error);
+        // 如果某轮对话失败，记录错误但继续
+        roundResults.push({
+          title: currentPrompt.title,
+          question: currentPrompt.prompt,
+          answer: `[错误: ${error.message}]`,
+        });
+
+        if (outputWindow) {
+          outputWindow.appendContent(
+            `\n\n❌ **对话失败:** ${error.message}\n\n---\n`,
+          );
+        }
+      }
+    }
+
+    // 根据模式生成最终内容
+    if (mode === "multi_concat") {
+      // 拼接模式：直接拼接所有问答
+      return this.formatMultiRoundConcat(roundResults);
+    } else {
+      // 总结模式：基于所有对话进行最终总结
+      progressCallback?.("正在生成最终总结...", 85);
+
+      if (outputWindow) {
+        outputWindow.appendContent("\n## 📝 最终总结\n\n");
+      }
+
+      // 读取最终总结提示词
+      const finalPromptConfig = getPref(
+        "multiRoundFinalPrompt" as any,
+      ) as string;
+      const finalPrompt =
+        finalPromptConfig?.trim() || getDefaultMultiRoundFinalPrompt();
+
+      // 将最终总结提示词加入对话
+      conversationHistory.push({
+        role: "user",
+        content: finalPrompt,
+      });
+
+      let finalSummary = "";
+      const onFinalProgress = async (chunk: string) => {
+        finalSummary += chunk;
+        streamCallback?.(chunk);
+        if (outputWindow) {
+          outputWindow.appendContent(chunk);
+        }
+      };
+
+      try {
+        const summary = await LLMClient.chat(
+          pdfContent,
+          isBase64,
+          conversationHistory,
+          onFinalProgress,
+        );
+        return summary;
+      } catch (error: any) {
+        ztoolkit.log("[AI Butler] 最终总结生成失败:", error);
+        // 如果最终总结失败，回退到拼接模式
+        return this.formatMultiRoundConcat(roundResults);
+      }
+    }
+  }
+
+  /**
+   * 格式化多轮对话拼接内容
+   *
+   * @param roundResults 各轮对话结果
+   * @returns 格式化后的 Markdown 内容
+   */
+  private static formatMultiRoundConcat(
+    roundResults: Array<{ title: string; question: string; answer: string }>,
+  ): string {
+    let content = "# 多轮对话分析\n\n";
+
+    for (let i = 0; i < roundResults.length; i++) {
+      const result = roundResults[i];
+      content += `## 第 ${i + 1} 轮: ${result.title}\n\n`;
+      content += `**提问:** ${result.question}\n\n`;
+      content += `**回答:**\n${result.answer}\n\n`;
+      content += "---\n\n";
+    }
+
+    return content;
   }
 
   /**

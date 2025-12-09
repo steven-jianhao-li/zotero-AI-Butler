@@ -186,3 +186,119 @@ export function shouldUpdatePrompt(
   // 自定义判断由调用方负责(通过比较 currentPrompt 与旧版本默认值)
   return currentPromptVersion < PROMPT_VERSION;
 }
+
+// ================================================================
+// 多轮对话提示词相关功能
+// ================================================================
+
+/**
+ * 多轮提示词条目类型
+ */
+export interface MultiRoundPromptItem {
+  id: string;
+  title: string;
+  prompt: string;
+  order: number;
+}
+
+/**
+ * 总结模式类型
+ * - single: 单次对话总结（默认，Token消耗最少）
+ * - multi_concat: 多轮拼接模式（将所有对话内容拼接作为笔记）
+ * - multi_summarize: 多轮总结模式（多轮对话后再进行汇总）
+ */
+export type SummaryMode = "single" | "multi_concat" | "multi_summarize";
+
+/**
+ * 默认的多轮提示词数组
+ *
+ * 包含四轮提示词，分别针对：
+ * 1. 研究背景与问题
+ * 2. 研究方法与技术
+ * 3. 实验设计与结果
+ * 4. 结论与展望
+ */
+export const DEFAULT_MULTI_ROUND_PROMPTS: MultiRoundPromptItem[] = [
+  {
+    id: "round1",
+    title: "研究背景与问题",
+    prompt:
+      "请详细介绍这篇论文的研究背景和动机。具体包括：1) 这个研究领域目前面临哪些主要挑战？2) 现有方法存在什么不足？3) 本文要解决的核心问题是什么？请用中文回答。",
+    order: 1,
+  },
+  {
+    id: "round2",
+    title: "研究方法与技术",
+    prompt:
+      "请详细解释这篇论文提出的方法和技术。具体包括：1) 核心方法/算法/框架是什么？2) 关键技术细节和创新点有哪些？3) 与现有方法相比有什么改进？请用中文回答。",
+    order: 2,
+  },
+  {
+    id: "round3",
+    title: "实验设计与结果",
+    prompt:
+      "请详细分析这篇论文的实验部分。具体包括：1) 使用了哪些数据集和评价指标？2) 主要的实验结果是什么？3) 与基线方法相比表现如何？4) 有哪些消融实验和分析？请用中文回答。",
+    order: 3,
+  },
+  {
+    id: "round4",
+    title: "结论与展望",
+    prompt:
+      "请总结这篇论文的结论和贡献。具体包括：1) 论文的主要贡献和创新点是什么？2) 存在哪些局限性？3) 未来可能的研究方向有哪些？请用中文回答。",
+    order: 4,
+  },
+];
+
+/**
+ * 默认的多轮对话最终总结提示词
+ */
+export const DEFAULT_MULTI_ROUND_FINAL_PROMPT = `基于以上多轮对话的内容，请为我生成一份完整、结构化的论文总结笔记。要求：
+1. 开头用一段话概括论文的核心内容
+2. 分章节整理各部分的关键信息
+3. 突出论文的创新点和贡献
+4. 指出论文的局限性和未来方向
+5. 语言简洁清晰，使用中文`;
+
+/**
+ * 获取默认的多轮提示词数组
+ *
+ * @returns 默认多轮提示词数组
+ */
+export function getDefaultMultiRoundPrompts(): MultiRoundPromptItem[] {
+  return DEFAULT_MULTI_ROUND_PROMPTS;
+}
+
+/**
+ * 获取默认的多轮对话最终总结提示词
+ *
+ * @returns 默认最终总结提示词
+ */
+export function getDefaultMultiRoundFinalPrompt(): string {
+  return DEFAULT_MULTI_ROUND_FINAL_PROMPT;
+}
+
+/**
+ * 解析存储的多轮提示词 JSON 字符串
+ *
+ * @param jsonStr 存储的 JSON 字符串
+ * @returns 解析后的多轮提示词数组，解析失败则返回默认值
+ */
+export function parseMultiRoundPrompts(
+  jsonStr: string | undefined,
+): MultiRoundPromptItem[] {
+  if (!jsonStr || !jsonStr.trim()) {
+    return getDefaultMultiRoundPrompts();
+  }
+  try {
+    const parsed = JSON.parse(jsonStr);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      // 按 order 排序
+      return parsed.sort(
+        (a: MultiRoundPromptItem, b: MultiRoundPromptItem) => a.order - b.order,
+      );
+    }
+    return getDefaultMultiRoundPrompts();
+  } catch (e) {
+    return getDefaultMultiRoundPrompts();
+  }
+}

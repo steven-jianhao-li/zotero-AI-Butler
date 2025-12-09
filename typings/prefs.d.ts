@@ -30,6 +30,9 @@ declare namespace _ZoteroTypes {
       "requestTimeout": string;
       "summaryPrompt": string;
       "customPrompts": string;
+      "summaryMode": string;
+      "multiRoundPrompts": string;
+      "multiRoundFinalPrompt": string;
       "maxRetries": string;
       "batchSize": string;
       "batchInterval": string;

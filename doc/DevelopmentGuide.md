@@ -1,3 +1,12 @@
+## 常用命令
+
+- 发布新版本：`npm run release`
+- 打包插件：`npm run build`
+- 本地测试：`npm start`
+- 修改zotero profile： `./zotero.exe -p`(在Windows zotero安装目录下运行)
+- 统一代码格式：`npx prettier --write .`
+- 检查代码格式：`npm run lint:check`
+
 # zotero-AI-Butler
 
 > **文献下载一时爽，打开阅读火葬场。**
@@ -88,15 +97,6 @@ TA 是您7x24小时待命、不知疲倦且绝对忠诚的私人管家。
     - **错误显示**:如果调用模型时出错,错误信息会直接显示在对话界面中。
     - **对话保存**:可选择将对话历史保存到论文的AI管家笔记中(需在设置中开启)。
     - **动态输入框**:输入框可根据内容自动调整大小,交互体验类似Cherry Studio。
-
-## 常用命令
-
-- 发布新版本：`npm run release`
-- 打包插件：`npm run build`
-- 本地测试：`npm start`
-- 修改zotero profile： `./zotero.exe -p`(在Windows zotero安装目录下运行)
-- 统一代码格式：`npx prettier --write .`
-- 检查代码格式：`npm run lint:check`
 
 ## 🧠 LLM Provider 架构深入
 

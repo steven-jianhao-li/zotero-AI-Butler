@@ -94,9 +94,9 @@ export class PromptsSettingsPage {
     modeSection.appendChild(
       createNotice(
         "选择 AI 总结论文的方式：<br/>" +
-        "• <b>单次对话</b>: 一次对话完成总结（Token消耗最少，笔记简洁）<br/>" +
-        "• <b>多轮拼接</b>: 多轮对话后拼接所有内容（Token消耗较多，笔记最详细）<br/>" +
-        "• <b>多轮总结</b>: 多轮对话后AI汇总（Token消耗最多，笔记详细且篇幅适中）",
+          "• <b>单次对话</b>: 一次对话完成总结（Token消耗最少，笔记简洁）<br/>" +
+          "• <b>多轮拼接</b>: 多轮对话后拼接所有内容（Token消耗较多，笔记最详细）<br/>" +
+          "• <b>多轮总结</b>: 多轮对话后AI汇总（Token消耗最多，笔记详细且篇幅适中）",
         "info",
       ),
     );
@@ -429,7 +429,7 @@ export class PromptsSettingsPage {
     const tpl = presets[name];
     if (tpl && typeof tpl === "string") {
       this.editor.value = tpl;
-      setPref("summaryPrompt", tpl);  // 保存到配置，确保立即生效
+      setPref("summaryPrompt", tpl); // 保存到配置，确保立即生效
       new ztoolkit.ProgressWindow("提示词")
         .createLine({ text: `已应用并保存预设: ${name}`, type: "success" })
         .show();
@@ -648,8 +648,8 @@ export class PromptsSettingsPage {
         background: "var(--ai-card-bg)",
         borderRadius: "4px",
         border: "1px solid var(--ai-input-border)",
-        minWidth: "0",  // 防止flex子元素撑开容器
-        overflow: "hidden",  // 确保内容不溢出
+        minWidth: "0", // 防止flex子元素撑开容器
+        overflow: "hidden", // 确保内容不溢出
       });
 
       const orderBadge = Zotero.getMainWindow().document.createElement("span");

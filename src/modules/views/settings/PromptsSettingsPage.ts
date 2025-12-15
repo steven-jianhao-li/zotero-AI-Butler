@@ -44,6 +44,14 @@ export class PromptsSettingsPage {
   public render(): void {
     this.container.innerHTML = "";
 
+    // 内容包装器 - 限制最大宽度，防止内容撑开容器
+    const contentWrapper = Zotero.getMainWindow().document.createElement("div");
+    Object.assign(contentWrapper.style, {
+      maxWidth: "680px",
+      width: "100%",
+    });
+    this.container.appendChild(contentWrapper);
+
     // 标题
     const title = Zotero.getMainWindow().document.createElement("h2");
     title.textContent = "📝 提示词模板";
@@ -54,9 +62,9 @@ export class PromptsSettingsPage {
       borderBottom: "2px solid #59c0bc",
       paddingBottom: "10px",
     });
-    this.container.appendChild(title);
+    contentWrapper.appendChild(title);
 
-    this.container.appendChild(
+    contentWrapper.appendChild(
       createNotice(
         "提示: 支持预设模板、自定义编辑与变量插值预览。可用变量: <code>${title}</code>、<code>${authors}</code>、<code>${year}</code>。",
         "info",
@@ -86,9 +94,9 @@ export class PromptsSettingsPage {
     modeSection.appendChild(
       createNotice(
         "选择 AI 总结论文的方式：<br/>" +
-          "• <b>单次对话</b>: 一次对话完成总结（Token消耗最少，笔记简洁）<br/>" +
-          "• <b>多轮拼接</b>: 多轮对话后拼接所有内容（Token消耗较多，笔记最详细）<br/>" +
-          "• <b>多轮总结</b>: 多轮对话后AI汇总（Token消耗最多，笔记详细且篇幅适中）",
+        "• <b>单次对话</b>: 一次对话完成总结（Token消耗最少，笔记简洁）<br/>" +
+        "• <b>多轮拼接</b>: 多轮对话后拼接所有内容（Token消耗较多，笔记最详细）<br/>" +
+        "• <b>多轮总结</b>: 多轮对话后AI汇总（Token消耗最多，笔记详细且篇幅适中）",
         "info",
       ),
     );
@@ -215,18 +223,19 @@ export class PromptsSettingsPage {
 
     multiRoundContainer.appendChild(finalPromptContainer);
     modeSection.appendChild(multiRoundContainer);
-    this.container.appendChild(modeSection);
+    contentWrapper.appendChild(modeSection);
 
     // =========== 原有的单次提示词设置 ===========
     // 左右布局
     const layout = Zotero.getMainWindow().document.createElement("div");
+    layout.id = "single-round-settings";
     Object.assign(layout.style, {
-      display: "grid",
+      display: currentMode === "single" ? "grid" : "none",
       gridTemplateColumns: "minmax(280px, 340px) 1fr",
       gap: "20px",
       alignItems: "start",
     });
-    this.container.appendChild(layout);
+    contentWrapper.appendChild(layout);
 
     // 左侧: 模板选择与示例变量
     const left = Zotero.getMainWindow().document.createElement("div");
@@ -420,8 +429,9 @@ export class PromptsSettingsPage {
     const tpl = presets[name];
     if (tpl && typeof tpl === "string") {
       this.editor.value = tpl;
+      setPref("summaryPrompt", tpl);  // 保存到配置，确保立即生效
       new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: `已应用预设: ${name}`, type: "success" })
+        .createLine({ text: `已应用并保存预设: ${name}`, type: "success" })
         .show();
       this.updatePreview();
     } else {
@@ -590,6 +600,9 @@ export class PromptsSettingsPage {
     const finalPromptContainer = this.container.querySelector(
       "#final-prompt-container",
     ) as HTMLElement;
+    const singleRoundSettings = this.container.querySelector(
+      "#single-round-settings",
+    ) as HTMLElement;
 
     if (multiRoundSettings) {
       multiRoundSettings.style.display = mode === "single" ? "none" : "block";
@@ -597,6 +610,10 @@ export class PromptsSettingsPage {
     if (finalPromptContainer) {
       finalPromptContainer.style.display =
         mode === "multi_summarize" ? "block" : "none";
+    }
+    // 单次对话模式下显示预设模板区域，多轮模式下隐藏
+    if (singleRoundSettings) {
+      singleRoundSettings.style.display = mode === "single" ? "grid" : "none";
     }
   }
 
@@ -631,6 +648,8 @@ export class PromptsSettingsPage {
         background: "var(--ai-card-bg)",
         borderRadius: "4px",
         border: "1px solid var(--ai-input-border)",
+        minWidth: "0",  // 防止flex子元素撑开容器
+        overflow: "hidden",  // 确保内容不溢出
       });
 
       const orderBadge = Zotero.getMainWindow().document.createElement("span");

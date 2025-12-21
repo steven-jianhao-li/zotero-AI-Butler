@@ -102,6 +102,24 @@ export class UiSettingsPage {
       ),
     );
 
+    // Markdown 笔记样式主题
+    const currentTheme = ((getPref("markdownTheme" as any) as string) || "github").toString();
+    const themeSelect = createSelect(
+      "markdownTheme",
+      [
+        { value: "github", label: "GitHub (默认)" },
+        // 更多主题可在此添加
+      ],
+      currentTheme,
+    );
+    form.appendChild(
+      createFormGroup(
+        "侧边栏笔记样式",
+        themeSelect,
+        "设置侧边栏 AI 笔记的 Markdown 渲染样式",
+      ),
+    );
+
     // 预览区域（移除字号预览，不再提供字体大小设置）
 
     // 按钮
@@ -112,7 +130,7 @@ export class UiSettingsPage {
       marginTop: "16px",
     });
     const btnSave = createStyledButton("💾 保存设置", "#4caf50");
-    btnSave.addEventListener("click", () => {
+    btnSave.addEventListener("click", async () => {
       const autoVal =
         (form.querySelector("#setting-autoScroll") as HTMLInputElement)
           ?.checked ?? true;
@@ -125,11 +143,20 @@ export class UiSettingsPage {
       const policyVal = (policySelect as any).getValue
         ? (policySelect as any).getValue()
         : policy;
+      const themeVal = (themeSelect as any).getValue
+        ? (themeSelect as any).getValue()
+        : currentTheme;
 
       setPref("autoScroll", !!autoVal as any);
       setPref("autoScan", !!autoScanVal as any);
       setPref("saveChatHistory", !!saveChatHistoryVal as any);
       setPref("noteStrategy" as any, policyVal);
+      setPref("markdownTheme" as any, themeVal);
+
+      // 清除主题缓存以便下次加载新主题
+      const { themeManager } = await import("../../themeManager");
+      themeManager.setCurrentTheme(themeVal);
+      themeManager.clearCache();
 
       // 重新加载自动扫描管理器
       AutoScanManager.getInstance().reload();

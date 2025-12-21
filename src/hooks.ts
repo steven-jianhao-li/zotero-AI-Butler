@@ -22,7 +22,7 @@
  * @author AI-Butler Team
  */
 
-import { getString, initLocale } from "./utils/locale";
+import { getString, initLocale, getLocaleID } from "./utils/locale";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
 import { TaskQueueManager } from "./modules/taskQueue";
@@ -75,6 +75,14 @@ async function onStartup() {
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
   );
+
+  // 注册 PDF 阅读器工具栏按钮
+  // 用户可以在阅读 PDF 时快速访问 AI 追问功能
+  registerReaderToolbarButton();
+
+  // 注册条目面板自定义区块
+  // 用户可以在浏览文献库时快速访问 AI 追问功能
+  registerItemPaneSection();
 
   // 启动自动扫描管理器
   const autoScanManager = AutoScanManager.getInstance();
@@ -337,6 +345,988 @@ function registerContextMenuItem() {
       return hasTag || titleMatch;
     },
   });
+}
+
+/**
+ * 注册 PDF 阅读器工具栏按钮
+ *
+ * 在 PDF 阅读器顶部工具栏中添加"AI 追问"按钮
+ * 用户点击后可以快速打开 AI 追问界面
+ *
+ * 技术实现:
+ * - 使用 Zotero.Reader.registerEventListener("renderToolbar") API
+ * - 动态注入按钮到工具栏
+ * - 点击后获取当前文献并打开追问窗口
+ * - 同时处理已打开的 Reader（插件启动时）
+ */
+function registerReaderToolbarButton() {
+  const pluginID = config.addonID;
+
+  /**
+   * 创建并返回工具栏按钮
+   */
+  const createToolbarButton = (doc: Document, reader: any) => {
+    // 创建按钮容器
+    const buttonContainer = doc.createElement("div");
+    buttonContainer.className = "ai-butler-toolbar-container";
+    buttonContainer.style.cssText = `
+      display: flex;
+      align-items: center;
+      margin-left: 8px;
+    `;
+
+    // 创建按钮 - 使用图标而非文字以适应窄工具栏
+    const button = doc.createElement("button");
+    button.className = "toolbar-button ai-butler-reader-chat-btn";
+    button.innerHTML = `🤖`;
+    button.title = "AI 管家 - 与 AI 对话讨论当前论文";
+    button.style.cssText = `
+      padding: 4px 8px;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.2s ease;
+    `;
+
+    // 悬停效果
+    button.addEventListener("mouseenter", () => {
+      button.style.background = "rgba(0, 0, 0, 0.08)";
+    });
+    button.addEventListener("mouseleave", () => {
+      button.style.background = "transparent";
+    });
+
+    // 点击事件
+    button.addEventListener("click", async () => {
+      try {
+        const readerItem = reader._item;
+        if (!readerItem) {
+          new ztoolkit.ProgressWindow("AI Butler", {
+            closeOnClick: true,
+            closeTime: 3000,
+          })
+            .createLine({
+              text: "无法获取当前文献信息",
+              type: "error",
+            })
+            .show();
+          return;
+        }
+
+        // 获取正确的父条目 ID
+        // reader._item 可能是 PDF 附件，也可能是父条目
+        let targetItemId: number;
+        if (readerItem.isAttachment()) {
+          // 是附件，获取父条目 ID
+          const parentId = readerItem.parentItemID;
+          if (!parentId) {
+            new ztoolkit.ProgressWindow("AI Butler", {
+              closeOnClick: true,
+              closeTime: 3000,
+            })
+              .createLine({
+                text: "该 PDF 没有关联的父条目",
+                type: "error",
+              })
+              .show();
+            return;
+          }
+          targetItemId = parentId;
+        } else {
+          // 是父条目，直接使用
+          targetItemId = readerItem.id;
+        }
+
+        await handleOpenAIChat(targetItemId);
+      } catch (error: any) {
+        ztoolkit.log("[AI-Butler] Reader 工具栏按钮点击失败:", error);
+        new ztoolkit.ProgressWindow("AI Butler", {
+          closeOnClick: true,
+          closeTime: 3000,
+        })
+          .createLine({
+            text: `打开失败: ${error.message || error}`,
+            type: "error",
+          })
+          .show();
+      }
+    });
+
+    buttonContainer.appendChild(button);
+    return buttonContainer;
+  };
+
+  try {
+    // 注册事件监听器，处理新打开的 Reader
+    (Zotero as any).Reader.registerEventListener(
+      "renderToolbar",
+      (event: any) => {
+        const { reader, doc, append } = event;
+        const buttonContainer = createToolbarButton(doc, reader);
+        append(buttonContainer);
+      },
+      pluginID,
+    );
+
+    // 处理已打开的 Reader（插件启动时）
+    // 延迟执行，确保 Zotero.Reader._readers 已经初始化
+    setTimeout(() => {
+      try {
+        const readers = (Zotero as any).Reader._readers || [];
+        for (const reader of readers) {
+          if (!reader?._iframeWindow?.document) continue;
+          const doc = reader._iframeWindow.document;
+          const toolbar = doc.querySelector(".toolbar");
+          if (!toolbar) continue;
+
+          // 检查是否已经添加过按钮
+          if (toolbar.querySelector(".ai-butler-toolbar-container")) continue;
+
+          // 创建并添加按钮
+          const buttonContainer = createToolbarButton(doc, reader);
+          toolbar.appendChild(buttonContainer);
+        }
+        ztoolkit.log(
+          `[AI-Butler] 已为 ${readers.length} 个已打开的 Reader 添加工具栏按钮`,
+        );
+      } catch (err) {
+        ztoolkit.log("[AI-Butler] 处理已打开的 Reader 失败:", err);
+      }
+    }, 1000);
+
+    ztoolkit.log("[AI-Butler] Reader 工具栏按钮已注册");
+  } catch (error) {
+    ztoolkit.log("[AI-Butler] 注册 Reader 工具栏按钮失败:", error);
+  }
+}
+
+/**
+ * 注册条目面板自定义区块
+ *
+ * 在 Zotero 右侧条目面板中添加"AI 追问"区块
+ * 提供两个入口：完整追问（保存记录）和快速提问（临时）
+ *
+ * 技术实现:
+ * - 使用 Zotero.ItemPaneManager.registerSection() API
+ * - 区块显示当前文献状态和操作按钮
+ * - 内嵌临时聊天功能
+ */
+function registerItemPaneSection() {
+  const pluginID = config.addonID;
+
+  // 存储侧边栏聊天状态
+  let currentChatState: {
+    itemId: number | null;
+    pdfContent: string;
+    isBase64: boolean;
+    conversationHistory: Array<{ role: string; content: string }>;
+    isChatting: boolean;
+  } = {
+    itemId: null,
+    pdfContent: "",
+    isBase64: false,
+    conversationHistory: [],
+    isChatting: false,
+  };
+
+  try {
+    (Zotero as any).ItemPaneManager.registerSection({
+      paneID: "ai-butler-chat-section",
+      pluginID: pluginID,
+      header: {
+        l10nID: getLocaleID("itempane-ai-section-header" as any),
+        icon: rootURI + "content/icons/icon24.png",
+      },
+      sidenav: {
+        l10nID: getLocaleID("itempane-ai-section-sidenav" as any),
+        icon: rootURI + "content/icons/icon24.png",
+      },
+      onRender: ({ body, item, editable, tabType }: any) => {
+        // 清空已有内容
+        body.innerHTML = "";
+        const doc = body.ownerDocument;
+
+        // 容器样式
+        body.style.cssText = `
+          padding: 10px;
+          font-family: system-ui, -apple-system, sans-serif;
+          font-size: 13px;
+        `;
+
+        // 检查是否有有效的文献条目
+        if (!item || !item.isRegularItem()) {
+          const hint = doc.createElement("div");
+          hint.style.cssText = `
+            color: #9e9e9e;
+            font-size: 12px;
+            text-align: center;
+            padding: 12px;
+          `;
+          hint.textContent = getString("itempane-ai-no-item");
+          body.appendChild(hint);
+          return;
+        }
+
+        // 重置聊天状态（如果切换了条目）
+        if (currentChatState.itemId !== item.id) {
+          currentChatState = {
+            itemId: item.id,
+            pdfContent: "",
+            isBase64: false,
+            conversationHistory: [],
+            isChatting: false,
+          };
+        }
+
+        // ========== 按钮容器（放在笔记区域上方） ==========
+        const btnContainer = doc.createElement("div");
+        btnContainer.style.cssText = `
+          display: flex;
+          gap: 8px;
+          margin-bottom: 10px;
+        `;
+
+        // 通用按钮样式函数
+        const createButton = (text: string, isPrimary: boolean) => {
+          const btn = doc.createElement("button");
+          btn.textContent = text;
+          btn.style.cssText = `
+            flex: 1;
+            padding: 8px 12px;
+            border: ${isPrimary ? "none" : "1px solid #59c0bc"};
+            border-radius: 4px;
+            background: ${isPrimary ? "#59c0bc" : "transparent"};
+            color: ${isPrimary ? "white" : "#59c0bc"};
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          `;
+          btn.addEventListener("mouseenter", () => {
+            if (isPrimary) {
+              btn.style.background = "#4db6ac";
+            } else {
+              btn.style.background = "rgba(89, 192, 188, 0.1)";
+            }
+          });
+          btn.addEventListener("mouseleave", () => {
+            btn.style.background = isPrimary ? "#59c0bc" : "transparent";
+          });
+          return btn;
+        };
+
+        // 完整追问按钮
+        const fullChatBtn = createButton(
+          getString("itempane-ai-open-chat"),
+          true,
+        );
+        fullChatBtn.addEventListener("click", async () => {
+          try {
+            await handleOpenAIChat(item.id);
+          } catch (error: any) {
+            ztoolkit.log("[AI-Butler] 完整追问按钮点击失败:", error);
+          }
+        });
+
+        // 快速提问按钮
+        const quickChatBtn = createButton(
+          getString("itempane-ai-temp-chat"),
+          false,
+        );
+
+        btnContainer.appendChild(fullChatBtn);
+        btnContainer.appendChild(quickChatBtn);
+        body.appendChild(btnContainer);
+
+        // ========== AI 笔记展示区域 ==========
+        const noteSection = doc.createElement("div");
+        noteSection.className = "ai-butler-note-section";
+        noteSection.style.cssText = `
+          margin-bottom: 12px;
+          border: 1px solid #e0e0e0;
+          border-radius: 6px;
+          overflow: hidden;
+          background: white;
+        `;
+
+        // 笔记标题栏（可折叠）
+        const noteHeader = doc.createElement("div");
+        noteHeader.className = "ai-butler-note-header";
+        noteHeader.style.cssText = `
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 8px 10px;
+          background: linear-gradient(135deg, #f8f9fa, #f0f2f4);
+          cursor: pointer;
+          user-select: none;
+          border-bottom: 1px solid #e0e0e0;
+        `;
+
+        const noteTitle = doc.createElement("span");
+        noteTitle.style.cssText = `
+          font-weight: 500;
+          font-size: 12px;
+          color: #333;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        `;
+        noteTitle.innerHTML = `📄 <span>AI 笔记</span>`;
+
+        // 字体大小控制
+        const fontSizeControl = doc.createElement("div");
+        fontSizeControl.style.cssText = `
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          margin-left: auto;
+          margin-right: 8px;
+        `;
+        fontSizeControl.addEventListener("click", (e: Event) =>
+          e.stopPropagation(),
+        ); // 防止触发折叠
+
+        // 从设置加载字体大小，默认12px
+        let currentFontSize = parseInt(
+          (getPref("sidebarNoteFontSize" as any) as string) || "12",
+          10,
+        );
+        if (
+          isNaN(currentFontSize) ||
+          currentFontSize < 10 ||
+          currentFontSize > 20
+        ) {
+          currentFontSize = 12;
+        }
+
+        const fontSizeLabel = doc.createElement("span");
+        fontSizeLabel.textContent = `${currentFontSize}px`;
+        fontSizeLabel.style.cssText = `
+          font-size: 10px;
+          color: #666;
+          min-width: 28px;
+          text-align: center;
+        `;
+
+        const createFontBtn = (text: string, delta: number) => {
+          const btn = doc.createElement("button");
+          btn.textContent = text;
+          btn.style.cssText = `
+            width: 20px;
+            height: 20px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            background: white;
+            cursor: pointer;
+            font-size: 12px;
+            line-height: 1;
+            color: #666;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          `;
+          btn.addEventListener("mouseenter", () => {
+            btn.style.background = "#f0f0f0";
+          });
+          btn.addEventListener("mouseleave", () => {
+            btn.style.background = "white";
+          });
+          btn.addEventListener("click", () => {
+            currentFontSize = Math.max(
+              10,
+              Math.min(20, currentFontSize + delta),
+            );
+            fontSizeLabel.textContent = `${currentFontSize}px`;
+            noteContent.style.fontSize = `${currentFontSize}px`;
+            // 保存到设置
+            setPref(
+              "sidebarNoteFontSize" as any,
+              String(currentFontSize) as any,
+            );
+          });
+          return btn;
+        };
+
+        fontSizeControl.appendChild(createFontBtn("−", -1));
+        fontSizeControl.appendChild(fontSizeLabel);
+        fontSizeControl.appendChild(createFontBtn("+", 1));
+
+        // 主题选择器
+        const themeSelect = doc.createElement("select");
+        themeSelect.style.cssText = `
+          margin-left: 8px;
+          padding: 2px 4px;
+          font-size: 10px;
+          border: 1px solid #ddd;
+          border-radius: 3px;
+          background: white;
+          cursor: pointer;
+          color: #666;
+        `;
+        themeSelect.addEventListener("click", (e: Event) =>
+          e.stopPropagation(),
+        );
+
+        // 添加内置主题选项
+        const themes = [
+          { id: "github", name: "GitHub" },
+          { id: "redstriking", name: "红印" },
+        ];
+        const currentTheme = (
+          (getPref("markdownTheme" as any) as string) || "github"
+        ).toString();
+        themes.forEach((t) => {
+          const opt = doc.createElement("option");
+          opt.value = t.id;
+          opt.textContent = t.name;
+          if (t.id === currentTheme) opt.selected = true;
+          themeSelect.appendChild(opt);
+        });
+
+        themeSelect.addEventListener("change", async () => {
+          const newTheme = themeSelect.value;
+          setPref("markdownTheme" as any, newTheme as any);
+          // 重新加载主题
+          const { themeManager } = await import("./modules/themeManager");
+          themeManager.setCurrentTheme(newTheme);
+          themeManager.clearCache();
+          const themeCss = await themeManager.loadThemeCss();
+          const adaptedCss = themeManager.adaptCssForSidebar(themeCss);
+          const styleEl = doc.getElementById(
+            "ai-butler-note-theme",
+          ) as HTMLStyleElement;
+          if (styleEl) {
+            styleEl.textContent = adaptedCss;
+          }
+        });
+        fontSizeControl.appendChild(themeSelect);
+
+        const toggleIcon = doc.createElement("span");
+        toggleIcon.textContent = "▼";
+        toggleIcon.style.cssText = `
+          font-size: 10px;
+          color: #666;
+          transition: transform 0.2s ease;
+        `;
+
+        noteHeader.appendChild(noteTitle);
+        noteHeader.appendChild(fontSizeControl);
+        noteHeader.appendChild(toggleIcon);
+
+        // 笔记内容区域（可滚动、可调高度）
+        const DEFAULT_NOTE_HEIGHT = 200;
+        let savedNoteHeight = parseInt(
+          (getPref("sidebarNoteHeight" as any) as string) ||
+            String(DEFAULT_NOTE_HEIGHT),
+          10,
+        );
+        if (isNaN(savedNoteHeight) || savedNoteHeight < 50) {
+          savedNoteHeight = DEFAULT_NOTE_HEIGHT;
+        }
+
+        const noteContentWrapper = doc.createElement("div");
+        noteContentWrapper.className = "ai-butler-note-content-wrapper";
+        noteContentWrapper.style.cssText = `
+          position: relative;
+          height: ${savedNoteHeight}px;
+          min-height: 50px;
+          overflow-y: auto;
+          transition: height 0.2s ease;
+        `;
+
+        const noteContent = doc.createElement("div");
+        noteContent.className = "ai-butler-note-content markdown-body";
+        noteContent.style.cssText = `
+          padding: 10px;
+          padding-bottom: 20px;
+          font-size: ${currentFontSize}px;
+          line-height: 1.6;
+        `;
+
+        // 高度调节手柄（移到 wrapper 外面，固定在底部）
+        const resizeHandle = doc.createElement("div");
+        resizeHandle.className = "ai-butler-resize-handle";
+        resizeHandle.style.cssText = `
+          height: 10px;
+          background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.03));
+          cursor: ns-resize;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          border-top: 1px solid #eee;
+        `;
+        resizeHandle.innerHTML = `<span style="width: 30px; height: 3px; background: #ccc; border-radius: 2px;"></span>`;
+
+        // 拖拽调整高度
+        let isResizing = false;
+        let startY = 0;
+        let startHeight = 0;
+
+        resizeHandle.addEventListener("mousedown", (e: MouseEvent) => {
+          isResizing = true;
+          startY = e.clientY;
+          startHeight = noteContentWrapper.offsetHeight;
+          if (doc.body) doc.body.style.cursor = "ns-resize";
+          e.preventDefault();
+        });
+
+        doc.addEventListener("mousemove", (e: MouseEvent) => {
+          if (!isResizing) return;
+          const deltaY = e.clientY - startY;
+          // 最小50px，无上限
+          const newHeight = Math.max(50, startHeight + deltaY);
+          noteContentWrapper.style.height = `${newHeight}px`;
+        });
+
+        doc.addEventListener("mouseup", () => {
+          if (isResizing) {
+            isResizing = false;
+            if (doc.body) doc.body.style.cursor = "";
+            // 保存高度到设置
+            const currentHeight = noteContentWrapper.offsetHeight;
+            setPref("sidebarNoteHeight" as any, String(currentHeight) as any);
+          }
+        });
+
+        // 阻止滚动冒泡到父级侧边栏
+        noteContentWrapper.addEventListener(
+          "wheel",
+          (e: WheelEvent) => {
+            const { scrollTop, scrollHeight, clientHeight } =
+              noteContentWrapper;
+            const isAtTop = scrollTop === 0;
+            const isAtBottom = scrollTop + clientHeight >= scrollHeight;
+
+            // 如果在顶部往上滚或在底部往下滚，阻止冒泡
+            if ((isAtTop && e.deltaY < 0) || (isAtBottom && e.deltaY > 0)) {
+              e.preventDefault();
+            }
+            e.stopPropagation();
+          },
+          { passive: false },
+        );
+
+        noteContentWrapper.appendChild(noteContent);
+
+        // 恢复默认高度按钮（添加到 fontSizeControl 旁边）
+        const resetHeightBtn = doc.createElement("button");
+        resetHeightBtn.textContent = "↕";
+        resetHeightBtn.title = "恢复默认高度";
+        resetHeightBtn.style.cssText = `
+          width: 20px;
+          height: 20px;
+          border: 1px solid #ddd;
+          border-radius: 3px;
+          background: white;
+          cursor: pointer;
+          font-size: 12px;
+          color: #666;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-left: 8px;
+        `;
+        resetHeightBtn.addEventListener("click", (e: Event) => {
+          e.stopPropagation();
+          savedNoteHeight = DEFAULT_NOTE_HEIGHT;
+          noteContentWrapper.style.height = `${DEFAULT_NOTE_HEIGHT}px`;
+          setPref(
+            "sidebarNoteHeight" as any,
+            String(DEFAULT_NOTE_HEIGHT) as any,
+          );
+        });
+        resetHeightBtn.addEventListener("mouseenter", () => {
+          resetHeightBtn.style.background = "#f0f0f0";
+        });
+        resetHeightBtn.addEventListener("mouseleave", () => {
+          resetHeightBtn.style.background = "white";
+        });
+        fontSizeControl.appendChild(resetHeightBtn);
+
+        // 折叠/展开功能
+        let isCollapsed = false;
+        noteHeader.addEventListener("click", () => {
+          isCollapsed = !isCollapsed;
+          if (isCollapsed) {
+            noteContentWrapper.style.height = "0px";
+            noteContentWrapper.style.overflow = "hidden";
+            resizeHandle.style.display = "none";
+            toggleIcon.style.transform = "rotate(-90deg)";
+          } else {
+            // 使用保存的高度
+            const restoreHeight = parseInt(
+              (getPref("sidebarNoteHeight" as any) as string) ||
+                String(DEFAULT_NOTE_HEIGHT),
+              10,
+            );
+            noteContentWrapper.style.height = `${restoreHeight}px`;
+            noteContentWrapper.style.overflowY = "auto";
+            resizeHandle.style.display = "flex";
+            toggleIcon.style.transform = "rotate(0deg)";
+          }
+        });
+
+        noteSection.appendChild(noteHeader);
+        noteSection.appendChild(noteContentWrapper);
+        noteSection.appendChild(resizeHandle);
+        body.appendChild(noteSection);
+
+        // 加载 AI 笔记内容
+        (async () => {
+          try {
+            // 获取正确的父条目（如果当前是附件，则获取其父条目）
+            let targetItem: any = item;
+            if (item.isAttachment && item.isAttachment()) {
+              const parentId = item.parentItemID;
+              if (parentId) {
+                targetItem = await Zotero.Items.getAsync(parentId);
+              }
+            }
+
+            // 查找 AI 生成的笔记（参照 SummaryView 的检测逻辑）
+            const noteIDs = (targetItem as any).getNotes?.() || [];
+            let aiNoteContent = "";
+            let aiNoteFound = false;
+            let targetNote: any = null;
+
+            for (const nid of noteIDs) {
+              try {
+                const n = await Zotero.Items.getAsync(nid);
+                if (!n) continue;
+                const tags: Array<{ tag: string }> =
+                  (n as any).getTags?.() || [];
+                const noteHtml: string = (n as any).getNote?.() || "";
+
+                // 检查是否是 AI-Butler 生成的摘要笔记（排除 Chat 笔记）
+                const isChatNote =
+                  tags.some((t) => t.tag === "AI-Butler-Chat") ||
+                  /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(noteHtml);
+                const isAiSummaryNote =
+                  tags.some((t) => t.tag === "AI-Generated") ||
+                  (/<h2>\s*AI 管家\s*-/.test(noteHtml) && !isChatNote) ||
+                  noteHtml.includes("[AI-Butler]");
+
+                if (isAiSummaryNote) {
+                  if (!targetNote) {
+                    targetNote = n;
+                  } else {
+                    // 选择最新修改的笔记
+                    const a = (targetNote as any).dateModified || 0;
+                    const b = (n as any).dateModified || 0;
+                    if (b > a) targetNote = n;
+                  }
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+
+            if (targetNote) {
+              aiNoteContent = (targetNote as any).getNote?.() || "";
+              aiNoteFound = true;
+            }
+
+            if (!aiNoteFound) {
+              // 创建生成笔记按钮
+              const generateBtn = doc.createElement("button");
+              generateBtn.textContent = "🤖 召唤 AI 管家生成笔记";
+              generateBtn.style.cssText = `
+                width: 100%;
+                padding: 10px;
+                margin-top: 8px;
+                border: none;
+                border-radius: 4px;
+                background: linear-gradient(135deg, #59c0bc, #4db6ac);
+                color: white;
+                cursor: pointer;
+                font-size: 12px;
+                font-weight: 500;
+                transition: all 0.2s ease;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              `;
+              generateBtn.addEventListener("mouseenter", () => {
+                generateBtn.style.background =
+                  "linear-gradient(135deg, #4db6ac, #26a69a)";
+              });
+              generateBtn.addEventListener("mouseleave", () => {
+                generateBtn.style.background =
+                  "linear-gradient(135deg, #59c0bc, #4db6ac)";
+              });
+              generateBtn.addEventListener("click", async () => {
+                try {
+                  generateBtn.disabled = true;
+                  generateBtn.textContent = "正在加入队列...";
+                  const { TaskQueueManager } = await import(
+                    "./modules/taskQueue"
+                  );
+                  const queueManager = TaskQueueManager.getInstance();
+                  await queueManager.addTask(item, true); // 优先处理
+                  generateBtn.textContent = "✅ 已加入队列";
+                  // 启动队列处理
+                  queueManager.start();
+                } catch (err: any) {
+                  generateBtn.textContent = "❌ 失败: " + err.message;
+                  generateBtn.disabled = false;
+                }
+              });
+
+              noteContent.innerHTML = `
+                <div style="text-align: center; color: #9e9e9e; padding: 16px;">
+                  <div style="font-size: 24px; margin-bottom: 8px;">📝</div>
+                  <div>暂无 AI 笔记</div>
+                </div>
+              `;
+              noteContent.appendChild(generateBtn);
+              return;
+            }
+
+            // 加载主题 CSS
+            const { themeManager } = await import("./modules/themeManager");
+            const themeCss = await themeManager.loadThemeCss();
+            const adaptedCss = themeManager.adaptCssForSidebar(themeCss);
+
+            // 注入样式（使用 body 或父元素，因为 XUL 文档没有 head）
+            let styleEl = doc.getElementById(
+              "ai-butler-note-theme",
+            ) as HTMLStyleElement;
+            if (!styleEl) {
+              styleEl = doc.createElement("style");
+              styleEl.id = "ai-butler-note-theme";
+              // 尝试添加到 body，如果不存在则添加到 noteSection
+              const insertTarget =
+                doc.body || doc.documentElement || noteSection;
+              insertTarget.appendChild(styleEl);
+            }
+            styleEl.textContent = adaptedCss;
+
+            // Zotero 笔记本身就是 HTML 格式（有 <h2>、<strong> 等标签）
+            // 直接显示 HTML 内容并应用 CSS 样式即可
+            noteContent.innerHTML = aiNoteContent;
+          } catch (err: any) {
+            ztoolkit.log("[AI-Butler] 加载笔记失败:", err);
+            noteContent.innerHTML = `<div style="color: #d32f2f; padding: 10px;">加载笔记失败: ${err.message}</div>`;
+          }
+        })();
+
+        // 内嵌聊天区域容器
+        const chatArea = doc.createElement("div");
+        chatArea.id = "ai-butler-inline-chat";
+        chatArea.style.cssText = `
+          display: none;
+          flex-direction: column;
+          border: 1px solid #e0e0e0;
+          border-radius: 6px;
+          overflow: hidden;
+          background: #fafafa;
+        `;
+
+        // 聊天消息显示区
+        const messagesArea = doc.createElement("div");
+        messagesArea.style.cssText = `
+          max-height: 200px;
+          overflow-y: auto;
+          padding: 8px;
+          font-size: 12px;
+          line-height: 1.5;
+        `;
+
+        // 输入区域
+        const inputArea = doc.createElement("div");
+        inputArea.style.cssText = `
+          display: flex;
+          gap: 6px;
+          padding: 8px;
+          border-top: 1px solid #e0e0e0;
+          background: white;
+        `;
+
+        const inputBox = doc.createElement("textarea");
+        inputBox.placeholder = "输入问题...";
+        inputBox.style.cssText = `
+          flex: 1;
+          min-height: 36px;
+          max-height: 80px;
+          padding: 6px 8px;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          resize: none;
+          font-size: 12px;
+          font-family: inherit;
+        `;
+
+        const sendBtn = doc.createElement("button");
+        sendBtn.textContent = "发送";
+        sendBtn.style.cssText = `
+          padding: 6px 12px;
+          background: #59c0bc;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 12px;
+          align-self: flex-end;
+        `;
+
+        // 发送消息处理
+        const handleSend = async () => {
+          const question = inputBox.value.trim();
+          if (!question || currentChatState.isChatting) return;
+
+          // 如果还没有加载 PDF 内容，先加载
+          if (!currentChatState.pdfContent) {
+            try {
+              sendBtn.textContent = "加载中...";
+              sendBtn.disabled = true;
+              const { PDFExtractor } = await import("./modules/pdfExtractor");
+              const prefMode =
+                (getPref("pdfProcessMode") as string) || "base64";
+              currentChatState.isBase64 = prefMode === "base64";
+
+              if (currentChatState.isBase64) {
+                currentChatState.pdfContent =
+                  await PDFExtractor.extractBase64FromItem(item);
+              } else {
+                currentChatState.pdfContent =
+                  await PDFExtractor.extractTextFromItem(item);
+              }
+            } catch (err: any) {
+              messagesArea.innerHTML += `<div style="color: #d32f2f; padding: 4px 0;">❌ 无法加载 PDF: ${err.message}</div>`;
+              sendBtn.textContent = "发送";
+              sendBtn.disabled = false;
+              return;
+            }
+          }
+
+          currentChatState.isChatting = true;
+          inputBox.value = "";
+          sendBtn.textContent = "思考中...";
+          sendBtn.disabled = true;
+
+          // 显示用户消息
+          messagesArea.innerHTML += `<div style="background: #e3f2fd; padding: 6px 8px; border-radius: 4px; margin-bottom: 6px;"><strong>👤 您:</strong> ${question}</div>`;
+          messagesArea.scrollTop = messagesArea.scrollHeight;
+
+          // 添加到历史
+          currentChatState.conversationHistory.push({
+            role: "user",
+            content: question,
+          });
+
+          // 显示 AI 回复占位
+          const aiMsgDiv = doc.createElement("div");
+          aiMsgDiv.style.cssText =
+            "background: #f5f5f5; padding: 6px 8px; border-radius: 4px; margin-bottom: 6px;";
+          aiMsgDiv.innerHTML = "<strong>🤖 AI:</strong> <em>思考中...</em>";
+          messagesArea.appendChild(aiMsgDiv);
+          messagesArea.scrollTop = messagesArea.scrollHeight;
+
+          try {
+            const { default: LLMClient } = await import("./modules/llmClient");
+            let fullResponse = "";
+
+            await LLMClient.chat(
+              currentChatState.pdfContent,
+              currentChatState.isBase64,
+              currentChatState.conversationHistory,
+              (chunk: string) => {
+                fullResponse += chunk;
+                aiMsgDiv.innerHTML = `<strong>🤖 AI:</strong> ${fullResponse.substring(0, 500)}${fullResponse.length > 500 ? "..." : ""}`;
+                messagesArea.scrollTop = messagesArea.scrollHeight;
+              },
+            );
+
+            currentChatState.conversationHistory.push({
+              role: "assistant",
+              content: fullResponse,
+            });
+            aiMsgDiv.innerHTML = `<strong>🤖 AI:</strong> ${fullResponse}`;
+          } catch (err: any) {
+            aiMsgDiv.innerHTML = `<strong>🤖 AI:</strong> <span style="color: #d32f2f;">❌ 错误: ${err.message}</span>`;
+            currentChatState.conversationHistory.pop(); // 移除失败的用户消息
+          } finally {
+            currentChatState.isChatting = false;
+            sendBtn.textContent = "发送";
+            sendBtn.disabled = false;
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+          }
+        };
+
+        sendBtn.addEventListener("click", handleSend);
+        inputBox.addEventListener("keydown", (e: KeyboardEvent) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+          }
+        });
+
+        inputArea.appendChild(inputBox);
+        inputArea.appendChild(sendBtn);
+        chatArea.appendChild(messagesArea);
+        chatArea.appendChild(inputArea);
+        body.appendChild(chatArea);
+
+        // 快速提问按钮点击：显示/隐藏内嵌聊天
+        quickChatBtn.addEventListener("click", () => {
+          if (chatArea.style.display === "none") {
+            chatArea.style.display = "flex";
+            quickChatBtn.style.background = "rgba(89, 192, 188, 0.15)";
+            quickChatBtn.style.borderColor = "#4db6ac";
+            inputBox.focus();
+          } else {
+            chatArea.style.display = "none";
+            quickChatBtn.style.background = "transparent";
+            quickChatBtn.style.borderColor = "#59c0bc";
+          }
+        });
+      },
+    });
+
+    ztoolkit.log("[AI-Butler] 条目面板区块已注册");
+  } catch (error) {
+    ztoolkit.log("[AI-Butler] 注册条目面板区块失败:", error);
+  }
+}
+
+/**
+ * 打开 AI 追问界面
+ *
+ * 统一的入口函数,用于从 Reader 工具栏按钮或条目面板打开追问界面
+ *
+ * @param itemId 文献条目 ID
+ */
+async function handleOpenAIChat(itemId: number): Promise<void> {
+  try {
+    // 打开主窗口并切换到摘要视图
+    const mainWin = MainWindow.getInstance();
+    await mainWin.open("summary");
+
+    // 获取 SummaryView 并加载文献
+    const summaryView = mainWin.getSummaryView();
+    if (summaryView) {
+      // 调用 loadItemForChat 方法加载文献并显示聊天界面
+      await (summaryView as any).loadItemForChat(itemId);
+    }
+  } catch (error: any) {
+    ztoolkit.log("[AI-Butler] 打开 AI 追问失败:", error);
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 3000,
+    })
+      .createLine({
+        text: `打开 AI 追问失败: ${error.message || error}`,
+        type: "error",
+      })
+      .show();
+  }
 }
 
 /**

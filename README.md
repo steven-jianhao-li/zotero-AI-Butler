@@ -157,7 +157,54 @@ AI管家完美适配 Zotero 的明暗主题切换，无论您使用亮色还是�
 
 ![明暗主题适配](./assets/images/明暗主题适配.png)
 
-### 8. Zotero笔记字体大小调整
+### 8. 侧边栏 AI 笔记预览
+
+在 Zotero 右侧的条目信息面板中，AI 管家会自动展示该文献的 AI 笔记内容，方便您快速浏览。
+
+- **自动检测**：自动查找并显示 AI 管家生成的笔记
+- **样式渲染**：使用精美的 CSS 样式渲染笔记内容，支持多种主题切换
+- **折叠/展开**：点击标题栏可折叠或展开笔记区域
+- **高度可调**：拖拽底部手柄调整笔记区域高度，设置自动保存
+- **字体缩放**：点击标题栏的 +/− 按钮调整字体大小
+- **快速生成**：如果没有 AI 笔记，可一键召唤 AI 管家生成
+
+![侧边栏AI笔记预览](./assets/images/侧边栏AI笔记预览.png)
+
+- **侧边栏追问**：
+  - **完整追问 (保存记录)**：打开对话窗口进行深度追问，对话记录自动保存到笔记
+  - **快速提问 (不保存记录)**：临时提问，不保存对话历史
+
+![侧边栏追问](./assets/images/侧边栏追问.png)
+
+### 9. 笔记样式主题
+
+AI 管家支持自定义侧边栏笔记的渲染样式。
+
+- **内置主题**：
+  - **GitHub** (默认) - 简洁清爽的 GitHub 风格
+  - **红印 (Redstriking)** - 红色主题，适合强调重点内容
+- **主题切换**：在 "界面设置" 中可选择笔记样式
+
+![笔记样式主题选择](./assets/images/笔记样式主题选择.png)
+
+> 💡 红印主题来源：[Theigrams/My-Typora-Themes](https://github.com/Theigrams/My-Typora-Themes)
+
+#### 🎨 贡献新主题
+
+欢迎为 AI 管家贡献更多漂亮的主题！
+
+1. 在 `addon/content/markdown_themes/` 目录下创建新的 CSS 文件（如 `your-theme-name.css`）
+2. CSS 中可使用 `#write` 或 `.markdown-body` 作为选择器前缀（会自动适配）
+3. 在 `src/modules/themeManager.ts` 的 `BUILTIN_THEMES` 数组中添加新主题：
+   ```typescript
+   { id: "your-theme", name: "您的主题名称", file: "your-theme-name.css" }
+   ```
+4. 在 `src/modules/views/settings/UiSettingsPage.ts` 的主题下拉列表中添加选项
+5. 提交 Pull Request！
+
+> 提示：Typora 主题可以直接使用！插件会自动适配 `#write` 选择器。
+
+### 10. Zotero笔记字体大小调整
 
 笔记字体大小可通过 Zotero 原生设置进行调整：
 ![调整笔记字体大小](assets/images/调整笔记字体大小.png)

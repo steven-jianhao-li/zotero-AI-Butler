@@ -1015,6 +1015,205 @@ ${jsonMarker}
   }
 
   /**
+   * 从外部加载指定文献的追问界面
+   *
+   * 用于 Reader 工具栏按钮和条目面板的快捷入口
+   * 会自动提取 PDF 内容并设置论文上下文
+   *
+   * @param itemId 文献条目 ID
+   */
+  public async loadItemForChat(itemId: number): Promise<void> {
+    try {
+      // 清空并显示加载提示
+      this.clear();
+      this.showLoadingState("正在加载文献...");
+
+      const item = await Zotero.Items.getAsync(itemId);
+      if (!item) {
+        this.hideLoading();
+        new ztoolkit.ProgressWindow("AI Butler", {
+          closeOnClick: true,
+          closeTime: 3000,
+        })
+          .createLine({
+            text: "无法加载该文献",
+            type: "error",
+          })
+          .show();
+        return;
+      }
+
+      const title = (item.getField("title") as string) || "文献";
+
+      // 显示标题
+      this.startItem(title);
+      this.finishItem();
+
+      // 查找已有的 AI 总结笔记
+      const noteIDs = (item as any).getNotes?.() || [];
+      let aiSummaryText = "";
+      let targetNote: any = null;
+
+      for (const nid of noteIDs) {
+        try {
+          const n = await Zotero.Items.getAsync(nid);
+          if (!n) continue;
+          const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
+          const noteHtml: string = (n as any).getNote?.() || "";
+          const isChatNote =
+            tags.some((t) => t.tag === "AI-Butler-Chat") ||
+            /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(noteHtml);
+          const isAiSummaryNote =
+            tags.some((t) => t.tag === "AI-Generated") ||
+            (/<h2>\s*AI 管家\s*-/.test(noteHtml) && !isChatNote);
+
+          if (isAiSummaryNote) {
+            if (!targetNote) {
+              targetNote = n;
+            } else {
+              const a = (targetNote as any).dateModified || 0;
+              const b = (n as any).dateModified || 0;
+              if (b > a) targetNote = n;
+            }
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      // 提取 AI 总结内容
+      if (targetNote) {
+        const html = (targetNote as any).getNote?.() || "";
+        aiSummaryText = html
+          .replace(/<style[^>]*>.*?<\/style>/gis, "")
+          .replace(/<script[^>]*>.*?<\/script>/gis, "")
+          .replace(/<[^>]+>/g, "")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&amp;/g, "&")
+          .trim();
+      }
+
+      // 获取 PDF 内容以支持追问
+      try {
+        const { PDFExtractor } = await import("../pdfExtractor");
+        const prefMode =
+          ((getPref as any)("pdfProcessMode") as string) || "base64";
+        const isBase64 = prefMode === "base64";
+
+        let pdfContent = "";
+        if (isBase64) {
+          pdfContent = await PDFExtractor.extractBase64FromItem(item);
+        } else {
+          pdfContent = await PDFExtractor.extractTextFromItem(item);
+        }
+
+        this.hideLoading();
+
+        if (pdfContent) {
+          // 设置论文上下文
+          this.setCurrentPaperContext(
+            itemId,
+            pdfContent,
+            isBase64,
+            aiSummaryText,
+          );
+
+          // 如果有 AI 总结，显示总结卡片
+          if (aiSummaryText) {
+            try {
+              this.appendSummaryCard(aiSummaryText);
+            } catch (e) {
+              ztoolkit.log("[AI-Butler] 渲染 AI 总结卡片失败:", e);
+            }
+          } else {
+            // 没有已有总结，显示欢迎提示
+            if (this.outputContainer) {
+              const welcomeHint =
+                Zotero.getMainWindow().document.createElement("div");
+              welcomeHint.style.cssText = `
+                padding: 20px;
+                margin: 10px 0;
+                background: linear-gradient(135deg, rgba(89, 192, 188, 0.1), rgba(89, 192, 188, 0.05));
+                border-radius: 8px;
+                border-left: 4px solid #59c0bc;
+                color: var(--ai-text);
+              `;
+              welcomeHint.innerHTML = `
+                <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px; color: #59c0bc;">
+                  🤖 准备好开始追问了！
+                </div>
+                <div style="font-size: 13px; color: var(--ai-text-muted); line-height: 1.6;">
+                  该文献尚未生成 AI 总结。您可以直接在下方输入问题与 AI 对话，
+                  或者先右键该文献选择"召唤 AI 管家进行分析"生成完整总结。
+                </div>
+              `;
+              this.outputContainer.appendChild(welcomeHint);
+            }
+          }
+
+          // 加载已有的追问历史
+          try {
+            await this.loadExistingChatPairs(item);
+          } catch (e) {
+            ztoolkit.log("[AI-Butler] 加载历史追问失败:", e);
+          }
+
+          // 自动展开追问输入区域
+          const inputArea = this.chatContainer?.querySelector(
+            "#ai-butler-chat-input-area",
+          ) as HTMLElement;
+          const toggleBtn = this.chatContainer?.querySelector(
+            "#ai-butler-chat-toggle-button",
+          ) as HTMLElement;
+          if (inputArea && toggleBtn) {
+            inputArea.style.display = "flex";
+            toggleBtn.innerHTML = "🔽 收起追问";
+          }
+
+          // 聚焦输入框
+          if (this.chatInput) {
+            setTimeout(() => {
+              this.chatInput?.focus();
+            }, 100);
+          }
+        } else {
+          this.hideLoading();
+          // 没有 PDF 内容
+          new ztoolkit.ProgressWindow("AI Butler", {
+            closeOnClick: true,
+            closeTime: 3000,
+          })
+            .createLine({
+              text: "该文献没有可用的 PDF 附件",
+              type: "error",
+            })
+            .show();
+          this.clearPaperContext();
+        }
+      } catch (err) {
+        this.hideLoading();
+        ztoolkit.log("[AI-Butler] 获取 PDF 内容失败:", err);
+        new ztoolkit.ProgressWindow("AI Butler", {
+          closeOnClick: true,
+          closeTime: 3000,
+        })
+          .createLine({
+            text: "获取 PDF 内容失败",
+            type: "error",
+          })
+          .show();
+        this.clearPaperContext();
+      }
+    } catch (err) {
+      this.hideLoading();
+      ztoolkit.log("[AI-Butler] loadItemForChat 失败:", err);
+      this.clearPaperContext();
+    }
+  }
+
+  /**
    * 显示已保存的笔记内容(来自 Zotero 笔记,HTML 直接渲染)
    *
    * @param itemId 文献条目ID

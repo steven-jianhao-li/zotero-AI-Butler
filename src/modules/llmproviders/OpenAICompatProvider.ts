@@ -258,18 +258,30 @@ export class OpenAICompatProvider implements ILlmProvider {
         if (role !== "system" && role !== "user" && role !== "assistant") {
           role = "user";
         }
-        if (isBase64 && role === "user" && msg === conversation[0]) {
-          // 第一条用户消息附带 PDF（多模态格式）
-          messages.push({
-            role: "user",
-            content: [
-              { type: "text", text: msg.content },
-              {
-                type: "image_url",
-                image_url: { url: `data:application/pdf;base64,${pdfContent}` },
-              },
-            ],
-          });
+        const isFirstUserMessage = role === "user" && msg === conversation[0];
+        if (isFirstUserMessage) {
+          // 第一条用户消息需要附带论文内容
+          if (isBase64) {
+            // Base64 模式：使用多模态格式
+            messages.push({
+              role: "user",
+              content: [
+                { type: "text", text: msg.content },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:application/pdf;base64,${pdfContent}`,
+                  },
+                },
+              ],
+            });
+          } else {
+            // 文本模式：将论文内容附加到消息中
+            messages.push({
+              role: "user",
+              content: buildUserMessage(msg.content, pdfContent),
+            });
+          }
         } else {
           messages.push({ role, content: msg.content });
         }

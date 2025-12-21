@@ -52,6 +52,8 @@ pref(
   "__prefsPrefix__.multiRoundFinalPrompt",
   "基于以上多轮对话的内容，请为我生成一份完整、结构化的论文总结笔记。要求：\\n1. 开头用一段话概括论文的核心内容\\n2. 分章节整理各部分的关键信息\\n3. 突出论文的创新点和贡献\\n4. 指出论文的局限性和未来方向\\n5. 语言简洁清晰，使用中文",
 );
+// 多轮总结模式下是否保存中间对话内容到笔记（仅对 multi_summarize 生效）
+pref("__prefsPrefix__.multiSummarySaveIntermediate", false);
 
 // ==================== 任务队列配置 ====================
 pref("__prefsPrefix__.maxRetries", "3");

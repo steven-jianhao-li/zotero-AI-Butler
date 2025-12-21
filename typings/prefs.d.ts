@@ -33,6 +33,7 @@ declare namespace _ZoteroTypes {
       "summaryMode": string;
       "multiRoundPrompts": string;
       "multiRoundFinalPrompt": string;
+      "multiSummarySaveIntermediate": boolean;
       "maxRetries": string;
       "batchSize": string;
       "batchInterval": string;

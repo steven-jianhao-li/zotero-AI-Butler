@@ -68,14 +68,14 @@ export class UiSettingsPage {
     );
 
     // 保存对话历史
-    const saveChatHistory = (getPref("saveChatHistory") as boolean) ?? false;
+    const saveChatHistory = (getPref("saveChatHistory") as boolean) ?? true;
     const saveChatHistoryBox = createCheckbox(
       "saveChatHistory",
       !!saveChatHistory,
     );
     form.appendChild(
       createFormGroup(
-        "保存追问对话记录（试验性功能，谨慎启用）",
+        "保存追问对话记录",
         saveChatHistoryBox,
         "开启后，追问对话的内容会自动保存到论文的 AI 管家笔记中",
       ),
@@ -102,6 +102,27 @@ export class UiSettingsPage {
       ),
     );
 
+    // Markdown 笔记样式主题
+    const currentTheme = (
+      (getPref("markdownTheme" as any) as string) || "github"
+    ).toString();
+    const themeSelect = createSelect(
+      "markdownTheme",
+      [
+        { value: "github", label: "GitHub (默认)" },
+        { value: "redstriking", label: "红印 (Redstriking)" },
+        // 更多主题可在此添加
+      ],
+      currentTheme,
+    );
+    form.appendChild(
+      createFormGroup(
+        "侧边栏笔记样式",
+        themeSelect,
+        "设置侧边栏 AI 笔记的 Markdown 渲染样式",
+      ),
+    );
+
     // 预览区域（移除字号预览，不再提供字体大小设置）
 
     // 按钮
@@ -112,7 +133,7 @@ export class UiSettingsPage {
       marginTop: "16px",
     });
     const btnSave = createStyledButton("💾 保存设置", "#4caf50");
-    btnSave.addEventListener("click", () => {
+    btnSave.addEventListener("click", async () => {
       const autoVal =
         (form.querySelector("#setting-autoScroll") as HTMLInputElement)
           ?.checked ?? true;
@@ -121,15 +142,24 @@ export class UiSettingsPage {
           ?.checked ?? true;
       const saveChatHistoryVal =
         (form.querySelector("#setting-saveChatHistory") as HTMLInputElement)
-          ?.checked ?? false;
+          ?.checked ?? true;
       const policyVal = (policySelect as any).getValue
         ? (policySelect as any).getValue()
         : policy;
+      const themeVal = (themeSelect as any).getValue
+        ? (themeSelect as any).getValue()
+        : currentTheme;
 
       setPref("autoScroll", !!autoVal as any);
       setPref("autoScan", !!autoScanVal as any);
       setPref("saveChatHistory", !!saveChatHistoryVal as any);
       setPref("noteStrategy" as any, policyVal);
+      setPref("markdownTheme" as any, themeVal);
+
+      // 清除主题缓存以便下次加载新主题
+      const { themeManager } = await import("../../themeManager");
+      themeManager.setCurrentTheme(themeVal);
+      themeManager.clearCache();
 
       // 重新加载自动扫描管理器
       AutoScanManager.getInstance().reload();
@@ -143,7 +173,7 @@ export class UiSettingsPage {
     btnReset.addEventListener("click", () => {
       setPref("autoScroll", true as any);
       setPref("autoScan", true as any);
-      setPref("saveChatHistory", false as any);
+      setPref("saveChatHistory", true as any);
       setPref("noteStrategy" as any, "skip");
       AutoScanManager.getInstance().reload();
       this.render();

@@ -108,6 +108,7 @@ export class UiSettingsPage {
       "markdownTheme",
       [
         { value: "github", label: "GitHub (默认)" },
+        { value: "redstriking", label: "红印 (Redstriking)" },
         // 更多主题可在此添加
       ],
       currentTheme,

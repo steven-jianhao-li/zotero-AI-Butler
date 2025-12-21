@@ -16,6 +16,7 @@ import { getPref, setPref } from "../utils/prefs";
 // 内置主题列表
 const BUILTIN_THEMES = [
     { id: "github", name: "GitHub", file: "github.css" },
+    { id: "redstriking", name: "红印 (Redstriking)", file: "redstriking.css" },
     // 可以在这里添加更多内置主题
 ];
 
@@ -114,6 +115,10 @@ export class ThemeManager {
         // 替换 body 选择器为容器选择器
         let adapted = css.replace(/body\s*\{/g, ".ai-butler-note-content {");
 
+        // 替换 Typora 专用的 #write 选择器
+        adapted = adapted.replace(/#write\s*/g, ".ai-butler-note-content ");
+        adapted = adapted.replace(/#write\{/g, ".ai-butler-note-content{");
+
         // 调整 .markdown-body 的 padding（侧边栏空间有限）
         adapted = adapted.replace(
             /\.markdown-body\s*\{([^}]*?)padding:\s*45px;/g,
@@ -122,9 +127,12 @@ export class ThemeManager {
 
         // 调整 max-width
         adapted = adapted.replace(
-            /max-width:\s*980px;/g,
+            /max-width:\s*\d+px;/g,
             "max-width: 100%;",
         );
+
+        // 移除外部字体引用（可能无法加载）
+        adapted = adapted.replace(/@font-face\s*\{[^}]*url\([^)]*\.woff2[^)]*\)[^}]*\}/g, "");
 
         return adapted;
     }

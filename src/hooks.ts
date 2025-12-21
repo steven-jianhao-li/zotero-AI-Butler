@@ -674,6 +674,113 @@ function registerItemPaneSection() {
         `;
         noteTitle.innerHTML = `📄 <span>AI 笔记</span>`;
 
+        // 字体大小控制
+        const fontSizeControl = doc.createElement("div");
+        fontSizeControl.style.cssText = `
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          margin-left: auto;
+          margin-right: 8px;
+        `;
+        fontSizeControl.addEventListener("click", (e: Event) => e.stopPropagation()); // 防止触发折叠
+
+        // 从设置加载字体大小，默认12px
+        let currentFontSize = parseInt((getPref("sidebarNoteFontSize" as any) as string) || "12", 10);
+        if (isNaN(currentFontSize) || currentFontSize < 10 || currentFontSize > 20) {
+          currentFontSize = 12;
+        }
+
+        const fontSizeLabel = doc.createElement("span");
+        fontSizeLabel.textContent = `${currentFontSize}px`;
+        fontSizeLabel.style.cssText = `
+          font-size: 10px;
+          color: #666;
+          min-width: 28px;
+          text-align: center;
+        `;
+
+        const createFontBtn = (text: string, delta: number) => {
+          const btn = doc.createElement("button");
+          btn.textContent = text;
+          btn.style.cssText = `
+            width: 20px;
+            height: 20px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            background: white;
+            cursor: pointer;
+            font-size: 12px;
+            line-height: 1;
+            color: #666;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          `;
+          btn.addEventListener("mouseenter", () => {
+            btn.style.background = "#f0f0f0";
+          });
+          btn.addEventListener("mouseleave", () => {
+            btn.style.background = "white";
+          });
+          btn.addEventListener("click", () => {
+            currentFontSize = Math.max(10, Math.min(20, currentFontSize + delta));
+            fontSizeLabel.textContent = `${currentFontSize}px`;
+            noteContent.style.fontSize = `${currentFontSize}px`;
+            // 保存到设置
+            setPref("sidebarNoteFontSize" as any, String(currentFontSize) as any);
+          });
+          return btn;
+        };
+
+        fontSizeControl.appendChild(createFontBtn("−", -1));
+        fontSizeControl.appendChild(fontSizeLabel);
+        fontSizeControl.appendChild(createFontBtn("+", 1));
+
+        // 主题选择器
+        const themeSelect = doc.createElement("select");
+        themeSelect.style.cssText = `
+          margin-left: 8px;
+          padding: 2px 4px;
+          font-size: 10px;
+          border: 1px solid #ddd;
+          border-radius: 3px;
+          background: white;
+          cursor: pointer;
+          color: #666;
+        `;
+        themeSelect.addEventListener("click", (e: Event) => e.stopPropagation());
+
+        // 添加内置主题选项
+        const themes = [
+          { id: "github", name: "GitHub" },
+          { id: "redstriking", name: "红印" },
+        ];
+        const currentTheme = ((getPref("markdownTheme" as any) as string) || "github").toString();
+        themes.forEach(t => {
+          const opt = doc.createElement("option");
+          opt.value = t.id;
+          opt.textContent = t.name;
+          if (t.id === currentTheme) opt.selected = true;
+          themeSelect.appendChild(opt);
+        });
+
+        themeSelect.addEventListener("change", async () => {
+          const newTheme = themeSelect.value;
+          setPref("markdownTheme" as any, newTheme as any);
+          // 重新加载主题
+          const { themeManager } = await import("./modules/themeManager");
+          themeManager.setCurrentTheme(newTheme);
+          themeManager.clearCache();
+          const themeCss = await themeManager.loadThemeCss();
+          const adaptedCss = themeManager.adaptCssForSidebar(themeCss);
+          let styleEl = doc.getElementById("ai-butler-note-theme") as HTMLStyleElement;
+          if (styleEl) {
+            styleEl.textContent = adaptedCss;
+          }
+        });
+        fontSizeControl.appendChild(themeSelect);
+
         const toggleIcon = doc.createElement("span");
         toggleIcon.textContent = "▼";
         toggleIcon.style.cssText = `
@@ -683,16 +790,22 @@ function registerItemPaneSection() {
         `;
 
         noteHeader.appendChild(noteTitle);
+        noteHeader.appendChild(fontSizeControl);
         noteHeader.appendChild(toggleIcon);
 
         // 笔记内容区域（可滚动、可调高度）
+        const DEFAULT_NOTE_HEIGHT = 200;
+        let savedNoteHeight = parseInt((getPref("sidebarNoteHeight" as any) as string) || String(DEFAULT_NOTE_HEIGHT), 10);
+        if (isNaN(savedNoteHeight) || savedNoteHeight < 50) {
+          savedNoteHeight = DEFAULT_NOTE_HEIGHT;
+        }
+
         const noteContentWrapper = doc.createElement("div");
         noteContentWrapper.className = "ai-butler-note-content-wrapper";
         noteContentWrapper.style.cssText = `
           position: relative;
-          height: 200px;
-          min-height: 100px;
-          max-height: 500px;
+          height: ${savedNoteHeight}px;
+          min-height: 50px;
           overflow-y: auto;
           transition: height 0.2s ease;
         `;
@@ -702,7 +815,7 @@ function registerItemPaneSection() {
         noteContent.style.cssText = `
           padding: 10px;
           padding-bottom: 20px;
-          font-size: 12px;
+          font-size: ${currentFontSize}px;
           line-height: 1.6;
         `;
 
@@ -729,25 +842,74 @@ function registerItemPaneSection() {
           isResizing = true;
           startY = e.clientY;
           startHeight = noteContentWrapper.offsetHeight;
-          doc.body.style.cursor = "ns-resize";
+          if (doc.body) doc.body.style.cursor = "ns-resize";
           e.preventDefault();
         });
 
         doc.addEventListener("mousemove", (e: MouseEvent) => {
           if (!isResizing) return;
           const deltaY = e.clientY - startY;
-          const newHeight = Math.max(100, Math.min(500, startHeight + deltaY));
+          // 最小50px，无上限
+          const newHeight = Math.max(50, startHeight + deltaY);
           noteContentWrapper.style.height = `${newHeight}px`;
         });
 
         doc.addEventListener("mouseup", () => {
           if (isResizing) {
             isResizing = false;
-            doc.body.style.cursor = "";
+            if (doc.body) doc.body.style.cursor = "";
+            // 保存高度到设置
+            const currentHeight = noteContentWrapper.offsetHeight;
+            setPref("sidebarNoteHeight" as any, String(currentHeight) as any);
           }
         });
 
+        // 阻止滚动冒泡到父级侧边栏
+        noteContentWrapper.addEventListener("wheel", (e: WheelEvent) => {
+          const { scrollTop, scrollHeight, clientHeight } = noteContentWrapper;
+          const isAtTop = scrollTop === 0;
+          const isAtBottom = scrollTop + clientHeight >= scrollHeight;
+
+          // 如果在顶部往上滚或在底部往下滚，阻止冒泡
+          if ((isAtTop && e.deltaY < 0) || (isAtBottom && e.deltaY > 0)) {
+            e.preventDefault();
+          }
+          e.stopPropagation();
+        }, { passive: false });
+
         noteContentWrapper.appendChild(noteContent);
+
+        // 恢复默认高度按钮（添加到 fontSizeControl 旁边）
+        const resetHeightBtn = doc.createElement("button");
+        resetHeightBtn.textContent = "↕";
+        resetHeightBtn.title = "恢复默认高度";
+        resetHeightBtn.style.cssText = `
+          width: 20px;
+          height: 20px;
+          border: 1px solid #ddd;
+          border-radius: 3px;
+          background: white;
+          cursor: pointer;
+          font-size: 12px;
+          color: #666;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-left: 8px;
+        `;
+        resetHeightBtn.addEventListener("click", (e: Event) => {
+          e.stopPropagation();
+          savedNoteHeight = DEFAULT_NOTE_HEIGHT;
+          noteContentWrapper.style.height = `${DEFAULT_NOTE_HEIGHT}px`;
+          setPref("sidebarNoteHeight" as any, String(DEFAULT_NOTE_HEIGHT) as any);
+        });
+        resetHeightBtn.addEventListener("mouseenter", () => {
+          resetHeightBtn.style.background = "#f0f0f0";
+        });
+        resetHeightBtn.addEventListener("mouseleave", () => {
+          resetHeightBtn.style.background = "white";
+        });
+        fontSizeControl.appendChild(resetHeightBtn);
 
         // 折叠/展开功能
         let isCollapsed = false;
@@ -759,7 +921,9 @@ function registerItemPaneSection() {
             resizeHandle.style.display = "none";
             toggleIcon.style.transform = "rotate(-90deg)";
           } else {
-            noteContentWrapper.style.height = "200px";
+            // 使用保存的高度
+            const restoreHeight = parseInt((getPref("sidebarNoteHeight" as any) as string) || String(DEFAULT_NOTE_HEIGHT), 10);
+            noteContentWrapper.style.height = `${restoreHeight}px`;
             noteContentWrapper.style.overflowY = "auto";
             resizeHandle.style.display = "flex";
             toggleIcon.style.transform = "rotate(0deg)";
@@ -893,17 +1057,9 @@ function registerItemPaneSection() {
             }
             styleEl.textContent = adaptedCss;
 
-            // 渲染 Markdown
-            // 先将 HTML 转换为纯文本 Markdown（如果是 Zotero 笔记格式）
-            const tempDiv = doc.createElement("div");
-            tempDiv.innerHTML = aiNoteContent;
-            const plainText = tempDiv.textContent || tempDiv.innerText || "";
-
-            // 使用 marked 解析
-            const { marked } = await import("marked");
-            const renderedHtml = marked.parse(plainText) as string;
-
-            noteContent.innerHTML = renderedHtml;
+            // Zotero 笔记本身就是 HTML 格式（有 <h2>、<strong> 等标签）
+            // 直接显示 HTML 内容并应用 CSS 样式即可
+            noteContent.innerHTML = aiNoteContent;
           } catch (err: any) {
             ztoolkit.log("[AI-Butler] 加载笔记失败:", err);
             noteContent.innerHTML = `<div style="color: #d32f2f; padding: 10px;">加载笔记失败: ${err.message}</div>`;

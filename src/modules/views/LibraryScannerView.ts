@@ -740,10 +740,20 @@ export class LibraryScannerView extends BaseView {
 
     // 懒渲染: 初次不生成所有子节点 DOM, 仅创建占位容器, 展开时再渲染
     if (node.children.length > 0) {
+      // 当子节点数量超过阈值时，限制高度并添加滚动
+      const needsScroll = node.children.length > 20;
       const childrenContainer = this.createElement("div", {
         styles: {
           display: node.expanded ? "block" : "none",
           marginTop: "2px",
+          ...(needsScroll && {
+            maxHeight: "400px",
+            overflowY: "auto",
+            border: "1px solid #e0e0e0",
+            borderRadius: "4px",
+            backgroundColor: "#fafafa",
+            padding: "4px",
+          }),
         },
       });
       node.childrenContainer = childrenContainer;

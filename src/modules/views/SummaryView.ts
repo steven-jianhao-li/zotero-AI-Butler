@@ -1130,9 +1130,8 @@ ${jsonMarker}
           } else {
             // 没有已有总结，显示欢迎提示
             if (this.outputContainer) {
-              const welcomeHint = Zotero.getMainWindow().document.createElement(
-                "div",
-              );
+              const welcomeHint =
+                Zotero.getMainWindow().document.createElement("div");
               welcomeHint.style.cssText = `
                 padding: 20px;
                 margin: 10px 0;

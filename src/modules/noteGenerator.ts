@@ -608,7 +608,8 @@ export class NoteGenerator {
         );
 
         // 检查是否需要保存中间对话内容
-        const saveIntermediate = (getPref("multiSummarySaveIntermediate" as any) as boolean) ?? false;
+        const saveIntermediate =
+          (getPref("multiSummarySaveIntermediate" as any) as boolean) ?? false;
         if (saveIntermediate) {
           // 拼接中间内容和最终总结
           const intermediateContent = this.formatMultiRoundConcat(roundResults);

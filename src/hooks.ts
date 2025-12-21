@@ -622,7 +622,10 @@ function registerItemPaneSection() {
         };
 
         // 完整追问按钮
-        const fullChatBtn = createButton(getString("itempane-ai-open-chat"), true);
+        const fullChatBtn = createButton(
+          getString("itempane-ai-open-chat"),
+          true,
+        );
         fullChatBtn.addEventListener("click", async () => {
           try {
             await handleOpenAIChat(item.id);
@@ -632,7 +635,10 @@ function registerItemPaneSection() {
         });
 
         // 快速提问按钮
-        const quickChatBtn = createButton(getString("itempane-ai-temp-chat"), false);
+        const quickChatBtn = createButton(
+          getString("itempane-ai-temp-chat"),
+          false,
+        );
 
         btnContainer.appendChild(fullChatBtn);
         btnContainer.appendChild(quickChatBtn);
@@ -683,11 +689,20 @@ function registerItemPaneSection() {
           margin-left: auto;
           margin-right: 8px;
         `;
-        fontSizeControl.addEventListener("click", (e: Event) => e.stopPropagation()); // 防止触发折叠
+        fontSizeControl.addEventListener("click", (e: Event) =>
+          e.stopPropagation(),
+        ); // 防止触发折叠
 
         // 从设置加载字体大小，默认12px
-        let currentFontSize = parseInt((getPref("sidebarNoteFontSize" as any) as string) || "12", 10);
-        if (isNaN(currentFontSize) || currentFontSize < 10 || currentFontSize > 20) {
+        let currentFontSize = parseInt(
+          (getPref("sidebarNoteFontSize" as any) as string) || "12",
+          10,
+        );
+        if (
+          isNaN(currentFontSize) ||
+          currentFontSize < 10 ||
+          currentFontSize > 20
+        ) {
           currentFontSize = 12;
         }
 
@@ -724,11 +739,17 @@ function registerItemPaneSection() {
             btn.style.background = "white";
           });
           btn.addEventListener("click", () => {
-            currentFontSize = Math.max(10, Math.min(20, currentFontSize + delta));
+            currentFontSize = Math.max(
+              10,
+              Math.min(20, currentFontSize + delta),
+            );
             fontSizeLabel.textContent = `${currentFontSize}px`;
             noteContent.style.fontSize = `${currentFontSize}px`;
             // 保存到设置
-            setPref("sidebarNoteFontSize" as any, String(currentFontSize) as any);
+            setPref(
+              "sidebarNoteFontSize" as any,
+              String(currentFontSize) as any,
+            );
           });
           return btn;
         };
@@ -749,15 +770,19 @@ function registerItemPaneSection() {
           cursor: pointer;
           color: #666;
         `;
-        themeSelect.addEventListener("click", (e: Event) => e.stopPropagation());
+        themeSelect.addEventListener("click", (e: Event) =>
+          e.stopPropagation(),
+        );
 
         // 添加内置主题选项
         const themes = [
           { id: "github", name: "GitHub" },
           { id: "redstriking", name: "红印" },
         ];
-        const currentTheme = ((getPref("markdownTheme" as any) as string) || "github").toString();
-        themes.forEach(t => {
+        const currentTheme = (
+          (getPref("markdownTheme" as any) as string) || "github"
+        ).toString();
+        themes.forEach((t) => {
           const opt = doc.createElement("option");
           opt.value = t.id;
           opt.textContent = t.name;
@@ -774,7 +799,9 @@ function registerItemPaneSection() {
           themeManager.clearCache();
           const themeCss = await themeManager.loadThemeCss();
           const adaptedCss = themeManager.adaptCssForSidebar(themeCss);
-          let styleEl = doc.getElementById("ai-butler-note-theme") as HTMLStyleElement;
+          const styleEl = doc.getElementById(
+            "ai-butler-note-theme",
+          ) as HTMLStyleElement;
           if (styleEl) {
             styleEl.textContent = adaptedCss;
           }
@@ -795,7 +822,11 @@ function registerItemPaneSection() {
 
         // 笔记内容区域（可滚动、可调高度）
         const DEFAULT_NOTE_HEIGHT = 200;
-        let savedNoteHeight = parseInt((getPref("sidebarNoteHeight" as any) as string) || String(DEFAULT_NOTE_HEIGHT), 10);
+        let savedNoteHeight = parseInt(
+          (getPref("sidebarNoteHeight" as any) as string) ||
+            String(DEFAULT_NOTE_HEIGHT),
+          10,
+        );
         if (isNaN(savedNoteHeight) || savedNoteHeight < 50) {
           savedNoteHeight = DEFAULT_NOTE_HEIGHT;
         }
@@ -865,17 +896,22 @@ function registerItemPaneSection() {
         });
 
         // 阻止滚动冒泡到父级侧边栏
-        noteContentWrapper.addEventListener("wheel", (e: WheelEvent) => {
-          const { scrollTop, scrollHeight, clientHeight } = noteContentWrapper;
-          const isAtTop = scrollTop === 0;
-          const isAtBottom = scrollTop + clientHeight >= scrollHeight;
+        noteContentWrapper.addEventListener(
+          "wheel",
+          (e: WheelEvent) => {
+            const { scrollTop, scrollHeight, clientHeight } =
+              noteContentWrapper;
+            const isAtTop = scrollTop === 0;
+            const isAtBottom = scrollTop + clientHeight >= scrollHeight;
 
-          // 如果在顶部往上滚或在底部往下滚，阻止冒泡
-          if ((isAtTop && e.deltaY < 0) || (isAtBottom && e.deltaY > 0)) {
-            e.preventDefault();
-          }
-          e.stopPropagation();
-        }, { passive: false });
+            // 如果在顶部往上滚或在底部往下滚，阻止冒泡
+            if ((isAtTop && e.deltaY < 0) || (isAtBottom && e.deltaY > 0)) {
+              e.preventDefault();
+            }
+            e.stopPropagation();
+          },
+          { passive: false },
+        );
 
         noteContentWrapper.appendChild(noteContent);
 
@@ -901,7 +937,10 @@ function registerItemPaneSection() {
           e.stopPropagation();
           savedNoteHeight = DEFAULT_NOTE_HEIGHT;
           noteContentWrapper.style.height = `${DEFAULT_NOTE_HEIGHT}px`;
-          setPref("sidebarNoteHeight" as any, String(DEFAULT_NOTE_HEIGHT) as any);
+          setPref(
+            "sidebarNoteHeight" as any,
+            String(DEFAULT_NOTE_HEIGHT) as any,
+          );
         });
         resetHeightBtn.addEventListener("mouseenter", () => {
           resetHeightBtn.style.background = "#f0f0f0";
@@ -922,7 +961,11 @@ function registerItemPaneSection() {
             toggleIcon.style.transform = "rotate(-90deg)";
           } else {
             // 使用保存的高度
-            const restoreHeight = parseInt((getPref("sidebarNoteHeight" as any) as string) || String(DEFAULT_NOTE_HEIGHT), 10);
+            const restoreHeight = parseInt(
+              (getPref("sidebarNoteHeight" as any) as string) ||
+                String(DEFAULT_NOTE_HEIGHT),
+              10,
+            );
             noteContentWrapper.style.height = `${restoreHeight}px`;
             noteContentWrapper.style.overflowY = "auto";
             resizeHandle.style.display = "flex";
@@ -957,7 +1000,8 @@ function registerItemPaneSection() {
               try {
                 const n = await Zotero.Items.getAsync(nid);
                 if (!n) continue;
-                const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
+                const tags: Array<{ tag: string }> =
+                  (n as any).getTags?.() || [];
                 const noteHtml: string = (n as any).getNote?.() || "";
 
                 // 检查是否是 AI-Butler 生成的摘要笔记（排除 Chat 笔记）
@@ -1010,16 +1054,20 @@ function registerItemPaneSection() {
                 justify-content: center;
               `;
               generateBtn.addEventListener("mouseenter", () => {
-                generateBtn.style.background = "linear-gradient(135deg, #4db6ac, #26a69a)";
+                generateBtn.style.background =
+                  "linear-gradient(135deg, #4db6ac, #26a69a)";
               });
               generateBtn.addEventListener("mouseleave", () => {
-                generateBtn.style.background = "linear-gradient(135deg, #59c0bc, #4db6ac)";
+                generateBtn.style.background =
+                  "linear-gradient(135deg, #59c0bc, #4db6ac)";
               });
               generateBtn.addEventListener("click", async () => {
                 try {
                   generateBtn.disabled = true;
                   generateBtn.textContent = "正在加入队列...";
-                  const { TaskQueueManager } = await import("./modules/taskQueue");
+                  const { TaskQueueManager } = await import(
+                    "./modules/taskQueue"
+                  );
                   const queueManager = TaskQueueManager.getInstance();
                   await queueManager.addTask(item, true); // 优先处理
                   generateBtn.textContent = "✅ 已加入队列";
@@ -1047,12 +1095,15 @@ function registerItemPaneSection() {
             const adaptedCss = themeManager.adaptCssForSidebar(themeCss);
 
             // 注入样式（使用 body 或父元素，因为 XUL 文档没有 head）
-            let styleEl = doc.getElementById("ai-butler-note-theme") as HTMLStyleElement;
+            let styleEl = doc.getElementById(
+              "ai-butler-note-theme",
+            ) as HTMLStyleElement;
             if (!styleEl) {
               styleEl = doc.createElement("style");
               styleEl.id = "ai-butler-note-theme";
               // 尝试添加到 body，如果不存在则添加到 noteSection
-              const insertTarget = doc.body || doc.documentElement || noteSection;
+              const insertTarget =
+                doc.body || doc.documentElement || noteSection;
               insertTarget.appendChild(styleEl);
             }
             styleEl.textContent = adaptedCss;
@@ -1136,13 +1187,16 @@ function registerItemPaneSection() {
               sendBtn.textContent = "加载中...";
               sendBtn.disabled = true;
               const { PDFExtractor } = await import("./modules/pdfExtractor");
-              const prefMode = (getPref("pdfProcessMode") as string) || "base64";
+              const prefMode =
+                (getPref("pdfProcessMode") as string) || "base64";
               currentChatState.isBase64 = prefMode === "base64";
 
               if (currentChatState.isBase64) {
-                currentChatState.pdfContent = await PDFExtractor.extractBase64FromItem(item);
+                currentChatState.pdfContent =
+                  await PDFExtractor.extractBase64FromItem(item);
               } else {
-                currentChatState.pdfContent = await PDFExtractor.extractTextFromItem(item);
+                currentChatState.pdfContent =
+                  await PDFExtractor.extractTextFromItem(item);
               }
             } catch (err: any) {
               messagesArea.innerHTML += `<div style="color: #d32f2f; padding: 4px 0;">❌ 无法加载 PDF: ${err.message}</div>`;
@@ -1162,11 +1216,15 @@ function registerItemPaneSection() {
           messagesArea.scrollTop = messagesArea.scrollHeight;
 
           // 添加到历史
-          currentChatState.conversationHistory.push({ role: "user", content: question });
+          currentChatState.conversationHistory.push({
+            role: "user",
+            content: question,
+          });
 
           // 显示 AI 回复占位
           const aiMsgDiv = doc.createElement("div");
-          aiMsgDiv.style.cssText = "background: #f5f5f5; padding: 6px 8px; border-radius: 4px; margin-bottom: 6px;";
+          aiMsgDiv.style.cssText =
+            "background: #f5f5f5; padding: 6px 8px; border-radius: 4px; margin-bottom: 6px;";
           aiMsgDiv.innerHTML = "<strong>🤖 AI:</strong> <em>思考中...</em>";
           messagesArea.appendChild(aiMsgDiv);
           messagesArea.scrollTop = messagesArea.scrollHeight;
@@ -1186,7 +1244,10 @@ function registerItemPaneSection() {
               },
             );
 
-            currentChatState.conversationHistory.push({ role: "assistant", content: fullResponse });
+            currentChatState.conversationHistory.push({
+              role: "assistant",
+              content: fullResponse,
+            });
             aiMsgDiv.innerHTML = `<strong>🤖 AI:</strong> ${fullResponse}`;
           } catch (err: any) {
             aiMsgDiv.innerHTML = `<strong>🤖 AI:</strong> <span style="color: #d32f2f;">❌ 错误: ${err.message}</span>`;

@@ -103,7 +103,9 @@ export class UiSettingsPage {
     );
 
     // Markdown 笔记样式主题
-    const currentTheme = ((getPref("markdownTheme" as any) as string) || "github").toString();
+    const currentTheme = (
+      (getPref("markdownTheme" as any) as string) || "github"
+    ).toString();
     const themeSelect = createSelect(
       "markdownTheme",
       [

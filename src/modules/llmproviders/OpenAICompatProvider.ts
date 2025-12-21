@@ -127,7 +127,7 @@ export class OpenAICompatProvider implements ILlmProvider {
                   const parts = slice.split(/\r?\n/);
                   partialLine =
                     parts[parts.length - 1].indexOf("data:") === 0 &&
-                      slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                    slice.indexOf("\n", slice.length - 1) === slice.length - 1
                       ? ""
                       : parts.pop() || "";
 
@@ -269,7 +269,9 @@ export class OpenAICompatProvider implements ILlmProvider {
                 { type: "text", text: msg.content },
                 {
                   type: "image_url",
-                  image_url: { url: `data:application/pdf;base64,${pdfContent}` },
+                  image_url: {
+                    url: `data:application/pdf;base64,${pdfContent}`,
+                  },
                 },
               ],
             });
@@ -333,7 +335,7 @@ export class OpenAICompatProvider implements ILlmProvider {
                 const parts = slice.split(/\r?\n/);
                 partialLine =
                   parts[parts.length - 1].indexOf("data:") === 0 &&
-                    slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
                     ? ""
                     : parts.pop() || "";
 

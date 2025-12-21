@@ -606,6 +606,15 @@ export class NoteGenerator {
           conversationHistory,
           onFinalProgress,
         );
+
+        // 检查是否需要保存中间对话内容
+        const saveIntermediate = (getPref("multiSummarySaveIntermediate" as any) as boolean) ?? false;
+        if (saveIntermediate) {
+          // 拼接中间内容和最终总结
+          const intermediateContent = this.formatMultiRoundConcat(roundResults);
+          return `${intermediateContent}\n---\n\n# 📝 最终总结\n\n${summary}`;
+        }
+
         return summary;
       } catch (error: any) {
         ztoolkit.log("[AI Butler] 最终总结生成失败:", error);

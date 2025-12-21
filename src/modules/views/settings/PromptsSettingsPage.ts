@@ -22,6 +22,7 @@ import {
   createStyledButton,
   createSectionTitle,
   createNotice,
+  createCheckbox,
 } from "../ui/components";
 
 type PresetMap = Record<string, string>;
@@ -94,9 +95,9 @@ export class PromptsSettingsPage {
     modeSection.appendChild(
       createNotice(
         "选择 AI 总结论文的方式：<br/>" +
-          "• <b>单次对话</b>: 一次对话完成总结（Token消耗最少，笔记简洁）<br/>" +
-          "• <b>多轮拼接</b>: 多轮对话后拼接所有内容（Token消耗较多，笔记最详细）<br/>" +
-          "• <b>多轮总结</b>: 多轮对话后AI汇总（Token消耗最多，笔记详细且篇幅适中）",
+        "• <b>单次对话</b>: 一次对话完成总结（Token消耗最少，笔记简洁）<br/>" +
+        "• <b>多轮拼接</b>: 多轮对话后拼接所有内容（Token消耗较多，笔记最详细）<br/>" +
+        "• <b>多轮总结</b>: 多轮对话后AI汇总（Token消耗最多，笔记详细且篇幅适中）",
         "info",
       ),
     );
@@ -218,6 +219,29 @@ export class PromptsSettingsPage {
         "最终总结提示词",
         finalPromptEditor,
         "多轮对话完成后，使用此提示词生成最终总结",
+      ),
+    );
+
+    // 保存中间对话内容选项
+    const saveIntermediate = (getPref("multiSummarySaveIntermediate" as any) as boolean) ?? false;
+    const saveIntermediateCheckbox = createCheckbox("save-intermediate", saveIntermediate);
+    saveIntermediateCheckbox.addEventListener("click", () => {
+      const checkbox = saveIntermediateCheckbox.querySelector("input") as HTMLInputElement;
+      if (checkbox) {
+        setPref("multiSummarySaveIntermediate" as any, checkbox.checked as any);
+        new ztoolkit.ProgressWindow("提示词")
+          .createLine({
+            text: checkbox.checked ? "✅ 将保存中间对话内容" : "ℹ️ 仅保存最终总结",
+            type: "success",
+          })
+          .show();
+      }
+    });
+    finalPromptContainer.appendChild(
+      createFormGroup(
+        "保存中间对话内容",
+        saveIntermediateCheckbox,
+        "开启后，笔记中将同时包含多轮对话过程和最终总结",
       ),
     );
 

@@ -22,7 +22,7 @@
  * @author AI-Butler Team
  */
 
-import { getString, initLocale } from "./utils/locale";
+import { getString, initLocale, getLocaleID } from "./utils/locale";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
 import { TaskQueueManager } from "./modules/taskQueue";
@@ -75,6 +75,14 @@ async function onStartup() {
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
   );
+
+  // 注册 PDF 阅读器工具栏按钮
+  // 用户可以在阅读 PDF 时快速访问 AI 追问功能
+  registerReaderToolbarButton();
+
+  // 注册条目面板自定义区块
+  // 用户可以在浏览文献库时快速访问 AI 追问功能
+  registerItemPaneSection();
 
   // 启动自动扫描管理器
   const autoScanManager = AutoScanManager.getInstance();
@@ -337,6 +345,496 @@ function registerContextMenuItem() {
       return hasTag || titleMatch;
     },
   });
+}
+
+/**
+ * 注册 PDF 阅读器工具栏按钮
+ *
+ * 在 PDF 阅读器顶部工具栏中添加"AI 追问"按钮
+ * 用户点击后可以快速打开 AI 追问界面
+ *
+ * 技术实现:
+ * - 使用 Zotero.Reader.registerEventListener("renderToolbar") API
+ * - 动态注入按钮到工具栏
+ * - 点击后获取当前文献并打开追问窗口
+ * - 同时处理已打开的 Reader（插件启动时）
+ */
+function registerReaderToolbarButton() {
+  const pluginID = config.addonID;
+
+  /**
+   * 创建并返回工具栏按钮
+   */
+  const createToolbarButton = (doc: Document, reader: any) => {
+    // 创建按钮容器
+    const buttonContainer = doc.createElement("div");
+    buttonContainer.className = "ai-butler-toolbar-container";
+    buttonContainer.style.cssText = `
+      display: flex;
+      align-items: center;
+      margin-left: 8px;
+    `;
+
+    // 创建按钮 - 使用图标而非文字以适应窄工具栏
+    const button = doc.createElement("button");
+    button.className = "toolbar-button ai-butler-reader-chat-btn";
+    button.innerHTML = `🤖`;
+    button.title = "AI 管家 - 与 AI 对话讨论当前论文";
+    button.style.cssText = `
+      padding: 4px 8px;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.2s ease;
+    `;
+
+    // 悬停效果
+    button.addEventListener("mouseenter", () => {
+      button.style.background = "rgba(0, 0, 0, 0.08)";
+    });
+    button.addEventListener("mouseleave", () => {
+      button.style.background = "transparent";
+    });
+
+    // 点击事件
+    button.addEventListener("click", async () => {
+      try {
+        const readerItem = reader._item;
+        if (!readerItem) {
+          new ztoolkit.ProgressWindow("AI Butler", {
+            closeOnClick: true,
+            closeTime: 3000,
+          })
+            .createLine({
+              text: "无法获取当前文献信息",
+              type: "error",
+            })
+            .show();
+          return;
+        }
+
+        // 获取正确的父条目 ID
+        // reader._item 可能是 PDF 附件，也可能是父条目
+        let targetItemId: number;
+        if (readerItem.isAttachment()) {
+          // 是附件，获取父条目 ID
+          const parentId = readerItem.parentItemID;
+          if (!parentId) {
+            new ztoolkit.ProgressWindow("AI Butler", {
+              closeOnClick: true,
+              closeTime: 3000,
+            })
+              .createLine({
+                text: "该 PDF 没有关联的父条目",
+                type: "error",
+              })
+              .show();
+            return;
+          }
+          targetItemId = parentId;
+        } else {
+          // 是父条目，直接使用
+          targetItemId = readerItem.id;
+        }
+
+        await handleOpenAIChat(targetItemId);
+      } catch (error: any) {
+        ztoolkit.log("[AI-Butler] Reader 工具栏按钮点击失败:", error);
+        new ztoolkit.ProgressWindow("AI Butler", {
+          closeOnClick: true,
+          closeTime: 3000,
+        })
+          .createLine({
+            text: `打开失败: ${error.message || error}`,
+            type: "error",
+          })
+          .show();
+      }
+    });
+
+    buttonContainer.appendChild(button);
+    return buttonContainer;
+  };
+
+  try {
+    // 注册事件监听器，处理新打开的 Reader
+    (Zotero as any).Reader.registerEventListener(
+      "renderToolbar",
+      (event: any) => {
+        const { reader, doc, append } = event;
+        const buttonContainer = createToolbarButton(doc, reader);
+        append(buttonContainer);
+      },
+      pluginID,
+    );
+
+    // 处理已打开的 Reader（插件启动时）
+    // 延迟执行，确保 Zotero.Reader._readers 已经初始化
+    setTimeout(() => {
+      try {
+        const readers = (Zotero as any).Reader._readers || [];
+        for (const reader of readers) {
+          if (!reader?._iframeWindow?.document) continue;
+          const doc = reader._iframeWindow.document;
+          const toolbar = doc.querySelector(".toolbar");
+          if (!toolbar) continue;
+
+          // 检查是否已经添加过按钮
+          if (toolbar.querySelector(".ai-butler-toolbar-container")) continue;
+
+          // 创建并添加按钮
+          const buttonContainer = createToolbarButton(doc, reader);
+          toolbar.appendChild(buttonContainer);
+        }
+        ztoolkit.log(
+          `[AI-Butler] 已为 ${readers.length} 个已打开的 Reader 添加工具栏按钮`,
+        );
+      } catch (err) {
+        ztoolkit.log("[AI-Butler] 处理已打开的 Reader 失败:", err);
+      }
+    }, 1000);
+
+    ztoolkit.log("[AI-Butler] Reader 工具栏按钮已注册");
+  } catch (error) {
+    ztoolkit.log("[AI-Butler] 注册 Reader 工具栏按钮失败:", error);
+  }
+}
+
+/**
+ * 注册条目面板自定义区块
+ *
+ * 在 Zotero 右侧条目面板中添加"AI 追问"区块
+ * 提供两个入口：完整追问（保存记录）和快速提问（临时）
+ *
+ * 技术实现:
+ * - 使用 Zotero.ItemPaneManager.registerSection() API
+ * - 区块显示当前文献状态和操作按钮
+ * - 内嵌临时聊天功能
+ */
+function registerItemPaneSection() {
+  const pluginID = config.addonID;
+
+  // 存储侧边栏聊天状态
+  let currentChatState: {
+    itemId: number | null;
+    pdfContent: string;
+    isBase64: boolean;
+    conversationHistory: Array<{ role: string; content: string }>;
+    isChatting: boolean;
+  } = {
+    itemId: null,
+    pdfContent: "",
+    isBase64: false,
+    conversationHistory: [],
+    isChatting: false,
+  };
+
+  try {
+    (Zotero as any).ItemPaneManager.registerSection({
+      paneID: "ai-butler-chat-section",
+      pluginID: pluginID,
+      header: {
+        l10nID: getLocaleID("itempane-ai-section-header" as any),
+        icon: rootURI + "content/icons/icon24.png",
+      },
+      sidenav: {
+        l10nID: getLocaleID("itempane-ai-section-sidenav" as any),
+        icon: rootURI + "content/icons/icon24.png",
+      },
+      onRender: ({ body, item, editable, tabType }: any) => {
+        // 清空已有内容
+        body.innerHTML = "";
+        const doc = body.ownerDocument;
+
+        // 容器样式
+        body.style.cssText = `
+          padding: 10px;
+          font-family: system-ui, -apple-system, sans-serif;
+          font-size: 13px;
+        `;
+
+        // 检查是否有有效的文献条目
+        if (!item || !item.isRegularItem()) {
+          const hint = doc.createElement("div");
+          hint.style.cssText = `
+            color: #9e9e9e;
+            font-size: 12px;
+            text-align: center;
+            padding: 12px;
+          `;
+          hint.textContent = getString("itempane-ai-no-item");
+          body.appendChild(hint);
+          return;
+        }
+
+        // 重置聊天状态（如果切换了条目）
+        if (currentChatState.itemId !== item.id) {
+          currentChatState = {
+            itemId: item.id,
+            pdfContent: "",
+            isBase64: false,
+            conversationHistory: [],
+            isChatting: false,
+          };
+        }
+
+        // 按钮容器
+        const btnContainer = doc.createElement("div");
+        btnContainer.style.cssText = `
+          display: flex;
+          gap: 8px;
+          margin-bottom: 10px;
+        `;
+
+        // 通用按钮样式函数
+        const createButton = (text: string, isPrimary: boolean) => {
+          const btn = doc.createElement("button");
+          btn.textContent = text;
+          btn.style.cssText = `
+            flex: 1;
+            padding: 8px 12px;
+            border: ${isPrimary ? "none" : "1px solid #59c0bc"};
+            border-radius: 4px;
+            background: ${isPrimary ? "#59c0bc" : "transparent"};
+            color: ${isPrimary ? "white" : "#59c0bc"};
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.15s ease;
+          `;
+          btn.addEventListener("mouseenter", () => {
+            if (isPrimary) {
+              btn.style.background = "#4db6ac";
+            } else {
+              btn.style.background = "rgba(89, 192, 188, 0.1)";
+            }
+          });
+          btn.addEventListener("mouseleave", () => {
+            btn.style.background = isPrimary ? "#59c0bc" : "transparent";
+          });
+          return btn;
+        };
+
+        // 完整追问按钮
+        const fullChatBtn = createButton(getString("itempane-ai-open-chat"), true);
+        fullChatBtn.addEventListener("click", async () => {
+          try {
+            await handleOpenAIChat(item.id);
+          } catch (error: any) {
+            ztoolkit.log("[AI-Butler] 完整追问按钮点击失败:", error);
+          }
+        });
+
+        // 快速提问按钮
+        const quickChatBtn = createButton(getString("itempane-ai-temp-chat"), false);
+
+        btnContainer.appendChild(fullChatBtn);
+        btnContainer.appendChild(quickChatBtn);
+        body.appendChild(btnContainer);
+
+        // 内嵌聊天区域容器
+        const chatArea = doc.createElement("div");
+        chatArea.id = "ai-butler-inline-chat";
+        chatArea.style.cssText = `
+          display: none;
+          flex-direction: column;
+          border: 1px solid #e0e0e0;
+          border-radius: 6px;
+          overflow: hidden;
+          background: #fafafa;
+        `;
+
+        // 聊天消息显示区
+        const messagesArea = doc.createElement("div");
+        messagesArea.style.cssText = `
+          max-height: 200px;
+          overflow-y: auto;
+          padding: 8px;
+          font-size: 12px;
+          line-height: 1.5;
+        `;
+
+        // 输入区域
+        const inputArea = doc.createElement("div");
+        inputArea.style.cssText = `
+          display: flex;
+          gap: 6px;
+          padding: 8px;
+          border-top: 1px solid #e0e0e0;
+          background: white;
+        `;
+
+        const inputBox = doc.createElement("textarea");
+        inputBox.placeholder = "输入问题...";
+        inputBox.style.cssText = `
+          flex: 1;
+          min-height: 36px;
+          max-height: 80px;
+          padding: 6px 8px;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          resize: none;
+          font-size: 12px;
+          font-family: inherit;
+        `;
+
+        const sendBtn = doc.createElement("button");
+        sendBtn.textContent = "发送";
+        sendBtn.style.cssText = `
+          padding: 6px 12px;
+          background: #59c0bc;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 12px;
+          align-self: flex-end;
+        `;
+
+        // 发送消息处理
+        const handleSend = async () => {
+          const question = inputBox.value.trim();
+          if (!question || currentChatState.isChatting) return;
+
+          // 如果还没有加载 PDF 内容，先加载
+          if (!currentChatState.pdfContent) {
+            try {
+              sendBtn.textContent = "加载中...";
+              sendBtn.disabled = true;
+              const { PDFExtractor } = await import("./modules/pdfExtractor");
+              const prefMode = (getPref("pdfProcessMode") as string) || "base64";
+              currentChatState.isBase64 = prefMode === "base64";
+
+              if (currentChatState.isBase64) {
+                currentChatState.pdfContent = await PDFExtractor.extractBase64FromItem(item);
+              } else {
+                currentChatState.pdfContent = await PDFExtractor.extractTextFromItem(item);
+              }
+            } catch (err: any) {
+              messagesArea.innerHTML += `<div style="color: #d32f2f; padding: 4px 0;">❌ 无法加载 PDF: ${err.message}</div>`;
+              sendBtn.textContent = "发送";
+              sendBtn.disabled = false;
+              return;
+            }
+          }
+
+          currentChatState.isChatting = true;
+          inputBox.value = "";
+          sendBtn.textContent = "思考中...";
+          sendBtn.disabled = true;
+
+          // 显示用户消息
+          messagesArea.innerHTML += `<div style="background: #e3f2fd; padding: 6px 8px; border-radius: 4px; margin-bottom: 6px;"><strong>👤 您:</strong> ${question}</div>`;
+          messagesArea.scrollTop = messagesArea.scrollHeight;
+
+          // 添加到历史
+          currentChatState.conversationHistory.push({ role: "user", content: question });
+
+          // 显示 AI 回复占位
+          const aiMsgDiv = doc.createElement("div");
+          aiMsgDiv.style.cssText = "background: #f5f5f5; padding: 6px 8px; border-radius: 4px; margin-bottom: 6px;";
+          aiMsgDiv.innerHTML = "<strong>🤖 AI:</strong> <em>思考中...</em>";
+          messagesArea.appendChild(aiMsgDiv);
+          messagesArea.scrollTop = messagesArea.scrollHeight;
+
+          try {
+            const { default: LLMClient } = await import("./modules/llmClient");
+            let fullResponse = "";
+
+            await LLMClient.chat(
+              currentChatState.pdfContent,
+              currentChatState.isBase64,
+              currentChatState.conversationHistory,
+              (chunk: string) => {
+                fullResponse += chunk;
+                aiMsgDiv.innerHTML = `<strong>🤖 AI:</strong> ${fullResponse.substring(0, 500)}${fullResponse.length > 500 ? "..." : ""}`;
+                messagesArea.scrollTop = messagesArea.scrollHeight;
+              },
+            );
+
+            currentChatState.conversationHistory.push({ role: "assistant", content: fullResponse });
+            aiMsgDiv.innerHTML = `<strong>🤖 AI:</strong> ${fullResponse}`;
+          } catch (err: any) {
+            aiMsgDiv.innerHTML = `<strong>🤖 AI:</strong> <span style="color: #d32f2f;">❌ 错误: ${err.message}</span>`;
+            currentChatState.conversationHistory.pop(); // 移除失败的用户消息
+          } finally {
+            currentChatState.isChatting = false;
+            sendBtn.textContent = "发送";
+            sendBtn.disabled = false;
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+          }
+        };
+
+        sendBtn.addEventListener("click", handleSend);
+        inputBox.addEventListener("keydown", (e: KeyboardEvent) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+          }
+        });
+
+        inputArea.appendChild(inputBox);
+        inputArea.appendChild(sendBtn);
+        chatArea.appendChild(messagesArea);
+        chatArea.appendChild(inputArea);
+        body.appendChild(chatArea);
+
+        // 快速提问按钮点击：显示/隐藏内嵌聊天
+        quickChatBtn.addEventListener("click", () => {
+          if (chatArea.style.display === "none") {
+            chatArea.style.display = "flex";
+            quickChatBtn.style.background = "rgba(89, 192, 188, 0.15)";
+            quickChatBtn.style.borderColor = "#4db6ac";
+            inputBox.focus();
+          } else {
+            chatArea.style.display = "none";
+            quickChatBtn.style.background = "transparent";
+            quickChatBtn.style.borderColor = "#59c0bc";
+          }
+        });
+      },
+    });
+
+    ztoolkit.log("[AI-Butler] 条目面板区块已注册");
+  } catch (error) {
+    ztoolkit.log("[AI-Butler] 注册条目面板区块失败:", error);
+  }
+}
+
+/**
+ * 打开 AI 追问界面
+ *
+ * 统一的入口函数,用于从 Reader 工具栏按钮或条目面板打开追问界面
+ *
+ * @param itemId 文献条目 ID
+ */
+async function handleOpenAIChat(itemId: number): Promise<void> {
+  try {
+    // 打开主窗口并切换到摘要视图
+    const mainWin = MainWindow.getInstance();
+    await mainWin.open("summary");
+
+    // 获取 SummaryView 并加载文献
+    const summaryView = mainWin.getSummaryView();
+    if (summaryView) {
+      // 调用 loadItemForChat 方法加载文献并显示聊天界面
+      await (summaryView as any).loadItemForChat(itemId);
+    }
+  } catch (error: any) {
+    ztoolkit.log("[AI-Butler] 打开 AI 追问失败:", error);
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 3000,
+    })
+      .createLine({
+        text: `打开 AI 追问失败: ${error.message || error}`,
+        type: "error",
+      })
+      .show();
+  }
 }
 
 /**

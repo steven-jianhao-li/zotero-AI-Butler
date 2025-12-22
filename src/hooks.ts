@@ -824,7 +824,7 @@ function registerItemPaneSection() {
         const DEFAULT_NOTE_HEIGHT = 200;
         let savedNoteHeight = parseInt(
           (getPref("sidebarNoteHeight" as any) as string) ||
-          String(DEFAULT_NOTE_HEIGHT),
+            String(DEFAULT_NOTE_HEIGHT),
           10,
         );
         if (isNaN(savedNoteHeight) || savedNoteHeight < 50) {
@@ -963,7 +963,7 @@ function registerItemPaneSection() {
             // 使用保存的高度
             const restoreHeight = parseInt(
               (getPref("sidebarNoteHeight" as any) as string) ||
-              String(DEFAULT_NOTE_HEIGHT),
+                String(DEFAULT_NOTE_HEIGHT),
               10,
             );
             noteContentWrapper.style.height = `${restoreHeight}px`;
@@ -1112,17 +1112,22 @@ function registerItemPaneSection() {
             // 在 XUL 环境中，需要清理可能导致解析错误的 HTML 属性和标签
             // 例如：contenteditable 属性、非自闭合的 <hr> 标签等
             const cleanHtmlForXul = (html: string): string => {
-              return html
-                // 移除 contenteditable 属性（Zotero 编辑器添加的）
-                .replace(/\s+contenteditable\s*=\s*["'][^"']*["']/gi, "")
-                // 移除 xmlns 属性（可能引起 XML 解析问题）
-                .replace(/\s+xmlns\s*=\s*["'][^"']*["']/gi, "")
-                // 将非自闭合的 <hr> 转换为自闭合形式（兼容 XML 解析）
-                .replace(/<hr(\s[^>]*)?>(?!<\/hr>)/gi, "<hr$1/>")
-                // 确保 <br> 标签也是自闭合的
-                .replace(/<br(\s[^>]*)?>(?!<\/br>)/gi, "<br$1/>")
-                // 移除可能导致问题的 data- 属性中的特殊字符
-                .replace(/<([a-z]+)([^>]*)\s+data-[^=]*\s*=\s*["'][^"']*["']([^>]*)>/gi, "<$1$2$3>");
+              return (
+                html
+                  // 移除 contenteditable 属性（Zotero 编辑器添加的）
+                  .replace(/\s+contenteditable\s*=\s*["'][^"']*["']/gi, "")
+                  // 移除 xmlns 属性（可能引起 XML 解析问题）
+                  .replace(/\s+xmlns\s*=\s*["'][^"']*["']/gi, "")
+                  // 将非自闭合的 <hr> 转换为自闭合形式（兼容 XML 解析）
+                  .replace(/<hr(\s[^>]*)?>(?!<\/hr>)/gi, "<hr$1/>")
+                  // 确保 <br> 标签也是自闭合的
+                  .replace(/<br(\s[^>]*)?>(?!<\/br>)/gi, "<br$1/>")
+                  // 移除可能导致问题的 data- 属性中的特殊字符
+                  .replace(
+                    /<([a-z]+)([^>]*)\s+data-[^=]*\s*=\s*["'][^"']*["']([^>]*)>/gi,
+                    "<$1$2$3>",
+                  )
+              );
             };
             noteContent.innerHTML = cleanHtmlForXul(aiNoteContent);
           } catch (err: any) {

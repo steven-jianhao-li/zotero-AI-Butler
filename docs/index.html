@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Zotero AI Butler 使用文档</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+    <meta
+      name="description"
+      content="Zotero AI Butler 插件使用文档 - 配置指南、常见问题、故障排除"
+    />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, minimum-scale=1.0"
+    />
+    <!-- Docsify 主题 -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css"
+    />
+    <style>
+      :root {
+        --theme-color: #3eaf7c;
+      }
+      .sidebar-nav > ul > li > a {
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">加载中...</div>
+    <script>
+      window.$docsify = {
+        name: "Zotero AI Butler",
+        repo: "https://github.com/steven-jianhao-li/zotero-AI-Butler",
+        loadSidebar: true,
+        subMaxLevel: 2,
+        auto2top: true,
+        search: {
+          placeholder: "搜索",
+          noData: "没有找到结果",
+          paths: "auto",
+        },
+        copyCode: {
+          buttonText: "复制",
+          successText: "已复制",
+        },
+      };
+    </script>
+    <!-- Docsify 核心 -->
+    <script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
+    <!-- 搜索插件 -->
+    <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
+    <!-- 代码复制插件 -->
+    <script src="https://cdn.jsdelivr.net/npm/docsify-copy-code@2"></script>
+    <!-- 图片缩放插件 -->
+    <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/zoom-image.min.js"></script>
+  </body>
+</html>

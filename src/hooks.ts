@@ -1065,9 +1065,8 @@ function registerItemPaneSection() {
                 try {
                   generateBtn.disabled = true;
                   generateBtn.textContent = "正在加入队列...";
-                  const { TaskQueueManager } = await import(
-                    "./modules/taskQueue"
-                  );
+                  const { TaskQueueManager } =
+                    await import("./modules/taskQueue");
                   const queueManager = TaskQueueManager.getInstance();
                   await queueManager.addTask(item, true); // 优先处理
                   generateBtn.textContent = "✅ 已加入队列";

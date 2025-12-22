@@ -13,6 +13,7 @@
 ### 原因分析
 
 Google AI Studio 免费层级对 API 调用有配额限制，不同模型的限制不同。例如：
+
 - 某些模型在免费层级下不可用（如曾经的 `gemini-2.5-pro`）
 - 批量处理论文时容易超出每分钟请求限制
 
@@ -26,6 +27,7 @@ Google AI Studio 免费层级对 API 调用有配额限制，不同模型的限�
 4. 在插件中修改模型名称为支持的模型
 
 ![AI Studio 免费层级模型](images/faq-gemini-free-tier.png)
+
 <!-- 占位图：展示 AI Studio 速率限制页面，显示免费层级支持的模型 -->
 <!-- 截图时间：2025年12月22日 -->
 
@@ -58,6 +60,7 @@ Google AI Studio 免费层级对 API 调用有配额限制，不同模型的限�
 3. 重新尝试分析论文
 
 ![切换 PDF 处理模式](images/faq-switch-pdf-mode.png)
+
 <!-- 占位图：展示 PDF 处理模式切换界面 -->
 
 ---
@@ -93,6 +96,7 @@ Google AI Studio 免费层级对 API 调用有配额限制，不同模型的限�
 ### 原因分析
 
 这通常是 API 调用失败的表现，可能原因包括：
+
 - API 密钥配置错误
 - 遇到了 429 速率限制
 - 网络连接问题
@@ -108,6 +112,7 @@ Google AI Studio 免费层级对 API 调用有配额限制，不同模型的限�
 ## 更多问题？
 
 如果您的问题未在此列出，欢迎：
+
 - 查看 [故障排除指南](troubleshooting.md) 进行自查
 - 在 [GitHub Discussions](https://github.com/steven-jianhao-li/zotero-AI-Butler/discussions) 中提问
 - 提交 [Issue](https://github.com/steven-jianhao-li/zotero-AI-Butler/issues) 反馈 Bug

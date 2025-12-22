@@ -6,12 +6,12 @@
 
 AI 管家目前支持以下 4 种 API 接入方式：
 
-| 平台 | 接口类型 | 适用场景 |
-|------|----------|----------|
-| **Google Gemini** | 原生 Gemini API | 多模态能力强，支持直接读取 PDF |
-| **OpenAI** | OpenAI 新接口(v1/responses) | GPT 系列模型 |
-| **Anthropic Claude** | 原生 Claude API | Claude 系列模型 |
-| **OpenAI 兼容** | OpenAI 兼容接口(chat/completions) | 第三方服务商（硅基流动、DeepSeek 等） |
+| 平台                 | 接口类型                          | 适用场景                              |
+| -------------------- | --------------------------------- | ------------------------------------- |
+| **Google Gemini**    | 原生 Gemini API                   | 多模态能力强，支持直接读取 PDF        |
+| **OpenAI**           | OpenAI 新接口(v1/responses)       | GPT 系列模型                          |
+| **Anthropic Claude** | 原生 Claude API                   | Claude 系列模型                       |
+| **OpenAI 兼容**      | OpenAI 兼容接口(chat/completions) | 第三方服务商（硅基流动、DeepSeek 等） |
 
 ---
 
@@ -26,7 +26,6 @@ AI 管家目前支持以下 4 种 API 接入方式：
 5. 确保配额层级不是 **"不可用"**，否则无法使用 API。若所有 API 配额都为 **"不可用"**，建议更换 Google 账号。
 
 ![AI Studio 配额层级](images/api-config-gemini-quota.png)
-
 
 ### 在插件中配置
 
@@ -109,17 +108,18 @@ Google AI Studio 免费层级对不同模型有不同的速率限制。查看可
 ## OpenAI 兼容接口（第三方平台）
 
 许多第三方 AI 服务商提供兼容 OpenAI Chat Completions 格式的 API。配置时需要从各平台官方文档获取：
+
 - **Base URL**：API 服务地址
 - **模型名称**：平台支持的模型标识符
 
 ### 常见平台文档
 
-| 平台 | API 文档 | Base URL |
-|------|----------|----------|
-| **硅基流动** | [SiliconFlow Docs](https://docs.siliconflow.cn/) | `https://api.siliconflow.cn/v1` |
-| **DeepSeek** | [DeepSeek API](https://api-docs.deepseek.com/) | `https://api.deepseek.com/v1` |
-| **智谱 AI** | [GLM API](https://open.bigmodel.cn/dev/api) | `https://open.bigmodel.cn/api/paas/v4` |
-| **Moonshot** | [Kimi API](https://platform.moonshot.cn/docs/) | `https://api.moonshot.cn/v1` |
+| 平台         | API 文档                                         | Base URL                               |
+| ------------ | ------------------------------------------------ | -------------------------------------- |
+| **硅基流动** | [SiliconFlow Docs](https://docs.siliconflow.cn/) | `https://api.siliconflow.cn/v1`        |
+| **DeepSeek** | [DeepSeek API](https://api-docs.deepseek.com/)   | `https://api.deepseek.com/v1`          |
+| **智谱 AI**  | [GLM API](https://open.bigmodel.cn/dev/api)      | `https://open.bigmodel.cn/api/paas/v4` |
+| **Moonshot** | [Kimi API](https://platform.moonshot.cn/docs/)   | `https://api.moonshot.cn/v1`           |
 
 ### 配置方法
 
@@ -154,10 +154,10 @@ Google AI Studio 免费层级对不同模型有不同的速率限制。查看可
 
 AI 管家提供两种 PDF 处理方式：
 
-| 模式 | 说明 | 适用场景 |
-|------|------|----------|
+| 模式                | 说明                    | 适用场景                              |
+| ------------------- | ----------------------- | ------------------------------------- |
 | **多模态 (Base64)** | 将 PDF 编码后发送给模型 | 支持多模态的模型（如 Gemini、GPT-4o） |
-| **文本提取** | 提取 PDF 文字内容发送 | 不支持多模态的模型 |
+| **文本提取**        | 提取 PDF 文字内容发送   | 不支持多模态的模型                    |
 
 ### 切换方法
 

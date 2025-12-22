@@ -35,6 +35,7 @@ import {
   PROMPT_VERSION,
   shouldUpdatePrompt,
 } from "./utils/prompts";
+import { sanitizeForInnerHTML } from "./utils/htmlSanitizer";
 
 /**
  * 插件启动钩子函数
@@ -1110,10 +1111,11 @@ function registerItemPaneSection() {
 
             // Zotero 笔记本身就是 HTML 格式（有 <h2>、<strong> 等标签）
             // 直接显示 HTML 内容并应用 CSS 样式即可
-            noteContent.innerHTML = aiNoteContent;
+            // 使用 sanitizeForInnerHTML 清理可能导致 innerHTML 失败的无效字符
+            noteContent.innerHTML = sanitizeForInnerHTML(aiNoteContent);
           } catch (err: any) {
             ztoolkit.log("[AI-Butler] 加载笔记失败:", err);
-            noteContent.innerHTML = `<div style="color: #d32f2f; padding: 10px;">加载笔记失败: ${err.message}</div>`;
+            noteContent.innerHTML = `<div style="color: #d32f2f; padding: 10px;">加载笔记失败: ${err.message || err}</div>`;
           }
         })();
 

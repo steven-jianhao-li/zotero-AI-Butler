@@ -206,7 +206,7 @@ export class ApiSettingsPage {
           "openaiCompatApiUrl",
           "text",
           (getPref("openaiCompatApiUrl") as string) ||
-          "https://api.openai.com/v1/chat/completions",
+            "https://api.openai.com/v1/chat/completions",
           "https://api.openai.com/v1/chat/completions",
         ),
         "【必填】旧版 Chat Completions 完整端点。例如 SiliconFlow: https://api.siliconflow.cn/v1/chat/completions",
@@ -218,7 +218,7 @@ export class ApiSettingsPage {
         this.createPasswordInput(
           "openaiCompatApiKey",
           (getPref("openaiCompatApiKey") as string) ||
-          (getPref("openaiApiKey") as string),
+            (getPref("openaiApiKey") as string),
           "sk-...",
         ),
         "【必填】对应第三方服务的密钥（格式同 Bearer Token）",
@@ -231,8 +231,8 @@ export class ApiSettingsPage {
           "openaiCompatModel",
           "text",
           (getPref("openaiCompatModel") as string) ||
-          (getPref("openaiApiModel") as string) ||
-          "gpt-3.5-turbo",
+            (getPref("openaiApiModel") as string) ||
+            "gpt-3.5-turbo",
           "gpt-3.5-turbo",
         ),
         "【必填】第三方提供的模型名称，如 Qwen/QwQ-32B、deepseek-ai/DeepSeek-V3 等",

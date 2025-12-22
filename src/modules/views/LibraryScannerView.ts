@@ -504,7 +504,9 @@ export class LibraryScannerView extends BaseView {
     content.addEventListener("click", (e) => {
       if (e.target !== checkbox) {
         checkbox.checked = !checkbox.checked;
-        checkbox.dispatchEvent(new Event("change"));
+        // 直接调用而非依赖 dispatchEvent，确保在 XUL 环境下正常工作
+        this.toggleAllNodes(checkbox.checked);
+        this.updateSelectedCount();
       }
     });
 
@@ -516,13 +518,50 @@ export class LibraryScannerView extends BaseView {
    * 切换所有节点
    */
   private toggleAllNodes(checked: boolean): void {
+    // 第一阶段：更新所有节点的数据模型
     for (const node of this.treeRoot) {
-      this.toggleNodeRecursive(node, checked);
+      this.updateCheckedStateRecursive(node, checked);
+    }
+
+    // 第二阶段：更新 UI（展开节点、渲染子节点、更新复选框）
+    for (const node of this.treeRoot) {
+      this.updateNodeUIRecursive(node, checked);
     }
   }
 
   /**
-   * 递归切换节点及其所有子节点
+   * 递归更新节点的 checked 状态（仅更新数据模型）
+   */
+  private updateCheckedStateRecursive(node: TreeNode, checked: boolean): void {
+    node.checked = checked;
+    for (const child of node.children) {
+      this.updateCheckedStateRecursive(child, checked);
+    }
+  }
+
+  /**
+   * 递归更新节点的 UI（复选框状态、展开状态）
+   */
+  private updateNodeUIRecursive(node: TreeNode, checked: boolean): void {
+    // 更新已渲染节点的复选框 UI
+    if (node.checkboxElement) {
+      node.checkboxElement.checked = checked;
+    }
+
+    // 如果选中且是收藏夹，展开节点
+    if (checked && node.type === "collection" && node.children.length > 0) {
+      node.expanded = true;
+      this.updateNodeVisibility(node);
+    }
+
+    // 递归处理子节点
+    for (const child of node.children) {
+      this.updateNodeUIRecursive(child, checked);
+    }
+  }
+
+  /**
+   * 递归切换节点及其所有子节点（用于单个节点的切换）
    */
   private toggleNodeRecursive(node: TreeNode, checked: boolean): void {
     node.checked = checked;
@@ -532,15 +571,15 @@ export class LibraryScannerView extends BaseView {
       node.checkboxElement.checked = checked;
     }
 
-    // 如果被选中,展开节点
+    // 先递归处理所有子节点的 checked 状态（确保数据模型正确）
+    for (const child of node.children) {
+      this.toggleNodeRecursive(child, checked);
+    }
+
+    // 最后展开节点（此时子节点的 checked 状态已正确设置）
     if (checked && node.type === "collection" && node.children.length > 0) {
       node.expanded = true;
       this.updateNodeVisibility(node);
-    }
-
-    // 递归处理子节点
-    for (const child of node.children) {
-      this.toggleNodeRecursive(child, checked);
     }
   }
 

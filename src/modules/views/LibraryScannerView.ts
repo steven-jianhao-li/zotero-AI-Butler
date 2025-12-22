@@ -676,13 +676,14 @@ export class LibraryScannerView extends BaseView {
     });
 
     // 图标和名称
+    // 使用 textContent 而非 innerHTML，避免论文标题中的特殊字符（如 <, >, &）导致 XML 解析错误
     const icon = node.type === "collection" ? "📁" : "📄";
     const label = this.createElement("span", {
       styles: {
         flex: "1",
         fontSize: "14px",
       },
-      innerHTML: `${icon} ${node.name}`,
+      textContent: `${icon} ${node.name}`,
     });
 
     // 子项数量

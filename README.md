@@ -1,4 +1,4 @@
-# zotero-AI-Butler(Zotero插件)
+# Zotero插件：**zotero-AI-Butler【AI 管家】**
 
 <!-- Badges -->
 <p>
@@ -10,7 +10,7 @@
 </p>
 </div>
 
-## 📖 [点击查看完整使用文档——AI管家Wiki](https://steven-jianhao-li.github.io/zotero-AI-Butler/)
+## [点我查看 **AI Butler Wiki**——配置与使用文档](https://steven-jianhao-li.github.io/zotero-AI-Butler/)
 
 > **文献下载一时爽，打开阅读火葬场。**
 > **天书难啃骨头硬，管家嚼碎再喂粮。**

@@ -21,6 +21,7 @@
 > 💡 **提示**：详细的 API 配置方法请参阅 [API 配置指南](api-configuration.md)
 
 Google Gemini 官方 API 配置示例：
+
 ![Google Gemini 官方 API 配置示例](images/quick-start-google-gemini-api-config.png)
 
 5. 使用 **"🔍 测试连接"** 按钮测试连接是否成功。

@@ -15,6 +15,7 @@ import {
   createSelect,
 } from "../ui/components";
 import LLMClient from "../../llmClient";
+import { APITestError } from "../../llmproviders/types";
 
 /**
  * API 设置页面类
@@ -659,6 +660,10 @@ export class ApiSettingsPage {
       textContent: "API 连接测试结果",
       styles: { fontSize: "13px", fontWeight: "600" },
     });
+    // 按钮容器
+    const buttonContainer = this.createElement("div", {
+      styles: { display: "flex", gap: "8px" },
+    });
     const copyBtn = this.createElement("button", {
       textContent: "复制详情",
       styles: {
@@ -677,7 +682,6 @@ export class ApiSettingsPage {
       const doc = win?.document as Document | undefined;
       const nav = (win as any)?.navigator as any;
       try {
-        // 优先使用标准剪贴板 API（在 Zotero/Firefox 环境下可能可用）
         if (nav?.clipboard?.writeText) {
           await nav.clipboard.writeText(text);
         } else {
@@ -689,7 +693,6 @@ export class ApiSettingsPage {
       } catch {
         try {
           if (!doc) throw new Error("no document");
-          // 退化为选中复制
           const tmp = doc.createElement("textarea");
           tmp.value = text;
           (tmp.style as any).position = "fixed";
@@ -711,8 +714,9 @@ export class ApiSettingsPage {
         }
       }
     });
+    buttonContainer.appendChild(copyBtn);
     resultTitle.appendChild(resultTitleText);
-    resultTitle.appendChild(copyBtn);
+    resultTitle.appendChild(buttonContainer);
     const resultPre = this.createElement("pre", {
       id: "api-test-result-text",
       styles: {
@@ -1279,9 +1283,16 @@ export class ApiSettingsPage {
 
       setTimeout(() => progressWindow.close(), 3000);
     } catch (error: any) {
-      const fullMsg = (error?.stack ||
-        error?.message ||
-        String(error)) as string;
+      // 检查是否为 APITestError 类型
+      let fullMsg: string;
+      if (error?.name === "APITestError" && error?.details) {
+        // 使用详细错误报告格式
+        fullMsg = error.formatReport?.() || this.formatAPITestError(error);
+      } else {
+        // 普通错误，直接显示消息
+        fullMsg = error?.message || String(error);
+      }
+
       progressWindow.changeLine({
         text: `❌ ${error?.message || "连接失败"}`,
         type: "fail",
@@ -1299,6 +1310,29 @@ export class ApiSettingsPage {
 
       setTimeout(() => progressWindow.close(), 5000);
     }
+  }
+
+  /**
+   * 格式化 APITestError 为详细错误报告
+   */
+  private formatAPITestError(error: any): string {
+    const d = error?.details;
+    if (!d) return error?.message || String(error);
+    const lines: string[] = [];
+    lines.push(`错误名称: ${d.errorName || "Unknown"}`);
+    lines.push(`错误信息: ${d.errorMessage || error?.message || "Unknown"}`);
+    if (d.statusCode !== undefined) {
+      lines.push(`状态码: ${d.statusCode}`);
+    }
+    lines.push(`请求路径: ${d.requestUrl || "Unknown"}`);
+    if (d.responseBody) {
+      lines.push(`响应内容: ${d.responseBody}`);
+    }
+    if (d.responseHeaders && Object.keys(d.responseHeaders).length > 0) {
+      lines.push(`响应首部: ${JSON.stringify(d.responseHeaders, null, 2)}`);
+    }
+    lines.push(`请求体: ${d.requestBody || "Unknown"}`);
+    return lines.join("\n");
   }
 
   /**

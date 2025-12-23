@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* eslint-env node */
 /* global console */
 // Generate test bootstrap to set Zotero prefs from .env for repeatable runs.
 import fs from "node:fs";

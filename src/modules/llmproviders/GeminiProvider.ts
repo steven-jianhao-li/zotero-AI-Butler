@@ -388,24 +388,108 @@ export class GeminiProvider implements ILlmProvider {
       systemInstruction: { parts: [{ text: SYSTEM_ROLE_PROMPT }] },
       generationConfig: { temperature: 0.1, topP: 1.0, maxOutputTokens: 16 },
     };
-    const response = await Zotero.HTTP.request("POST", url, {
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify(payload),
-      responseType: "json",
-      timeout: 30000,
-    });
-    if (response.status === 200) {
+    const payloadStr = JSON.stringify(payload, null, 2);
+
+    let response: any;
+    const responseHeaders: Record<string, string> = {};
+    try {
+      response = await Zotero.HTTP.request("POST", url, {
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify(payload),
+        responseType: "text", // 使用 text 以获取原始响应
+        timeout: 30000,
+      });
+      // 提取响应首部
+      try {
+        const headerStr = response.getAllResponseHeaders?.() || "";
+        headerStr.split(/\r?\n/).forEach((line: string) => {
+          const idx = line.indexOf(":");
+          if (idx > 0) {
+            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line
+              .slice(idx + 1)
+              .trim();
+          }
+        });
+      } catch {
+        /* ignore */
+      }
+    } catch (error: any) {
+      // 提取响应首部
+      try {
+        const headerStr = error?.xmlhttp?.getAllResponseHeaders?.() || "";
+        headerStr.split(/\r?\n/).forEach((line: string) => {
+          const idx = line.indexOf(":");
+          if (idx > 0) {
+            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line
+              .slice(idx + 1)
+              .trim();
+          }
+        });
+      } catch {
+        /* ignore */
+      }
+      const status = error?.xmlhttp?.status;
+      const responseBody =
+        error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
+      let errorMessage = error?.message || "Gemini 请求失败";
+      let errorName = "NetworkError";
+      try {
+        if (responseBody) {
+          const parsed =
+            typeof responseBody === "string"
+              ? JSON.parse(responseBody)
+              : responseBody;
+          const err = parsed?.error || parsed;
+          errorName = err?.code || err?.status || "APIError";
+          errorMessage = err?.message || errorMessage;
+        }
+      } catch {
+        /* ignore */
+      }
+
+      // 导入并抛出 APITestError
+      const { APITestError } = await import("./types");
+      throw new APITestError(errorMessage, {
+        errorName,
+        errorMessage,
+        statusCode: status,
+        requestUrl: url,
+        requestBody: payloadStr,
+        responseHeaders,
+        responseBody:
+          typeof responseBody === "string"
+            ? responseBody
+            : JSON.stringify(responseBody),
+      });
+    }
+
+    const status = response.status;
+    const rawResponse = response.response || "";
+
+    if (status === 200) {
       const json =
-        typeof response.response === "string"
-          ? JSON.parse(response.response)
-          : response.response;
+        typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
       const text =
         json?.candidates?.[0]?.content?.parts
           ?.map((p: any) => p?.text || "")
           .join("") || "";
-      return `✅ 连接成功!\n模型: ${model}\n响应: ${text}`;
+      return `✅ 连接成功!\n模型: ${model}\n响应: ${text}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
     }
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+    // 非 200 但未抛出异常的情况
+    const { APITestError } = await import("./types");
+    throw new APITestError(`HTTP ${status}`, {
+      errorName: `HTTP_${status}`,
+      errorMessage: `HTTP ${status}: ${response.statusText || "请求失败"}`,
+      statusCode: status,
+      requestUrl: url,
+      requestBody: payloadStr,
+      responseHeaders,
+      responseBody: rawResponse,
+    });
   }
 
   private extractGeminiText(json: any): string {

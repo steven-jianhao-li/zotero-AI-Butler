@@ -127,7 +127,7 @@ export class OpenAICompatProvider implements ILlmProvider {
                   const parts = slice.split(/\r?\n/);
                   partialLine =
                     parts[parts.length - 1].indexOf("data:") === 0 &&
-                      slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                    slice.indexOf("\n", slice.length - 1) === slice.length - 1
                       ? ""
                       : parts.pop() || "";
 
@@ -335,7 +335,7 @@ export class OpenAICompatProvider implements ILlmProvider {
                 const parts = slice.split(/\r?\n/);
                 partialLine =
                   parts[parts.length - 1].indexOf("data:") === 0 &&
-                    slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
                     ? ""
                     : parts.pop() || "";
 
@@ -447,10 +447,14 @@ export class OpenAICompatProvider implements ILlmProvider {
         headerStr.split(/\r?\n/).forEach((line: string) => {
           const idx = line.indexOf(":");
           if (idx > 0) {
-            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line.slice(idx + 1).trim();
+            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line
+              .slice(idx + 1)
+              .trim();
           }
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     } catch (error: any) {
       // 提取响应首部
       try {
@@ -458,22 +462,32 @@ export class OpenAICompatProvider implements ILlmProvider {
         headerStr.split(/\r?\n/).forEach((line: string) => {
           const idx = line.indexOf(":");
           if (idx > 0) {
-            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line.slice(idx + 1).trim();
+            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line
+              .slice(idx + 1)
+              .trim();
           }
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       const status = error?.xmlhttp?.status;
-      const responseBody = error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
+      const responseBody =
+        error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
       let errorMessage = error?.message || "OpenAI 兼容请求失败";
       let errorName = "NetworkError";
       try {
         if (responseBody) {
-          const parsed = typeof responseBody === "string" ? JSON.parse(responseBody) : responseBody;
+          const parsed =
+            typeof responseBody === "string"
+              ? JSON.parse(responseBody)
+              : responseBody;
           const err = parsed?.error || parsed;
           errorName = err?.code || err?.type || "APIError";
           errorMessage = err?.message || errorMessage;
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
 
       const { APITestError } = await import("./types");
       throw new APITestError(errorMessage, {
@@ -483,7 +497,10 @@ export class OpenAICompatProvider implements ILlmProvider {
         requestUrl: apiUrl,
         requestBody: payloadStr,
         responseHeaders,
-        responseBody: typeof responseBody === "string" ? responseBody : JSON.stringify(responseBody),
+        responseBody:
+          typeof responseBody === "string"
+            ? responseBody
+            : JSON.stringify(responseBody),
       });
     }
 
@@ -491,7 +508,8 @@ export class OpenAICompatProvider implements ILlmProvider {
     const rawResponse = response.response || "";
 
     if (status === 200) {
-      const json = typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
+      const json =
+        typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
       const content = json?.choices?.[0]?.message?.content || "";
       return `✅ 连接成功!\n模型: ${model}\n响应: ${content}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
     }

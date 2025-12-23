@@ -105,7 +105,7 @@ export class GeminiProvider implements ILlmProvider {
                 const parts = slice.split(/\r?\n/);
                 partialLine =
                   parts[parts.length - 1].indexOf("data: ") === 0 &&
-                    slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
                     ? ""
                     : parts.pop() || "";
 
@@ -285,7 +285,7 @@ export class GeminiProvider implements ILlmProvider {
                 const parts = slice.split(/\r?\n/);
                 partialLine =
                   parts[parts.length - 1].indexOf("data:") === 0 &&
-                    slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
                     ? ""
                     : parts.pop() || "";
 
@@ -394,7 +394,10 @@ export class GeminiProvider implements ILlmProvider {
     let responseHeaders: Record<string, string> = {};
     try {
       response = await Zotero.HTTP.request("POST", url, {
-        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
         body: JSON.stringify(payload),
         responseType: "text", // 使用 text 以获取原始响应
         timeout: 30000,
@@ -405,10 +408,14 @@ export class GeminiProvider implements ILlmProvider {
         headerStr.split(/\r?\n/).forEach((line: string) => {
           const idx = line.indexOf(":");
           if (idx > 0) {
-            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line.slice(idx + 1).trim();
+            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line
+              .slice(idx + 1)
+              .trim();
           }
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     } catch (error: any) {
       // 提取响应首部
       try {
@@ -416,22 +423,32 @@ export class GeminiProvider implements ILlmProvider {
         headerStr.split(/\r?\n/).forEach((line: string) => {
           const idx = line.indexOf(":");
           if (idx > 0) {
-            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line.slice(idx + 1).trim();
+            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line
+              .slice(idx + 1)
+              .trim();
           }
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       const status = error?.xmlhttp?.status;
-      const responseBody = error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
+      const responseBody =
+        error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
       let errorMessage = error?.message || "Gemini 请求失败";
       let errorName = "NetworkError";
       try {
         if (responseBody) {
-          const parsed = typeof responseBody === "string" ? JSON.parse(responseBody) : responseBody;
+          const parsed =
+            typeof responseBody === "string"
+              ? JSON.parse(responseBody)
+              : responseBody;
           const err = parsed?.error || parsed;
           errorName = err?.code || err?.status || "APIError";
           errorMessage = err?.message || errorMessage;
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
 
       // 导入并抛出 APITestError
       const { APITestError } = await import("./types");
@@ -442,7 +459,10 @@ export class GeminiProvider implements ILlmProvider {
         requestUrl: url,
         requestBody: payloadStr,
         responseHeaders,
-        responseBody: typeof responseBody === "string" ? responseBody : JSON.stringify(responseBody),
+        responseBody:
+          typeof responseBody === "string"
+            ? responseBody
+            : JSON.stringify(responseBody),
       });
     }
 
@@ -450,10 +470,12 @@ export class GeminiProvider implements ILlmProvider {
     const rawResponse = response.response || "";
 
     if (status === 200) {
-      const json = typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
-      const text = json?.candidates?.[0]?.content?.parts
-        ?.map((p: any) => p?.text || "")
-        .join("") || "";
+      const json =
+        typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
+      const text =
+        json?.candidates?.[0]?.content?.parts
+          ?.map((p: any) => p?.text || "")
+          .join("") || "";
       return `✅ 连接成功!\n模型: ${model}\n响应: ${text}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
     }
 
@@ -469,7 +491,6 @@ export class GeminiProvider implements ILlmProvider {
       responseBody: rawResponse,
     });
   }
-
 
   private extractGeminiText(json: any): string {
     try {

@@ -114,12 +114,12 @@ Google AI Studio 免费层级对不同模型有不同的速率限制。查看可
 
 ### 常见平台文档
 
-| 平台         | API 文档                                         | Base URL                               |
-| ------------ | ------------------------------------------------ | -------------------------------------- |
-| **硅基流动** | [SiliconFlow Docs](https://docs.siliconflow.cn/) | `https://api.siliconflow.cn/v1`        |
-| **DeepSeek** | [DeepSeek API](https://api-docs.deepseek.com/)   | `https://api.deepseek.com/v1`          |
-| **智谱 AI**  | [GLM API](https://open.bigmodel.cn/dev/api)      | `https://open.bigmodel.cn/api/paas/v4` |
-| **Moonshot** | [Kimi API](https://platform.moonshot.cn/docs/)   | `https://api.moonshot.cn/v1`           |
+| 平台         | API 文档                                                                                           | Base URL                                                |
+| ------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| **硅基流动** | [SiliconFlow Docs](https://docs.siliconflow.cn/cn/api-reference/chat-completions/chat-completions) | `https://api.siliconflow.cn/v1/chat/completions`        |
+| **DeepSeek** | [DeepSeek API](https://api-docs.deepseek.com/)                                                     | `https://api.deepseek.com/v1/chat/completions`          |
+| **智谱 AI**  | [GLM API](https://open.bigmodel.cn/dev/api)                                                        | `https://open.bigmodel.cn/api/paas/v4/chat/completions` |
+| **Moonshot** | [Kimi API](https://platform.moonshot.cn/docs/api/chat)                                             | `https://api.moonshot.cn/v1/chat/completions`           |
 
 ### 配置方法
 
@@ -127,7 +127,7 @@ Google AI Studio 免费层级对不同模型有不同的速率限制。查看可
 2. 平台选择 **OpenAI 兼容**
 3. 填写以下信息：
    - **API 密钥**：从第三方平台控制台获取
-   - **Base URL**：参考上表或平台官方文档
+   - **API 地址**：填写上表Base URL或参考平台官方文档
    - **模型名称**：从平台官方文档获取（注意大小写和格式）
 
 ### 硅基流动配置示例

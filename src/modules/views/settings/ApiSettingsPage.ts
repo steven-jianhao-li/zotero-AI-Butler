@@ -15,6 +15,7 @@ import {
   createSelect,
 } from "../ui/components";
 import LLMClient from "../../llmClient";
+import { APITestError } from "../../llmproviders/types";
 
 /**
  * API 设置页面类
@@ -206,7 +207,7 @@ export class ApiSettingsPage {
           "openaiCompatApiUrl",
           "text",
           (getPref("openaiCompatApiUrl") as string) ||
-            "https://api.openai.com/v1/chat/completions",
+          "https://api.openai.com/v1/chat/completions",
           "https://api.openai.com/v1/chat/completions",
         ),
         "【必填】旧版 Chat Completions 完整端点。例如 SiliconFlow: https://api.siliconflow.cn/v1/chat/completions",
@@ -218,7 +219,7 @@ export class ApiSettingsPage {
         this.createPasswordInput(
           "openaiCompatApiKey",
           (getPref("openaiCompatApiKey") as string) ||
-            (getPref("openaiApiKey") as string),
+          (getPref("openaiApiKey") as string),
           "sk-...",
         ),
         "【必填】对应第三方服务的密钥（格式同 Bearer Token）",
@@ -231,8 +232,8 @@ export class ApiSettingsPage {
           "openaiCompatModel",
           "text",
           (getPref("openaiCompatModel") as string) ||
-            (getPref("openaiApiModel") as string) ||
-            "gpt-3.5-turbo",
+          (getPref("openaiApiModel") as string) ||
+          "gpt-3.5-turbo",
           "gpt-3.5-turbo",
         ),
         "【必填】第三方提供的模型名称，如 Qwen/QwQ-32B、deepseek-ai/DeepSeek-V3 等",
@@ -659,6 +660,10 @@ export class ApiSettingsPage {
       textContent: "API 连接测试结果",
       styles: { fontSize: "13px", fontWeight: "600" },
     });
+    // 按钮容器
+    const buttonContainer = this.createElement("div", {
+      styles: { display: "flex", gap: "8px" },
+    });
     const copyBtn = this.createElement("button", {
       textContent: "复制详情",
       styles: {
@@ -677,7 +682,6 @@ export class ApiSettingsPage {
       const doc = win?.document as Document | undefined;
       const nav = (win as any)?.navigator as any;
       try {
-        // 优先使用标准剪贴板 API（在 Zotero/Firefox 环境下可能可用）
         if (nav?.clipboard?.writeText) {
           await nav.clipboard.writeText(text);
         } else {
@@ -689,7 +693,6 @@ export class ApiSettingsPage {
       } catch {
         try {
           if (!doc) throw new Error("no document");
-          // 退化为选中复制
           const tmp = doc.createElement("textarea");
           tmp.value = text;
           (tmp.style as any).position = "fixed";
@@ -703,16 +706,14 @@ export class ApiSettingsPage {
             .show();
         } catch {
           new ztoolkit.ProgressWindow("API 连接测试", { closeTime: 2500 })
-            .createLine({
-              text: "复制失败，可手动选择文本复制",
-              type: "default",
-            })
+            .createLine({ text: "复制失败，可手动选择文本复制", type: "default" })
             .show();
         }
       }
     });
+    buttonContainer.appendChild(copyBtn);
     resultTitle.appendChild(resultTitleText);
-    resultTitle.appendChild(copyBtn);
+    resultTitle.appendChild(buttonContainer);
     const resultPre = this.createElement("pre", {
       id: "api-test-result-text",
       styles: {
@@ -1279,9 +1280,16 @@ export class ApiSettingsPage {
 
       setTimeout(() => progressWindow.close(), 3000);
     } catch (error: any) {
-      const fullMsg = (error?.stack ||
-        error?.message ||
-        String(error)) as string;
+      // 检查是否为 APITestError 类型
+      let fullMsg: string;
+      if (error?.name === "APITestError" && error?.details) {
+        // 使用详细错误报告格式
+        fullMsg = error.formatReport?.() || this.formatAPITestError(error);
+      } else {
+        // 普通错误，直接显示消息
+        fullMsg = error?.message || String(error);
+      }
+
       progressWindow.changeLine({
         text: `❌ ${error?.message || "连接失败"}`,
         type: "fail",
@@ -1299,6 +1307,29 @@ export class ApiSettingsPage {
 
       setTimeout(() => progressWindow.close(), 5000);
     }
+  }
+
+  /**
+   * 格式化 APITestError 为详细错误报告
+   */
+  private formatAPITestError(error: any): string {
+    const d = error?.details;
+    if (!d) return error?.message || String(error);
+    const lines: string[] = [];
+    lines.push(`错误名称: ${d.errorName || "Unknown"}`);
+    lines.push(`错误信息: ${d.errorMessage || error?.message || "Unknown"}`);
+    if (d.statusCode !== undefined) {
+      lines.push(`状态码: ${d.statusCode}`);
+    }
+    lines.push(`请求路径: ${d.requestUrl || "Unknown"}`);
+    if (d.responseBody) {
+      lines.push(`响应内容: ${d.responseBody}`);
+    }
+    if (d.responseHeaders && Object.keys(d.responseHeaders).length > 0) {
+      lines.push(`响应首部: ${JSON.stringify(d.responseHeaders, null, 2)}`);
+    }
+    lines.push(`请求体: ${d.requestBody || "Unknown"}`);
+    return lines.join("\n");
   }
 
   /**

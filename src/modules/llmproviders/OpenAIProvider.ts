@@ -97,7 +97,7 @@ export class OpenAIProvider implements ILlmProvider {
                     const parts = slice.split(/\r?\n/);
                     partialLine =
                       parts[parts.length - 1].indexOf("data:") === 0 &&
-                      slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                        slice.indexOf("\n", slice.length - 1) === slice.length - 1
                         ? ""
                         : parts.pop() || "";
 
@@ -281,7 +281,7 @@ export class OpenAIProvider implements ILlmProvider {
                   const parts = slice.split(/\r?\n/);
                   partialLine =
                     parts[parts.length - 1].indexOf("data: ") === 0 &&
-                    slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                      slice.indexOf("\n", slice.length - 1) === slice.length - 1
                       ? ""
                       : parts.pop() || "";
 
@@ -485,7 +485,7 @@ export class OpenAIProvider implements ILlmProvider {
                   const parts = slice.split(/\r?\n/);
                   partialLine =
                     parts[parts.length - 1].indexOf("data:") === 0 &&
-                    slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                      slice.indexOf("\n", slice.length - 1) === slice.length - 1
                       ? ""
                       : parts.pop() || "";
 
@@ -657,7 +657,7 @@ export class OpenAIProvider implements ILlmProvider {
                 const parts = slice.split(/\r?\n/);
                 partialLine =
                   parts[parts.length - 1].indexOf("data:") === 0 &&
-                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                    slice.indexOf("\n", slice.length - 1) === slice.length - 1
                     ? ""
                     : parts.pop() || "";
 
@@ -766,25 +766,85 @@ export class OpenAIProvider implements ILlmProvider {
       ],
       stream: false,
     } as any;
+    const payloadStr = JSON.stringify(payload, null, 2);
 
-    const response = await Zotero.HTTP.request("POST", responsesUrl, {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
-      responseType: "json",
-      timeout: 30000,
-    });
-    if (response.status === 200) {
-      const json =
-        typeof response.response === "string"
-          ? JSON.parse(response.response)
-          : response.response;
-      const content = json?.output_text || "";
-      return `✅ 连接成功!\n模型: ${model}\n响应: ${content}`;
+    let response: any;
+    let responseHeaders: Record<string, string> = {};
+    try {
+      response = await Zotero.HTTP.request("POST", responsesUrl, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+        responseType: "text", // 使用 text 以获取原始响应
+        timeout: 30000,
+      });
+      // 提取响应首部
+      try {
+        const headerStr = response.getAllResponseHeaders?.() || "";
+        headerStr.split(/\r?\n/).forEach((line: string) => {
+          const idx = line.indexOf(":");
+          if (idx > 0) {
+            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line.slice(idx + 1).trim();
+          }
+        });
+      } catch { /* ignore */ }
+    } catch (error: any) {
+      // 提取响应首部
+      try {
+        const headerStr = error?.xmlhttp?.getAllResponseHeaders?.() || "";
+        headerStr.split(/\r?\n/).forEach((line: string) => {
+          const idx = line.indexOf(":");
+          if (idx > 0) {
+            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line.slice(idx + 1).trim();
+          }
+        });
+      } catch { /* ignore */ }
+      const status = error?.xmlhttp?.status;
+      const responseBody = error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
+      let errorMessage = error?.message || "OpenAI 请求失败";
+      let errorName = "NetworkError";
+      try {
+        if (responseBody) {
+          const parsed = typeof responseBody === "string" ? JSON.parse(responseBody) : responseBody;
+          const err = parsed?.error || parsed;
+          errorName = err?.code || err?.type || "APIError";
+          errorMessage = err?.message || errorMessage;
+        }
+      } catch { /* ignore */ }
+
+      const { APITestError } = await import("./types");
+      throw new APITestError(errorMessage, {
+        errorName,
+        errorMessage,
+        statusCode: status,
+        requestUrl: responsesUrl,
+        requestBody: payloadStr,
+        responseHeaders,
+        responseBody: typeof responseBody === "string" ? responseBody : JSON.stringify(responseBody),
+      });
     }
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+    const status = response.status;
+    const rawResponse = response.response || "";
+
+    if (status === 200) {
+      const json = typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
+      const content = json?.output_text || "";
+      return `✅ 连接成功!\n模型: ${model}\n响应: ${content}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
+    }
+
+    const { APITestError } = await import("./types");
+    throw new APITestError(`HTTP ${status}`, {
+      errorName: `HTTP_${status}`,
+      errorMessage: `HTTP ${status}: ${response.statusText || "请求失败"}`,
+      statusCode: status,
+      requestUrl: responsesUrl,
+      requestBody: payloadStr,
+      responseHeaders,
+      responseBody: rawResponse,
+    });
   }
 
   private async nonStreamCompletion(

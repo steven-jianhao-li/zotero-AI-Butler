@@ -391,7 +391,7 @@ export class GeminiProvider implements ILlmProvider {
     const payloadStr = JSON.stringify(payload, null, 2);
 
     let response: any;
-    let responseHeaders: Record<string, string> = {};
+    const responseHeaders: Record<string, string> = {};
     try {
       response = await Zotero.HTTP.request("POST", url, {
         headers: {

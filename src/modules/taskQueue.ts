@@ -573,6 +573,16 @@ export class TaskQueueManager {
       return;
     }
 
+    // 防止任务被重复执行（竞态条件保护）
+    // 如果任务已在处理中或已完成，跳过执行
+    if (
+      task.status === TaskStatus.PROCESSING ||
+      task.status === TaskStatus.COMPLETED
+    ) {
+      ztoolkit.log(`任务已在处理中或已完成，跳过重复执行: ${taskId}`);
+      return;
+    }
+
     // 更新任务状态为处理中
     task.status = TaskStatus.PROCESSING;
     task.startedAt = new Date();

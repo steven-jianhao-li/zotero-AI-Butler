@@ -202,7 +202,8 @@ AI 管家支持自定义侧边栏笔记的渲染样式。
    { id: "your-theme", name: "您的主题名称", file: "your-theme-name.css" }
    ```
 4. 在 `src/modules/views/settings/UiSettingsPage.ts` 的主题下拉列表中添加选项
-5. 提交 Pull Request！
+5. 在 `src/hooks.ts` 的 `const themes = [` 中添加新主题
+6. 提交 Pull Request！
 
 > 提示：Typora 主题可以直接使用！插件会自动适配 `#write` 选择器。
 

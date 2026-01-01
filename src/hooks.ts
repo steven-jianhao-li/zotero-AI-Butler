@@ -778,6 +778,7 @@ function registerItemPaneSection() {
         const themes = [
           { id: "github", name: "GitHub" },
           { id: "redstriking", name: "红印" },
+          { id: "github-dark", name: "GitHub Dark" },
         ];
         const currentTheme = (
           (getPref("markdownTheme" as any) as string) || "github"

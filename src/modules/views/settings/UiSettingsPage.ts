@@ -111,6 +111,7 @@ export class UiSettingsPage {
       [
         { value: "github", label: "GitHub (默认)" },
         { value: "redstriking", label: "红印 (Redstriking)" },
+        { value: "github-dark", label: "GitHub Dark" },
         // 更多主题可在此添加
       ],
       currentTheme,

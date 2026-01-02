@@ -20,6 +20,9 @@ declare namespace _ZoteroTypes {
       "anthropicApiUrl": string;
       "anthropicApiKey": string;
       "anthropicModel": string;
+      "openRouterApiUrl": string;
+      "openRouterApiKey": string;
+      "openRouterModel": string;
       "temperature": string;
       "enableTemperature": boolean;
       "maxTokens": string;

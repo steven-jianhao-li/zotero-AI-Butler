@@ -74,6 +74,17 @@ export class LLMClient {
         (getPref("openaiApiModel" as any) as string) ||
         "gpt-3.5-turbo"
       ).trim();
+    } else if (id === "openrouter") {
+      common.apiUrl = (
+        (getPref("openRouterApiUrl" as any) as string) ||
+        "https://openrouter.ai/api/v1/chat/completions"
+      ).trim();
+      common.apiKey = (
+        (getPref("openRouterApiKey" as any) as string) || ""
+      ).trim();
+      common.model = (
+        (getPref("openRouterModel" as any) as string) || "google/gemma-3-27b-it"
+      ).trim();
     } else {
       common.apiUrl = ((getPref("openaiApiUrl" as any) as string) || "").trim();
       common.apiKey = ((getPref("openaiApiKey" as any) as string) || "").trim();

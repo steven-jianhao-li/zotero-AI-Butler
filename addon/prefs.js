@@ -25,6 +25,12 @@ pref("__prefsPrefix__.geminiModel", "gemini-2.5-pro");
 pref("__prefsPrefix__.anthropicApiUrl", "https://api.anthropic.com");
 pref("__prefsPrefix__.anthropicApiKey", "");
 pref("__prefsPrefix__.anthropicModel", "claude-3-5-sonnet-20241022");
+pref(
+  "__prefsPrefix__.openRouterApiUrl",
+  "https://openrouter.ai/api/v1/chat/completions",
+);
+pref("__prefsPrefix__.openRouterApiKey", "");
+pref("__prefsPrefix__.openRouterModel", "google/gemma-3-27b-it");
 pref("__prefsPrefix__.temperature", "0.7");
 pref("__prefsPrefix__.enableTemperature", true);
 pref("__prefsPrefix__.maxTokens", "8192");

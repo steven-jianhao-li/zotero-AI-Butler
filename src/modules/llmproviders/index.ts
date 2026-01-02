@@ -7,3 +7,4 @@ export { default as OpenAIProvider } from "./OpenAIProvider";
 export { default as OpenAICompatProvider } from "./OpenAICompatProvider";
 export { default as GeminiProvider } from "./GeminiProvider";
 export { default as AnthropicProvider } from "./AnthropicProvider";
+export { default as OpenRouterProvider } from "./OpenRouterProvider";

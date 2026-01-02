@@ -1584,20 +1584,51 @@ ${jsonMarker}
   }
 
   /**
-   * 初始化 MathJax
+   * 初始化 KaTeX CSS 样式
    *
    * @private
    */
   private initMathJax(): void {
-    // MathJax 初始化逻辑
-    // 注意:在 Zotero 环境中需要特殊处理
+    // 加载 KaTeX CSS 样式
     this.mathJaxReady = false;
 
-    // TODO: 实现 MathJax 加载逻辑
-    // 当前简化处理
-    setTimeout(() => {
+    if (!this.container) return;
+    const doc = this.container.ownerDocument;
+    if (!doc) return;
+
+    // 检查是否已添加 KaTeX CSS
+    if (doc.getElementById("ai-butler-katex-style")) {
       this.mathJaxReady = true;
-    }, 1000);
+      return;
+    }
+
+    // 异步加载 KaTeX CSS
+    (async () => {
+      try {
+        const { themeManager } = await import("../themeManager");
+        const katexCss = await themeManager.loadKatexCss();
+        
+        if (!katexCss) {
+          ztoolkit.log("[AI-Butler] KaTeX CSS 加载失败，为空");
+          return;
+        }
+
+        const styleEl = doc.createElement("style");
+        styleEl.id = "ai-butler-katex-style";
+        styleEl.textContent = katexCss;
+
+        // 添加到文档
+        const insertTarget = doc.head || doc.documentElement;
+        if (insertTarget) {
+          insertTarget.appendChild(styleEl);
+          ztoolkit.log("[AI-Butler] KaTeX CSS 已加载");
+        }
+
+        this.mathJaxReady = true;
+      } catch (e) {
+        ztoolkit.log("[AI-Butler] KaTeX CSS 加载出错:", e);
+      }
+    })();
   }
 
   /**
@@ -2124,15 +2155,17 @@ ${jsonMarker}
   }
 
   /**
-   * 将 Markdown 转换为 HTML（实例方法，简化版）
+   * 将 Markdown 转换为 HTML（实例方法）
+   * 
+   * 注意：总结页面不渲染 KaTeX，直接显示原始公式文本
    *
    * @param markdown Markdown 文本
    * @returns HTML 字符串
    * @private
    */
   private convertMarkdownToHTML(markdown: string): string {
-    // 使用静态方法进行转换，包含 KaTeX 公式渲染
-    return SummaryView.convertMarkdownToHTMLCore(markdown);
+    // 总结页面显示原始公式文本，不使用 KaTeX 渲染
+    return marked.parse(markdown) as string;
   }
 
   /**

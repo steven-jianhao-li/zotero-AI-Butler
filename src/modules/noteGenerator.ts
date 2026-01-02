@@ -30,6 +30,7 @@ import { LLMClient } from "./llmClient";
 import { SummaryView } from "./views/SummaryView";
 import { getPref } from "../utils/prefs";
 import { MainWindow } from "./views/MainWindow";
+import { marked } from "marked";
 import {
   parseMultiRoundPrompts,
   getDefaultMultiRoundFinalPrompt,
@@ -324,24 +325,15 @@ export class NoteGenerator {
    * ```
    */
   private static convertMarkdownToNoteHTML(markdown: string): string {
-    // 复用 SummaryView 的 Markdown 转换核心方法
-    // 该方法会保护公式标记并转换基本 Markdown 语法
-    let html = SummaryView.convertMarkdownToHTMLCore(markdown);
+    // 直接使用 marked 转换 Markdown，保留原始公式
+    // 公式保持原样（包含 $$、$ 等分隔符）以便侧边栏渲染时使用 KaTeX
+    let html = marked.parse(markdown) as string;
 
     // 移除所有内联样式,Zotero 笔记不支持 style 属性
     html = html.replace(/\s+style="[^"]*"/g, "");
 
-    // 转换块级公式: $$...$$ → <pre class="math">$$...$$</pre>
-    // Zotero 使用 <pre class="math"> 标签来渲染块级数学公式（虽然实际不会渲染，但可增加可读性）
-    html = html.replace(
-      /\$\$([\s\S]*?)\$\$/g,
-      (_match: string, formula: string) => {
-        return `<pre class="math">$$${formula}$$</pre>`;
-      },
-    );
-
-    // 行内公式: 保持原样 $...$ ，不再添加 <span class="math"> 包裹
-    // 因为 Zotero 笔记编辑器无法渲染 LaTeX，包裹会影响阅读体验
+    // 公式保持原样，不做任何包装处理
+    // 这样侧边栏在加载时可以直接识别 $$...$$ 和 $...$ 格式的公式进行 KaTeX 渲染
 
     return html;
   }

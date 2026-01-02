@@ -150,61 +150,57 @@ export class ThemeManager {
       "",
     );
 
-    // 添加数学公式样式，防止溢出
+    // 添加数学公式样式 - 横向滚动，完整高度显示
     const mathStyles = `
-/* 数学公式样式 - 防止横向溢出 */
-.ai-butler-note-content .math,
-.ai-butler-note-content span.math,
-.ai-butler-note-content pre.math {
+/* 公式容器样式 - 宽度限制，横向滚动 */
+.ai-butler-note-content .katex-display,
+.ai-butler-note-content .katex-block {
+  display: block;
+  max-width: 100%;
   overflow-x: auto;
   overflow-y: visible;
-  max-width: 100%;
-  display: block;
-}
-.ai-butler-note-content span.math {
-  display: inline-block;
-  max-width: 100%;
-  word-break: break-word;
-}
-.ai-butler-note-content pre.math {
-  padding: 8px;
+  padding: 12px 0;
   margin: 8px 0;
-  background: rgba(0, 0, 0, 0.03);
+  /* 自定义横向滚动条样式 */
+  scrollbar-width: thin;
+  scrollbar-color: #888 #f0f0f0;
+}
+.ai-butler-note-content .katex-display::-webkit-scrollbar,
+.ai-butler-note-content .katex-block::-webkit-scrollbar {
+  height: 8px;
+}
+.ai-butler-note-content .katex-display::-webkit-scrollbar-track,
+.ai-butler-note-content .katex-block::-webkit-scrollbar-track {
+  background: #f0f0f0;
   border-radius: 4px;
 }
-/* KaTeX 样式修复 - 确保公式完整显示 */
-.ai-butler-note-content .katex-display {
-  overflow-x: auto;
-  overflow-y: visible;
-  padding: 8px 0;
-  margin: 8px 0;
-  line-height: 1.5;
+.ai-butler-note-content .katex-display::-webkit-scrollbar-thumb,
+.ai-butler-note-content .katex-block::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
 }
+.ai-butler-note-content .katex-display::-webkit-scrollbar-thumb:hover,
+.ai-butler-note-content .katex-block::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
 .ai-butler-note-content .katex-inline {
-  display: inline-block;
-  vertical-align: middle;
-  line-height: normal;
+  display: inline;
+  vertical-align: baseline;
 }
+
 .ai-butler-note-content .katex {
-  font-size: 1em;
-  line-height: 1.5;
+  font-size: 1.1em;
+  white-space: nowrap;
 }
+
+/* 确保公式完整显示高度 */
 .ai-butler-note-content .katex .base {
   display: inline-block;
   vertical-align: baseline;
 }
 .ai-butler-note-content .katex-html {
-  line-height: 1.5;
-}
-/* 确保分数、上下标等不被裁剪 */
-.ai-butler-note-content .katex .frac-line {
-  border-bottom-width: 0.08em !important;
-}
-.ai-butler-note-content .katex .mord,
-.ai-butler-note-content .katex .mrel,
-.ai-butler-note-content .katex .mbin,
-.ai-butler-note-content .katex .mop {
-  line-height: normal;
+  white-space: nowrap;
 }
 `;
     adapted += mathStyles;

@@ -30,7 +30,8 @@ import { NoteGenerator } from "./noteGenerator";
 import { PDFExtractor } from "./pdfExtractor";
 
 /** 无 PDF 附件错误标识 */
-const NO_PDF_ERROR_MSG = "该条目没有 PDF 附件，无法进行 AI 分析。请先为该文献添加 PDF 文件。";
+const NO_PDF_ERROR_MSG =
+  "该条目没有 PDF 附件，无法进行 AI 分析。请先为该文献添加 PDF 文件。";
 
 /**
  * 任务状态枚举

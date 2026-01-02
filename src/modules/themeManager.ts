@@ -157,7 +157,7 @@ export class ThemeManager {
 .ai-butler-note-content span.math,
 .ai-butler-note-content pre.math {
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
   max-width: 100%;
   display: block;
 }
@@ -172,14 +172,39 @@ export class ThemeManager {
   background: rgba(0, 0, 0, 0.03);
   border-radius: 4px;
 }
-/* KaTeX 样式修复 */
+/* KaTeX 样式修复 - 确保公式完整显示 */
 .ai-butler-note-content .katex-display {
   overflow-x: auto;
-  overflow-y: hidden;
-  padding: 4px 0;
+  overflow-y: visible;
+  padding: 8px 0;
+  margin: 8px 0;
+  line-height: 1.5;
+}
+.ai-butler-note-content .katex-inline {
+  display: inline-block;
+  vertical-align: middle;
+  line-height: normal;
 }
 .ai-butler-note-content .katex {
   font-size: 1em;
+  line-height: 1.5;
+}
+.ai-butler-note-content .katex .base {
+  display: inline-block;
+  vertical-align: baseline;
+}
+.ai-butler-note-content .katex-html {
+  line-height: 1.5;
+}
+/* 确保分数、上下标等不被裁剪 */
+.ai-butler-note-content .katex .frac-line {
+  border-bottom-width: 0.08em !important;
+}
+.ai-butler-note-content .katex .mord,
+.ai-butler-note-content .katex .mrel,
+.ai-butler-note-content .katex .mbin,
+.ai-butler-note-content .katex .mop {
+  line-height: normal;
 }
 `;
     adapted += mathStyles;

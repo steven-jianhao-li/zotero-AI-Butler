@@ -2131,8 +2131,8 @@ ${jsonMarker}
    * @private
    */
   private convertMarkdownToHTML(markdown: string): string {
-    // 使用 marked 转换 Markdown
-    return marked.parse(markdown) as string;
+    // 使用静态方法进行转换，包含 KaTeX 公式渲染
+    return SummaryView.convertMarkdownToHTMLCore(markdown);
   }
 
   /**
@@ -2221,7 +2221,15 @@ ${jsonMarker}
             throwOnError: false,
             displayMode: isBlock,
             output: "html",
+            trust: true,
+            strict: false,
           });
+          
+          // 检查是否有渲染错误（KaTeX 会返回包含错误信息的 HTML）
+          if (rendered.includes("katex-error")) {
+            ztoolkit.log("[AI-Butler] KaTeX 渲染有问题，内容:", content);
+          }
+          
           if (isBlock) {
             return `<div class="katex-display">${rendered}</div>`;
           } else {
@@ -2229,7 +2237,7 @@ ${jsonMarker}
           }
         } catch (e) {
           // KaTeX 渲染失败，显示原始公式
-          ztoolkit.log("[AI-Butler] KaTeX 渲染失败:", e);
+          ztoolkit.log("[AI-Butler] KaTeX 渲染失败:", e, "公式内容:", content);
           if (isBlock) {
             return `<pre class="math-fallback">$$${SummaryView.escapeHtml(content)}$$</pre>`;
           } else {

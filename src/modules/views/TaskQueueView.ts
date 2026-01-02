@@ -32,7 +32,7 @@
 
 import { BaseView } from "./BaseView";
 import { MainWindow } from "./MainWindow";
-import { TaskQueueManager, TaskItem, TaskStatus } from "../taskQueue";
+import { TaskQueueManager, TaskItem, TaskStatus, TaskType } from "../taskQueue";
 import { createCard } from "./ui/components";
 
 // 使用任务队列模块中定义的类型,避免重复定义导致的偏差
@@ -49,6 +49,9 @@ export class TaskQueueView extends BaseView {
 
   /** 当前筛选状态 */
   private filterStatus: TaskStatus | "all" = "all";
+
+  /** 任务类型筛选: all(全部), summary(论文总结), imageSummary(一图总结) */
+  private filterTaskType: TaskType | "all" = "all";
 
   /** 文本搜索关键字 */
   private searchQuery: string = "";
@@ -274,6 +277,63 @@ export class TaskQueueView extends BaseView {
       filterBar.appendChild(button);
     });
 
+    // 分隔符
+    const separator = this.createElement("span", {
+      styles: {
+        width: "1px",
+        height: "24px",
+        backgroundColor: "var(--ai-border)",
+        margin: "0 8px",
+      },
+    });
+    filterBar.appendChild(separator);
+
+    // 任务类型筛选按钮
+    const typeButtons = [
+      { label: "📝 论文总结", value: "summary" as TaskType | "all" },
+      { label: "🖼️ 一图总结", value: "imageSummary" as TaskType | "all" },
+    ];
+
+    typeButtons.forEach((btn) => {
+      const isActive = btn.value === this.filterTaskType;
+      const button = this.createElement("button", {
+        className: `type-filter-btn ${isActive ? "active" : ""}`,
+        styles: {
+          padding: "8px 16px",
+          border: isActive ? "2px solid #9c27b0" : "1px solid #9e9e9e",
+          borderRadius: "4px",
+          backgroundColor: isActive ? "#f3e5f5" : "transparent",
+          color: isActive ? "#9c27b0" : "#666",
+          fontWeight: isActive ? "700" : "500",
+          cursor: "pointer",
+          transition: "all 0.2s",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        textContent: btn.label,
+      });
+
+      (button as HTMLElement).setAttribute("data-type", String(btn.value));
+
+      button.addEventListener("click", () => {
+        this.filterTaskType = btn.value;
+        // 更新按钮样式
+        filterBar.querySelectorAll(".type-filter-btn").forEach((b: Element) => {
+          const el = b as HTMLElement;
+          const val = el.getAttribute("data-type");
+          const active = val === btn.value;
+          el.style.border = active ? "2px solid #9c27b0" : "1px solid #9e9e9e";
+          el.style.backgroundColor = active ? "#f3e5f5" : "transparent";
+          el.style.color = active ? "#9c27b0" : "#666";
+          el.style.fontWeight = active ? "700" : "500";
+        });
+        this.renderTaskList();
+      });
+
+      filterBar.appendChild(button);
+    });
+
     // 搜索框
     const searchInput = this.createElement("input", {
       styles: {
@@ -340,6 +400,14 @@ export class TaskQueueView extends BaseView {
       filteredTasks = this.tasks.filter(
         (task) => task.status === this.filterStatus,
       );
+    }
+
+    // 任务类型筛选
+    if (this.filterTaskType !== "all") {
+      filteredTasks = filteredTasks.filter((task) => {
+        const taskType = task.taskType || "summary"; // 默认为 summary
+        return taskType === this.filterTaskType;
+      });
     }
 
     // 文本搜索
@@ -449,6 +517,23 @@ export class TaskQueueView extends BaseView {
     });
     taskHeader.appendChild(taskStatus);
 
+    // 任务类型标识 (一图总结特殊显示)
+    const isImageSummary = task.taskType === "imageSummary";
+    if (isImageSummary) {
+      const typeBadge = this.createElement("span", {
+        styles: {
+          fontSize: "11px",
+          padding: "2px 8px",
+          borderRadius: "10px",
+          backgroundColor: "#9c27b0",
+          color: "white",
+          marginLeft: "8px",
+        },
+        textContent: "🖼️ 一图总结",
+      });
+      taskHeader.appendChild(typeBadge);
+    }
+
     // 任务信息
     const taskInfo = this.createElement("div", {
       styles: {
@@ -461,6 +546,7 @@ export class TaskQueueView extends BaseView {
         ${task.completedAt ? `<br/>完成时间: ${task.completedAt.toLocaleString("zh-CN")}` : ""}
         ${task.error ? `<br/><span style="color: #f44336;">错误: ${task.error}</span>` : ""}
         ${task.retryCount > 0 ? `<br/>重试次数: ${task.retryCount}` : ""}
+        ${isImageSummary && task.workflowStage ? `<br/><strong style="color: #9c27b0;">阶段: ${task.workflowStage}</strong>` : ""}
       `,
     });
 

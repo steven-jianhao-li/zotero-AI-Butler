@@ -31,6 +31,7 @@ export type FluentMessageId =
   | 'menuitem-chatWithAI'
   | 'menuitem-filemenulabel'
   | 'menuitem-generateSummary'
+  | 'menuitem-imageSummary'
   | 'menuitem-label'
   | 'menuitem-multiRoundConcat'
   | 'menuitem-multiRoundReanalyze'

@@ -374,6 +374,25 @@ function registerContextMenuItem() {
       return hasTag || titleMatch;
     },
   });
+
+  // 注册"召唤AI管家一图总结"菜单项
+  ztoolkit.Menu.register("item", {
+    tag: "menuitem",
+    label: getString("menuitem-imageSummary"),
+    icon: menuIcon,
+
+    commandListener: async () => {
+      await handleImageSummary();
+    },
+
+    getVisibility: () => {
+      const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
+      return (
+        selectedItems?.every((item: Zotero.Item) => item.isRegularItem()) ||
+        false
+      );
+    },
+  });
 }
 
 /**
@@ -1787,6 +1806,59 @@ async function onPrefsEvent(type: string, data: { [key: string]: any }) {
  */
 function onShortcuts(type: string) {
   // 预留给快捷键功能
+}
+/**
+ * 处理一图总结请求
+ *
+ * 为选中的文献条目生成学术概念海报图片并保存到笔记中
+ */
+async function handleImageSummary() {
+  // 1. 获取选中条目
+  const items = Zotero.getActiveZoteroPane().getSelectedItems();
+  if (!items || items.length === 0) {
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 3000,
+    })
+      .createLine({ text: "请先选择要处理的文献", type: "error" })
+      .show();
+    return;
+  }
+
+  // 只处理第一个选中的条目
+  const item = items[0];
+  if (!item.isRegularItem()) {
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 3000,
+    })
+      .createLine({ text: "请选择一个文献条目", type: "error" })
+      .show();
+    return;
+  }
+
+  try {
+    // 添加到任务队列
+    const { TaskQueueManager } = await import("./modules/taskQueue");
+    const manager = TaskQueueManager.getInstance();
+    await manager.addImageSummaryTask(item);
+
+    // 显示开始提示
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 3000,
+    })
+      .createLine({ text: "🖼️ 一图总结任务已加入队列", type: "success" })
+      .show();
+  } catch (error: any) {
+    ztoolkit.log("[AI-Butler] 添加一图总结任务失败:", error);
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 5000,
+    })
+      .createLine({ text: `❌ 添加任务失败: ${error.message || error}`, type: "error" })
+      .show();
+  }
 }
 
 /**

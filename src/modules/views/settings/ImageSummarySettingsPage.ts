@@ -239,9 +239,9 @@ export class ImageSummarySettingsPage {
       ];
 
       for (const field of fields) {
-        const input = this.container.querySelector(
-          `#setting-${field}`,
-        ) as HTMLInputElement | HTMLTextAreaElement;
+        const input = this.container.querySelector(`#setting-${field}`) as
+          | HTMLInputElement
+          | HTMLTextAreaElement;
         if (input) {
           setPref(field as any, input.value.trim() as any);
         }
@@ -309,7 +309,11 @@ export class ImageSummarySettingsPage {
       closeOnClick: false,
       closeTime: -1,
     })
-      .createLine({ text: "正在测试 API 连接...", type: "default", progress: 50 })
+      .createLine({
+        text: "正在测试 API 连接...",
+        type: "default",
+        progress: 50,
+      })
       .show();
 
     try {

@@ -28,12 +28,12 @@ import {
  * 工作流阶段类型
  */
 export type WorkflowStage =
-  | "extracting"      // 提取 PDF
-  | "summarizing"     // 生成视觉摘要
-  | "generating"      // 生成图片
-  | "saving"          // 保存笔记
-  | "completed"       // 完成
-  | "failed";         // 失败
+  | "extracting" // 提取 PDF
+  | "summarizing" // 生成视觉摘要
+  | "generating" // 生成图片
+  | "saving" // 保存笔记
+  | "completed" // 完成
+  | "failed"; // 失败
 
 /**
  * 工作流进度回调
@@ -113,10 +113,7 @@ export class ImageSummaryService {
       // ========== 阶段 3: 生成学术概念海报 ==========
       progressCallback?.("generating", "正在生成学术概念海报...", 60);
 
-      const imagePrompt = this.buildImagePrompt(
-        visualSummary,
-        itemTitle,
-      );
+      const imagePrompt = this.buildImagePrompt(visualSummary, itemTitle);
 
       const imageResult = await ImageClient.generateImage(imagePrompt);
 
@@ -156,9 +153,7 @@ export class ImageSummaryService {
   /**
    * 提取 PDF 内容
    */
-  private static async extractPdfContent(
-    item: Zotero.Item,
-  ): Promise<string> {
+  private static async extractPdfContent(item: Zotero.Item): Promise<string> {
     const prefMode = (getPref("pdfProcessMode") as string) || "base64";
 
     if (prefMode === "base64") {
@@ -192,7 +187,10 @@ export class ImageSummaryService {
       getDefaultImageSummaryPrompt();
 
     // 替换变量
-    prompt = prompt.replace(/\$\{context\}/g, isBase64 ? "[PDF 文件内容]" : pdfContent.substring(0, 5000));
+    prompt = prompt.replace(
+      /\$\{context\}/g,
+      isBase64 ? "[PDF 文件内容]" : pdfContent.substring(0, 5000),
+    );
     prompt = prompt.replace(/\$\{title\}/g, itemTitle);
 
     // 调用 LLM 生成视觉摘要

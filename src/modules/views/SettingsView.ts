@@ -19,7 +19,13 @@ import { ImageSummarySettingsPage } from "./settings/ImageSummarySettingsPage";
 /**
  * 设置分类类型
  */
-type SettingCategory = "api" | "prompts" | "imageSummary" | "ui" | "data" | "about";
+type SettingCategory =
+  | "api"
+  | "prompts"
+  | "imageSummary"
+  | "ui"
+  | "data"
+  | "about";
 
 /**
  * 设置视图类

@@ -1856,7 +1856,10 @@ async function handleImageSummary() {
       closeOnClick: true,
       closeTime: 5000,
     })
-      .createLine({ text: `❌ 添加任务失败: ${error.message || error}`, type: "error" })
+      .createLine({
+        text: `❌ 添加任务失败: ${error.message || error}`,
+        type: "error",
+      })
       .show();
   }
 }

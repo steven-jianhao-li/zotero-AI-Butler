@@ -359,16 +359,19 @@ export class TaskQueueManager {
       const { ImageSummaryService } = await import("./imageSummaryService");
 
       // 执行一图总结
-      await ImageSummaryService.generateForItem(item, (stage, message, progress) => {
-        // 更新任务进度
-        task.progress = progress;
-        task.workflowStage = message;
-        this.notifyProgress(taskId, progress, message);
-        // 保存进度（但不要太频繁）
-        if (progress % 20 === 0 || progress === 100) {
-          this.saveToStorage().catch(() => {});
-        }
-      });
+      await ImageSummaryService.generateForItem(
+        item,
+        (stage, message, progress) => {
+          // 更新任务进度
+          task.progress = progress;
+          task.workflowStage = message;
+          this.notifyProgress(taskId, progress, message);
+          // 保存进度（但不要太频繁）
+          if (progress % 20 === 0 || progress === 100) {
+            this.saveToStorage().catch(() => {});
+          }
+        },
+      );
 
       // 任务成功完成
       task.status = TaskStatus.COMPLETED;

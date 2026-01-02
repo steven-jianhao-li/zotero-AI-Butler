@@ -55,9 +55,7 @@ export class ImageNoteGenerator {
       // 更新已存在的笔记
       (existing as any).setNote?.(noteContent);
       await (existing as any).saveTx?.();
-      ztoolkit.log(
-        `[AI-Butler] 更新已存在的一图总结笔记: ${existing.id}`,
-      );
+      ztoolkit.log(`[AI-Butler] 更新已存在的一图总结笔记: ${existing.id}`);
       return existing;
     }
 

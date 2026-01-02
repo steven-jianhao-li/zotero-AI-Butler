@@ -43,10 +43,7 @@ export class ImageGenerationError extends Error {
     responseBody?: string;
   };
 
-  constructor(
-    message: string,
-    details: ImageGenerationError["details"],
-  ) {
+  constructor(message: string, details: ImageGenerationError["details"]) {
     super(message);
     this.name = "ImageGenerationError";
     this.details = details;
@@ -74,9 +71,7 @@ export class ImageClient {
   ): Promise<ImageGenerationResult> {
     // 从设置中获取 API 配置
     const apiKey =
-      options?.apiKey ||
-      (getPref("imageSummaryApiKey" as any) as string) ||
-      "";
+      options?.apiKey || (getPref("imageSummaryApiKey" as any) as string) || "";
     const apiUrl =
       options?.apiUrl ||
       (getPref("imageSummaryApiUrl" as any) as string) ||
@@ -134,10 +129,10 @@ export class ImageClient {
             typeof responseBody === "string"
               ? JSON.parse(responseBody)
               : responseBody;
-          
+
           // 处理标准 Gemini 错误格式
           let err = parsed?.error || parsed;
-          
+
           // 处理代理服务器返回的嵌套错误 (如 {"detail": "...JSON..."})
           if (parsed?.detail && typeof parsed.detail === "string") {
             // detail 字段可能包含嵌套的 JSON 字符串
@@ -154,7 +149,7 @@ export class ImageClient {
               errorMessage = parsed.detail;
             }
           }
-          
+
           errorName = err?.code || err?.status || "APIError";
           if (err?.message) {
             errorMessage = err.message;

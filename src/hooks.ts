@@ -654,7 +654,7 @@ function registerItemPaneSection() {
           overflow: hidden;
         `;
 
-        // 笔记标题栏（可折叠）
+        // 笔记标题栏（可折叠）- 使用继承颜色以支持暗色模式
         const noteHeader = doc.createElement("div");
         noteHeader.className = "ai-butler-note-header";
         noteHeader.style.cssText = `
@@ -662,17 +662,17 @@ function registerItemPaneSection() {
           align-items: center;
           justify-content: space-between;
           padding: 8px 10px;
-          background: linear-gradient(135deg, #f8f9fa, #f0f2f4);
+          background: rgba(128, 128, 128, 0.1);
           cursor: pointer;
           user-select: none;
-          border-bottom: 1px solid #e0e0e0;
+          border-bottom: 1px solid rgba(128, 128, 128, 0.2);
         `;
 
         const noteTitle = doc.createElement("span");
         noteTitle.style.cssText = `
           font-weight: 500;
           font-size: 12px;
-          color: #333;
+          color: inherit;
           display: flex;
           align-items: center;
           gap: 6px;
@@ -709,7 +709,8 @@ function registerItemPaneSection() {
         fontSizeLabel.textContent = `${currentFontSize}px`;
         fontSizeLabel.style.cssText = `
           font-size: 10px;
-          color: #666;
+          color: inherit;
+          opacity: 0.7;
           min-width: 28px;
           text-align: center;
         `;
@@ -720,22 +721,25 @@ function registerItemPaneSection() {
           btn.style.cssText = `
             width: 20px;
             height: 20px;
-            border: 1px solid #ddd;
+            border: 1px solid currentColor;
             border-radius: 3px;
-            background: white;
+            background: transparent;
             cursor: pointer;
             font-size: 12px;
             line-height: 1;
-            color: #666;
+            color: inherit;
             display: flex;
             align-items: center;
             justify-content: center;
+            opacity: 0.7;
           `;
           btn.addEventListener("mouseenter", () => {
-            btn.style.background = "#f0f0f0";
+            btn.style.opacity = "1";
+            btn.style.background = "rgba(128, 128, 128, 0.2)";
           });
           btn.addEventListener("mouseleave", () => {
-            btn.style.background = "white";
+            btn.style.opacity = "0.7";
+            btn.style.background = "transparent";
           });
           btn.addEventListener("click", () => {
             currentFontSize = Math.max(
@@ -814,7 +818,8 @@ function registerItemPaneSection() {
         toggleIcon.textContent = "▼";
         toggleIcon.style.cssText = `
           font-size: 10px;
-          color: #666;
+          color: inherit;
+          opacity: 0.6;
           transition: transform 0.2s ease;
         `;
 

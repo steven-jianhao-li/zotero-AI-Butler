@@ -1168,7 +1168,7 @@ function registerItemPaneSection() {
 
                 // 渲染行内公式 $...$（注意不要匹配 $$）
                 html = html.replace(
-                  /(?<!\$)\$([^\$\n]+?)\$(?!\$)/g,
+                  /(?<!\$)\$([^$\n]+?)\$(?!\$)/g,
                   (_match, formula) => {
                     try {
                       const rendered = katex.renderToString(formula, {

@@ -763,11 +763,12 @@ function registerItemPaneSection() {
           margin-left: 8px;
           padding: 2px 4px;
           font-size: 10px;
-          border: 1px solid #ddd;
+          border: 1px solid currentColor;
           border-radius: 3px;
-          background: white;
+          background: inherit;
           cursor: pointer;
-          color: #666;
+          color: inherit;
+          opacity: 0.8;
         `;
         themeSelect.addEventListener("click", (e: Event) =>
           e.stopPropagation(),

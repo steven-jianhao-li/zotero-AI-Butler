@@ -202,6 +202,45 @@ export class ThemeManager {
 .ai-butler-note-content .katex-html {
   white-space: nowrap;
 }
+
+/* 暗色模式下的文字颜色修正 */
+@media (prefers-color-scheme: dark) {
+  .ai-butler-note-content,
+  .ai-butler-note-content p,
+  .ai-butler-note-content li,
+  .ai-butler-note-content h1,
+  .ai-butler-note-content h2,
+  .ai-butler-note-content h3,
+  .ai-butler-note-content h4,
+  .ai-butler-note-content h5,
+  .ai-butler-note-content h6,
+  .ai-butler-note-content blockquote,
+  .ai-butler-note-content td,
+  .ai-butler-note-content th {
+    color: #e0e0e0 !important;
+  }
+  .ai-butler-note-content {
+    background-color: #1e1e1e !important;
+  }
+  .ai-butler-note-content code {
+    background-color: #2d2d2d !important;
+    color: #e0e0e0 !important;
+  }
+  .ai-butler-note-content pre {
+    background-color: #2d2d2d !important;
+  }
+  .ai-butler-note-content blockquote {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    border-left-color: #666 !important;
+  }
+  .ai-butler-note-content table tr:nth-child(2n),
+  .ai-butler-note-content thead {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+  }
+  .ai-butler-note-content hr {
+    background-color: #444 !important;
+  }
+}
 `;
     adapted += mathStyles;
 

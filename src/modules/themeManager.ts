@@ -94,6 +94,21 @@ export class ThemeManager {
   }
 
   /**
+   * 加载 KaTeX CSS
+   */
+  public async loadKatexCss(): Promise<string> {
+    const cacheKey = "__katex__";
+    if (this.cachedCss.has(cacheKey)) {
+      return this.cachedCss.get(cacheKey)!;
+    }
+
+    const cssUrl = `chrome://${config.addonRef}/content/katex.min.css`;
+    const css = await this.fetchCss(cssUrl);
+    this.cachedCss.set(cacheKey, css);
+    return css;
+  }
+
+  /**
    * 获取 CSS 内容
    */
   private async fetchCss(url: string): Promise<string> {
@@ -135,6 +150,40 @@ export class ThemeManager {
       /@font-face\s*\{[^}]*url\([^)]*\.woff2[^)]*\)[^}]*\}/g,
       "",
     );
+
+    // 添加数学公式样式，防止溢出
+    const mathStyles = `
+/* 数学公式样式 - 防止横向溢出 */
+.ai-butler-note-content .math,
+.ai-butler-note-content span.math,
+.ai-butler-note-content pre.math {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  display: block;
+}
+.ai-butler-note-content span.math {
+  display: inline-block;
+  max-width: 100%;
+  word-break: break-word;
+}
+.ai-butler-note-content pre.math {
+  padding: 8px;
+  margin: 8px 0;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 4px;
+}
+/* KaTeX 样式修复 */
+.ai-butler-note-content .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+}
+.ai-butler-note-content .katex {
+  font-size: 1em;
+}
+`;
+    adapted += mathStyles;
 
     return adapted;
   }

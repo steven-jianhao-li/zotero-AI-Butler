@@ -28,6 +28,7 @@ import { MainWindow } from "./MainWindow";
 import { marked } from "marked";
 import { getPref } from "../../utils/prefs";
 import { createStyledButton } from "./ui/components";
+import katex from "katex";
 
 /**
  * AI 总结视图类
@@ -2165,35 +2166,35 @@ ${jsonMarker}
    */
   public static convertMarkdownToHTMLCore(markdown: string): string {
     // ===== 步骤 1: 保护公式，避免被 marked 误处理 =====
-    const formulas: string[] = [];
+    const formulas: Array<{ content: string; isBlock: boolean }> = [];
     let html = markdown;
 
     // 转换并保护 LaTeX 块级公式: \[...\] → $$...$$
-    html = html.replace(/\\\[([\s\S]*?)\\\]/g, (match, formula) => {
+    html = html.replace(/\\\[([\s\S]*?)\\\]/g, (_match, formula) => {
       const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_BLOCK_${formulas.length}`;
-      formulas.push(`$$${formula.trim()}$$`);
+      formulas.push({ content: formula.trim(), isBlock: true });
       return placeholder;
     });
 
     // 保护已有的 $$ $$ 块级公式
-    html = html.replace(/\$\$([\s\S]*?)\$\$/g, (match) => {
+    html = html.replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula) => {
       const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_BLOCK_${formulas.length}`;
-      formulas.push(match);
+      formulas.push({ content: formula.trim(), isBlock: true });
       return placeholder;
     });
 
     // 转换并保护 LaTeX 行内公式: \(...\) → $...$
-    html = html.replace(/\\\((.*?)\\\)/g, (match, formula) => {
+    html = html.replace(/\\\((.*?)\\\)/g, (_match, formula) => {
       const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_INLINE_${formulas.length}`;
-      formulas.push(`$${formula}$`);
+      formulas.push({ content: formula, isBlock: false });
       return placeholder;
     });
 
     // 保护已有的 $ $ 行内公式
     // eslint-disable-next-line no-useless-escape
-    html = html.replace(/\$([^\$\n]+?)\$/g, (match) => {
+    html = html.replace(/\$([^\$\n]+?)\$/g, (_match, formula) => {
       const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_INLINE_${formulas.length}`;
-      formulas.push(match);
+      formulas.push({ content: formula, isBlock: false });
       return placeholder;
     });
 
@@ -2206,12 +2207,35 @@ ${jsonMarker}
       html = `<p>${SummaryView.escapeHtml(html)}</p>`;
     }
 
-    // ===== 步骤 3: 恢复所有公式 =====
+    // ===== 步骤 3: 恢复并渲染所有公式（使用 KaTeX） =====
     html = html.replace(
       /ⒻⓄⓇⓂⓊⓁⒶ_(BLOCK|INLINE)_(\d+)/g,
-      (match, type, index) => {
-        const formula = formulas[parseInt(index)];
-        return formula || match;
+      (_match, _type, index) => {
+        const formulaData = formulas[parseInt(index)];
+        if (!formulaData) return _match;
+
+        const { content, isBlock } = formulaData;
+        try {
+          // 使用 KaTeX 渲染公式
+          const rendered = katex.renderToString(content, {
+            throwOnError: false,
+            displayMode: isBlock,
+            output: "html",
+          });
+          if (isBlock) {
+            return `<div class="katex-display">${rendered}</div>`;
+          } else {
+            return `<span class="katex-inline">${rendered}</span>`;
+          }
+        } catch (e) {
+          // KaTeX 渲染失败，显示原始公式
+          ztoolkit.log("[AI-Butler] KaTeX 渲染失败:", e);
+          if (isBlock) {
+            return `<pre class="math-fallback">$$${SummaryView.escapeHtml(content)}$$</pre>`;
+          } else {
+            return `<code class="math-fallback">$${SummaryView.escapeHtml(content)}$</code>`;
+          }
+        }
       },
     );
 

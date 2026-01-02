@@ -332,7 +332,7 @@ export class NoteGenerator {
     html = html.replace(/\s+style="[^"]*"/g, "");
 
     // 转换块级公式: $$...$$ → <pre class="math">$$...$$</pre>
-    // Zotero 使用 <pre class="math"> 标签来渲染块级数学公式
+    // Zotero 使用 <pre class="math"> 标签来渲染块级数学公式（虽然实际不会渲染，但可增加可读性）
     html = html.replace(
       /\$\$([\s\S]*?)\$\$/g,
       (_match: string, formula: string) => {
@@ -340,15 +340,8 @@ export class NoteGenerator {
       },
     );
 
-    // 转换行内公式: $...$ → <span class="math">$...$</span>
-    // Zotero 使用 <span class="math"> 标签来渲染行内数学公式
-    // 注意: 公式内不能包含换行符或另一个 $
-    html = html.replace(
-      /\$([^$\n]+?)\$/g,
-      (_match: string, formula: string) => {
-        return `<span class="math">$${formula}$</span>`;
-      },
-    );
+    // 行内公式: 保持原样 $...$ ，不再添加 <span class="math"> 包裹
+    // 因为 Zotero 笔记编辑器无法渲染 LaTeX，包裹会影响阅读体验
 
     return html;
   }

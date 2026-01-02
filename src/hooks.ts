@@ -652,7 +652,6 @@ function registerItemPaneSection() {
           border: 1px solid #e0e0e0;
           border-radius: 6px;
           overflow: hidden;
-          background: white;
         `;
 
         // 笔记标题栏（可折叠）
@@ -799,12 +798,13 @@ function registerItemPaneSection() {
           themeManager.setCurrentTheme(newTheme);
           themeManager.clearCache();
           const themeCss = await themeManager.loadThemeCss();
+          const katexCss = await themeManager.loadKatexCss();
           const adaptedCss = themeManager.adaptCssForSidebar(themeCss);
           const styleEl = doc.getElementById(
             "ai-butler-note-theme",
           ) as HTMLStyleElement;
           if (styleEl) {
-            styleEl.textContent = adaptedCss;
+            styleEl.textContent = katexCss + "\n" + adaptedCss;
           }
         });
         fontSizeControl.appendChild(themeSelect);
@@ -849,6 +849,9 @@ function registerItemPaneSection() {
           padding-bottom: 20px;
           font-size: ${currentFontSize}px;
           line-height: 1.6;
+          overflow-wrap: break-word;
+          word-wrap: break-word;
+          overflow-x: auto;
         `;
 
         // 高度调节手柄（移到 wrapper 外面，固定在底部）
@@ -1089,9 +1092,10 @@ function registerItemPaneSection() {
               return;
             }
 
-            // 加载主题 CSS
+            // 加载主题 CSS 和 KaTeX CSS
             const { themeManager } = await import("./modules/themeManager");
             const themeCss = await themeManager.loadThemeCss();
+            const katexCss = await themeManager.loadKatexCss();
             const adaptedCss = themeManager.adaptCssForSidebar(themeCss);
 
             // 注入样式（使用 body 或父元素，因为 XUL 文档没有 head）
@@ -1106,7 +1110,7 @@ function registerItemPaneSection() {
                 doc.body || doc.documentElement || noteSection;
               insertTarget.appendChild(styleEl);
             }
-            styleEl.textContent = adaptedCss;
+            styleEl.textContent = katexCss + "\n" + adaptedCss;
 
             // Zotero 笔记本身就是 HTML 格式（有 <h2>、<strong> 等标签）
             // 在 XUL 环境中，需要清理可能导致解析错误的 HTML 属性和标签

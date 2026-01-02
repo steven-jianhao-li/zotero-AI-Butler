@@ -82,6 +82,7 @@ export class ApiSettingsPage {
         },
         { value: "google", label: "Google Gemini" },
         { value: "anthropic", label: "Anthropic Claude" },
+        { value: "openrouter", label: "OpenRouter" },
       ],
       providerValue,
       (newVal) => {
@@ -126,6 +127,25 @@ export class ApiSettingsPage {
             modelInput.value = "claude-3-5-sonnet-20241022";
           }
         }
+        // 若切换到 OpenRouter 且未填写，填充默认
+        if (newVal === "openrouter") {
+          const curUrl = (getPref("openRouterApiUrl") as string) || "";
+          const urlInput = this.container.querySelector(
+            "#setting-openRouterApiUrl",
+          ) as HTMLInputElement;
+          const modelInput = this.container.querySelector(
+            "#setting-openRouterModel",
+          ) as HTMLInputElement;
+          if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
+            urlInput.value = "https://openrouter.ai/api/v1/chat/completions";
+          }
+          if (
+            modelInput &&
+            (!modelInput.value || modelInput.value.trim() === "")
+          ) {
+            modelInput.value = "google/gemma-3-27b-it";
+          }
+        }
       },
     );
     form.appendChild(
@@ -144,6 +164,9 @@ export class ApiSettingsPage {
     const sectionGemini = this.createElement("div", { id: "provider-gemini" });
     const sectionAnthropic = this.createElement("div", {
       id: "provider-anthropic",
+    });
+    const sectionOpenRouter = this.createElement("div", {
+      id: "provider-openrouter",
     });
 
     // OpenAI 字段（Responses 新接口）
@@ -328,17 +351,58 @@ export class ApiSettingsPage {
       ),
     );
 
+    // OpenRouter 字段
+    sectionOpenRouter.appendChild(
+      this.createFormGroup(
+        "API 基础地址 *",
+        this.createInput(
+          "openRouterApiUrl",
+          "text",
+          getPref("openRouterApiUrl") as string,
+          "https://openrouter.ai/api/v1/chat/completions",
+        ),
+        "【必填】OpenRouter API 基础地址",
+      ),
+    );
+    sectionOpenRouter.appendChild(
+      this.createFormGroup(
+        "API 密钥 *",
+        this.createPasswordInput(
+          "openRouterApiKey",
+          getPref("openRouterApiKey") as string,
+          "sk-or-...",
+        ),
+        "【必填】您的 OpenRouter API Key",
+      ),
+    );
+    sectionOpenRouter.appendChild(
+      this.createFormGroup(
+        "模型 *",
+        this.createInput(
+          "openRouterModel",
+          "text",
+          getPref("openRouterModel") as string,
+          "google/gemma-3-27b-it",
+        ),
+        "【必填】OpenRouter 模型名称, 如 google/gemma-3-27b-it",
+      ),
+    );
+
     form.appendChild(sectionOpenAI);
     form.appendChild(sectionOpenAICompat);
     form.appendChild(sectionGemini);
     form.appendChild(sectionAnthropic);
+    form.appendChild(sectionOpenRouter);
 
     const renderProviderSections = (prov: string) => {
       const isGemini = prov === "google";
       const isAnthropic = prov === "anthropic";
+      const isOpenRouter = prov === "openrouter";
       const isOpenAICompat = prov === "openai-compat";
       (sectionOpenAI as HTMLElement).style.display =
-        isGemini || isAnthropic || isOpenAICompat ? "none" : "block";
+        isGemini || isAnthropic || isOpenAICompat || isOpenRouter
+          ? "none"
+          : "block";
       (sectionOpenAICompat as HTMLElement).style.display = isOpenAICompat
         ? "block"
         : "none";
@@ -346,6 +410,9 @@ export class ApiSettingsPage {
         ? "block"
         : "none";
       (sectionAnthropic as HTMLElement).style.display = isAnthropic
+        ? "block"
+        : "none";
+      (sectionOpenRouter as HTMLElement).style.display = isOpenRouter
         ? "block"
         : "none";
     };
@@ -1059,6 +1126,16 @@ export class ApiSettingsPage {
       const anthModelEl = this.container.querySelector(
         "#setting-anthropicModel",
       ) as HTMLInputElement;
+      // OpenRouter
+      const orUrlEl = this.container.querySelector(
+        "#setting-openRouterApiUrl",
+      ) as HTMLInputElement;
+      const orKeyEl = this.container.querySelector(
+        "#setting-openRouterApiKey",
+      ) as HTMLInputElement;
+      const orModelEl = this.container.querySelector(
+        "#setting-openRouterModel",
+      ) as HTMLInputElement;
       const temperatureEl = this.container.querySelector(
         "#setting-temperature",
       ) as HTMLInputElement;
@@ -1123,6 +1200,9 @@ export class ApiSettingsPage {
         anthropicApiUrl: anthUrlEl?.value?.trim() || "",
         anthropicApiKey: anthKeyEl?.value?.trim() || "",
         anthropicModel: anthModelEl?.value?.trim() || "",
+        openRouterApiUrl: orUrlEl?.value?.trim() || "",
+        openRouterApiKey: orKeyEl?.value?.trim() || "",
+        openRouterModel: orModelEl?.value?.trim() || "",
         temperature: temperatureEl?.value || "0.7",
         maxTokens: maxTokensEl?.value?.trim() || "4096",
         topP: topPEl?.value || "1.0",
@@ -1160,6 +1240,12 @@ export class ApiSettingsPage {
           missingFields.push("API 基础地址(Anthropic)");
         if (!values.anthropicApiKey) missingFields.push("API 密钥(Anthropic)");
         if (!values.anthropicModel) missingFields.push("模型名称(Anthropic)");
+      } else if (provider === "openrouter") {
+        if (!values.openRouterApiUrl)
+          missingFields.push("API 基础地址(OpenRouter)");
+        if (!values.openRouterApiKey)
+          missingFields.push("API 密钥(OpenRouter)");
+        if (!values.openRouterModel) missingFields.push("模型名称(OpenRouter)");
       } else if (provider === "openai-compat") {
         if (!values.openaiCompatApiUrl)
           missingFields.push("兼容 API 地址(OpenAI兼容)");
@@ -1201,6 +1287,9 @@ export class ApiSettingsPage {
       setPref("anthropicApiUrl", values.anthropicApiUrl);
       setPref("anthropicApiKey", values.anthropicApiKey);
       setPref("anthropicModel", values.anthropicModel);
+      setPref("openRouterApiUrl", values.openRouterApiUrl);
+      setPref("openRouterApiKey", values.openRouterApiKey);
+      setPref("openRouterModel", values.openRouterModel);
       setPref("temperature", values.temperature);
       setPref("maxTokens", values.maxTokens);
       setPref("topP", values.topP);
@@ -1367,6 +1456,12 @@ export class ApiSettingsPage {
     setPref("anthropicApiUrl", "https://api.anthropic.com");
     setPref("anthropicApiKey", "");
     setPref("anthropicModel", "claude-3-5-sonnet-20241022");
+    setPref(
+      "openRouterApiUrl",
+      "https://openrouter.ai/api/v1/chat/completions",
+    );
+    setPref("openRouterApiKey", "");
+    setPref("openRouterModel", "google/gemma-3-27b-it");
     setPref("temperature", "0.7");
     setPref("maxTokens", "8192");
     setPref("topP", "1.0");

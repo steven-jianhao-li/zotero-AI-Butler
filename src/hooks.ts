@@ -203,6 +203,10 @@ function initializeDefaultPrefsOnStartup() {
     openaiCompatApiUrl: "https://api.openai.com/v1/chat/completions",
     openaiCompatApiKey: "",
     openaiCompatModel: "gpt-3.5-turbo",
+    // OpenRouter 默认
+    openRouterApiUrl: "https://openrouter.ai/api/v1/chat/completions",
+    openRouterApiKey: "",
+    openRouterModel: "google/gemma-3-27b-it",
     temperature: "0.7", // 默认温度参数,平衡创造性和准确性
     stream: true, // 默认启用流式输出,提供更好的用户体验
     summaryPrompt: getDefaultSummaryPrompt(), // 加载默认提示词模板
@@ -1553,6 +1557,12 @@ async function handleGenerateSummary() {
       ) as string) ||
       (Zotero.Prefs.get(`${config.prefsPrefix}.openaiApiKey`, true) as string);
     providerName = "OpenAI 兼容"; // 提示更明确
+  } else if (pLower === "openrouter") {
+    selectedApiKey = Zotero.Prefs.get(
+      `${config.prefsPrefix}.openRouterApiKey`,
+      true,
+    ) as string;
+    providerName = "OpenRouter";
   } else {
     selectedApiKey = Zotero.Prefs.get(
       `${config.prefsPrefix}.openaiApiKey`,

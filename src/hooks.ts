@@ -777,7 +777,7 @@ function registerItemPaneSection() {
         const themes = [
           { id: "github", name: "GitHub" },
           { id: "redstriking", name: "红印" },
-          { id: "github-dark", name: "GitHub Dark" },
+          // 可以在这里添加更多内置主题
         ];
         const currentTheme = (
           (getPref("markdownTheme" as any) as string) || "github"

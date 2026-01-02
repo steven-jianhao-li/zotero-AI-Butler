@@ -17,7 +17,6 @@ import { getPref, setPref } from "../utils/prefs";
 const BUILTIN_THEMES = [
   { id: "github", name: "GitHub", file: "github.css" },
   { id: "redstriking", name: "红印 (Redstriking)", file: "redstriking.css" },
-  { id: "github-dark", name: "GitHub Dark", file: "github-dark.css" },
   // 可以在这里添加更多内置主题
 ];
 

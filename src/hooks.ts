@@ -291,9 +291,34 @@ function registerContextMenuItem() {
       handleGenerateSummary();
     },
 
-    // 动态控制菜单项可见性
-    // 仅当选中的所有条目都是常规条目时显示
     getVisibility: () => {
+      const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
+      return (
+        selectedItems?.every((item: Zotero.Item) => item.isRegularItem()) ||
+        false
+      );
+    },
+  });
+
+  // 注册"AI管家多轮对话重新精读"菜单项 (包含子菜单)
+  ztoolkit.Menu.register("item", {
+    tag: "menu", // 使用 menu 标签创建子菜单
+    label: getString("menuitem-multiRoundReanalyze" as any),
+    icon: menuIcon,
+    children: [
+      {
+        tag: "menuitem",
+        label: getString("menuitem-multiRoundConcat" as any),
+        commandListener: () => handleMultiRoundSummary("multi_concat"),
+      },
+      {
+        tag: "menuitem",
+        label: getString("menuitem-multiRoundSummary" as any),
+        commandListener: () => handleMultiRoundSummary("multi_summarize"),
+      },
+    ],
+    getVisibility: () => {
+      // 与生成总结的可见性逻辑相同
       const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
       return (
         selectedItems?.every((item: Zotero.Item) => item.isRegularItem()) ||
@@ -1765,7 +1790,65 @@ function onShortcuts(type: string) {
 }
 
 /**
- * 对话框事件处理器
+ * 处理多轮对话重新精读
+ *
+ * @param mode 多轮对话模式
+ */
+async function handleMultiRoundSummary(
+  mode: "multi_concat" | "multi_summarize",
+) {
+  // 1. 验证 API 配置 (简略版，主要依赖后续流程的检查)
+  const provider =
+    (Zotero.Prefs.get(`${config.prefsPrefix}.provider`, true) as string) ||
+    "openai";
+
+  // 2. 获取选中条目
+  const items = Zotero.getActiveZoteroPane().getSelectedItems();
+  if (!items || items.length === 0) {
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 3000,
+    })
+      .createLine({ text: "请先选择要处理的文献", type: "error" })
+      .show();
+    return;
+  }
+
+  // 3. 加入队列并强制覆盖
+  try {
+    const { TaskQueueManager } = await import("./modules/taskQueue");
+    const taskQueue = TaskQueueManager.getInstance();
+
+    // 批量添加任务，带有特定选项
+    for (const item of items) {
+      await taskQueue.addTask(item, true, {
+        summaryMode: mode,
+        forceOverwrite: true,
+      });
+    }
+
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 3000,
+    })
+      .createLine({
+        text: `已将 ${items.length} 个重分析任务加入高优队列`,
+        type: "success",
+      })
+      .show();
+  } catch (error: any) {
+    ztoolkit.log("[AI Butler] 加入重分析队列失败:", error);
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 5000,
+    })
+      .createLine({ text: "加入队列失败: " + error.message, type: "error" })
+      .show();
+  }
+}
+
+/**
+ * 关于页面事件处理器
  *
  * 响应插件创建的对话框窗口的事件
  * 当前为占位实现,预留给未来的对话框交互

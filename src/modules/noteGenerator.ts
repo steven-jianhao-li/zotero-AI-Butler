@@ -78,6 +78,7 @@ export class NoteGenerator {
     outputWindow?: SummaryView,
     progressCallback?: (message: string, progress: number) => void,
     streamCallback?: (chunk: string) => void,
+    options?: { summaryMode?: string; forceOverwrite?: boolean },
   ): Promise<{ note: Zotero.Item; content: string }> {
     // 获取文献标题,用于日志和用户反馈
     const itemTitle = item.getField("title") as string;
@@ -90,7 +91,8 @@ export class NoteGenerator {
         (getPref("noteStrategy" as any) as string) || "skip"
       ).toLowerCase();
       const existing = await this.findExistingNote(item);
-      if (existing) {
+      // 如果不是强制覆盖，且已存在笔记，则检查策略
+      if (existing && !options?.forceOverwrite) {
         if (policy === "skip") {
           progressCallback?.("已存在AI笔记，跳过", 100);
           return {
@@ -121,8 +123,9 @@ export class NoteGenerator {
       }
 
       // 步骤 2: AI 模型总结生成
-      // 读取总结模式配置
-      const summaryMode = ((getPref("summaryMode" as any) as string) ||
+      // 读取总结模式配置 - 优先使用传入的 options.summaryMode
+      const summaryMode = (options?.summaryMode ||
+        (getPref("summaryMode" as any) as string) ||
         "single") as SummaryMode;
 
       // 通知进度回调开始 AI 分析 (40% 完成)

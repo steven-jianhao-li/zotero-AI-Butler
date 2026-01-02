@@ -60,6 +60,10 @@ export interface TaskItem {
   retryCount: number; // 已重试次数
   maxRetries: number; // 最大重试次数
   duration?: number; // 处理耗时(秒)
+  options?: {
+    summaryMode?: string;
+    forceOverwrite?: boolean;
+  };
 }
 
 /**
@@ -175,11 +179,37 @@ export class TaskQueueManager {
   public async addTask(
     item: Zotero.Item,
     priority: boolean = false,
+    options?: { summaryMode?: string; forceOverwrite?: boolean },
   ): Promise<string> {
     const taskId = `task-${item.id}`;
 
     // 检查是否已存在
     if (this.tasks.has(taskId)) {
+      const existingTask = this.tasks.get(taskId)!;
+      // 如果强制覆盖，或者任务已存在且需要强制更新
+      if (options?.forceOverwrite) {
+        ztoolkit.log(`强制更新已存在的任务: ${taskId}`);
+        existingTask.status = priority
+          ? TaskStatus.PRIORITY
+          : TaskStatus.PENDING;
+        existingTask.options = options;
+        existingTask.progress = 0;
+        existingTask.error = undefined;
+        existingTask.retryCount = 0;
+        existingTask.createdAt = new Date(); // 更新创建时间以调整顺序
+        await this.saveToStorage();
+
+        if (!this.isRunning) {
+          this.start();
+        }
+        if (priority) {
+          this.executeTask(taskId).catch((e) => {
+            ztoolkit.log(`优先任务立即执行失败: ${e}`);
+          });
+        }
+        return taskId;
+      }
+
       ztoolkit.log(`任务已存在: ${taskId}`);
       return taskId;
     }
@@ -194,6 +224,7 @@ export class TaskQueueManager {
       createdAt: new Date(),
       retryCount: 0,
       maxRetries: parseInt(getPref("maxRetries") as string) || 3,
+      options,
     };
 
     this.tasks.set(taskId, task);
@@ -641,6 +672,7 @@ export class TaskQueueManager {
             ztoolkit.log(`流式内容广播失败: ${e}`);
           }
         },
+        task.options,
       );
 
       // 任务成功完成

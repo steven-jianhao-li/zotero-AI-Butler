@@ -1607,7 +1607,7 @@ ${jsonMarker}
       try {
         const { themeManager } = await import("../themeManager");
         const katexCss = await themeManager.loadKatexCss();
-        
+
         if (!katexCss) {
           ztoolkit.log("[AI-Butler] KaTeX CSS 加载失败，为空");
           return;
@@ -2156,7 +2156,7 @@ ${jsonMarker}
 
   /**
    * 将 Markdown 转换为 HTML（实例方法）
-   * 
+   *
    * 注意：总结页面不渲染 KaTeX，直接显示原始公式文本
    *
    * @param markdown Markdown 文本
@@ -2257,12 +2257,12 @@ ${jsonMarker}
             trust: true,
             strict: false,
           });
-          
+
           // 检查是否有渲染错误（KaTeX 会返回包含错误信息的 HTML）
           if (rendered.includes("katex-error")) {
             ztoolkit.log("[AI-Butler] KaTeX 渲染有问题，内容:", content);
           }
-          
+
           if (isBlock) {
             return `<div class="katex-display">${rendered}</div>`;
           } else {

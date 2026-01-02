@@ -1141,41 +1141,49 @@ function registerItemPaneSection() {
             };
 
             // 使用 KaTeX 渲染公式（侧边栏专用）
-            const renderFormulasWithKatex = async (html: string): Promise<string> => {
+            const renderFormulasWithKatex = async (
+              html: string,
+            ): Promise<string> => {
               try {
                 const katex = (await import("katex")).default;
-                
+
                 // 渲染块级公式 $$...$$
-                html = html.replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula) => {
-                  try {
-                    const rendered = katex.renderToString(formula.trim(), {
-                      throwOnError: false,
-                      displayMode: true,
-                      output: "html",
-                      trust: true,
-                      strict: false,
-                    });
-                    return `<div class="katex-display katex-block">${rendered}</div>`;
-                  } catch (e) {
-                    return `<pre class="math-fallback">$$${formula}$$</pre>`;
-                  }
-                });
+                html = html.replace(
+                  /\$\$([\s\S]*?)\$\$/g,
+                  (_match, formula) => {
+                    try {
+                      const rendered = katex.renderToString(formula.trim(), {
+                        throwOnError: false,
+                        displayMode: true,
+                        output: "html",
+                        trust: true,
+                        strict: false,
+                      });
+                      return `<div class="katex-display katex-block">${rendered}</div>`;
+                    } catch (e) {
+                      return `<pre class="math-fallback">$$${formula}$$</pre>`;
+                    }
+                  },
+                );
 
                 // 渲染行内公式 $...$（注意不要匹配 $$）
-                html = html.replace(/(?<!\$)\$([^\$\n]+?)\$(?!\$)/g, (_match, formula) => {
-                  try {
-                    const rendered = katex.renderToString(formula, {
-                      throwOnError: false,
-                      displayMode: false,
-                      output: "html",
-                      trust: true,
-                      strict: false,
-                    });
-                    return `<span class="katex-inline">${rendered}</span>`;
-                  } catch (e) {
-                    return `<code class="math-fallback">$${formula}$</code>`;
-                  }
-                });
+                html = html.replace(
+                  /(?<!\$)\$([^\$\n]+?)\$(?!\$)/g,
+                  (_match, formula) => {
+                    try {
+                      const rendered = katex.renderToString(formula, {
+                        throwOnError: false,
+                        displayMode: false,
+                        output: "html",
+                        trust: true,
+                        strict: false,
+                      });
+                      return `<span class="katex-inline">${rendered}</span>`;
+                    } catch (e) {
+                      return `<code class="math-fallback">$${formula}$</code>`;
+                    }
+                  },
+                );
 
                 return html;
               } catch (e) {

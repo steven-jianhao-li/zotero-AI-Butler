@@ -62,21 +62,32 @@ export class PDFExtractor {
       throw new Error("No attachments found for this item");
     }
 
-    // 第二步:查找 PDF 附件
-    let pdfAttachment: Zotero.Item | null = null;
+    // 策略修改: 获取所有 PDF 并按添加时间排序，取最早的一个 (通常是原文)
+    const pdfAttachments: Zotero.Item[] = [];
+
     for (const attachmentID of attachments) {
       const attachment = await Zotero.Items.getAsync(attachmentID);
-
       // 检查附件的 MIME 类型是否为 PDF
       if (attachment.attachmentContentType === "application/pdf") {
-        pdfAttachment = attachment;
-        break; // 找到第一个 PDF 即停止
+        pdfAttachments.push(attachment);
       }
     }
 
-    if (!pdfAttachment) {
+    if (pdfAttachments.length === 0) {
       throw new Error("No PDF attachment found for this item");
     }
+
+    // 按 dateAdded 升序排序 (最早的在前)
+    // 假设 dateAdded 是 ISO 字符串，可以直接比较字符串或转换为 Date
+    const pdfAttachment = pdfAttachments.sort((a, b) => {
+      const dateA = new Date(a.dateAdded).getTime();
+      const dateB = new Date(b.dateAdded).getTime();
+      return dateA - dateB;
+    })[0];
+
+    ztoolkit.log(
+      `[AI Butler] Selected oldest PDF: ${pdfAttachment.getField("title")} (Added: ${pdfAttachment.dateAdded})`,
+    );
 
     // 第三步:从 PDF 附件中提取文本
     const text = await this.extractTextFromPDF(pdfAttachment);
@@ -293,21 +304,30 @@ export class PDFExtractor {
       throw new Error("No attachments found for this item");
     }
 
-    // 第二步: 查找 PDF 附件
-    let pdfAttachment: Zotero.Item | null = null;
+    // 策略修改: 获取所有 PDF 并按添加时间排序，取最早的一个
+    const pdfAttachments: Zotero.Item[] = [];
+
     for (const attachmentID of attachments) {
       const attachment = await Zotero.Items.getAsync(attachmentID);
-
-      // 检查附件的 MIME 类型是否为 PDF
       if (attachment.attachmentContentType === "application/pdf") {
-        pdfAttachment = attachment;
-        break; // 找到第一个 PDF 即停止
+        pdfAttachments.push(attachment);
       }
     }
 
-    if (!pdfAttachment) {
+    if (pdfAttachments.length === 0) {
       throw new Error("No PDF attachment found for this item");
     }
+
+    // 按 dateAdded 升序排序
+    const pdfAttachment = pdfAttachments.sort((a, b) => {
+      const dateA = new Date(a.dateAdded).getTime();
+      const dateB = new Date(b.dateAdded).getTime();
+      return dateA - dateB;
+    })[0];
+
+    ztoolkit.log(
+      `[AI Butler] Selected oldest PDF (Base64): ${pdfAttachment.getField("title")} (Added: ${pdfAttachment.dateAdded})`,
+    );
 
     // 第三步: 获取 PDF 文件路径
     const pdfPath = await pdfAttachment.getFilePathAsync();

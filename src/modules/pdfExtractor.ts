@@ -28,6 +28,36 @@
  */
 export class PDFExtractor {
   /**
+   * 检查条目是否有可用的 PDF 附件
+   *
+   * 用于在任务处理前快速检测条目是否有 PDF，
+   * 避免无附件的条目消耗处理时间
+   *
+   * @param item Zotero 文献条目对象
+   * @returns 是否有 PDF 附件
+   */
+  public static async hasPDFAttachment(item: Zotero.Item): Promise<boolean> {
+    try {
+      const attachments = item.getAttachments();
+      if (attachments.length === 0) {
+        return false;
+      }
+
+      for (const attachmentID of attachments) {
+        const attachment = await Zotero.Items.getAsync(attachmentID);
+        if (attachment.attachmentContentType === "application/pdf") {
+          return true;
+        }
+      }
+
+      return false;
+    } catch (error) {
+      ztoolkit.log("[PDFExtractor] 检查 PDF 附件时出错:", error);
+      return false;
+    }
+  }
+
+  /**
    * 从 Zotero 条目中提取 PDF 全文
    *
    * 这是模块的主入口函数,协调整个文本提取流程

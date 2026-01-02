@@ -27,6 +27,10 @@
 
 import { getPref, setPref } from "../utils/prefs";
 import { NoteGenerator } from "./noteGenerator";
+import { PDFExtractor } from "./pdfExtractor";
+
+/** 无 PDF 附件错误标识 */
+const NO_PDF_ERROR_MSG = "该条目没有 PDF 附件，无法进行 AI 分析。请先为该文献添加 PDF 文件。";
 
 /**
  * 任务状态枚举
@@ -498,55 +502,57 @@ export class TaskQueueManager {
       return;
     }
 
-    // 获取待处理任务(优先、待处理)
-    const pendingTasks = this.getAllTasks()
-      .filter(
-        (task) =>
-          task.status === TaskStatus.PRIORITY ||
-          task.status === TaskStatus.PENDING,
-      )
-      .sort((a, b) => {
-        if (
-          a.status === TaskStatus.PRIORITY &&
-          b.status !== TaskStatus.PRIORITY
-        ) {
-          return -1;
-        }
-        if (
-          a.status !== TaskStatus.PRIORITY &&
-          b.status === TaskStatus.PRIORITY
-        ) {
-          return 1;
-        }
-        return a.createdAt.getTime() - b.createdAt.getTime();
-      });
-
-    if (pendingTasks.length === 0) {
-      if (this.processingTasks.size === 0 && this.isRunning) {
-        this.stop();
-      }
-      return;
-    }
-
-    const tasksForBatch = pendingTasks.slice(0, this.batchSize);
-    if (tasksForBatch.length === 0) {
-      return;
-    }
-
     this.isBatchRunning = true;
-    ztoolkit.log(`开始执行批次, 计划处理 ${tasksForBatch.length} 个任务`);
 
     try {
-      let index = 0;
-      while (index < tasksForBatch.length) {
-        const remaining = tasksForBatch.length - index;
-        const chunkSize = Math.max(1, Math.min(this.maxConcurrency, remaining));
-        const chunk = tasksForBatch.slice(index, index + chunkSize);
-        await Promise.allSettled(
-          chunk.map((task) => this.executeTask(task.id)),
+      // 追踪本批次实际调用 LLM 的任务数（无 PDF 失败不计入）
+      let llmTasksProcessed = 0;
+
+      while (llmTasksProcessed < this.batchSize) {
+        // 每次循环重新获取待处理任务（因为状态可能已变化）
+        const pendingTasks = this.getAllTasks()
+          .filter(
+            (task) =>
+              task.status === TaskStatus.PRIORITY ||
+              task.status === TaskStatus.PENDING,
+          )
+          .sort((a, b) => {
+            if (
+              a.status === TaskStatus.PRIORITY &&
+              b.status !== TaskStatus.PRIORITY
+            ) {
+              return -1;
+            }
+            if (
+              a.status !== TaskStatus.PRIORITY &&
+              b.status === TaskStatus.PRIORITY
+            ) {
+              return 1;
+            }
+            return a.createdAt.getTime() - b.createdAt.getTime();
+          });
+
+        if (pendingTasks.length === 0) {
+          break;
+        }
+
+        const task = pendingTasks[0];
+        ztoolkit.log(
+          `执行任务 (${llmTasksProcessed + 1}/${this.batchSize}): ${task.title}`,
         );
-        index += chunk.length;
+
+        // 执行任务并获取是否为快速失败（无 PDF）
+        const wasQuickFail = await this.executeTask(task.id);
+
+        // 只有非快速失败的任务才计入批次配额
+        if (!wasQuickFail) {
+          llmTasksProcessed++;
+        } else {
+          ztoolkit.log(`任务快速失败（无 PDF），不计入批次配额: ${task.title}`);
+        }
       }
+
+      ztoolkit.log(`批次执行完成，实际处理 ${llmTasksProcessed} 个任务`);
     } finally {
       this.isBatchRunning = false;
 
@@ -566,11 +572,12 @@ export class TaskQueueManager {
    * 执行单个任务
    *
    * @param taskId 任务ID
+   * @returns 是否为快速失败（无 PDF 附件），用于批次配额判断
    */
-  private async executeTask(taskId: string): Promise<void> {
+  private async executeTask(taskId: string): Promise<boolean> {
     const task = this.tasks.get(taskId);
     if (!task) {
-      return;
+      return false;
     }
 
     // 防止任务被重复执行（竞态条件保护）
@@ -580,7 +587,7 @@ export class TaskQueueManager {
       task.status === TaskStatus.COMPLETED
     ) {
       ztoolkit.log(`任务已在处理中或已完成，跳过重复执行: ${taskId}`);
-      return;
+      return false;
     }
 
     // 更新任务状态为处理中
@@ -597,6 +604,12 @@ export class TaskQueueManager {
       const item = await Zotero.Items.getAsync(task.itemId);
       if (!item) {
         throw new Error("文献条目不存在");
+      }
+
+      // 检查是否有 PDF 附件
+      const hasPdf = await PDFExtractor.hasPDFAttachment(item);
+      if (!hasPdf) {
+        throw new Error(NO_PDF_ERROR_MSG);
       }
 
       // 调用 NoteGenerator 生成笔记
@@ -634,28 +647,38 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, true);
       // 发送结束事件
       this.notifyStream(taskId, { type: "finish" });
+      return false; // 非快速失败，计入批次
     } catch (error: any) {
       // 任务失败
       task.error = error.message || "未知错误";
-      task.retryCount++;
 
-      // 检查是否需要重试
-      if (task.retryCount < task.maxRetries) {
-        // 重置为待处理状态,等待重试
-        task.status = TaskStatus.PENDING;
-        task.progress = 0;
-        ztoolkit.log(
-          `任务失败,将重试 (${task.retryCount}/${task.maxRetries}): ${task.title}`,
-        );
-      } else {
-        // 超过最大重试次数,标记为失败
+      // 无 PDF 附件错误直接标记失败，不重试（用户需要手动添加 PDF）
+      const isNoPdfError = task.error === NO_PDF_ERROR_MSG;
+      if (isNoPdfError) {
         task.status = TaskStatus.FAILED;
         task.completedAt = new Date();
-        ztoolkit.log(`任务最终失败: ${task.title} - ${task.error}`);
+        ztoolkit.log(`任务失败（无 PDF 附件）: ${task.title}`);
+      } else {
+        task.retryCount++;
+        // 检查是否需要重试
+        if (task.retryCount < task.maxRetries) {
+          // 重置为待处理状态,等待重试
+          task.status = TaskStatus.PENDING;
+          task.progress = 0;
+          ztoolkit.log(
+            `任务失败,将重试 (${task.retryCount}/${task.maxRetries}): ${task.title}`,
+          );
+        } else {
+          // 超过最大重试次数,标记为失败
+          task.status = TaskStatus.FAILED;
+          task.completedAt = new Date();
+          ztoolkit.log(`任务最终失败: ${task.title} - ${task.error}`);
+        }
       }
 
       this.notifyComplete(taskId, false, task.error);
       this.notifyStream(taskId, { type: "error" });
+      return isNoPdfError; // 无 PDF 错误时返回 true，表示快速失败
     } finally {
       // 移除处理中标记
       this.processingTasks.delete(taskId);

@@ -3,6 +3,7 @@
 - [🏠 首页](/)
 - [🚀 快速开始](quick-start.md)
 - [🔑 API 配置指南](api-configuration.md)
+- [🖼️ 一图总结](one-image-summary.md)
 - [❓ 常见问题 FAQ](faq.md)
 - [🔧 故障排除](troubleshooting.md)
 

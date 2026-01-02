@@ -14,11 +14,18 @@ import { PromptsSettingsPage } from "./settings/PromptsSettingsPage";
 import { UiSettingsPage } from "./settings/UiSettingsPage";
 import { DataSettingsPage } from "./settings/DataSettingsPage";
 import { AboutPage } from "./settings/AboutPage";
+import { ImageSummarySettingsPage } from "./settings/ImageSummarySettingsPage";
 
 /**
  * 设置分类类型
  */
-type SettingCategory = "api" | "prompts" | "ui" | "data" | "about";
+type SettingCategory =
+  | "api"
+  | "prompts"
+  | "imageSummary"
+  | "ui"
+  | "data"
+  | "about";
 
 /**
  * 设置视图类
@@ -117,6 +124,7 @@ export class SettingsView extends BaseView {
     const categories = [
       { id: "api" as SettingCategory, label: "🔌 API 配置" },
       { id: "prompts" as SettingCategory, label: "📝 提示词模板" },
+      { id: "imageSummary" as SettingCategory, label: "🖼️ 一图总结" },
       { id: "ui" as SettingCategory, label: "🎨 界面设置" },
       { id: "data" as SettingCategory, label: "💾 数据管理" },
       { id: "about" as SettingCategory, label: "ℹ️ 关于" },
@@ -245,6 +253,9 @@ export class SettingsView extends BaseView {
           break;
         case "prompts":
           page = new PromptsSettingsPage(this.settingsContainer);
+          break;
+        case "imageSummary":
+          page = new ImageSummarySettingsPage(this.settingsContainer);
           break;
         case "ui":
           page = new UiSettingsPage(this.settingsContainer);

@@ -36,9 +36,14 @@ TA 是您7x24小时待命、不知疲倦且绝对忠诚的私人管家。
 2.  **深度解析 (生成笔记)**：管家的核心任务——利用大模型将论文精读、揉碎、嚼烂后，整理成一份热腾腾、条理清晰的 Markdown 笔记塞进您的 Zotero 条目下。
 3.  **随时待命 (右键菜单)**：除了“全自动”托管，您也可以随时右键点击任何一篇论文，让管家现在、立刻、最高优先级地分析这篇文章。
 4.  **管家智能（无损阅读）**：管家会根据自己模型的多模态能力直接处理PDF文件，不经过本地OCR或文本提取，最大程度保留论文内容的完整性和准确性，图片、表格、公式等都不在话下！
+5.  **一图总结 (实验性功能)**：利用 Nano Banana Pro 的图片生成能力，为论文生成一张精美的学术概念海报！一图胜千言，让您快速把握论文核心！
+    - 右键选择 "召唤AI管家一图总结" 即可体验
+    - 🎨 **欢迎优化提示词**：相信您的结果一定比示例更好看！欢迎在 [Discussion](https://github.com/steven-jianhao-li/zotero-AI-Butler/discussions) 中分享您的提示词和效果，优秀的提示词有机会被选为默认模板！
+
+    ![一图总结示例](./assets/images/一图总结示例.png)
 
 推荐使用 Google Gemini 3 pro 模型，Gemini读论文讲的很到位。
-没有免费的 Google Gemini 3 pro API？参考[我的自用gcli2api配置教程](https://github.com/steven-jianhao-li/zotero-AI-Butler/discussions/54#discussioncomment-15199692)部署[gcli2api](https://github.com/su-kaka/gcli2api)获得几乎用不完的免费Gemini 3 pro访问额度！
+没有免费的 Google Gemini 3 pro API？参考[我的自用gcli2api配置教程](https://github.com/steven-jianhao-li/zotero-AI-Butler/discussions/54#discussioncomment-15199692)部署[gcli2api](https://github.com/su-kaka/gcli2api)获得个人几乎用不完的免费Gemini 3 pro访问额度！
 
 > **您只负责思考，`Zotero-AI-Butler` 负责为您的阅读扫清障碍！**
 
@@ -64,6 +69,8 @@ AI管家提供三种方式来获取和分析您的论文。
   - 任务将立即进入队列。您可以点击**“详情”**，实时查看大模型的分析响应过程。
 
 ![右键菜单中唤醒AI管家进行分析](./assets/images/右键菜单中唤醒AI管家进行分析.gif)
+
+- **多轮对话重新精读**：如果想用更详细的模式重新分析一篇已经总结过的论文（或者想换一种模式），可以在右键菜单中选择 **“AI管家多轮对话重新精读”**，然后选择 **“多轮拼接”** 或 **“多轮总结”**。这会强制覆盖已有的AI笔记。
 
 - 方式二：自动巡航 (新文献自动处理)
   实现“一劳永逸”的自动化工作流。

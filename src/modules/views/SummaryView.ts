@@ -28,6 +28,7 @@ import { MainWindow } from "./MainWindow";
 import { marked } from "marked";
 import { getPref } from "../../utils/prefs";
 import { createStyledButton } from "./ui/components";
+import katex from "katex";
 
 /**
  * AI 总结视图类
@@ -1583,20 +1584,51 @@ ${jsonMarker}
   }
 
   /**
-   * 初始化 MathJax
+   * 初始化 KaTeX CSS 样式
    *
    * @private
    */
   private initMathJax(): void {
-    // MathJax 初始化逻辑
-    // 注意:在 Zotero 环境中需要特殊处理
+    // 加载 KaTeX CSS 样式
     this.mathJaxReady = false;
 
-    // TODO: 实现 MathJax 加载逻辑
-    // 当前简化处理
-    setTimeout(() => {
+    if (!this.container) return;
+    const doc = this.container.ownerDocument;
+    if (!doc) return;
+
+    // 检查是否已添加 KaTeX CSS
+    if (doc.getElementById("ai-butler-katex-style")) {
       this.mathJaxReady = true;
-    }, 1000);
+      return;
+    }
+
+    // 异步加载 KaTeX CSS
+    (async () => {
+      try {
+        const { themeManager } = await import("../themeManager");
+        const katexCss = await themeManager.loadKatexCss();
+
+        if (!katexCss) {
+          ztoolkit.log("[AI-Butler] KaTeX CSS 加载失败，为空");
+          return;
+        }
+
+        const styleEl = doc.createElement("style");
+        styleEl.id = "ai-butler-katex-style";
+        styleEl.textContent = katexCss;
+
+        // 添加到文档
+        const insertTarget = doc.head || doc.documentElement;
+        if (insertTarget) {
+          insertTarget.appendChild(styleEl);
+          ztoolkit.log("[AI-Butler] KaTeX CSS 已加载");
+        }
+
+        this.mathJaxReady = true;
+      } catch (e) {
+        ztoolkit.log("[AI-Butler] KaTeX CSS 加载出错:", e);
+      }
+    })();
   }
 
   /**
@@ -2123,14 +2155,16 @@ ${jsonMarker}
   }
 
   /**
-   * 将 Markdown 转换为 HTML（实例方法，简化版）
+   * 将 Markdown 转换为 HTML（实例方法）
+   *
+   * 注意：总结页面不渲染 KaTeX，直接显示原始公式文本
    *
    * @param markdown Markdown 文本
    * @returns HTML 字符串
    * @private
    */
   private convertMarkdownToHTML(markdown: string): string {
-    // 使用 marked 转换 Markdown
+    // 总结页面显示原始公式文本，不使用 KaTeX 渲染
     return marked.parse(markdown) as string;
   }
 
@@ -2165,35 +2199,35 @@ ${jsonMarker}
    */
   public static convertMarkdownToHTMLCore(markdown: string): string {
     // ===== 步骤 1: 保护公式，避免被 marked 误处理 =====
-    const formulas: string[] = [];
+    const formulas: Array<{ content: string; isBlock: boolean }> = [];
     let html = markdown;
 
     // 转换并保护 LaTeX 块级公式: \[...\] → $$...$$
-    html = html.replace(/\\\[([\s\S]*?)\\\]/g, (match, formula) => {
+    html = html.replace(/\\\[([\s\S]*?)\\\]/g, (_match, formula) => {
       const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_BLOCK_${formulas.length}`;
-      formulas.push(`$$${formula.trim()}$$`);
+      formulas.push({ content: formula.trim(), isBlock: true });
       return placeholder;
     });
 
     // 保护已有的 $$ $$ 块级公式
-    html = html.replace(/\$\$([\s\S]*?)\$\$/g, (match) => {
+    html = html.replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula) => {
       const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_BLOCK_${formulas.length}`;
-      formulas.push(match);
+      formulas.push({ content: formula.trim(), isBlock: true });
       return placeholder;
     });
 
     // 转换并保护 LaTeX 行内公式: \(...\) → $...$
-    html = html.replace(/\\\((.*?)\\\)/g, (match, formula) => {
+    html = html.replace(/\\\((.*?)\\\)/g, (_match, formula) => {
       const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_INLINE_${formulas.length}`;
-      formulas.push(`$${formula}$`);
+      formulas.push({ content: formula, isBlock: false });
       return placeholder;
     });
 
     // 保护已有的 $ $ 行内公式
     // eslint-disable-next-line no-useless-escape
-    html = html.replace(/\$([^\$\n]+?)\$/g, (match) => {
+    html = html.replace(/\$([^\$\n]+?)\$/g, (_match, formula) => {
       const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_INLINE_${formulas.length}`;
-      formulas.push(match);
+      formulas.push({ content: formula, isBlock: false });
       return placeholder;
     });
 
@@ -2206,12 +2240,43 @@ ${jsonMarker}
       html = `<p>${SummaryView.escapeHtml(html)}</p>`;
     }
 
-    // ===== 步骤 3: 恢复所有公式 =====
+    // ===== 步骤 3: 恢复并渲染所有公式（使用 KaTeX） =====
     html = html.replace(
       /ⒻⓄⓇⓂⓊⓁⒶ_(BLOCK|INLINE)_(\d+)/g,
-      (match, type, index) => {
-        const formula = formulas[parseInt(index)];
-        return formula || match;
+      (_match, _type, index) => {
+        const formulaData = formulas[parseInt(index)];
+        if (!formulaData) return _match;
+
+        const { content, isBlock } = formulaData;
+        try {
+          // 使用 KaTeX 渲染公式
+          const rendered = katex.renderToString(content, {
+            throwOnError: false,
+            displayMode: isBlock,
+            output: "html",
+            trust: true,
+            strict: false,
+          });
+
+          // 检查是否有渲染错误（KaTeX 会返回包含错误信息的 HTML）
+          if (rendered.includes("katex-error")) {
+            ztoolkit.log("[AI-Butler] KaTeX 渲染有问题，内容:", content);
+          }
+
+          if (isBlock) {
+            return `<div class="katex-display">${rendered}</div>`;
+          } else {
+            return `<span class="katex-inline">${rendered}</span>`;
+          }
+        } catch (e) {
+          // KaTeX 渲染失败，显示原始公式
+          ztoolkit.log("[AI-Butler] KaTeX 渲染失败:", e, "公式内容:", content);
+          if (isBlock) {
+            return `<pre class="math-fallback">$$${SummaryView.escapeHtml(content)}$$</pre>`;
+          } else {
+            return `<code class="math-fallback">$${SummaryView.escapeHtml(content)}$</code>`;
+          }
+        }
       },
     );
 

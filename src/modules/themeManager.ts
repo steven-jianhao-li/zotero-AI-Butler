@@ -93,6 +93,21 @@ export class ThemeManager {
   }
 
   /**
+   * 加载 KaTeX CSS
+   */
+  public async loadKatexCss(): Promise<string> {
+    const cacheKey = "__katex__";
+    if (this.cachedCss.has(cacheKey)) {
+      return this.cachedCss.get(cacheKey)!;
+    }
+
+    const cssUrl = `chrome://${config.addonRef}/content/katex.min.css`;
+    const css = await this.fetchCss(cssUrl);
+    this.cachedCss.set(cacheKey, css);
+    return css;
+  }
+
+  /**
    * 获取 CSS 内容
    */
   private async fetchCss(url: string): Promise<string> {
@@ -134,6 +149,100 @@ export class ThemeManager {
       /@font-face\s*\{[^}]*url\([^)]*\.woff2[^)]*\)[^}]*\}/g,
       "",
     );
+
+    // 添加数学公式样式 - 横向滚动，完整高度显示
+    const mathStyles = `
+/* 公式容器样式 - 宽度限制，横向滚动 */
+.ai-butler-note-content .katex-display,
+.ai-butler-note-content .katex-block {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 12px 0;
+  margin: 8px 0;
+  /* 自定义横向滚动条样式 */
+  scrollbar-width: thin;
+  scrollbar-color: #888 #f0f0f0;
+}
+.ai-butler-note-content .katex-display::-webkit-scrollbar,
+.ai-butler-note-content .katex-block::-webkit-scrollbar {
+  height: 8px;
+}
+.ai-butler-note-content .katex-display::-webkit-scrollbar-track,
+.ai-butler-note-content .katex-block::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 4px;
+}
+.ai-butler-note-content .katex-display::-webkit-scrollbar-thumb,
+.ai-butler-note-content .katex-block::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+.ai-butler-note-content .katex-display::-webkit-scrollbar-thumb:hover,
+.ai-butler-note-content .katex-block::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+.ai-butler-note-content .katex-inline {
+  display: inline;
+  vertical-align: baseline;
+}
+
+.ai-butler-note-content .katex {
+  font-size: 1.1em;
+  white-space: nowrap;
+}
+
+/* 确保公式完整显示高度 */
+.ai-butler-note-content .katex .base {
+  display: inline-block;
+  vertical-align: baseline;
+}
+.ai-butler-note-content .katex-html {
+  white-space: nowrap;
+}
+
+/* 暗色模式下的文字颜色修正 */
+@media (prefers-color-scheme: dark) {
+  .ai-butler-note-content,
+  .ai-butler-note-content p,
+  .ai-butler-note-content li,
+  .ai-butler-note-content h1,
+  .ai-butler-note-content h2,
+  .ai-butler-note-content h3,
+  .ai-butler-note-content h4,
+  .ai-butler-note-content h5,
+  .ai-butler-note-content h6,
+  .ai-butler-note-content blockquote,
+  .ai-butler-note-content td,
+  .ai-butler-note-content th {
+    color: #e0e0e0 !important;
+  }
+  .ai-butler-note-content {
+    background-color: #1e1e1e !important;
+  }
+  .ai-butler-note-content code {
+    background-color: #2d2d2d !important;
+    color: #e0e0e0 !important;
+  }
+  .ai-butler-note-content pre {
+    background-color: #2d2d2d !important;
+  }
+  .ai-butler-note-content blockquote {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    border-left-color: #666 !important;
+  }
+  .ai-butler-note-content table tr:nth-child(2n),
+  .ai-butler-note-content thead {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+  }
+  .ai-butler-note-content hr {
+    background-color: #444 !important;
+  }
+}
+`;
+    adapted += mathStyles;
 
     return adapted;
   }

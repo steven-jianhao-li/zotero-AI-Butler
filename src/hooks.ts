@@ -652,10 +652,9 @@ function registerItemPaneSection() {
           border: 1px solid #e0e0e0;
           border-radius: 6px;
           overflow: hidden;
-          background: white;
         `;
 
-        // 笔记标题栏（可折叠）
+        // 笔记标题栏（可折叠）- 使用继承颜色以支持暗色模式
         const noteHeader = doc.createElement("div");
         noteHeader.className = "ai-butler-note-header";
         noteHeader.style.cssText = `
@@ -663,17 +662,17 @@ function registerItemPaneSection() {
           align-items: center;
           justify-content: space-between;
           padding: 8px 10px;
-          background: linear-gradient(135deg, #f8f9fa, #f0f2f4);
+          background: rgba(128, 128, 128, 0.1);
           cursor: pointer;
           user-select: none;
-          border-bottom: 1px solid #e0e0e0;
+          border-bottom: 1px solid rgba(128, 128, 128, 0.2);
         `;
 
         const noteTitle = doc.createElement("span");
         noteTitle.style.cssText = `
           font-weight: 500;
           font-size: 12px;
-          color: #333;
+          color: inherit;
           display: flex;
           align-items: center;
           gap: 6px;
@@ -710,7 +709,8 @@ function registerItemPaneSection() {
         fontSizeLabel.textContent = `${currentFontSize}px`;
         fontSizeLabel.style.cssText = `
           font-size: 10px;
-          color: #666;
+          color: inherit;
+          opacity: 0.7;
           min-width: 28px;
           text-align: center;
         `;
@@ -721,22 +721,25 @@ function registerItemPaneSection() {
           btn.style.cssText = `
             width: 20px;
             height: 20px;
-            border: 1px solid #ddd;
+            border: 1px solid currentColor;
             border-radius: 3px;
-            background: white;
+            background: transparent;
             cursor: pointer;
             font-size: 12px;
             line-height: 1;
-            color: #666;
+            color: inherit;
             display: flex;
             align-items: center;
             justify-content: center;
+            opacity: 0.7;
           `;
           btn.addEventListener("mouseenter", () => {
-            btn.style.background = "#f0f0f0";
+            btn.style.opacity = "1";
+            btn.style.background = "rgba(128, 128, 128, 0.2)";
           });
           btn.addEventListener("mouseleave", () => {
-            btn.style.background = "white";
+            btn.style.opacity = "0.7";
+            btn.style.background = "transparent";
           });
           btn.addEventListener("click", () => {
             currentFontSize = Math.max(
@@ -764,11 +767,12 @@ function registerItemPaneSection() {
           margin-left: 8px;
           padding: 2px 4px;
           font-size: 10px;
-          border: 1px solid #ddd;
+          border: 1px solid currentColor;
           border-radius: 3px;
-          background: white;
+          background: inherit;
           cursor: pointer;
-          color: #666;
+          color: inherit;
+          opacity: 0.8;
         `;
         themeSelect.addEventListener("click", (e: Event) =>
           e.stopPropagation(),
@@ -778,6 +782,7 @@ function registerItemPaneSection() {
         const themes = [
           { id: "github", name: "GitHub" },
           { id: "redstriking", name: "红印" },
+          // 可以在这里添加更多内置主题
         ];
         const currentTheme = (
           (getPref("markdownTheme" as any) as string) || "github"
@@ -798,12 +803,13 @@ function registerItemPaneSection() {
           themeManager.setCurrentTheme(newTheme);
           themeManager.clearCache();
           const themeCss = await themeManager.loadThemeCss();
+          const katexCss = await themeManager.loadKatexCss();
           const adaptedCss = themeManager.adaptCssForSidebar(themeCss);
           const styleEl = doc.getElementById(
             "ai-butler-note-theme",
           ) as HTMLStyleElement;
           if (styleEl) {
-            styleEl.textContent = adaptedCss;
+            styleEl.textContent = katexCss + "\n" + adaptedCss;
           }
         });
         fontSizeControl.appendChild(themeSelect);
@@ -812,7 +818,8 @@ function registerItemPaneSection() {
         toggleIcon.textContent = "▼";
         toggleIcon.style.cssText = `
           font-size: 10px;
-          color: #666;
+          color: inherit;
+          opacity: 0.6;
           transition: transform 0.2s ease;
         `;
 
@@ -848,6 +855,9 @@ function registerItemPaneSection() {
           padding-bottom: 20px;
           font-size: ${currentFontSize}px;
           line-height: 1.6;
+          overflow-wrap: break-word;
+          word-wrap: break-word;
+          overflow-x: auto;
         `;
 
         // 高度调节手柄（移到 wrapper 外面，固定在底部）
@@ -1088,9 +1098,10 @@ function registerItemPaneSection() {
               return;
             }
 
-            // 加载主题 CSS
+            // 加载主题 CSS 和 KaTeX CSS
             const { themeManager } = await import("./modules/themeManager");
             const themeCss = await themeManager.loadThemeCss();
+            const katexCss = await themeManager.loadKatexCss();
             const adaptedCss = themeManager.adaptCssForSidebar(themeCss);
 
             // 注入样式（使用 body 或父元素，因为 XUL 文档没有 head）
@@ -1105,7 +1116,7 @@ function registerItemPaneSection() {
                 doc.body || doc.documentElement || noteSection;
               insertTarget.appendChild(styleEl);
             }
-            styleEl.textContent = adaptedCss;
+            styleEl.textContent = katexCss + "\n" + adaptedCss;
 
             // Zotero 笔记本身就是 HTML 格式（有 <h2>、<strong> 等标签）
             // 在 XUL 环境中，需要清理可能导致解析错误的 HTML 属性和标签
@@ -1128,7 +1139,63 @@ function registerItemPaneSection() {
                   )
               );
             };
-            noteContent.innerHTML = cleanHtmlForXul(aiNoteContent);
+
+            // 使用 KaTeX 渲染公式（侧边栏专用）
+            const renderFormulasWithKatex = async (
+              html: string,
+            ): Promise<string> => {
+              try {
+                const katex = (await import("katex")).default;
+
+                // 渲染块级公式 $$...$$
+                html = html.replace(
+                  /\$\$([\s\S]*?)\$\$/g,
+                  (_match, formula) => {
+                    try {
+                      const rendered = katex.renderToString(formula.trim(), {
+                        throwOnError: false,
+                        displayMode: true,
+                        output: "html",
+                        trust: true,
+                        strict: false,
+                      });
+                      return `<div class="katex-display katex-block">${rendered}</div>`;
+                    } catch (e) {
+                      return `<pre class="math-fallback">$$${formula}$$</pre>`;
+                    }
+                  },
+                );
+
+                // 渲染行内公式 $...$（注意不要匹配 $$）
+                html = html.replace(
+                  /(?<!\$)\$([^\$\n]+?)\$(?!\$)/g,
+                  (_match, formula) => {
+                    try {
+                      const rendered = katex.renderToString(formula, {
+                        throwOnError: false,
+                        displayMode: false,
+                        output: "html",
+                        trust: true,
+                        strict: false,
+                      });
+                      return `<span class="katex-inline">${rendered}</span>`;
+                    } catch (e) {
+                      return `<code class="math-fallback">$${formula}$</code>`;
+                    }
+                  },
+                );
+
+                return html;
+              } catch (e) {
+                ztoolkit.log("[AI-Butler] KaTeX 渲染失败:", e);
+                return html;
+              }
+            };
+
+            // 先清理 HTML，然后渲染公式
+            let processedContent = cleanHtmlForXul(aiNoteContent);
+            processedContent = await renderFormulasWithKatex(processedContent);
+            noteContent.innerHTML = processedContent;
           } catch (err: any) {
             ztoolkit.log("[AI-Butler] 加载笔记失败:", err);
             noteContent.innerHTML = `<div style="color: #d32f2f; padding: 10px;">加载笔记失败: ${err.message}</div>`;

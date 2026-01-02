@@ -205,6 +205,13 @@ export class TaskQueueManager {
       this.start();
     }
 
+    // 如果是优先任务，立即执行（不等待批处理周期）
+    if (priority) {
+      this.executeTask(taskId).catch((e) => {
+        ztoolkit.log(`优先任务立即执行失败: ${e}`);
+      });
+    }
+
     return taskId;
   }
 

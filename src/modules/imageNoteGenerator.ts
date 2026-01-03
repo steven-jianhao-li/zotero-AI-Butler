@@ -128,6 +128,7 @@ export class ImageNoteGenerator {
   ): Promise<Zotero.Item | null> {
     try {
       const noteIDs = (item as any).getNotes?.() || [];
+      ztoolkit.log(`[AI-Butler] 查找一图总结笔记，共 ${noteIDs.length} 个笔记`);
 
       for (const nid of noteIDs) {
         const n = await Zotero.Items.getAsync(nid);
@@ -137,20 +138,155 @@ export class ImageNoteGenerator {
         const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
         const hasTag = tags.some((t) => t.tag === this.IMAGE_NOTE_TAG);
 
-        // 检查标题是否匹配
+        // 检查标题是否匹配 (多种模式)
         const noteHtml: string = (n as any).getNote?.() || "";
-        const titleMatch = new RegExp(
+
+        // 模式1: 精确匹配 "AI 管家一图总结 -"
+        const titleMatch1 = new RegExp(
           `<h2>\\s*${this.escapeRegExp(this.NOTE_TITLE_PREFIX)}`,
         ).test(noteHtml);
 
-        if (hasTag || titleMatch) {
+        // 模式2: 宽松匹配 "一图总结"
+        const titleMatch2 = /<h2>[^<]*一图总结[^<]*<\/h2>/i.test(noteHtml);
+
+        // 模式3: 匹配标题中包含 "AI 管家一图总结"
+        const titleMatch3 = noteHtml.includes("AI 管家一图总结");
+
+        if (hasTag || titleMatch1 || titleMatch2 || titleMatch3) {
+          ztoolkit.log(
+            `[AI-Butler] 找到一图总结笔记: ID=${nid}, hasTag=${hasTag}, titleMatch1=${titleMatch1}, titleMatch2=${titleMatch2}, titleMatch3=${titleMatch3}`,
+          );
           return n as Zotero.Item;
         }
       }
 
+      ztoolkit.log(`[AI-Butler] 未找到一图总结笔记`);
       return null;
     } catch (error) {
       ztoolkit.log(`[AI-Butler] 查找一图总结笔记失败:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 从笔记中提取图片 data URI 或附件路径
+   *
+   * @param note Zotero 笔记对象
+   * @returns 图片的 data URI 或 null，如果是附件则返回附件信息
+   */
+  public static extractImageFromNote(note: Zotero.Item): string | null {
+    try {
+      const noteHtml: string = (note as any).getNote?.() || "";
+
+      // 尝试多种匹配模式
+      // 模式1: 标准 img src 属性 (data URI)
+      let match = noteHtml.match(/<img[^>]+src=["']([^"']+)["']/i);
+      if (match && match[1]) {
+        return match[1];
+      }
+
+      // 模式2: src 属性没有引号
+      match = noteHtml.match(/<img[^>]+src=([^\s>]+)/i);
+      if (match && match[1]) {
+        return match[1].replace(/["']/g, "");
+      }
+
+      // 模式3: 直接查找 data:image
+      match = noteHtml.match(/(data:image\/[^"'\s]+)/i);
+      if (match && match[1]) {
+        return match[1];
+      }
+
+      ztoolkit.log(
+        "[AI-Butler] 笔记中未找到图片，HTML 内容:",
+        noteHtml.substring(0, 500),
+      );
+      return null;
+    } catch (error) {
+      ztoolkit.log("[AI-Butler] 提取笔记图片失败:", error);
+      return null;
+    }
+  }
+
+  /**
+   * 从笔记中提取图片附件 key
+   *
+   * @param note Zotero 笔记对象
+   * @returns 附件 key，如果未找到则返回 null
+   */
+  public static extractAttachmentKeyFromNote(note: Zotero.Item): string | null {
+    try {
+      const noteHtml: string = (note as any).getNote?.() || "";
+
+      // 匹配 data-attachment-key 属性
+      const match = noteHtml.match(/data-attachment-key=["']([^"']+)["']/i);
+      if (match && match[1]) {
+        ztoolkit.log(`[AI-Butler] 找到附件 key: ${match[1]}`);
+        return match[1];
+      }
+
+      return null;
+    } catch (error) {
+      ztoolkit.log("[AI-Butler] 提取附件 key 失败:", error);
+      return null;
+    }
+  }
+
+  /**
+   * 从笔记中获取图片（支持 data URI 和附件引用）
+   *
+   * @param note Zotero 笔记对象
+   * @returns 图片的 data URI，如果未找到则返回 null
+   */
+  public static async getImageFromNote(
+    note: Zotero.Item,
+  ): Promise<string | null> {
+    try {
+      // 首先尝试提取内嵌的 data URI
+      const dataUri = this.extractImageFromNote(note);
+      if (dataUri && dataUri.startsWith("data:")) {
+        return dataUri;
+      }
+
+      // 然后尝试从附件获取
+      const attachmentKey = this.extractAttachmentKeyFromNote(note);
+      if (attachmentKey) {
+        // 通过 key 查找附件
+        const libraryID = note.libraryID;
+        const attachment = await Zotero.Items.getByLibraryAndKeyAsync(
+          libraryID,
+          attachmentKey,
+        );
+
+        if (attachment && (attachment as any).isFileAttachment?.()) {
+          const filePath = await (attachment as any).getFilePathAsync?.();
+          if (filePath) {
+            ztoolkit.log(`[AI-Butler] 附件文件路径: ${filePath}`);
+
+            // 读取文件并转换为 Base64
+            const contents = await Zotero.File.getBinaryContentsAsync(filePath);
+            const base64 = btoa(contents);
+
+            // 根据文件扩展名确定 MIME 类型
+            const ext = filePath.toLowerCase().split(".").pop() || "png";
+            const mimeMap: Record<string, string> = {
+              png: "image/png",
+              jpg: "image/jpeg",
+              jpeg: "image/jpeg",
+              gif: "image/gif",
+              webp: "image/webp",
+            };
+            const mimeType = mimeMap[ext] || "image/png";
+
+            return `data:${mimeType};base64,${base64}`;
+          }
+        }
+      }
+
+      ztoolkit.log("[AI-Butler] 无法从笔记获取图片");
+      return null;
+    } catch (error) {
+      ztoolkit.log("[AI-Butler] 获取笔记图片失败:", error);
       return null;
     }
   }

@@ -49,10 +49,12 @@ export function registerItemPaneSection(
       pluginID: pluginID,
       header: {
         l10nID: getLocaleID("itempane-ai-section-header" as any),
+        label: "AI 管家",
         icon: rootURI + "icons/icon24.png",
       },
       sidenav: {
         l10nID: getLocaleID("itempane-ai-section-sidenav" as any),
+        tooltiptext: "AI 管家",
         icon: rootURI + "icons/icon24.png",
       },
       onRender: ({ body, item, editable, tabType }: any) => {

@@ -328,15 +328,64 @@ export class NoteGenerator {
    * ```
    */
   private static convertMarkdownToNoteHTML(markdown: string): string {
-    // 直接使用 marked 转换 Markdown，保留原始公式
-    // 公式保持原样（包含 $$、$ 等分隔符）以便侧边栏渲染时使用 KaTeX
-    let html = marked.parse(markdown) as string;
+    // ===== 步骤 1: 保护公式，避免被 marked 误处理（将下划线转成 <em>）=====
+    const formulas: Array<{ content: string; isBlock: boolean }> = [];
+    let processedMarkdown = markdown;
+
+    // 保护块级公式 $$...$$（跨行）
+    processedMarkdown = processedMarkdown.replace(
+      /\$\$([\s\S]*?)\$\$/g,
+      (_match, formula) => {
+        const placeholder = `FORMULA_BLOCK_${formulas.length}_END`;
+        formulas.push({ content: formula.trim(), isBlock: true });
+        return placeholder;
+      },
+    );
+
+    // 保护内联公式 $...$（单行，避免匹配 $$）
+    processedMarkdown = processedMarkdown.replace(
+      // eslint-disable-next-line no-useless-escape
+      /(?<!\$)\$(?!\$)([^\$\n]+?)\$(?!\$)/g,
+      (_match, formula) => {
+        const placeholder = `FORMULA_INLINE_${formulas.length}_END`;
+        formulas.push({ content: formula.trim(), isBlock: false });
+        return placeholder;
+      },
+    );
+
+    // ===== 步骤 2: 预处理加粗语法 =====
+    processedMarkdown = processedMarkdown.replace(
+      // eslint-disable-next-line no-useless-escape
+      /\*\*([^\*\n]+?)\*\*/g,
+      "<strong>$1</strong>",
+    );
+
+    // ===== 步骤 3: 配置并运行 marked =====
+    marked.setOptions({
+      breaks: true, // 单换行符转换为 <br>，解决国产模型换行问题
+      gfm: true, // 启用 GitHub Flavored Markdown
+    });
+
+    let html = marked.parse(processedMarkdown) as string;
 
     // 移除所有内联样式,Zotero 笔记不支持 style 属性
     html = html.replace(/\s+style="[^"]*"/g, "");
 
-    // 公式保持原样，不做任何包装处理
-    // 这样侧边栏在加载时可以直接识别 $$...$$ 和 $...$ 格式的公式进行 KaTeX 渲染
+    // ===== 步骤 4: 恢复公式（保持原始格式，供侧边栏 KaTeX 渲染）=====
+    html = html.replace(
+      /FORMULA_(BLOCK|INLINE)_(\d+)_END/g,
+      (_match, type, index) => {
+        const formulaData = formulas[parseInt(index)];
+        if (!formulaData) return _match;
+        const { content, isBlock } = formulaData;
+        // 恢复为原始 $...$ 或 $$...$$ 格式，侧边栏会用 KaTeX 渲染
+        if (isBlock) {
+          return `$$${content}$$`;
+        } else {
+          return `$${content}$`;
+        }
+      },
+    );
 
     return html;
   }

@@ -13,6 +13,7 @@
 import { config } from "../../package.json";
 import { getString, getLocaleID } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
+import katex from "katex";
 
 // 侧边栏聊天状态类型
 interface ChatState {
@@ -939,7 +940,55 @@ async function loadNoteContent(
         </div>
       `;
     } else {
-      noteContent.innerHTML = sanitizedContent;
+      // 渲染 LaTeX 公式
+      // 使用 KaTeX 渲染 $$...$$ 块级公式和 $...$ 内联公式
+      let renderedContent = sanitizedContent;
+
+      // 渲染块级公式 $$...$$
+
+      renderedContent = renderedContent.replace(
+        /\$\$([\s\S]*?)\$\$/g,
+        (_match: string, formula: string) => {
+          try {
+            const rendered = katex.renderToString(formula.trim(), {
+              throwOnError: false,
+              displayMode: true,
+              output: "html",
+              trust: true,
+              strict: false,
+            });
+            return `<div class="katex-display">${rendered}</div>`;
+          } catch {
+            // 渲染失败，保留原始公式
+            return _match;
+          }
+        },
+      );
+
+      // 渲染内联公式 $...$
+      // 注意：需要避免匹配已渲染的 katex-display 中的内容
+      // 使用负向前瞻排除 $$ 开头的情况
+      renderedContent = renderedContent.replace(
+        // eslint-disable-next-line no-useless-escape
+        /(?<!\$)\$(?!\$)([^\$\n]+?)\$(?!\$)/g,
+        (_match: string, formula: string) => {
+          try {
+            const rendered = katex.renderToString(formula.trim(), {
+              throwOnError: false,
+              displayMode: false,
+              output: "html",
+              trust: true,
+              strict: false,
+            });
+            return `<span class="katex-inline">${rendered}</span>`;
+          } catch {
+            // 渲染失败，保留原始公式
+            return _match;
+          }
+        },
+      );
+
+      noteContent.innerHTML = renderedContent;
     }
   } catch (err: any) {
     ztoolkit.log("[AI-Butler] 加载笔记失败:", err);

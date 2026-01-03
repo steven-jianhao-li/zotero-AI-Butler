@@ -102,7 +102,14 @@ export class ThemeManager {
     }
 
     const cssUrl = `chrome://${config.addonRef}/content/katex.min.css`;
-    const css = await this.fetchCss(cssUrl);
+    let css = await this.fetchCss(cssUrl);
+
+    // 修复字体 URL：将相对路径转换为绝对 chrome:// URL
+    // 原始: url(fonts/KaTeX_AMS-Regular.woff2)
+    // 转换为: url(chrome://zotero-ai-butler/content/fonts/KaTeX_AMS-Regular.woff2)
+    const fontBaseUrl = `chrome://${config.addonRef}/content/fonts/`;
+    css = css.replace(/url\(fonts\//g, `url(${fontBaseUrl}`);
+
     this.cachedCss.set(cacheKey, css);
     return css;
   }

@@ -102,7 +102,14 @@ export class ThemeManager {
     }
 
     const cssUrl = `chrome://${config.addonRef}/content/katex.min.css`;
-    const css = await this.fetchCss(cssUrl);
+    let css = await this.fetchCss(cssUrl);
+
+    // 修复字体 URL：将相对路径转换为绝对 chrome:// URL
+    // 原始: url(fonts/KaTeX_AMS-Regular.woff2)
+    // 转换为: url(chrome://zotero-ai-butler/content/fonts/KaTeX_AMS-Regular.woff2)
+    const fontBaseUrl = `chrome://${config.addonRef}/content/fonts/`;
+    css = css.replace(/url\(fonts\//g, `url(${fontBaseUrl}`);
+
     this.cachedCss.set(cacheKey, css);
     return css;
   }
@@ -152,18 +159,43 @@ export class ThemeManager {
 
     // 添加数学公式样式 - 横向滚动，完整高度显示
     const mathStyles = `
-/* 公式容器样式 - 宽度限制，横向滚动 */
-.ai-butler-note-content .katex-display,
-.ai-butler-note-content .katex-block {
+/* 公式滚动容器 - 使用 table 布局强制宽度约束 */
+.ai-butler-note-content .katex-scroll-container {
+  display: table;
+  table-layout: fixed;
+  width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.ai-butler-note-content .katex-scroll-container > .katex-display {
   display: block;
-  max-width: 100%;
   overflow-x: auto;
   overflow-y: visible;
-  padding: 12px 0;
-  margin: 8px 0;
   /* 自定义横向滚动条样式 */
   scrollbar-width: thin;
   scrollbar-color: #888 #f0f0f0;
+}
+.ai-butler-note-content .katex-scroll-container > .katex-display::-webkit-scrollbar {
+  height: 8px;
+}
+.ai-butler-note-content .katex-scroll-container > .katex-display::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 4px;
+}
+.ai-butler-note-content .katex-scroll-container > .katex-display::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+.ai-butler-note-content .katex-scroll-container > .katex-display::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* 公式内容容器 */
+.ai-butler-note-content .katex-display,
+.ai-butler-note-content .katex-block {
+  padding: 8px 0;
+  margin: 8px 0;
+  text-align: center;
 }
 .ai-butler-note-content .katex-display::-webkit-scrollbar,
 .ai-butler-note-content .katex-block::-webkit-scrollbar {
@@ -189,10 +221,19 @@ export class ThemeManager {
   vertical-align: baseline;
 }
 
+/* 公式字体大小：使用 1em 跟随父容器字体大小缩放 */
 .ai-butler-note-content .katex {
-  font-size: 1.1em;
+  font-size: 1em !important;  /* 跟随父容器字体大小 */
   white-space: nowrap;
 }
+
+/* 标题内的公式使用固定大小，不继承标题的大字体 */
+.ai-butler-note-content h1 .katex { font-size: 0.5em !important; }
+.ai-butler-note-content h2 .katex { font-size: 0.6em !important; }
+.ai-butler-note-content h3 .katex { font-size: 0.7em !important; }
+.ai-butler-note-content h4 .katex { font-size: 0.8em !important; }
+.ai-butler-note-content h5 .katex { font-size: 0.9em !important; }
+.ai-butler-note-content h6 .katex { font-size: 1em !important; }
 
 /* 确保公式完整显示高度 */
 .ai-butler-note-content .katex .base {
@@ -201,6 +242,41 @@ export class ThemeManager {
 }
 .ai-butler-note-content .katex-html {
   white-space: nowrap;
+}
+
+/* 确保笔记内容容器不会被公式撑大 */
+.ai-butler-note-content-wrapper {
+  overflow-x: hidden !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+.ai-butler-note-content {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: hidden !important;
+  user-select: text !important;
+  cursor: text;
+}
+.ai-butler-note-content * {
+  user-select: text !important;
+}
+
+/* 约束 Zotero 侧边栏容器和父元素的宽度 */
+.item-pane-custom-section-container,
+.ai-butler-note-section,
+.ai-butler-note-header {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+/* 确保整个侧边栏区域的内容不会溢出 */
+[data-pane="item-pane"] .ai-butler-note-section,
+.item-details .ai-butler-note-section {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
 }
 
 /* 暗色模式下的文字颜色修正 */

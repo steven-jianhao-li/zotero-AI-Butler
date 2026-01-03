@@ -858,7 +858,89 @@ async function loadNoteContent(
     }
     styleEl.textContent = katexCss + "\n" + adaptedCss;
 
-    noteContent.innerHTML = aiNoteContent;
+    // Sanitize HTML for XHTML compatibility
+    // 1. Convert void elements to self-closing
+    const sanitizedContent = aiNoteContent
+      .replace(/<hr\s*(?:([^>/]*))?>/gi, "<hr $1/>")
+      .replace(/<br\s*(?:([^>/]*))?>/gi, "<br $1/>")
+      .replace(/<img\s+([^>]*)(?<!\/)>/gi, "<img $1/>")
+      .replace(/<input\s+([^>]*)(?<!\/)>/gi, "<input $1/>")
+      .replace(/<meta\s+([^>]*)(?<!\/)>/gi, "<meta $1/>")
+      .replace(/<link\s+([^>]*)(?<!\/)>/gi, "<link $1/>")
+      .replace(/\s+\/>/g, "/>")
+      // 2. Escape < symbols that are not part of tags (e.g. math operators: A < B, p < 0)
+      // Matches < followed by something that is NOT a letter, /, !, or ?
+      // This allows <div... but matches < 0 or <1
+      .replace(new RegExp("<(?=[^a-zA-Z/?!])", "g"), "&lt;");
+
+    // 3. Validate with DOMParser
+    const parser = new DOMParser();
+    const docTest = parser.parseFromString(
+      `<div>${sanitizedContent}</div>`,
+      "application/xhtml+xml",
+    );
+    const parserError = docTest.querySelector("parsererror");
+
+    if (parserError) {
+      // Extract error details
+      const errorText = parserError.textContent || "Unknown XML parsing error";
+      const serializer = new XMLSerializer();
+      const errorHtml = serializer.serializeToString(parserError);
+
+      // Try to parse line and column from error message
+      const locationMatch = errorHtml.match(/Line Number (\d+), Column (\d+)/i);
+      let errorLocation = "";
+      let errorContext = "";
+
+      if (locationMatch) {
+        const line = parseInt(locationMatch[1], 10);
+        const col = parseInt(locationMatch[2], 10);
+        errorLocation = `Line ${line}, Column ${col}`;
+
+        const lines = sanitizedContent.split(/\r?\n/);
+        const errorLineIndex = Math.max(0, line - 1);
+        if (lines[errorLineIndex]) {
+          errorContext = lines[errorLineIndex].substring(
+            Math.max(0, col - 50),
+            col + 50,
+          );
+        } else {
+          errorContext = sanitizedContent.substring(
+            Math.max(0, line * 50 + col - 50),
+            line * 50 + col + 50,
+          );
+        }
+      }
+
+      ztoolkit.log(
+        `[AI-Butler] XML Parsing Error: ${errorText}`,
+        errorLocation,
+      );
+
+      // Helper to escape HTML special chars for safe display
+      const escapeHtml = (text: string) =>
+        text
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+
+      noteContent.innerHTML = `
+        <div style="padding: 10px; color: #d32f2f; background: #ffebee; border: 1px solid #ffcdd2; border-radius: 4px; font-family: monospace; font-size: 11px;">
+          <div style="font-weight: bold; margin-bottom: 5px;">⚠ 笔记渲染失败 (XML解析错误)</div>
+          <div style="margin-bottom: 5px;">${escapeHtml(errorText.split("\n")[0])}</div>
+          ${errorLocation ? `<div style="margin-bottom: 5px;">📍 ${escapeHtml(errorLocation)}</div>` : ""}
+          <div style="white-space: pre-wrap; word-break: break-all; background: rgba(0,0,0,0.05); padding: 5px; border-radius: 2px;">${escapeHtml(errorContext)}</div>
+          <details style="margin-top: 8px;">
+            <summary style="cursor: pointer; opacity: 0.7;">原始错误详情</summary>
+            <pre style="margin: 5px 0; overflow: auto; max-height: 100px;">${escapeHtml(errorText)}</pre>
+          </details>
+        </div>
+      `;
+    } else {
+      noteContent.innerHTML = sanitizedContent;
+    }
   } catch (err: any) {
     ztoolkit.log("[AI-Butler] 加载笔记失败:", err);
     noteContent.innerHTML = `<div style="color: #d32f2f; padding: 10px;">加载笔记失败: ${err.message}</div>`;

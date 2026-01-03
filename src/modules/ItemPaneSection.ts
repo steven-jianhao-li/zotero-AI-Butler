@@ -32,6 +32,15 @@ let currentChatState: ChatState = {
   isChatting: false,
 };
 
+// 侧边栏锁定状态（从偏好设置加载）
+function isSidebarLocked(): boolean {
+  return (getPref("sidebarLocked" as any) as boolean) === true;
+}
+
+function setSidebarLocked(locked: boolean): void {
+  setPref("sidebarLocked" as any, locked as any);
+}
+
 /**
  * 注册条目面板侧边栏区块
  *
@@ -122,6 +131,59 @@ function renderItemPaneSection(
   renderNoteSection(body, doc, item);
   renderImageSummarySection(body, doc, item);
   renderChatArea(body, doc, item);
+
+  // 如果侧边栏锁定，调用 Zotero 内部 API 实现置顶效果
+  if (isSidebarLocked()) {
+    // 使用 setTimeout 确保 DOM 已更新
+    setTimeout(() => {
+      try {
+        // 根据 Zotero 内部逻辑，需要找到 container 并调用 scrollToPane
+        // container 是 item-pane-content 或类似的元素
+        
+        // 方法1：通过 body 向上查找 container 元素（带有 scrollToPane 方法）
+        let container: any = body.parentElement;
+        while (container) {
+          if (typeof container.scrollToPane === "function") {
+            container.scrollToPane("ai-butler-chat-section", "smooth");
+            ztoolkit.log("[AI-Butler] 已通过 container.scrollToPane 置顶");
+            return;
+          }
+          container = container.parentElement;
+        }
+        
+        // 方法2：查找 item-pane 相关元素
+        const itemPane = doc.querySelector("item-pane, #zotero-item-pane-content, .item-pane-content") as any;
+        if (itemPane && typeof itemPane.scrollToPane === "function") {
+          itemPane.scrollToPane("ai-butler-chat-section", "smooth");
+          ztoolkit.log("[AI-Butler] 已通过 itemPane.scrollToPane 置顶");
+          return;
+        }
+        
+        // 方法3：通过 Zotero API 获取 itemPane
+        const zoteroPane = (Zotero as any).getActiveZoteroPane?.();
+        if (zoteroPane?.itemPane?.container?.scrollToPane) {
+          zoteroPane.itemPane.container.scrollToPane("ai-butler-chat-section", "smooth");
+          ztoolkit.log("[AI-Butler] 已通过 Zotero.getActiveZoteroPane().itemPane.container 置顶");
+          return;
+        }
+        
+        // 方法4：直接查找 custom element
+        const itemPaneContent = doc.querySelector("item-pane-content, vbox.item-pane-content") as any;
+        if (itemPaneContent && typeof itemPaneContent.scrollToPane === "function") {
+          itemPaneContent.scrollToPane("ai-butler-chat-section", "smooth");
+          ztoolkit.log("[AI-Butler] 已通过 item-pane-content 置顶");
+          return;
+        }
+        
+        // 降级方案
+        ztoolkit.log("[AI-Butler] 未找到 scrollToPane 方法，使用降级方案");
+        body.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (err) {
+        ztoolkit.log("[AI-Butler] 自动滚动失败:", err);
+        body.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 150);
+  }
 }
 
 /**
@@ -192,8 +254,52 @@ function renderActionButtons(
   const quickChatBtn = createButton(doc, getString("itempane-ai-temp-chat"), false);
   quickChatBtn.id = "ai-butler-quick-chat-btn";
 
+  // 锁定按钮
+  const lockBtn = doc.createElement("button");
+  const isLocked = isSidebarLocked();
+  lockBtn.textContent = isLocked ? "🔒" : "🔓";
+  lockBtn.title = isLocked ? "已锁定：切换论文时自动滚动到此处，点击解锁" : "未锁定：点击锁定侧边栏位置";
+  lockBtn.style.cssText = `
+    padding: 8px 10px;
+    border: 1px solid ${isLocked ? "#59c0bc" : "#ccc"};
+    border-radius: 4px;
+    background: ${isLocked ? "rgba(89, 192, 188, 0.15)" : "transparent"};
+    color: ${isLocked ? "#59c0bc" : "#666"};
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `;
+  lockBtn.addEventListener("mouseenter", () => {
+    lockBtn.style.background = isSidebarLocked() ? "rgba(89, 192, 188, 0.25)" : "rgba(0, 0, 0, 0.05)";
+  });
+  lockBtn.addEventListener("mouseleave", () => {
+    lockBtn.style.background = isSidebarLocked() ? "rgba(89, 192, 188, 0.15)" : "transparent";
+  });
+  lockBtn.addEventListener("click", () => {
+    const newLocked = !isSidebarLocked();
+    setSidebarLocked(newLocked);
+    lockBtn.textContent = newLocked ? "🔒" : "🔓";
+    lockBtn.title = newLocked ? "已锁定：切换论文时自动滚动到此处，点击解锁" : "未锁定：点击锁定侧边栏位置";
+    lockBtn.style.borderColor = newLocked ? "#59c0bc" : "#ccc";
+    lockBtn.style.color = newLocked ? "#59c0bc" : "#666";
+    lockBtn.style.background = newLocked ? "rgba(89, 192, 188, 0.15)" : "transparent";
+    
+    // 显示提示
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 2000,
+    }).createLine({ 
+      text: newLocked ? "侧边栏已锁定" : "侧边栏已解锁", 
+      type: "success" 
+    }).show();
+  });
+
   btnContainer.appendChild(fullChatBtn);
   btnContainer.appendChild(quickChatBtn);
+  btnContainer.appendChild(lockBtn);
   body.appendChild(btnContainer);
 }
 

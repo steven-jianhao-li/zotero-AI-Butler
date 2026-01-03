@@ -179,7 +179,11 @@ function renderActionButtons(
   `;
 
   // 完整追问按钮
-  const fullChatBtn = createButton(doc, getString("itempane-ai-open-chat"), true);
+  const fullChatBtn = createButton(
+    doc,
+    getString("itempane-ai-open-chat"),
+    true,
+  );
   fullChatBtn.addEventListener("click", async () => {
     try {
       await handleOpenAIChat(item.id);
@@ -189,7 +193,11 @@ function renderActionButtons(
   });
 
   // 快速提问按钮
-  const quickChatBtn = createButton(doc, getString("itempane-ai-temp-chat"), false);
+  const quickChatBtn = createButton(
+    doc,
+    getString("itempane-ai-temp-chat"),
+    false,
+  );
   quickChatBtn.id = "ai-butler-quick-chat-btn";
 
   btnContainer.appendChild(fullChatBtn);
@@ -272,7 +280,8 @@ function renderNoteSection(
   // 高度控制
   const DEFAULT_NOTE_HEIGHT = 200;
   let savedNoteHeight = parseInt(
-    (getPref("sidebarNoteHeight" as any) as string) || String(DEFAULT_NOTE_HEIGHT),
+    (getPref("sidebarNoteHeight" as any) as string) ||
+      String(DEFAULT_NOTE_HEIGHT),
     10,
   );
   if (isNaN(savedNoteHeight) || savedNoteHeight < 50) {
@@ -362,7 +371,9 @@ function renderNoteSection(
     { id: "github", name: "GitHub" },
     { id: "redstriking", name: "红印" },
   ];
-  const currentTheme = ((getPref("markdownTheme" as any) as string) || "github").toString();
+  const currentTheme = (
+    (getPref("markdownTheme" as any) as string) || "github"
+  ).toString();
   themes.forEach((t) => {
     const opt = doc.createElement("option");
     opt.value = t.id;
@@ -380,7 +391,9 @@ function renderNoteSection(
     const themeCss = await themeManager.loadThemeCss();
     const katexCss = await themeManager.loadKatexCss();
     const adaptedCss = themeManager.adaptCssForSidebar(themeCss);
-    const styleEl = doc.getElementById("ai-butler-note-theme") as HTMLStyleElement;
+    const styleEl = doc.getElementById(
+      "ai-butler-note-theme",
+    ) as HTMLStyleElement;
     if (styleEl) {
       styleEl.textContent = katexCss + "\n" + adaptedCss;
     }
@@ -435,7 +448,11 @@ function renderNoteSection(
   noteContentWrapper.appendChild(noteContent);
 
   // 拖拽调整高度的手柄
-  const resizeHandle = createResizeHandle(doc, noteContentWrapper, "sidebarNoteHeight");
+  const resizeHandle = createResizeHandle(
+    doc,
+    noteContentWrapper,
+    "sidebarNoteHeight",
+  );
 
   // 折叠/展开功能
   let isCollapsed = false;
@@ -448,7 +465,8 @@ function renderNoteSection(
       toggleIcon.style.transform = "rotate(-90deg)";
     } else {
       const restoreHeight = parseInt(
-        (getPref("sidebarNoteHeight" as any) as string) || String(DEFAULT_NOTE_HEIGHT),
+        (getPref("sidebarNoteHeight" as any) as string) ||
+          String(DEFAULT_NOTE_HEIGHT),
         10,
       );
       noteContentWrapper.style.height = `${restoreHeight}px`;
@@ -517,7 +535,9 @@ function renderImageSummarySection(
     align-items: center;
     gap: 6px;
   `;
-  imageBtnContainer.addEventListener("click", (e: Event) => e.stopPropagation());
+  imageBtnContainer.addEventListener("click", (e: Event) =>
+    e.stopPropagation(),
+  );
 
   const imageToggleIcon = doc.createElement("span");
   imageToggleIcon.textContent = "▼";
@@ -640,7 +660,9 @@ function renderChatArea(
   body.appendChild(chatArea);
 
   // 快速提问按钮点击事件
-  const quickChatBtn = body.querySelector("#ai-butler-quick-chat-btn") as HTMLButtonElement;
+  const quickChatBtn = body.querySelector(
+    "#ai-butler-quick-chat-btn",
+  ) as HTMLButtonElement;
   if (quickChatBtn) {
     quickChatBtn.addEventListener("click", () => {
       if (chatArea.style.display === "none") {
@@ -823,7 +845,9 @@ async function loadNoteContent(
     const adaptedCss = themeManager.adaptCssForSidebar(themeCss);
 
     // 注入样式
-    let styleEl = doc.getElementById("ai-butler-note-theme") as HTMLStyleElement;
+    let styleEl = doc.getElementById(
+      "ai-butler-note-theme",
+    ) as HTMLStyleElement;
     if (!styleEl) {
       styleEl = doc.createElement("style");
       styleEl.id = "ai-butler-note-theme";
@@ -861,7 +885,8 @@ async function loadImageSummary(
 
     // 查找一图总结笔记
     const { ImageNoteGenerator } = await import("./imageNoteGenerator");
-    const imageNote = await ImageNoteGenerator.findExistingImageNote(targetItem);
+    const imageNote =
+      await ImageNoteGenerator.findExistingImageNote(targetItem);
 
     if (!imageNote) {
       // 显示生成按钮
@@ -1009,7 +1034,10 @@ async function loadImageSummary(
           const ext = mimeType.split("/")[1] || "png";
 
           const desktopDir = Services.dirsvc.get("Desk", Ci.nsIFile);
-          const filename = `一图总结_${targetItem.getField("title").substring(0, 20).replace(/[\\/:*?"<>|]/g, "_")}.${ext}`;
+          const filename = `一图总结_${targetItem
+            .getField("title")
+            .substring(0, 20)
+            .replace(/[\\/:*?"<>|]/g, "_")}.${ext}`;
           const filePath = PathUtils.join(desktopDir.path, filename);
 
           const binary = atob(base64Data);
@@ -1023,19 +1051,28 @@ async function loadImageSummary(
           new ztoolkit.ProgressWindow("AI Butler", {
             closeOnClick: true,
             closeTime: 3000,
-          }).createLine({ text: `图片已保存到桌面: ${filename}`, type: "success" }).show();
+          })
+            .createLine({
+              text: `图片已保存到桌面: ${filename}`,
+              type: "success",
+            })
+            .show();
         } else {
           new ztoolkit.ProgressWindow("AI Butler", {
             closeOnClick: true,
             closeTime: 3000,
-          }).createLine({ text: "仅支持 data URI 格式的图片", type: "error" }).show();
+          })
+            .createLine({ text: "仅支持 data URI 格式的图片", type: "error" })
+            .show();
         }
       } catch (err: any) {
         ztoolkit.log("[AI-Butler] 下载图片失败:", err);
         new ztoolkit.ProgressWindow("AI Butler", {
           closeOnClick: true,
           closeTime: 3000,
-        }).createLine({ text: `下载失败: ${err.message}`, type: "error" }).show();
+        })
+          .createLine({ text: `下载失败: ${err.message}`, type: "error" })
+          .show();
       }
     });
     imageBtnContainer.appendChild(downloadBtn);

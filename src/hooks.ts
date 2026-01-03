@@ -566,9 +566,8 @@ function registerReaderToolbarButton() {
  */
 async function registerItemPaneSection() {
   try {
-    const { registerItemPaneSection: registerSection } = await import(
-      "./modules/ItemPaneSection"
-    );
+    const { registerItemPaneSection: registerSection } =
+      await import("./modules/ItemPaneSection");
     registerSection(handleOpenAIChat);
   } catch (error) {
     ztoolkit.log("[AI-Butler] 注册条目面板区块失败:", error);

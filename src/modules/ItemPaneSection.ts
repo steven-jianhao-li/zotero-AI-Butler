@@ -91,6 +91,10 @@ function renderItemPaneSection(
     padding: 10px;
     font-family: system-ui, -apple-system, sans-serif;
     font-size: 13px;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
   `;
 
   // 检查是否有有效的文献条目
@@ -221,6 +225,9 @@ function renderNoteSection(
     border: 1px solid #e0e0e0;
     border-radius: 6px;
     overflow: hidden;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
   `;
 
   // 笔记标题栏（可折叠）- 使用继承颜色以支持暗色模式
@@ -235,6 +242,10 @@ function renderNoteSection(
     cursor: pointer;
     user-select: none;
     border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
   `;
 
   const noteTitle = doc.createElement("span");
@@ -297,7 +308,11 @@ function renderNoteSection(
     height: ${savedNoteHeight}px;
     min-height: 50px;
     overflow-y: auto;
+    overflow-x: hidden;
     transition: height 0.2s ease;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
   `;
 
   const noteContent = doc.createElement("div");
@@ -310,7 +325,12 @@ function renderNoteSection(
     line-height: 1.6;
     overflow-wrap: break-word;
     word-wrap: break-word;
-    overflow-x: auto;
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    user-select: text;
+    cursor: text;
   `;
 
   const createFontBtn = (text: string, delta: number) => {
@@ -957,7 +977,8 @@ async function loadNoteContent(
               trust: true,
               strict: false,
             });
-            return `<div class="katex-display">${rendered}</div>`;
+            // 用外层容器包裹，确保横向滚动不会撑大父容器
+            return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;
           } catch {
             // 渲染失败，保留原始公式
             return _match;

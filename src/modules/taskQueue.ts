@@ -835,6 +835,10 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, true);
       // 发送结束事件
       this.notifyStream(taskId, { type: "finish" });
+      // 自动触发一图总结（如果设置已启用且是普通总结任务）
+      if (task.taskType !== "imageSummary") {
+        this.maybeAutoTriggerImageSummary(task.itemId);
+      }
       return false; // 非快速失败，计入批次
     } catch (error: any) {
       // 任务失败
@@ -962,6 +966,44 @@ export class TaskQueueManager {
         ztoolkit.log(`流式回调执行失败: ${e}`);
       }
     });
+  }
+
+  /**
+   * 检查是否应该自动触发一图总结
+   * 只有当设置启用且任务是普通总结任务时才触发
+   */
+  private async maybeAutoTriggerImageSummary(itemId: number): Promise<void> {
+    try {
+      const { getPref } = await import("../utils/prefs");
+      const autoTrigger =
+        (getPref("autoImageSummaryOnComplete" as any) as boolean) || false;
+
+      if (!autoTrigger) {
+        return;
+      }
+
+      // 获取 Zotero Item
+      const item = await Zotero.Items.getAsync(itemId);
+      if (!item) {
+        return;
+      }
+
+      // 检查是否已有一图总结任务正在队列中
+      const existingTask = this.tasks.get(`img-task-${itemId}`);
+      if (existingTask) {
+        ztoolkit.log(
+          `[AI-Butler] 一图总结任务已存在，跳过自动触发: ${itemId}`,
+        );
+        return;
+      }
+
+      ztoolkit.log(
+        `[AI-Butler] 自动触发一图总结: ${item.getField("title")}`,
+      );
+      await this.addImageSummaryTask(item);
+    } catch (error) {
+      ztoolkit.log(`[AI-Butler] 自动触发一图总结失败:`, error);
+    }
   }
 
   // ==================== 持久化 ====================

@@ -991,15 +991,11 @@ export class TaskQueueManager {
       // 检查是否已有一图总结任务正在队列中
       const existingTask = this.tasks.get(`img-task-${itemId}`);
       if (existingTask) {
-        ztoolkit.log(
-          `[AI-Butler] 一图总结任务已存在，跳过自动触发: ${itemId}`,
-        );
+        ztoolkit.log(`[AI-Butler] 一图总结任务已存在，跳过自动触发: ${itemId}`);
         return;
       }
 
-      ztoolkit.log(
-        `[AI-Butler] 自动触发一图总结: ${item.getField("title")}`,
-      );
+      ztoolkit.log(`[AI-Butler] 自动触发一图总结: ${item.getField("title")}`);
       await this.addImageSummaryTask(item);
     } catch (error) {
       ztoolkit.log(`[AI-Butler] 自动触发一图总结失败:`, error);

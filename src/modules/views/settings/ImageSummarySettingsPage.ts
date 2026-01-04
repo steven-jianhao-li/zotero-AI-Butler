@@ -166,11 +166,15 @@ export class ImageSummarySettingsPage {
             if (autoSummaryLabel) {
               autoSummaryLabel.textContent = "已启用";
             }
+            // 用户确认后自动保存设置
+            setPref("autoImageSummaryOnComplete" as any, true);
           }
         } else {
           if (autoSummaryLabel) {
             autoSummaryLabel.textContent = "已禁用";
           }
+          // 用户关闭时自动保存设置
+          setPref("autoImageSummaryOnComplete" as any, false);
         }
       });
     }

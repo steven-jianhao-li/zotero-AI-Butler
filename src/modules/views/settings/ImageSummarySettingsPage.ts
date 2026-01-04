@@ -140,6 +140,53 @@ export class ImageSummarySettingsPage {
       ),
     );
 
+    // 自动添加一图总结（带二次确认）
+    const autoSummaryContainer = createCheckbox(
+      "autoImageSummaryOnComplete",
+      (getPref("autoImageSummaryOnComplete" as any) as boolean) || false,
+    );
+    const autoSummaryCheckbox = autoSummaryContainer.querySelector(
+      'input[type="checkbox"]',
+    ) as HTMLInputElement;
+    const autoSummaryLabel = autoSummaryContainer.querySelector(
+      "span",
+    ) as HTMLSpanElement;
+
+    if (autoSummaryCheckbox) {
+      autoSummaryCheckbox.addEventListener("change", () => {
+        if (autoSummaryCheckbox.checked) {
+          // 弹出二次确认对话框
+          const confirmed = this.showCostWarningDialog();
+          if (!confirmed) {
+            autoSummaryCheckbox.checked = false;
+            if (autoSummaryLabel) {
+              autoSummaryLabel.textContent = "已禁用";
+            }
+          } else {
+            if (autoSummaryLabel) {
+              autoSummaryLabel.textContent = "已启用";
+            }
+            // 用户确认后自动保存设置
+            setPref("autoImageSummaryOnComplete" as any, true);
+          }
+        } else {
+          if (autoSummaryLabel) {
+            autoSummaryLabel.textContent = "已禁用";
+          }
+          // 用户关闭时自动保存设置
+          setPref("autoImageSummaryOnComplete" as any, false);
+        }
+      });
+    }
+
+    form.appendChild(
+      createFormGroup(
+        "自动添加一图总结",
+        autoSummaryContainer,
+        "⚠️ 开启后，论文AI总结完成时将自动生成一图总结（可能消耗大量API费用，请谨慎开启）",
+      ),
+    );
+
     // === 提示词配置区域 ===
     form.appendChild(createSectionTitle("📝 提示词配置"));
 
@@ -253,6 +300,14 @@ export class ImageSummarySettingsPage {
       ) as HTMLInputElement;
       if (useExistingCb) {
         setPref("imageSummaryUseExistingNote" as any, useExistingCb.checked);
+      }
+
+      // 自动一图总结复选框
+      const autoSummaryCb = this.container.querySelector(
+        "#setting-autoImageSummaryOnComplete",
+      ) as HTMLInputElement;
+      if (autoSummaryCb) {
+        setPref("autoImageSummaryOnComplete" as any, autoSummaryCb.checked);
       }
 
       new ztoolkit.ProgressWindow("AI Butler", {
@@ -386,6 +441,21 @@ export class ImageSummarySettingsPage {
     }
 
     progressWin.startCloseTimer(5000);
+  }
+
+  /**
+   * 显示费用警告确认对话框
+   * @returns 用户是否确认开启
+   */
+  private showCostWarningDialog(): boolean {
+    const message =
+      "⚠️ 费用警告\n\n" +
+      "开启『自动添加一图总结』功能后，每当论文AI总结完成时，" +
+      "系统将自动调用 Gemini 生图 API 生成学术概念海报。\n\n" +
+      "这将消耗大量 API 调用次数和费用！\n\n" +
+      "确定要开启此功能吗？";
+
+    return ztoolkit.getGlobal("confirm")(message);
   }
 
   /**

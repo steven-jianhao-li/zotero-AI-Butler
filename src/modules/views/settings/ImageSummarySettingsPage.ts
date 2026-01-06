@@ -529,7 +529,8 @@ export class ImageSummarySettingsPage {
             resultBox.style.backgroundColor = "#fff8e1";
             resultBox.style.border = "1px solid #ffe082";
             resultPre.style.color = "#f57f17";
-            resultPre.textContent = "⚠️ API 连接成功，但未返回图片\n\n可能原因：模型不支持生图功能";
+            resultPre.textContent =
+              "⚠️ API 连接成功，但未返回图片\n\n可能原因：模型不支持生图功能";
           }
         }
       } else {
@@ -537,7 +538,7 @@ export class ImageSummarySettingsPage {
       }
     } catch (error: any) {
       ztoolkit.log("[AI-Butler] 一图总结 API 测试失败:", error);
-      
+
       // 构建详细错误信息
       const lines: string[] = [];
       lines.push(`❌ 测试失败`);
@@ -545,7 +546,7 @@ export class ImageSummarySettingsPage {
       lines.push(`错误信息: ${error?.message || "连接失败"}`);
       lines.push(`请求地址: ${apiUrl}`);
       lines.push(`模型名称: ${model}`);
-      
+
       // 尝试解析响应体中的详细错误
       try {
         const responseText =
@@ -567,24 +568,27 @@ export class ImageSummarySettingsPage {
       } catch {
         // 如果无法解析响应，尝试获取原始响应
         try {
-          const rawResponse = error?.xmlhttp?.response || error?.xmlhttp?.responseText;
+          const rawResponse =
+            error?.xmlhttp?.response || error?.xmlhttp?.responseText;
           if (rawResponse) {
             lines.push("");
-            lines.push(`原始响应: ${typeof rawResponse === 'string' ? rawResponse.substring(0, 500) : JSON.stringify(rawResponse).substring(0, 500)}`);
+            lines.push(
+              `原始响应: ${typeof rawResponse === "string" ? rawResponse.substring(0, 500) : JSON.stringify(rawResponse).substring(0, 500)}`,
+            );
           }
         } catch {
           /* ignore */
         }
       }
-      
+
       // HTTP 状态码
       if (error?.xmlhttp?.status) {
         lines.push("");
         lines.push(`HTTP 状态码: ${error.xmlhttp.status}`);
       }
-      
+
       const fullMsg = lines.join("\n");
-      
+
       if (resultBox && resultPre) {
         resultBox.style.display = "block";
         resultBox.style.backgroundColor = "#ffebee";

@@ -267,6 +267,113 @@ export class ImageSummarySettingsPage {
     buttonGroup.appendChild(resetButton);
 
     form.appendChild(buttonGroup);
+
+    // 测试结果展示区域（防止进度窗文本过长被截断）
+    const resultBox = this.createElement("div", {
+      id: "image-summary-test-result",
+      styles: {
+        display: "none",
+        marginTop: "12px",
+        padding: "12px 14px",
+        borderRadius: "6px",
+        backgroundColor: "#fff8e1",
+        border: "1px solid #ffe082",
+      },
+    });
+    // 标题 + 复制按钮
+    const resultTitle = this.createElement("div", {
+      styles: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "8px",
+        marginBottom: "6px",
+      },
+    });
+    const resultTitleText = this.createElement("span", {
+      textContent: "API 连接测试结果",
+      styles: { fontSize: "13px", fontWeight: "600" },
+    });
+    // 按钮容器
+    const buttonContainer = this.createElement("div", {
+      styles: { display: "flex", gap: "8px" },
+    });
+    const copyBtn = this.createElement("button", {
+      textContent: "复制详情",
+      styles: {
+        border: "1px solid #ddd",
+        background: "#fff",
+        color: "#333",
+        borderRadius: "4px",
+        padding: "4px 8px",
+        cursor: "pointer",
+        fontSize: "12px",
+      },
+    }) as HTMLButtonElement;
+    copyBtn.type = "button";
+    copyBtn.addEventListener("click", async () => {
+      const resultPre = this.container.querySelector(
+        "#image-summary-test-result-text",
+      ) as HTMLElement | null;
+      const text = (resultPre?.textContent || "").toString();
+      const win = Zotero.getMainWindow() as any;
+      const doc = win?.document as Document | undefined;
+      const nav = (win as any)?.navigator as any;
+      try {
+        if (nav?.clipboard?.writeText) {
+          await nav.clipboard.writeText(text);
+        } else {
+          throw new Error("clipboard api unavailable");
+        }
+        new ztoolkit.ProgressWindow("一图总结", { closeTime: 1500 })
+          .createLine({ text: "已复制错误详情", type: "success" })
+          .show();
+      } catch {
+        try {
+          if (!doc) throw new Error("no document");
+          const tmp = doc.createElement("textarea");
+          tmp.value = text;
+          (tmp.style as any).position = "fixed";
+          (tmp.style as any).left = "-9999px";
+          (doc.documentElement || doc.body || doc).appendChild(tmp);
+          (tmp as any).select?.();
+          (doc as any).execCommand?.("copy");
+          (tmp as any).remove?.();
+          new ztoolkit.ProgressWindow("一图总结", { closeTime: 1500 })
+            .createLine({ text: "已复制错误详情", type: "success" })
+            .show();
+        } catch {
+          new ztoolkit.ProgressWindow("一图总结", { closeTime: 2500 })
+            .createLine({
+              text: "复制失败，可手动选择文本复制",
+              type: "default",
+            })
+            .show();
+        }
+      }
+    });
+    buttonContainer.appendChild(copyBtn);
+    resultTitle.appendChild(resultTitleText);
+    resultTitle.appendChild(buttonContainer);
+    const resultPre = this.createElement("pre", {
+      id: "image-summary-test-result-text",
+      styles: {
+        margin: "0",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-all",
+        maxHeight: "240px",
+        overflow: "auto",
+        fontFamily:
+          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+        fontSize: "12px",
+        lineHeight: "1.5",
+        color: "#5d4037",
+      },
+    });
+    resultBox.appendChild(resultTitle);
+    resultBox.appendChild(resultPre);
+    form.appendChild(resultBox);
+
     this.container.appendChild(form);
   }
 
@@ -350,26 +457,33 @@ export class ImageSummarySettingsPage {
         ) as HTMLInputElement
       )?.value?.trim() || "gemini-3-pro-image-preview";
 
+    // 页面内结果区域
+    const resultBox = this.container.querySelector(
+      "#image-summary-test-result",
+    ) as HTMLElement | null;
+    const resultPre = this.container.querySelector(
+      "#image-summary-test-result-text",
+    ) as HTMLElement | null;
+
     if (!apiKey) {
-      new ztoolkit.ProgressWindow("AI Butler", {
-        closeOnClick: true,
-        closeTime: 3000,
-      })
-        .createLine({ text: "请先填写 API Key", type: "error" })
-        .show();
+      if (resultBox && resultPre) {
+        resultBox.style.display = "block";
+        resultBox.style.backgroundColor = "#ffebee";
+        resultBox.style.border = "1px solid #ffcdd2";
+        resultPre.style.color = "#b71c1c";
+        resultPre.textContent = "❌ 请先填写 API Key";
+      }
       return;
     }
 
-    const progressWin = new ztoolkit.ProgressWindow("AI Butler", {
-      closeOnClick: false,
-      closeTime: -1,
-    })
-      .createLine({
-        text: "正在测试 API 连接...",
-        type: "default",
-        progress: 50,
-      })
-      .show();
+    // 显示测试中状态
+    if (resultBox && resultPre) {
+      resultBox.style.display = "block";
+      resultBox.style.backgroundColor = "#fff8e1";
+      resultBox.style.border = "1px solid #ffe082";
+      resultPre.style.color = "#5d4037";
+      resultPre.textContent = "正在测试连接…\n请稍候。";
+    }
 
     try {
       // 简单的测试请求
@@ -402,24 +516,38 @@ export class ImageSummarySettingsPage {
           (p: any) => p.inlineData,
         );
         if (hasImage) {
-          progressWin.changeLine({
-            text: "✅ API 连接成功，生图功能正常！",
-            type: "success",
-            progress: 100,
-          });
+          if (resultBox && resultPre) {
+            resultBox.style.display = "block";
+            resultBox.style.backgroundColor = "#e8f5e9";
+            resultBox.style.border = "1px solid #a5d6a7";
+            resultPre.style.color = "#1b5e20";
+            resultPre.textContent = "✅ API 连接成功，生图功能正常！";
+          }
         } else {
-          progressWin.changeLine({
-            text: "⚠️ API 连接成功，但未返回图片（可能模型不支持）",
-            type: "default",
-            progress: 100,
-          });
+          if (resultBox && resultPre) {
+            resultBox.style.display = "block";
+            resultBox.style.backgroundColor = "#fff8e1";
+            resultBox.style.border = "1px solid #ffe082";
+            resultPre.style.color = "#f57f17";
+            resultPre.textContent =
+              "⚠️ API 连接成功，但未返回图片\n\n可能原因：模型不支持生图功能";
+          }
         }
       } else {
         throw new Error(`HTTP ${response.status}`);
       }
     } catch (error: any) {
       ztoolkit.log("[AI-Butler] 一图总结 API 测试失败:", error);
-      let errorMsg = error?.message || "连接失败";
+
+      // 构建详细错误信息
+      const lines: string[] = [];
+      lines.push(`❌ 测试失败`);
+      lines.push("");
+      lines.push(`错误信息: ${error?.message || "连接失败"}`);
+      lines.push(`请求地址: ${apiUrl}`);
+      lines.push(`模型名称: ${model}`);
+
+      // 尝试解析响应体中的详细错误
       try {
         const responseText =
           error?.xmlhttp?.response || error?.xmlhttp?.responseText;
@@ -428,19 +556,47 @@ export class ImageSummarySettingsPage {
             typeof responseText === "string"
               ? JSON.parse(responseText)
               : responseText;
-          errorMsg = parsed?.error?.message || errorMsg;
+          if (parsed?.error) {
+            lines.push("");
+            lines.push(`API 错误码: ${parsed.error.code || "N/A"}`);
+            lines.push(`API 错误信息: ${parsed.error.message || "N/A"}`);
+            if (parsed.error.status) {
+              lines.push(`API 状态: ${parsed.error.status}`);
+            }
+          }
         }
       } catch {
-        /* ignore */
+        // 如果无法解析响应，尝试获取原始响应
+        try {
+          const rawResponse =
+            error?.xmlhttp?.response || error?.xmlhttp?.responseText;
+          if (rawResponse) {
+            lines.push("");
+            lines.push(
+              `原始响应: ${typeof rawResponse === "string" ? rawResponse.substring(0, 500) : JSON.stringify(rawResponse).substring(0, 500)}`,
+            );
+          }
+        } catch {
+          /* ignore */
+        }
       }
-      progressWin.changeLine({
-        text: `❌ 测试失败: ${errorMsg}`,
-        type: "error",
-        progress: 100,
-      });
-    }
 
-    progressWin.startCloseTimer(5000);
+      // HTTP 状态码
+      if (error?.xmlhttp?.status) {
+        lines.push("");
+        lines.push(`HTTP 状态码: ${error.xmlhttp.status}`);
+      }
+
+      const fullMsg = lines.join("\n");
+
+      if (resultBox && resultPre) {
+        resultBox.style.display = "block";
+        resultBox.style.backgroundColor = "#ffebee";
+        resultBox.style.border = "1px solid #ffcdd2";
+        resultPre.style.color = "#b71c1c";
+        resultPre.textContent = fullMsg;
+      }
+    }
   }
 
   /**

@@ -1,7 +1,7 @@
 {
   "name": "zotero-ai-butler",
   "type": "module",
-  "version": "3.0.2-beta.1",
+  "version": "3.0.2-beta.2",
   "description": "Your personal AI butler, automatically and meticulously reads papers and summarizes notes.",
   "config": {
     "addonName": "zotero-ai-butler",

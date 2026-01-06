@@ -879,9 +879,74 @@ async function loadNoteContent(
     }
     styleEl.textContent = katexCss + "\n" + adaptedCss;
 
+    // Pre-render LaTeX formulas BEFORE XML validation
+    // This prevents LaTeX syntax (like \begin{cases}) from causing XML parsing errors
+    const renderLatexFormulas = (content: string): string => {
+      let result = content;
+
+      // Render block formulas $$...$$
+      result = result.replace(
+        /\$\$([\s\S]*?)\$\$/g,
+        (_match: string, formula: string) => {
+          try {
+            const rendered = katex.renderToString(formula.trim(), {
+              throwOnError: false,
+              displayMode: true,
+              output: "html",
+              trust: true,
+              strict: false,
+            });
+            return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;
+          } catch {
+            // Render failed, escape the formula for safe display
+            const escaped = formula
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;");
+            return `<code>$$${escaped}$$</code>`;
+          }
+        },
+      );
+
+      // Render inline formulas $...$
+      // Use RegExp constructor to avoid ESLint escape warnings
+      // In RegExp string: \\$ becomes \$ in pattern (matches literal $)
+      const inlineRegex = new RegExp(
+        "(?<!\\$)\\$(?!\\$)([^\\$\\n]+?)\\$(?!\\$)",
+        "g",
+      );
+      result = result.replace(
+        inlineRegex,
+        (_match: string, formula: string) => {
+          try {
+            const rendered = katex.renderToString(formula.trim(), {
+              throwOnError: false,
+              displayMode: false,
+              output: "html",
+              trust: true,
+              strict: false,
+            });
+            return `<span class="katex-inline">${rendered}</span>`;
+          } catch {
+            // Render failed, escape the formula for safe display
+            const escaped = formula
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;");
+            return `<code>$${escaped}$</code>`;
+          }
+        },
+      );
+
+      return result;
+    };
+
+    // Render LaTeX first (before XML validation)
+    const latexRenderedContent = renderLatexFormulas(aiNoteContent);
+
     // Sanitize HTML for XHTML compatibility
     // 1. Convert void elements to self-closing
-    const sanitizedContent = aiNoteContent
+    const sanitizedContent = latexRenderedContent
       .replace(/<hr\s*(?:([^>/]*))?>/gi, "<hr $1/>")
       .replace(/<br\s*(?:([^>/]*))?>/gi, "<br $1/>")
       .replace(/<img\s+([^>]*)(?<!\/)>/gi, "<img $1/>")
@@ -947,69 +1012,112 @@ async function loadNoteContent(
           .replace(/"/g, "&quot;")
           .replace(/'/g, "&#039;");
 
-      noteContent.innerHTML = `
-        <div style="padding: 10px; color: #d32f2f; background: #ffebee; border: 1px solid #ffcdd2; border-radius: 4px; font-family: monospace; font-size: 11px;">
-          <div style="font-weight: bold; margin-bottom: 5px;">⚠ 笔记渲染失败 (XML解析错误)</div>
-          <div style="margin-bottom: 5px;">${escapeHtml(errorText.split("\n")[0])}</div>
-          ${errorLocation ? `<div style="margin-bottom: 5px;">📍 ${escapeHtml(errorLocation)}</div>` : ""}
-          <div style="white-space: pre-wrap; word-break: break-all; background: rgba(0,0,0,0.05); padding: 5px; border-radius: 2px;">${escapeHtml(errorContext)}</div>
-          <details style="margin-top: 8px;">
-            <summary style="cursor: pointer; opacity: 0.7;">原始错误详情</summary>
-            <pre style="margin: 5px 0; overflow: auto; max-height: 100px;">${escapeHtml(errorText)}</pre>
-          </details>
-        </div>
+      noteContent.innerHTML = "";
+      const errorContainer = doc.createElement("div");
+      errorContainer.style.cssText = `
+        padding: 8px;
+        color: #d32f2f;
+        background: #ffebee;
+        border: 1px solid #ffcdd2;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 10px;
+        width: 100%;
+        box-sizing: border-box;
+        overflow: hidden;
       `;
+
+      // Error header with copy button
+      const headerRow = doc.createElement("div");
+      headerRow.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 5px;
+        flex-wrap: wrap;
+        gap: 4px;
+      `;
+
+      const headerText = doc.createElement("div");
+      headerText.style.fontWeight = "bold";
+      headerText.textContent = "⚠ 笔记渲染失败 (XML解析错误)";
+
+      // Prepare full error text for copying
+      const fullErrorText = `XML Parsing Error\n${errorText}\n\nLocation: ${errorLocation}\n\nContext:\n${errorContext}`;
+
+      const copyBtn = doc.createElement("button");
+      copyBtn.textContent = "📋 复制";
+      copyBtn.style.cssText = `
+        padding: 2px 6px;
+        font-size: 12px;
+        border: 1px solid #d32f2f;
+        border-radius: 3px;
+        background: transparent;
+        color: #d32f2f;
+        cursor: pointer;
+        flex-shrink: 0;
+      `;
+      copyBtn.addEventListener("click", () => {
+        try {
+          // Use a temporary textarea to copy text
+          const textarea = doc.createElement("textarea");
+          textarea.value = fullErrorText;
+          textarea.style.cssText = "position: fixed; left: -9999px;";
+          const insertTarget = doc.body || doc.documentElement;
+          if (insertTarget) {
+            insertTarget.appendChild(textarea);
+            textarea.select();
+            doc.execCommand("copy");
+            insertTarget.removeChild(textarea);
+          }
+          copyBtn.textContent = "✅ 已复制";
+          setTimeout(() => {
+            copyBtn.textContent = "📋 复制";
+          }, 2000);
+        } catch (e) {
+          ztoolkit.log("[AI-Butler] Copy failed:", e);
+          copyBtn.textContent = "❌ 失败";
+          setTimeout(() => {
+            copyBtn.textContent = "📋 复制";
+          }, 2000);
+        }
+      });
+
+      headerRow.appendChild(headerText);
+      headerRow.appendChild(copyBtn);
+      errorContainer.appendChild(headerRow);
+
+      // Error location
+      if (errorLocation) {
+        const locationDiv = doc.createElement("div");
+        locationDiv.style.cssText = "margin-bottom: 5px; opacity: 0.8;";
+        locationDiv.textContent = `📍 ${errorLocation}`;
+        errorContainer.appendChild(locationDiv);
+      }
+
+      // Full error content (no collapsible, direct display)
+      const errorPre = doc.createElement("pre");
+      errorPre.style.cssText = `
+        margin: 0;
+        padding: 6px;
+        background: rgba(0,0,0,0.05);
+        border-radius: 3px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        overflow-wrap: break-word;
+        max-height: 200px;
+        overflow-y: auto;
+        font-size: 12px;
+        line-height: 1.4;
+      `;
+      errorPre.textContent = errorText;
+      errorContainer.appendChild(errorPre);
+
+      noteContent.appendChild(errorContainer);
     } else {
-      // 渲染 LaTeX 公式
-      // 使用 KaTeX 渲染 $$...$$ 块级公式和 $...$ 内联公式
-      let renderedContent = sanitizedContent;
-
-      // 渲染块级公式 $$...$$
-
-      renderedContent = renderedContent.replace(
-        /\$\$([\s\S]*?)\$\$/g,
-        (_match: string, formula: string) => {
-          try {
-            const rendered = katex.renderToString(formula.trim(), {
-              throwOnError: false,
-              displayMode: true,
-              output: "html",
-              trust: true,
-              strict: false,
-            });
-            // 用外层容器包裹，确保横向滚动不会撑大父容器
-            return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;
-          } catch {
-            // 渲染失败，保留原始公式
-            return _match;
-          }
-        },
-      );
-
-      // 渲染内联公式 $...$
-      // 注意：需要避免匹配已渲染的 katex-display 中的内容
-      // 使用负向前瞻排除 $$ 开头的情况
-      renderedContent = renderedContent.replace(
-        // eslint-disable-next-line no-useless-escape
-        /(?<!\$)\$(?!\$)([^\$\n]+?)\$(?!\$)/g,
-        (_match: string, formula: string) => {
-          try {
-            const rendered = katex.renderToString(formula.trim(), {
-              throwOnError: false,
-              displayMode: false,
-              output: "html",
-              trust: true,
-              strict: false,
-            });
-            return `<span class="katex-inline">${rendered}</span>`;
-          } catch {
-            // 渲染失败，保留原始公式
-            return _match;
-          }
-        },
-      );
-
-      noteContent.innerHTML = renderedContent;
+      // LaTeX formulas already rendered before XML validation
+      // Just use the sanitized content directly
+      noteContent.innerHTML = sanitizedContent;
     }
   } catch (err: any) {
     ztoolkit.log("[AI-Butler] 加载笔记失败:", err);

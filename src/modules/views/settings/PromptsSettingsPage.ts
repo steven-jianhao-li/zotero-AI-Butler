@@ -557,20 +557,13 @@ export class PromptsSettingsPage {
     delete custom[name];
     setPref("customPrompts", JSON.stringify(custom));
 
-    // 更新下拉选项而不是完全重新渲染
-    const presets = this.getAllPresets();
-    const presetOptions = Object.keys(presets).map((n) => ({
-      value: n,
-      label: n,
-    }));
+    // 重新渲染整个页面来更新下拉框选项（与 saveAsPreset 一致）
+    this.render();
 
-    this.presetSelect.innerHTML = "";
-    presetOptions.forEach((opt) => {
-      const option = Zotero.getMainWindow().document.createElement("option");
-      option.value = opt.value;
-      option.textContent = opt.label;
-      this.presetSelect.appendChild(option);
-    });
+    // 设置下拉框为默认模板
+    setTimeout(() => {
+      (this.presetSelect as any).setValue("默认模板");
+    }, 0);
 
     new ztoolkit.ProgressWindow("提示词")
       .createLine({ text: `✅ 已删除预设: ${name}`, type: "success" })
@@ -580,10 +573,37 @@ export class PromptsSettingsPage {
   private saveCurrent(): void {
     const text = this.editor.value || getDefaultSummaryPrompt();
     setPref("summaryPrompt", text);
-    // 保存当前模板即视为用户自定义,这里不动 promptVersion
-    new ztoolkit.ProgressWindow("提示词")
-      .createLine({ text: "✅ 当前模板已保存", type: "success" })
-      .show();
+
+    // 获取当前选中的预设名
+    const currentPresetName = (this.presetSelect as any).getValue();
+
+    // 检查是否是自定义预设，如果是则同时更新
+    const custom: PresetMap = {};
+    try {
+      const raw = (getPref("customPrompts") as string) || "";
+      if (raw && raw.trim()) {
+        const parsed = JSON.parse(raw);
+        Object.entries(parsed).forEach(([k, v]) => {
+          if (v && typeof v === "string") custom[k] = v;
+        });
+      }
+    } catch (e) {
+      ztoolkit.log("[PromptsSettings] Failed to parse customPrompts:", e);
+    }
+
+    if (currentPresetName in custom) {
+      // 更新自定义预设
+      custom[currentPresetName] = text;
+      setPref("customPrompts", JSON.stringify(custom));
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: `✅ 预设「${currentPresetName}」已更新`, type: "success" })
+        .show();
+    } else {
+      // 内置预设，仅保存到 summaryPrompt
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: "✅ 当前模板已保存", type: "success" })
+        .show();
+    }
   }
 
   private resetDefault(): void {

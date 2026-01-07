@@ -541,7 +541,7 @@ function renderImageSummarySection(
   imageSummaryTitle.style.cssText = `
     font-weight: 500;
     font-size: 12px;
-    color: #9c27b0;
+    color: inherit;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -564,7 +564,7 @@ function renderImageSummarySection(
   imageToggleIcon.textContent = "▼";
   imageToggleIcon.style.cssText = `
     font-size: 10px;
-    color: #9c27b0;
+    color: inherit;
     opacity: 0.6;
     transition: transform 0.2s ease;
   `;
@@ -579,7 +579,7 @@ function renderImageSummarySection(
   imageContainer.style.cssText = `
     padding: 10px;
     text-align: center;
-    background: #fafafa;
+    background: transparent;
     min-height: 80px;
     display: flex;
     flex-direction: column;
@@ -621,10 +621,10 @@ function renderChatArea(
   chatArea.style.cssText = `
     display: none;
     flex-direction: column;
-    border: 1px solid #e0e0e0;
+    border: 1px solid rgba(128, 128, 128, 0.3);
     border-radius: 6px;
     overflow: hidden;
-    background: #fafafa;
+    background: transparent;
   `;
 
   // 消息显示区
@@ -643,8 +643,8 @@ function renderChatArea(
     display: flex;
     gap: 6px;
     padding: 8px;
-    border-top: 1px solid #e0e0e0;
-    background: white;
+    border-top: 1px solid rgba(128, 128, 128, 0.2);
+    background: transparent;
   `;
 
   const inputBox = doc.createElement("textarea");
@@ -654,11 +654,13 @@ function renderChatArea(
     min-height: 36px;
     max-height: 80px;
     padding: 6px 8px;
-    border: 1px solid #ddd;
+    border: 1px solid rgba(128, 128, 128, 0.3);
     border-radius: 4px;
     resize: none;
     font-size: 12px;
     font-family: inherit;
+    color: inherit;
+    background: transparent;
   `;
 
   const sendBtn = doc.createElement("button");

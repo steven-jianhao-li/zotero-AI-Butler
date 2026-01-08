@@ -557,9 +557,9 @@ export class SummaryView extends BaseView {
       // 导入 LLMClient
       const { default: LLMClient } = await import("../llmClient");
 
-      // 调用chat方法
+      // 调用chat方法 (使用带重试的方法，支持 API 密钥轮换)
       let fullResponse = "";
-      await LLMClient.chat(
+      await LLMClient.chatWithRetry(
         this.currentPdfContent,
         this.currentIsBase64,
         this.conversationHistory,

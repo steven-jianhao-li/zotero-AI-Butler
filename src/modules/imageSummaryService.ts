@@ -193,8 +193,8 @@ export class ImageSummaryService {
     );
     prompt = prompt.replace(/\$\{title\}/g, itemTitle);
 
-    // 调用 LLM 生成视觉摘要
-    const summary = await LLMClient.generateSummary(
+    // 调用 LLM 生成视觉摘要 (使用带重试的方法，支持 API 密钥轮换)
+    const summary = await LLMClient.generateSummaryWithRetry(
       pdfContent,
       isBase64,
       prompt,

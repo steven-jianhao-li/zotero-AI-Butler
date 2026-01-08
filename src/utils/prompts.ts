@@ -365,7 +365,7 @@ export const DEFAULT_IMAGE_GENERATION_PROMPT = `根据"\${summaryForImage}"，�
     *   No blurry text (不要模糊文字).
     *   No chaotic background (不要混乱背景).
 **Generation Instructions:**
-Generate an academic infographic poster with a width of 16:9.`;
+Generate an academic infographic poster.`;
 
 /**
  * 获取默认的视觉信息提取提示词

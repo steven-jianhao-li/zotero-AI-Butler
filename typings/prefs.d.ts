@@ -43,6 +43,8 @@ declare namespace _ZoteroTypes {
       "autoScan": boolean;
       "scanInterval": string;
       "pdfProcessMode": string;
+      "imageSummaryAspectRatio": string;
+      "imageSummaryResolution": string;
       "theme": string;
       "fontSize": string;
       "autoScroll": boolean;

@@ -67,6 +67,8 @@ export class ImageClient {
       apiKey?: string;
       apiUrl?: string;
       model?: string;
+      aspectRatio?: string;
+      resolution?: string;
     },
   ): Promise<ImageGenerationResult> {
     // 从设置中获取 API 配置
@@ -80,6 +82,14 @@ export class ImageClient {
       options?.model ||
       (getPref("imageSummaryModel" as any) as string) ||
       "gemini-3-pro-image-preview";
+    const aspectRatio =
+      options?.aspectRatio ||
+      (getPref("imageSummaryAspectRatio" as any) as string) ||
+      "16:9";
+    const resolution =
+      options?.resolution ||
+      (getPref("imageSummaryResolution" as any) as string) ||
+      "1K";
 
     if (!apiKey) {
       throw new ImageGenerationError("一图总结 API Key 未配置", {
@@ -98,6 +108,11 @@ export class ImageClient {
       ],
       generationConfig: {
         temperature: 0.8, // 稍高的温度以增加创造性
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: {
+          aspectRatio: aspectRatio,
+          imageSize: resolution,
+        },
       },
     };
 
@@ -113,7 +128,7 @@ export class ImageClient {
         },
         body: JSON.stringify(payload),
         responseType: "text",
-        timeout: 120000, // 2 分钟超时，生图可能较慢
+        timeout: 300000, // 5 分钟超时，生图可能较慢
       });
     } catch (error: any) {
       const statusCode = error?.xmlhttp?.status;

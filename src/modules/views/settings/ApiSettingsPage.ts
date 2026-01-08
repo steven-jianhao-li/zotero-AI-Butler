@@ -748,6 +748,59 @@ export class ApiSettingsPage {
       ),
     );
 
+    // PDF 大小限制设置
+    const sizeLimitContainer = this.createElement("div", {
+      styles: { display: "flex", alignItems: "center", gap: "12px" },
+    });
+    const enableSizeLimit = ((getPref("enablePdfSizeLimit" as any) as any) ??
+      false) as boolean;
+    const sizeLimitToggle = this.createCheckbox(
+      "enablePdfSizeLimit",
+      enableSizeLimit,
+    );
+    const maxSizeInput = this.createInput(
+      "maxPdfSizeMB",
+      "number",
+      ((getPref("maxPdfSizeMB" as any) as string) || "50") as string,
+      "50",
+    );
+    // 缩短输入框宽度
+    Object.assign(maxSizeInput.style, {
+      width: "100px",
+      flex: "0 0 100px",
+    });
+    const mbLabel = this.createElement("span", {
+      textContent: "MB",
+      styles: { fontSize: "14px", color: "#666" },
+    });
+
+    // 控制输入框禁用状态
+    setTimeout(() => {
+      const inputEl = this.container.querySelector(
+        "#setting-maxPdfSizeMB",
+      ) as HTMLInputElement;
+      const cbEl = sizeLimitToggle.querySelector(
+        "#setting-enablePdfSizeLimit",
+      ) as HTMLInputElement;
+      if (inputEl && cbEl) {
+        inputEl.disabled = !cbEl.checked;
+        cbEl.addEventListener("change", () => {
+          inputEl.disabled = !cbEl.checked;
+        });
+      }
+    }, 0);
+
+    sizeLimitContainer.appendChild(sizeLimitToggle);
+    sizeLimitContainer.appendChild(maxSizeInput);
+    sizeLimitContainer.appendChild(mbLabel);
+    form.appendChild(
+      this.createFormGroup(
+        "附件大小限制",
+        sizeLimitContainer,
+        "启用后,超过指定大小的 PDF 文件将在自动扫描时被跳过,避免大型扫描版书籍触发 API 限制",
+      ),
+    );
+
     // 按钮组
     const buttonGroup = this.createElement("div", {
       styles: {
@@ -1816,6 +1869,20 @@ export class ApiSettingsPage {
       if (cooldownSecsEl) {
         const secs = parseInt(cooldownSecsEl.value?.trim() || "300") || 300;
         setPref("failedKeyCooldown" as any, String(secs * 1000));
+      }
+
+      // PDF 大小限制配置
+      const enableSizeLimitEl = this.container.querySelector(
+        "#setting-enablePdfSizeLimit",
+      ) as HTMLInputElement | null;
+      const maxPdfSizeEl = this.container.querySelector(
+        "#setting-maxPdfSizeMB",
+      ) as HTMLInputElement | null;
+      if (enableSizeLimitEl) {
+        setPref("enablePdfSizeLimit" as any, enableSizeLimitEl.checked);
+      }
+      if (maxPdfSizeEl) {
+        setPref("maxPdfSizeMB" as any, maxPdfSizeEl.value?.trim() || "50");
       }
 
       // 不再在保存时强制调整 PDF 模式

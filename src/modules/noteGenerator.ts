@@ -104,6 +104,22 @@ export class NoteGenerator {
 
       // 步骤 1: PDF 处理
       progressCallback?.("正在处理PDF...", 10);
+
+      // 检查 PDF 文件大小限制
+      const enableSizeLimit =
+        (getPref("enablePdfSizeLimit" as any) as boolean) ?? false;
+      if (enableSizeLimit) {
+        const maxPdfSizeMB = parseFloat(
+          (getPref("maxPdfSizeMB" as any) as string) || "50",
+        );
+        const fileSizeMB = await PDFExtractor.getPdfFileSize(item);
+        if (fileSizeMB > maxPdfSizeMB) {
+          throw new Error(
+            `PDF 文件过大 (${fileSizeMB.toFixed(1)} MB)，超过设置的阈值 ${maxPdfSizeMB} MB`,
+          );
+        }
+      }
+
       // 尊重用户在设置中的 PDF 处理模式选择（不再根据 Provider 强制联动）
       const prefMode = (getPref("pdfProcessMode") as string) || "base64";
       const effectiveMode = prefMode;

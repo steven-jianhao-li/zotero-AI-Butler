@@ -12,6 +12,7 @@ import {
   createStyledButton,
   createFormGroup,
   createInput,
+  createSelect,
   createTextarea,
   createCheckbox,
   createSectionTitle,
@@ -125,6 +126,37 @@ export class ImageSummarySettingsPage {
           "中文",
         ),
         "生成图片中显示的文字语言",
+      ),
+    );
+
+    // 图片宽高比
+    form.appendChild(
+      createFormGroup(
+        "图片宽高比",
+        createInput(
+          "imageSummaryAspectRatio",
+          "text",
+          (getPref("imageSummaryAspectRatio" as any) as string) || "16:9",
+          "16:9",
+        ),
+        "生成图片的宽高比，如 16:9、1:1、9:16、4:3 等",
+      ),
+    );
+
+    // 图片分辨率
+    form.appendChild(
+      createFormGroup(
+        "图片分辨率",
+        createSelect(
+          "imageSummaryResolution",
+          [
+            { value: "1K", label: "1K (默认)" },
+            { value: "2K", label: "2K" },
+            { value: "4K", label: "4K" },
+          ],
+          (getPref("imageSummaryResolution" as any) as string) || "1K",
+        ),
+        "生成图片的分辨率，更高分辨率可能会增加 API 费用",
       ),
     );
 
@@ -388,6 +420,7 @@ export class ImageSummarySettingsPage {
         "imageSummaryApiUrl",
         "imageSummaryModel",
         "imageSummaryLanguage",
+        "imageSummaryAspectRatio",
         "imageSummaryPrompt",
         "imageSummaryImagePrompt",
       ];
@@ -399,6 +432,18 @@ export class ImageSummarySettingsPage {
         if (input) {
           setPref(field as any, input.value.trim() as any);
         }
+      }
+
+      // 下拉框单独处理 (resolution)
+      const resolutionSelect = this.container.querySelector(
+        "#setting-imageSummaryResolution",
+      ) as HTMLElement;
+      if (resolutionSelect) {
+        const resValue =
+          (resolutionSelect as any).getValue?.() ||
+          resolutionSelect.getAttribute("data-value") ||
+          "1K";
+        setPref("imageSummaryResolution" as any, resValue);
       }
 
       // 复选框单独处理

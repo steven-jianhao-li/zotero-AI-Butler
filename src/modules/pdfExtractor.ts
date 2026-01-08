@@ -58,6 +58,58 @@ export class PDFExtractor {
   }
 
   /**
+   * 获取 PDF 附件的文件大小 (MB)
+   *
+   * 用于在处理前检查文件大小，避免处理过大的扫描版 PDF
+   *
+   * @param item Zotero 文献条目对象
+   * @returns 文件大小 (MB), 如果无法获取则返回 0
+   */
+  public static async getPdfFileSize(item: Zotero.Item): Promise<number> {
+    try {
+      const attachments = item.getAttachments();
+      if (attachments.length === 0) {
+        return 0;
+      }
+
+      // 获取所有 PDF 附件并按添加时间排序，取最早的一个
+      const pdfAttachments: Zotero.Item[] = [];
+
+      for (const attachmentID of attachments) {
+        const attachment = await Zotero.Items.getAsync(attachmentID);
+        if (attachment.attachmentContentType === "application/pdf") {
+          pdfAttachments.push(attachment);
+        }
+      }
+
+      if (pdfAttachments.length === 0) {
+        return 0;
+      }
+
+      // 按 dateAdded 升序排序 (最早的在前)
+      const pdfAttachment = pdfAttachments.sort((a, b) => {
+        const dateA = new Date(a.dateAdded).getTime();
+        const dateB = new Date(b.dateAdded).getTime();
+        return dateA - dateB;
+      })[0];
+
+      // 获取 PDF 文件路径
+      const pdfPath = await pdfAttachment.getFilePathAsync();
+      if (!pdfPath) {
+        return 0;
+      }
+
+      // 获取文件大小 (字节)
+      const fileInfo = await IOUtils.stat(pdfPath);
+      // 转换为 MB
+      return (fileInfo.size ?? 0) / (1024 * 1024);
+    } catch (error) {
+      ztoolkit.log("[PDFExtractor] 获取 PDF 文件大小时出错:", error);
+      return 0;
+    }
+  }
+
+  /**
    * 从 Zotero 条目中提取 PDF 全文
    *
    * 这是模块的主入口函数,协调整个文本提取流程

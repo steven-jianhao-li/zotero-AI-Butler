@@ -2004,6 +2004,9 @@ export class ApiSettingsPage {
         resultPre.textContent = `密钥 ${keyIndex + 1} 测试结果:\n${result}`;
       }
 
+      // 更新成功密钥的状态指示器为绿色
+      this.updateKeyStatusIndicator(keyIndex, true);
+
       setTimeout(() => progressWindow.close(), 3000);
     } catch (error: any) {
       const fullMsg = error?.message || String(error);
@@ -2022,7 +2025,24 @@ export class ApiSettingsPage {
         resultPre.textContent = `密钥 ${keyIndex + 1} 测试失败:\n${fullMsg}`;
       }
 
+      // 更新失败密钥的状态指示器为红色
+      this.updateKeyStatusIndicator(keyIndex, false);
+
       setTimeout(() => progressWindow.close(), 5000);
+    }
+  }
+
+  /**
+   * 更新密钥状态指示器
+   */
+  private updateKeyStatusIndicator(keyIndex: number, isValid: boolean): void {
+    const provider = (getPref("provider") as string) || "openai";
+    const keyManagerId = this.mapToKeyManagerId(provider);
+    const statusSelector = `[data-key-status="${keyManagerId}-${keyIndex}"]`;
+    const statusIcon = this.container.querySelector(statusSelector) as HTMLElement | null;
+    if (statusIcon) {
+      statusIcon.style.color = isValid ? "#4caf50" : "#f44336";
+      statusIcon.title = isValid ? "测试成功" : "测试失败";
     }
   }
 

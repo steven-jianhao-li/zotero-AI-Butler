@@ -453,6 +453,65 @@ function renderNoteSection(
   });
   fontSizeControl.appendChild(resetHeightBtn);
 
+  // 复制 Markdown 按钮
+  const copyBtn = doc.createElement("button");
+  copyBtn.textContent = "📋";
+  copyBtn.title = "复制为 Markdown";
+  copyBtn.id = "ai-butler-copy-note-btn";
+  copyBtn.style.cssText = `
+    width: 20px;
+    height: 20px;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+    color: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 4px;
+    opacity: 0.7;
+  `;
+  copyBtn.addEventListener("click", async (e: Event) => {
+    e.stopPropagation();
+    try {
+      // 获取当前笔记的 Markdown 内容
+      const markdownContent = await getNoteMarkdownContent(item);
+      if (!markdownContent) {
+        copyBtn.textContent = "❌";
+        setTimeout(() => {
+          copyBtn.textContent = "📋";
+        }, 1500);
+        return;
+      }
+      // 复制到剪贴板
+      await copyToClipboard(doc, markdownContent);
+      // 显示成功反馈
+      copyBtn.textContent = "✓";
+      copyBtn.style.color = "#4caf50";
+      setTimeout(() => {
+        copyBtn.textContent = "📋";
+        copyBtn.style.color = "inherit";
+      }, 1500);
+    } catch (err) {
+      ztoolkit.log("[AI-Butler] 复制笔记失败:", err);
+      copyBtn.textContent = "❌";
+      setTimeout(() => {
+        copyBtn.textContent = "📋";
+      }, 1500);
+    }
+  });
+  copyBtn.addEventListener("mouseenter", () => {
+    copyBtn.style.opacity = "1";
+    copyBtn.style.background = "rgba(128, 128, 128, 0.2)";
+  });
+  copyBtn.addEventListener("mouseleave", () => {
+    copyBtn.style.opacity = "0.7";
+    copyBtn.style.background = "transparent";
+  });
+  fontSizeControl.appendChild(copyBtn);
+
   const toggleIcon = doc.createElement("span");
   toggleIcon.textContent = "▼";
   toggleIcon.style.cssText = `
@@ -1347,4 +1406,181 @@ async function loadImageSummary(
   }
 }
 
+/**
+ * 获取 AI 笔记的 Markdown 内容
+ *
+ * @param item 文献条目
+ * @returns Markdown 格式的笔记内容，如果不存在则返回 null
+ */
+async function getNoteMarkdownContent(
+  item: Zotero.Item,
+): Promise<string | null> {
+  try {
+    // 获取正确的父条目
+    let targetItem: any = item;
+    if (item.isAttachment && item.isAttachment()) {
+      const parentId = item.parentItemID;
+      if (parentId) {
+        targetItem = await Zotero.Items.getAsync(parentId);
+      }
+    }
+
+    // 查找 AI 生成的笔记
+    const noteIDs = (targetItem as any).getNotes?.() || [];
+    let targetNote: any = null;
+
+    for (const nid of noteIDs) {
+      try {
+        const n = await Zotero.Items.getAsync(nid);
+        if (!n) continue;
+        const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
+        const noteHtml: string = (n as any).getNote?.() || "";
+
+        // 检查是否是 AI-Butler 生成的摘要笔记
+        const isChatNote =
+          tags.some((t) => t.tag === "AI-Butler-Chat") ||
+          /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(noteHtml);
+        const isAiSummaryNote =
+          tags.some((t) => t.tag === "AI-Generated") ||
+          (/<h2>\s*AI 管家\s*-/.test(noteHtml) && !isChatNote) ||
+          noteHtml.includes("[AI-Butler]");
+
+        if (isAiSummaryNote) {
+          if (!targetNote) {
+            targetNote = n;
+          } else {
+            const a = (targetNote as any).dateModified || 0;
+            const b = (n as any).dateModified || 0;
+            if (b > a) targetNote = n;
+          }
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+
+    if (!targetNote) {
+      return null;
+    }
+
+    const noteHtml: string = (targetNote as any).getNote?.() || "";
+    // 将 HTML 转换为 Markdown 文本
+    return htmlToMarkdown(noteHtml);
+  } catch (err) {
+    ztoolkit.log("[AI-Butler] 获取笔记 Markdown 内容失败:", err);
+    return null;
+  }
+}
+
+/**
+ * 将 HTML 转换为 Markdown 格式
+ *
+ * @param html HTML 字符串
+ * @returns Markdown 格式的字符串
+ */
+function htmlToMarkdown(html: string): string {
+  let result = html;
+
+  // 移除 style 和 script 标签及其内容
+  result = result.replace(/<style[^>]*>.*?<\/style>/gis, "");
+  result = result.replace(/<script[^>]*>.*?<\/script>/gis, "");
+
+  // 处理标题
+  result = result.replace(/<h1[^>]*>(.*?)<\/h1>/gi, "# $1\n\n");
+  result = result.replace(/<h2[^>]*>(.*?)<\/h2>/gi, "## $1\n\n");
+  result = result.replace(/<h3[^>]*>(.*?)<\/h3>/gi, "### $1\n\n");
+  result = result.replace(/<h4[^>]*>(.*?)<\/h4>/gi, "#### $1\n\n");
+  result = result.replace(/<h5[^>]*>(.*?)<\/h5>/gi, "##### $1\n\n");
+  result = result.replace(/<h6[^>]*>(.*?)<\/h6>/gi, "###### $1\n\n");
+
+  // 处理粗体和斜体
+  result = result.replace(/<strong[^>]*>(.*?)<\/strong>/gi, "**$1**");
+  result = result.replace(/<b[^>]*>(.*?)<\/b>/gi, "**$1**");
+  result = result.replace(/<em[^>]*>(.*?)<\/em>/gi, "*$1*");
+  result = result.replace(/<i[^>]*>(.*?)<\/i>/gi, "*$1*");
+
+  // 处理代码
+  result = result.replace(/<code[^>]*>(.*?)<\/code>/gi, "`$1`");
+  result = result.replace(/<pre[^>]*>(.*?)<\/pre>/gis, "```\n$1\n```\n");
+
+  // 处理链接
+  result = result.replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, "[$2]($1)");
+
+  // 处理列表项
+  result = result.replace(/<li[^>]*>(.*?)<\/li>/gi, "- $1\n");
+  result = result.replace(/<ul[^>]*>(.*?)<\/ul>/gis, "$1\n");
+  result = result.replace(/<ol[^>]*>(.*?)<\/ol>/gis, "$1\n");
+
+  // 处理段落和换行
+  result = result.replace(/<p[^>]*>(.*?)<\/p>/gis, "$1\n\n");
+  result = result.replace(/<br\s*\/?>/gi, "\n");
+  result = result.replace(/<hr\s*\/?>/gi, "\n---\n\n");
+
+  // 处理 div 标签
+  result = result.replace(/<div[^>]*>(.*?)<\/div>/gis, "$1\n");
+
+  // 移除剩余的 HTML 标签
+  result = result.replace(/<[^>]+>/g, "");
+
+  // 解码 HTML 实体
+  result = result
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'");
+
+  // 清理多余的空行
+  result = result.replace(/\n{3,}/g, "\n\n");
+
+  return result.trim();
+}
+
+/**
+ * 复制文本到剪贴板
+ *
+ * @param doc Document 对象
+ * @param text 要复制的文本
+ */
+async function copyToClipboard(doc: Document, text: string): Promise<void> {
+  try {
+    // 优先使用主窗口的剪贴板 API
+    const win: any =
+      Zotero && (Zotero as any).getMainWindow
+        ? (Zotero as any).getMainWindow()
+        : (globalThis as any);
+
+    if (win?.navigator?.clipboard?.writeText) {
+      await win.navigator.clipboard.writeText(text);
+      return;
+    }
+
+    // 回退方案：使用 execCommand
+    if (!doc.body) {
+      throw new Error("Document body not available");
+    }
+    const textArea = doc.createElement("textarea");
+    textArea.value = text;
+    textArea.style.cssText = `
+      position: fixed;
+      left: -9999px;
+      top: -9999px;
+    `;
+    doc.body.appendChild(textArea);
+    textArea.select();
+
+    try {
+      doc.execCommand("copy");
+    } finally {
+      doc.body.removeChild(textArea);
+    }
+  } catch (err) {
+    ztoolkit.log("[AI-Butler] 复制到剪贴板失败:", err);
+    throw err;
+  }
+}
+
 export default { registerItemPaneSection };
+

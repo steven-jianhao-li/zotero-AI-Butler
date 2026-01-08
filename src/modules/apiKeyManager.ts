@@ -75,32 +75,60 @@ export class ApiKeyManager {
   /** 轮换状态缓存（运行时，不持久化） */
   private static rotationStates: Map<ProviderId, RotationState> = new Map();
 
-  /** 禁用的密钥索引（运行时，Map<providerId, Set<keyIndex>>） */
-  private static disabledKeys: Map<ProviderId, Set<number>> = new Map();
+  /**
+   * 获取禁用密钥索引的 pref key
+   */
+  private static getDisabledKeysPrefKey(providerId: ProviderId): string {
+    return `${providerId}DisabledKeyIndices`;
+  }
+
+  /**
+   * 获取禁用的密钥索引列表
+   */
+  private static getDisabledKeyIndices(providerId: ProviderId): number[] {
+    try {
+      const json =
+        (getPref(this.getDisabledKeysPrefKey(providerId) as any) as string) ||
+        "[]";
+      const indices = JSON.parse(json) as number[];
+      return Array.isArray(indices) ? indices : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 保存禁用的密钥索引列表
+   */
+  private static saveDisabledKeyIndices(
+    providerId: ProviderId,
+    indices: number[],
+  ): void {
+    setPref(this.getDisabledKeysPrefKey(providerId) as any, JSON.stringify(indices));
+  }
 
   /**
    * 检查密钥是否被禁用
    */
   static isKeyDisabled(providerId: ProviderId, keyIndex: number): boolean {
-    const disabled = this.disabledKeys.get(providerId);
-    return disabled?.has(keyIndex) ?? false;
+    const indices = this.getDisabledKeyIndices(providerId);
+    return indices.includes(keyIndex);
   }
 
   /**
    * 禁用/启用密钥
    */
   static toggleKeyDisabled(providerId: ProviderId, keyIndex: number): boolean {
-    let disabled = this.disabledKeys.get(providerId);
-    if (!disabled) {
-      disabled = new Set();
-      this.disabledKeys.set(providerId, disabled);
-    }
-    if (disabled.has(keyIndex)) {
-      disabled.delete(keyIndex);
+    const indices = this.getDisabledKeyIndices(providerId);
+    const idx = indices.indexOf(keyIndex);
+    if (idx >= 0) {
+      indices.splice(idx, 1);
+      this.saveDisabledKeyIndices(providerId, indices);
       ztoolkit.log(`[ApiKeyManager] 启用密钥 ${keyIndex + 1}`);
       return false; // 现在是启用状态
     } else {
-      disabled.add(keyIndex);
+      indices.push(keyIndex);
+      this.saveDisabledKeyIndices(providerId, indices);
       ztoolkit.log(`[ApiKeyManager] 禁用密钥 ${keyIndex + 1}`);
       return true; // 现在是禁用状态
     }
@@ -110,7 +138,7 @@ export class ApiKeyManager {
    * 获取禁用的密钥数量
    */
   static getDisabledCount(providerId: ProviderId): number {
-    return this.disabledKeys.get(providerId)?.size ?? 0;
+    return this.getDisabledKeyIndices(providerId).length;
   }
 
   /**

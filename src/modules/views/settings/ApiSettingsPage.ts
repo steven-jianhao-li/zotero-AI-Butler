@@ -1056,28 +1056,30 @@ export class ApiSettingsPage {
     if (providerId) {
       const keyIndex = 0;
       const isDisabled = ApiKeyManager.isKeyDisabled(providerId, keyIndex);
+      const hasValue = !!value?.trim();
       const statusIcon = this.createElement("span", {
         textContent: "●",
         styles: {
-          color: isDisabled ? "#9e9e9e" : value?.trim() ? "#4caf50" : "#bbb",
+          color: isDisabled ? "#9e9e9e" : hasValue ? "#4caf50" : "#bbb",
           fontSize: "14px",
           lineHeight: "1",
           cursor: "pointer",
         },
       });
-      statusIcon.title = isDisabled
-        ? "已禁用 - 点击启用此密钥"
-        : "点击禁用此密钥";
+      const getTooltip = (disabled: boolean, configured: boolean) => {
+        const status = disabled ? "已禁用" : configured ? "已配置" : "未配置";
+        const action = disabled ? "点击启用" : "点击禁用";
+        return `${status} | ${action}`;
+      };
+      statusIcon.title = getTooltip(isDisabled, hasValue);
       statusIcon.setAttribute("data-key-status", `${providerId}-${keyIndex}`);
       statusIcon.addEventListener("click", () => {
         const nowDisabled = ApiKeyManager.toggleKeyDisabled(
           providerId,
           keyIndex,
         );
-        statusIcon.style.color = nowDisabled ? "#9e9e9e" : "#4caf50";
-        statusIcon.title = nowDisabled
-          ? "已禁用 - 点击启用此密钥"
-          : "点击禁用此密钥";
+        statusIcon.style.color = nowDisabled ? "#9e9e9e" : hasValue ? "#4caf50" : "#bbb";
+        statusIcon.title = getTooltip(nowDisabled, hasValue);
         this.updateAllKeyBadges(providerId);
       });
       container.appendChild(statusIcon);
@@ -1244,25 +1246,27 @@ export class ApiSettingsPage {
     // 状态指示器（放最前面，可点击禁用/启用）
     const keyIndex = index + 1; // 额外密钥从索引1开始
     const isDisabled = ApiKeyManager.isKeyDisabled(providerId, keyIndex);
+    const hasValue = !!value?.trim();
     const statusIcon = this.createElement("span", {
       textContent: "●",
       styles: {
-        color: isDisabled ? "#9e9e9e" : value?.trim() ? "#4caf50" : "#bbb",
+        color: isDisabled ? "#9e9e9e" : hasValue ? "#4caf50" : "#bbb",
         fontSize: "14px",
         lineHeight: "1",
         cursor: "pointer",
       },
     });
-    statusIcon.title = isDisabled
-      ? "已禁用 - 点击启用此密钥"
-      : "点击禁用此密钥";
+    const getTooltip = (disabled: boolean, configured: boolean) => {
+      const status = disabled ? "已禁用" : configured ? "已配置" : "未配置";
+      const action = disabled ? "点击启用" : "点击禁用";
+      return `${status} | ${action}`;
+    };
+    statusIcon.title = getTooltip(isDisabled, hasValue);
     statusIcon.setAttribute("data-key-status", `${providerId}-${keyIndex}`);
     statusIcon.addEventListener("click", () => {
       const nowDisabled = ApiKeyManager.toggleKeyDisabled(providerId, keyIndex);
-      statusIcon.style.color = nowDisabled ? "#9e9e9e" : "#4caf50";
-      statusIcon.title = nowDisabled
-        ? "已禁用 - 点击启用此密钥"
-        : "点击禁用此密钥";
+      statusIcon.style.color = nowDisabled ? "#9e9e9e" : hasValue ? "#4caf50" : "#bbb";
+      statusIcon.title = getTooltip(nowDisabled, hasValue);
       this.updateAllKeyBadges(providerId);
     });
     container.appendChild(statusIcon);

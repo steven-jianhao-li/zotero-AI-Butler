@@ -75,6 +75,44 @@ export class ApiKeyManager {
   /** 轮换状态缓存（运行时，不持久化） */
   private static rotationStates: Map<ProviderId, RotationState> = new Map();
 
+  /** 禁用的密钥索引（运行时，Map<providerId, Set<keyIndex>>） */
+  private static disabledKeys: Map<ProviderId, Set<number>> = new Map();
+
+  /**
+   * 检查密钥是否被禁用
+   */
+  static isKeyDisabled(providerId: ProviderId, keyIndex: number): boolean {
+    const disabled = this.disabledKeys.get(providerId);
+    return disabled?.has(keyIndex) ?? false;
+  }
+
+  /**
+   * 禁用/启用密钥
+   */
+  static toggleKeyDisabled(providerId: ProviderId, keyIndex: number): boolean {
+    let disabled = this.disabledKeys.get(providerId);
+    if (!disabled) {
+      disabled = new Set();
+      this.disabledKeys.set(providerId, disabled);
+    }
+    if (disabled.has(keyIndex)) {
+      disabled.delete(keyIndex);
+      ztoolkit.log(`[ApiKeyManager] 启用密钥 ${keyIndex + 1}`);
+      return false; // 现在是启用状态
+    } else {
+      disabled.add(keyIndex);
+      ztoolkit.log(`[ApiKeyManager] 禁用密钥 ${keyIndex + 1}`);
+      return true; // 现在是禁用状态
+    }
+  }
+
+  /**
+   * 获取禁用的密钥数量
+   */
+  static getDisabledCount(providerId: ProviderId): number {
+    return this.disabledKeys.get(providerId)?.size ?? 0;
+  }
+
   /**
    * 获取提供商的所有密钥
    * 合并第一个密钥（向后兼容）和额外密钥列表

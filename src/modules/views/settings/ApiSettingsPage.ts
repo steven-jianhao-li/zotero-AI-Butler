@@ -1052,18 +1052,34 @@ export class ApiSettingsPage {
       },
     });
 
-    // 状态指示器（放最前面）
+    // 状态指示器（放最前面，可点击禁用/启用）
     if (providerId) {
+      const keyIndex = 0;
+      const isDisabled = ApiKeyManager.isKeyDisabled(providerId, keyIndex);
       const statusIcon = this.createElement("span", {
         textContent: "●",
         styles: {
-          color: value?.trim() ? "#4caf50" : "#bbb",
+          color: isDisabled ? "#9e9e9e" : value?.trim() ? "#4caf50" : "#bbb",
           fontSize: "14px",
           lineHeight: "1",
+          cursor: "pointer",
         },
       });
-      statusIcon.title = value?.trim() ? "已配置" : "未配置";
-      statusIcon.setAttribute("data-key-status", `${providerId}-0`);
+      statusIcon.title = isDisabled
+        ? "已禁用 - 点击启用此密钥"
+        : "点击禁用此密钥";
+      statusIcon.setAttribute("data-key-status", `${providerId}-${keyIndex}`);
+      statusIcon.addEventListener("click", () => {
+        const nowDisabled = ApiKeyManager.toggleKeyDisabled(
+          providerId,
+          keyIndex,
+        );
+        statusIcon.style.color = nowDisabled ? "#9e9e9e" : "#4caf50";
+        statusIcon.title = nowDisabled
+          ? "已禁用 - 点击启用此密钥"
+          : "点击禁用此密钥";
+        this.updateAllKeyBadges(providerId);
+      });
       container.appendChild(statusIcon);
     }
 
@@ -1171,7 +1187,12 @@ export class ApiSettingsPage {
     const allKeys = ApiKeyManager.getAllKeys(providerId);
     const total = allKeys.length;
     const valid = allKeys.filter((k) => k?.trim()).length;
-    badge.textContent = `共 ${total} 个密钥，${valid} 个有效`;
+    const disabled = ApiKeyManager.getDisabledCount(providerId);
+    if (disabled > 0) {
+      badge.textContent = `共 ${total} 个，${valid} 有效，${disabled} 禁用`;
+    } else {
+      badge.textContent = `共 ${total} 个密钥，${valid} 个有效`;
+    }
   }
 
   /**
@@ -1220,17 +1241,30 @@ export class ApiSettingsPage {
     container.setAttribute("data-extra-key-index", String(index));
     container.setAttribute("data-provider-id", providerId);
 
-    // 状态指示器（放最前面）
+    // 状态指示器（放最前面，可点击禁用/启用）
+    const keyIndex = index + 1; // 额外密钥从索引1开始
+    const isDisabled = ApiKeyManager.isKeyDisabled(providerId, keyIndex);
     const statusIcon = this.createElement("span", {
       textContent: "●",
       styles: {
-        color: value?.trim() ? "#4caf50" : "#bbb",
+        color: isDisabled ? "#9e9e9e" : value?.trim() ? "#4caf50" : "#bbb",
         fontSize: "14px",
         lineHeight: "1",
+        cursor: "pointer",
       },
     });
-    statusIcon.title = value?.trim() ? "已配置" : "未配置";
-    statusIcon.setAttribute("data-key-status", `${providerId}-${index + 1}`);
+    statusIcon.title = isDisabled
+      ? "已禁用 - 点击启用此密钥"
+      : "点击禁用此密钥";
+    statusIcon.setAttribute("data-key-status", `${providerId}-${keyIndex}`);
+    statusIcon.addEventListener("click", () => {
+      const nowDisabled = ApiKeyManager.toggleKeyDisabled(providerId, keyIndex);
+      statusIcon.style.color = nowDisabled ? "#9e9e9e" : "#4caf50";
+      statusIcon.title = nowDisabled
+        ? "已禁用 - 点击启用此密钥"
+        : "点击禁用此密钥";
+      this.updateAllKeyBadges(providerId);
+    });
     container.appendChild(statusIcon);
 
     // 密钥标签

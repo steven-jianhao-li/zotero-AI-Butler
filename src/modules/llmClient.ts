@@ -3,11 +3,13 @@
  * - 读取偏好
  * - 组装统一 LLMOptions
  * - 委派给 ProviderRegistry
+ * - 支持多 API 密钥轮换
  * 供应商私有逻辑都在 src/modules/llmproviders 下实现。
  */
 import { getPref } from "../utils/prefs";
 import { getDefaultSummaryPrompt } from "../utils/prompts";
 import { ProviderRegistry } from "./llmproviders/ProviderRegistry";
+import { ApiKeyManager, type ProviderId } from "./apiKeyManager";
 import "./llmproviders";
 import type {
   LLMOptions,
@@ -37,12 +39,17 @@ export class LLMClient {
       maxTokens: parseInt((getPref("maxTokens") as string) || "4096") || 4096,
       requestTimeoutMs: LLMClient.getRequestTimeout(),
     };
+
+    // 映射到 ApiKeyManager 的 ProviderId
+    const keyManagerId = this.mapToKeyManagerId(id);
+
     if (id.includes("gemini") || id === "google") {
       common.apiUrl = (
         (getPref("geminiApiUrl" as any) as string) ||
         "https://generativelanguage.googleapis.com"
       ).replace(/\/$/, "");
-      common.apiKey = ((getPref("geminiApiKey" as any) as string) || "").trim();
+      // 使用 ApiKeyManager 获取当前活动密钥
+      common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
       common.model = (
         (getPref("geminiModel" as any) as string) || "gemini-2.5-pro"
       ).trim();
@@ -51,9 +58,7 @@ export class LLMClient {
         (getPref("anthropicApiUrl" as any) as string) ||
         "https://api.anthropic.com"
       ).replace(/\/$/, "");
-      common.apiKey = (
-        (getPref("anthropicApiKey" as any) as string) || ""
-      ).trim();
+      common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
       common.model = (
         (getPref("anthropicModel" as any) as string) ||
         "claude-3-5-sonnet-20241022"
@@ -64,11 +69,7 @@ export class LLMClient {
         (getPref("openaiCompatApiUrl" as any) as string) ||
         "https://api.openai.com/v1/chat/completions"
       ).trim();
-      common.apiKey = (
-        (getPref("openaiCompatApiKey" as any) as string) ||
-        (getPref("openaiApiKey" as any) as string) ||
-        ""
-      ).trim();
+      common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
       common.model = (
         (getPref("openaiCompatModel" as any) as string) ||
         (getPref("openaiApiModel" as any) as string) ||
@@ -79,20 +80,30 @@ export class LLMClient {
         (getPref("openRouterApiUrl" as any) as string) ||
         "https://openrouter.ai/api/v1/chat/completions"
       ).trim();
-      common.apiKey = (
-        (getPref("openRouterApiKey" as any) as string) || ""
-      ).trim();
+      common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
       common.model = (
         (getPref("openRouterModel" as any) as string) || "google/gemma-3-27b-it"
       ).trim();
     } else {
       common.apiUrl = ((getPref("openaiApiUrl" as any) as string) || "").trim();
-      common.apiKey = ((getPref("openaiApiKey" as any) as string) || "").trim();
+      common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
       common.model = (
         (getPref("openaiApiModel" as any) as string) || "gpt-3.5-turbo"
       ).trim();
     }
     return { ...common, ...(extra || {}) };
+  }
+
+  /**
+   * 映射 provider ID 到 ApiKeyManager 的 ProviderId
+   */
+  private static mapToKeyManagerId(providerId: string): ProviderId {
+    const id = providerId.toLowerCase();
+    if (id.includes("gemini") || id === "google") return "google";
+    if (id.includes("anthropic") || id.includes("claude")) return "anthropic";
+    if (id === "openai-compat") return "openai-compat";
+    if (id === "openrouter") return "openrouter";
+    return "openai";
   }
 
   private static resolveProvider(): { id: string; impl: any } {
@@ -151,6 +162,106 @@ export class LLMClient {
     const { id, impl } = this.resolveProvider();
     const options = this.buildOptions(id, { stream: false });
     return impl.testConnection(options);
+  }
+
+  /**
+   * 测试指定密钥的连接（用于多密钥测试UI）
+   *
+   * @param apiKey 要测试的密钥
+   */
+  static async testConnectionWithKey(apiKey: string): Promise<string> {
+    const { id, impl } = this.resolveProvider();
+    const options = this.buildOptions(id, { stream: false });
+    options.apiKey = apiKey;
+    return impl.testConnection(options);
+  }
+
+  /**
+   * 带自动轮换的生成摘要方法
+   * 遇到 API 错误时自动切换到下一个可用密钥
+   */
+  static async generateSummaryWithRetry(
+    content: string,
+    isBase64 = false,
+    prompt?: string,
+    onProgress?: ProgressCb,
+  ): Promise<string> {
+    const { id } = this.resolveProvider();
+    const keyManagerId = this.mapToKeyManagerId(id);
+    const maxRetries = ApiKeyManager.getMaxSwitchCount();
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const result = await this.generateSummary(
+          content,
+          isBase64,
+          prompt,
+          onProgress,
+        );
+        // 成功后轮换到下一个密钥（等权重轮换）
+        ApiKeyManager.advanceToNextKey(keyManagerId);
+        return result;
+      } catch (error: any) {
+        lastError = error;
+        ztoolkit.log(
+          `[LLMClient] API 调用失败 (尝试 ${attempt + 1}/${maxRetries}): ${error?.message || error}`,
+        );
+
+        // 尝试轮换到下一个密钥
+        const rotated = ApiKeyManager.rotateToNextKey(keyManagerId);
+        if (!rotated) {
+          ztoolkit.log(`[LLMClient] 无更多可用密钥，停止重试`);
+          break;
+        }
+      }
+    }
+
+    throw lastError || new Error("所有 API 密钥均已耗尽");
+  }
+
+  /**
+   * 带自动轮换的聊天方法
+   * 遇到 API 错误时自动切换到下一个可用密钥
+   */
+  static async chatWithRetry(
+    pdfContent: string,
+    isBase64: boolean,
+    conversation: Array<{ role: string; content: string }>,
+    onProgress?: ProgressCb,
+  ): Promise<string> {
+    const { id } = this.resolveProvider();
+    const keyManagerId = this.mapToKeyManagerId(id);
+    const maxRetries = ApiKeyManager.getMaxSwitchCount();
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const result = await this.chat(
+          pdfContent,
+          isBase64,
+          conversation,
+          onProgress,
+        );
+        // 成功后轮换到下一个密钥（等权重轮换）
+        ApiKeyManager.advanceToNextKey(keyManagerId);
+        return result;
+      } catch (error: any) {
+        lastError = error;
+        ztoolkit.log(
+          `[LLMClient] Chat API 调用失败 (尝试 ${attempt + 1}/${maxRetries}): ${error?.message || error}`,
+        );
+
+        // 尝试轮换到下一个密钥
+        const rotated = ApiKeyManager.rotateToNextKey(keyManagerId);
+        if (!rotated) {
+          ztoolkit.log(`[LLMClient] 无更多可用密钥，停止重试`);
+          break;
+        }
+      }
+    }
+
+    throw lastError || new Error("所有 API 密钥均已耗尽");
   }
 
   private static notifyError(message: string) {

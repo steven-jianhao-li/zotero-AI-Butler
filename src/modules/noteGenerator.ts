@@ -161,7 +161,7 @@ export class NoteGenerator {
           }
         };
 
-        const summary = await LLMClient.generateSummary(
+        const summary = await LLMClient.generateSummaryWithRetry(
           pdfContent,
           isBase64,
           undefined,
@@ -560,8 +560,8 @@ export class NoteGenerator {
       };
 
       try {
-        // 调用 LLM 进行对话
-        const answer = await LLMClient.chat(
+        // 调用 LLM 进行对话（带自动 API 密钥轮换）
+        const answer = await LLMClient.chatWithRetry(
           pdfContent,
           isBase64,
           conversationHistory,
@@ -637,7 +637,8 @@ export class NoteGenerator {
       };
 
       try {
-        const summary = await LLMClient.chat(
+        // 调用 LLM 生成最终总结（带自动 API 密钥轮换）
+        const summary = await LLMClient.chatWithRetry(
           pdfContent,
           isBase64,
           conversationHistory,

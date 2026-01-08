@@ -16,6 +16,7 @@ import {
 } from "../ui/components";
 import LLMClient from "../../llmClient";
 import { APITestError } from "../../llmproviders/types";
+import { ApiKeyManager, type ProviderId } from "../../apiKeyManager";
 
 /**
  * API 设置页面类
@@ -189,8 +190,9 @@ export class ApiSettingsPage {
           "openaiApiKey",
           getPref("openaiApiKey") as string,
           "sk-...",
+          "openai",
         ),
-        "【必填】您的 API 密钥,将安全存储在本地",
+        "【必填】您的 API 密钥,将安全存储在本地。点击 + 添加更多密钥启用轮换。",
       ),
     );
     sectionOpenAI.appendChild(
@@ -244,8 +246,9 @@ export class ApiSettingsPage {
           (getPref("openaiCompatApiKey") as string) ||
             (getPref("openaiApiKey") as string),
           "sk-...",
+          "openai-compat",
         ),
-        "【必填】对应第三方服务的密钥（格式同 Bearer Token）",
+        "【必填】对应第三方服务的密钥。点击 + 添加更多密钥启用轮换。",
       ),
     );
     sectionOpenAICompat.appendChild(
@@ -297,8 +300,9 @@ export class ApiSettingsPage {
           "geminiApiKey",
           getPref("geminiApiKey") as string,
           "sk-...",
+          "google",
         ),
-        "【必填】您的 Gemini API Key, 将通过 x-goog-api-key 发送",
+        "【必填】您的 Gemini API Key。点击 + 添加更多密钥启用轮换。",
       ),
     );
     sectionGemini.appendChild(
@@ -334,8 +338,9 @@ export class ApiSettingsPage {
           "anthropicApiKey",
           getPref("anthropicApiKey") as string,
           "sk-ant-...",
+          "anthropic",
         ),
-        "【必填】您的 Anthropic API Key, 将通过 x-api-key 发送",
+        "【必填】您的 Anthropic API Key。点击 + 添加更多密钥启用轮换。",
       ),
     );
     sectionAnthropic.appendChild(
@@ -371,8 +376,9 @@ export class ApiSettingsPage {
           "openRouterApiKey",
           getPref("openRouterApiKey") as string,
           "sk-or-...",
+          "openrouter",
         ),
-        "【必填】您的 OpenRouter API Key",
+        "【必填】您的 OpenRouter API Key。点击 + 添加更多密钥启用轮换。",
       ),
     );
     sectionOpenRouter.appendChild(
@@ -616,6 +622,64 @@ export class ApiSettingsPage {
           "300",
         ),
         "后台自动扫描新文献的时间间隔,默认 5 分钟",
+      ),
+    );
+
+    // === API 轮换配置分隔线 ===
+    const rotationTitle = this.createElement("h3", {
+      textContent: "🔄 API 轮换配置",
+      styles: {
+        color: "#9c27b0",
+        marginTop: "40px",
+        marginBottom: "20px",
+        fontSize: "18px",
+        borderBottom: "2px solid #9c27b0",
+        paddingBottom: "8px",
+      },
+    });
+    form.appendChild(rotationTitle);
+
+    // API 轮换说明
+    const rotationNote = this.createElement("div", {
+      innerHTML:
+        "ℹ️ <strong>说明</strong>：配置备用 API 密钥后，当主密钥调用失败时会自动切换到备用密钥继续执行，提高任务成功率。",
+      styles: {
+        padding: "10px 12px",
+        backgroundColor: "#f3e5f5",
+        border: "1px solid #ce93d8",
+        borderRadius: "6px",
+        color: "#6a1b9a",
+        fontSize: "13px",
+        marginBottom: "16px",
+      },
+    });
+    form.appendChild(rotationNote);
+
+    // 最大切换次数
+    form.appendChild(
+      this.createFormGroup(
+        "最大切换次数",
+        this.createInput(
+          "maxApiSwitchCount",
+          "number",
+          (getPref("maxApiSwitchCount" as any) as string) || "3",
+          "3",
+        ),
+        "API 调用失败时最多切换密钥的次数，默认 3 次",
+      ),
+    );
+
+    // 失败冷却时间
+    form.appendChild(
+      this.createFormGroup(
+        "失败冷却时间(秒)",
+        this.createInput(
+          "failedKeyCooldownSeconds",
+          "number",
+          String(Math.floor((parseInt((getPref("failedKeyCooldown" as any) as string) || "300000") || 300000) / 1000)),
+          "300",
+        ),
+        "失败的密钥需要冷却多久才能再次使用，默认 300 秒 (5分钟)",
       ),
     );
 
@@ -923,13 +987,27 @@ export class ApiSettingsPage {
   }
 
   /**
-   * 创建密码输入框
+   * 创建密码输入框（支持多密钥管理）
+   *
+   * @param id 输入框ID
+   * @param value 当前值
+   * @param placeholder 占位符
+   * @param providerId 可选的提供商ID，用于多密钥管理
    */
   private createPasswordInput(
     id: string,
     value: string,
     placeholder?: string,
+    providerId?: ProviderId,
   ): HTMLElement {
+    const wrapper = this.createElement("div", {
+      styles: {
+        display: "flex",
+        flexDirection: "column",
+        gap: "8px",
+      },
+    });
+
     const container = this.createElement("div", {
       styles: {
         position: "relative",
@@ -967,7 +1045,205 @@ export class ApiSettingsPage {
 
     container.appendChild(toggleButton);
 
-    return container;
+    // 如果指定了 providerId，添加 "+" 按钮用于添加更多密钥
+    if (providerId) {
+      const addButton = this.createElement("button", {
+        textContent: "+",
+        styles: {
+          padding: "10px 16px",
+          border: "1px solid #4caf50",
+          borderRadius: "4px",
+          backgroundColor: "#e8f5e9",
+          color: "#2e7d32",
+          cursor: "pointer",
+          fontSize: "16px",
+          fontWeight: "bold",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        },
+      });
+
+      addButton.title = "添加更多密钥";
+
+      addButton.addEventListener("mouseenter", () => {
+        addButton.style.backgroundColor = "#4caf50";
+        addButton.style.color = "#fff";
+      });
+      addButton.addEventListener("mouseleave", () => {
+        addButton.style.backgroundColor = "#e8f5e9";
+        addButton.style.color = "#2e7d32";
+      });
+
+      addButton.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.addExtraKeyField(wrapper, providerId);
+      });
+
+      container.appendChild(addButton);
+
+      // 显示密钥数量提示
+      const keyCount = ApiKeyManager.getKeyCount(providerId);
+      if (keyCount > 1) {
+        const badge = this.createElement("span", {
+          textContent: `${keyCount}个密钥`,
+          styles: {
+            padding: "4px 8px",
+            backgroundColor: "#e3f2fd",
+            color: "#1565c0",
+            borderRadius: "12px",
+            fontSize: "12px",
+            fontWeight: "500",
+            display: "flex",
+            alignItems: "center",
+          },
+        });
+        container.appendChild(badge);
+      }
+    }
+
+    wrapper.appendChild(container);
+
+    // 如果有额外密钥，显示它们
+    if (providerId) {
+      const extraKeys = ApiKeyManager.getExtraKeys(providerId);
+      for (let i = 0; i < extraKeys.length; i++) {
+        this.renderExtraKeyField(wrapper, providerId, i, extraKeys[i]);
+      }
+    }
+
+    return wrapper;
+  }
+
+  /**
+   * 添加额外密钥输入框
+   */
+  private addExtraKeyField(wrapper: HTMLElement, providerId: ProviderId): void {
+    const extraKeys = ApiKeyManager.getExtraKeys(providerId);
+    const index = extraKeys.length;
+
+    // 创建新的空输入框
+    this.renderExtraKeyField(wrapper, providerId, index, "");
+  }
+
+  /**
+   * 渲染额外密钥输入框
+   */
+  private renderExtraKeyField(
+    wrapper: HTMLElement,
+    providerId: ProviderId,
+    index: number,
+    value: string,
+  ): void {
+    const container = this.createElement("div", {
+      styles: {
+        display: "flex",
+        gap: "8px",
+        alignItems: "center",
+      },
+    });
+    container.setAttribute("data-extra-key-index", String(index));
+    container.setAttribute("data-provider-id", providerId);
+
+    const label = this.createElement("span", {
+      textContent: `密钥 ${index + 2}:`,
+      styles: {
+        fontSize: "12px",
+        color: "#666",
+        minWidth: "60px",
+      },
+    });
+    container.appendChild(label);
+
+    const input = this.createInput(
+      `${providerId}-extraKey-${index}`,
+      "password",
+      value,
+      "sk-...",
+    );
+    input.style.flex = "1";
+    container.appendChild(input);
+
+    // 保存按钮
+    const saveBtn = this.createElement("button", {
+      textContent: "✓",
+      styles: {
+        padding: "8px 12px",
+        border: "1px solid #4caf50",
+        borderRadius: "4px",
+        backgroundColor: "#e8f5e9",
+        color: "#2e7d32",
+        cursor: "pointer",
+        fontSize: "14px",
+      },
+    });
+    saveBtn.title = "保存此密钥";
+    saveBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const inputEl = container.querySelector("input") as HTMLInputElement;
+      const newKey = inputEl?.value?.trim() || "";
+      if (newKey) {
+        const extraKeys = ApiKeyManager.getExtraKeys(providerId);
+        if (index < extraKeys.length) {
+          extraKeys[index] = newKey;
+        } else {
+          extraKeys.push(newKey);
+        }
+        ApiKeyManager.saveExtraKeys(providerId, extraKeys);
+        new ztoolkit.ProgressWindow("API 配置", { closeTime: 1500 })
+          .createLine({ text: `✅ 密钥 ${index + 2} 已保存`, type: "success" })
+          .show();
+      }
+    });
+    container.appendChild(saveBtn);
+
+    // 删除按钮
+    const deleteBtn = this.createElement("button", {
+      textContent: "×",
+      styles: {
+        padding: "8px 12px",
+        border: "1px solid #f44336",
+        borderRadius: "4px",
+        backgroundColor: "#ffebee",
+        color: "#c62828",
+        cursor: "pointer",
+        fontSize: "14px",
+        fontWeight: "bold",
+      },
+    });
+    deleteBtn.title = "删除此密钥";
+    deleteBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      ApiKeyManager.removeExtraKey(providerId, index);
+      container.remove();
+      // 刷新索引
+      this.refreshExtraKeyIndices(wrapper, providerId);
+      new ztoolkit.ProgressWindow("API 配置", { closeTime: 1500 })
+        .createLine({ text: `🗑️ 密钥已删除`, type: "default" })
+        .show();
+    });
+    container.appendChild(deleteBtn);
+
+    wrapper.appendChild(container);
+  }
+
+  /**
+   * 刷新额外密钥的索引显示
+   */
+  private refreshExtraKeyIndices(
+    wrapper: HTMLElement,
+    providerId: ProviderId,
+  ): void {
+    const containers = wrapper.querySelectorAll(
+      `[data-provider-id="${providerId}"]`,
+    );
+    containers.forEach((container: Element, idx: number) => {
+      container.setAttribute("data-extra-key-index", String(idx));
+      const label = container.querySelector("span");
+      if (label) {
+        label.textContent = `密钥 ${idx + 2}:`;
+      }
+    });
   }
 
   /**
@@ -1304,6 +1580,21 @@ export class ApiSettingsPage {
       setPref("scanInterval", values.scanInterval);
       // PDF 处理模式
       setPref("pdfProcessMode", values.pdfProcessMode);
+
+      // API 轮换配置
+      const maxSwitchEl = this.container.querySelector(
+        "#setting-maxApiSwitchCount",
+      ) as HTMLInputElement | null;
+      const cooldownSecsEl = this.container.querySelector(
+        "#setting-failedKeyCooldownSeconds",
+      ) as HTMLInputElement | null;
+      if (maxSwitchEl) {
+        setPref("maxApiSwitchCount" as any, maxSwitchEl.value?.trim() || "3");
+      }
+      if (cooldownSecsEl) {
+        const secs = parseInt(cooldownSecsEl.value?.trim() || "300") || 300;
+        setPref("failedKeyCooldown" as any, String(secs * 1000));
+      }
 
       // 不再在保存时强制调整 PDF 模式
 

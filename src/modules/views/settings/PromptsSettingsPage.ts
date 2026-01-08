@@ -596,7 +596,10 @@ export class PromptsSettingsPage {
       custom[currentPresetName] = text;
       setPref("customPrompts", JSON.stringify(custom));
       new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: `✅ 预设「${currentPresetName}」已更新`, type: "success" })
+        .createLine({
+          text: `✅ 预设「${currentPresetName}」已更新`,
+          type: "success",
+        })
         .show();
     } else {
       // 内置预设，仅保存到 summaryPrompt

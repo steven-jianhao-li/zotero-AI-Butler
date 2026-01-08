@@ -104,7 +104,10 @@ export class ApiKeyManager {
     providerId: ProviderId,
     indices: number[],
   ): void {
-    setPref(this.getDisabledKeysPrefKey(providerId) as any, JSON.stringify(indices));
+    setPref(
+      this.getDisabledKeysPrefKey(providerId) as any,
+      JSON.stringify(indices),
+    );
   }
 
   /**
@@ -166,8 +169,7 @@ export class ApiKeyManager {
 
     // 2. 获取额外密钥列表
     try {
-      const json =
-        (getPref(mapping.extraKeysPrefKey as any) as string) || "[]";
+      const json = (getPref(mapping.extraKeysPrefKey as any) as string) || "[]";
       const extraKeys = JSON.parse(json) as string[];
       if (Array.isArray(extraKeys)) {
         for (const k of extraKeys) {
@@ -309,8 +311,7 @@ export class ApiKeyManager {
     }
 
     try {
-      const json =
-        (getPref(mapping.extraKeysPrefKey as any) as string) || "[]";
+      const json = (getPref(mapping.extraKeysPrefKey as any) as string) || "[]";
       const keys = JSON.parse(json) as string[];
       return Array.isArray(keys) ? keys : [];
     } catch (e) {

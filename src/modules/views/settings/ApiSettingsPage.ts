@@ -681,7 +681,13 @@ export class ApiSettingsPage {
         this.createInput(
           "failedKeyCooldownSeconds",
           "number",
-          String(Math.floor((parseInt((getPref("failedKeyCooldown" as any) as string) || "300000") || 300000) / 1000)),
+          String(
+            Math.floor(
+              (parseInt(
+                (getPref("failedKeyCooldown" as any) as string) || "300000",
+              ) || 300000) / 1000,
+            ),
+          ),
           "300",
         ),
         "失败的密钥需要冷却多久才能再次使用，默认 300 秒 (5分钟)",
@@ -1078,7 +1084,11 @@ export class ApiSettingsPage {
           providerId,
           keyIndex,
         );
-        statusIcon.style.color = nowDisabled ? "#9e9e9e" : hasValue ? "#4caf50" : "#bbb";
+        statusIcon.style.color = nowDisabled
+          ? "#9e9e9e"
+          : hasValue
+            ? "#4caf50"
+            : "#bbb";
         statusIcon.title = getTooltip(nowDisabled, hasValue);
         this.updateAllKeyBadges(providerId);
       });
@@ -1101,6 +1111,48 @@ export class ApiSettingsPage {
     // 输入框
     const input = this.createInput(id, "password", value, placeholder);
     input.style.flex = "1";
+
+    // 自动保存第一个密钥（与额外密钥行为一致）
+    if (providerId) {
+      const mapping: Record<ProviderId, string> = {
+        openai: "openaiApiKey",
+        "openai-compat": "openaiCompatApiKey",
+        google: "geminiApiKey",
+        anthropic: "anthropicApiKey",
+        openrouter: "openRouterApiKey",
+      };
+      const prefKey = mapping[providerId];
+      if (prefKey) {
+        let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+        const saveFirstKey = () => {
+          const newKey = input.value?.trim() || "";
+          setPref(prefKey as any, newKey);
+          // 更新状态指示器
+          const statusIconEl = container.querySelector(
+            "[data-key-status]",
+          ) as HTMLElement | null;
+          if (statusIconEl) {
+            const isDisabled = ApiKeyManager.isKeyDisabled(providerId, 0);
+            statusIconEl.style.color = isDisabled
+              ? "#9e9e9e"
+              : newKey
+                ? "#4caf50"
+                : "#bbb";
+          }
+          this.updateAllKeyBadges(providerId);
+          ztoolkit.log(`[ApiSettingsPage] 自动保存密钥1: ${prefKey}`);
+        };
+        input.addEventListener("input", () => {
+          if (saveTimeout) clearTimeout(saveTimeout);
+          saveTimeout = setTimeout(saveFirstKey, 500);
+        });
+        input.addEventListener("blur", () => {
+          if (saveTimeout) clearTimeout(saveTimeout);
+          saveFirstKey();
+        });
+      }
+    }
+
     container.appendChild(input);
 
     // 显示/隐藏按钮
@@ -1265,7 +1317,11 @@ export class ApiSettingsPage {
     statusIcon.setAttribute("data-key-status", `${providerId}-${keyIndex}`);
     statusIcon.addEventListener("click", () => {
       const nowDisabled = ApiKeyManager.toggleKeyDisabled(providerId, keyIndex);
-      statusIcon.style.color = nowDisabled ? "#9e9e9e" : hasValue ? "#4caf50" : "#bbb";
+      statusIcon.style.color = nowDisabled
+        ? "#9e9e9e"
+        : hasValue
+          ? "#4caf50"
+          : "#bbb";
       statusIcon.title = getTooltip(nowDisabled, hasValue);
       this.updateAllKeyBadges(providerId);
     });
@@ -2077,7 +2133,9 @@ export class ApiSettingsPage {
     const provider = (getPref("provider") as string) || "openai";
     const keyManagerId = this.mapToKeyManagerId(provider);
     const statusSelector = `[data-key-status="${keyManagerId}-${keyIndex}"]`;
-    const statusIcon = this.container.querySelector(statusSelector) as HTMLElement | null;
+    const statusIcon = this.container.querySelector(
+      statusSelector,
+    ) as HTMLElement | null;
     if (statusIcon) {
       statusIcon.style.color = isValid ? "#4caf50" : "#f44336";
       statusIcon.title = isValid ? "测试成功" : "测试失败";

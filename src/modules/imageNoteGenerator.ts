@@ -29,7 +29,8 @@ export class ImageNoteGenerator {
   /**
    * 创建一图总结笔记
    *
-   * 将 Base64 编码的图片嵌入到新建的 Zotero 笔记中
+   * 使用 Zotero 官方 API 将图片作为独立附件存储，笔记中只保留引用
+   * 这样可以大幅减小笔记大小，解决 WebDAV 同步限制问题
    *
    * @param item Zotero 文献条目对象
    * @param imageBase64 Base64 编码的图片数据 (不含 data URI 前缀)
@@ -43,31 +44,93 @@ export class ImageNoteGenerator {
   ): Promise<Zotero.Item> {
     const itemTitle = item.getField("title") as string;
 
-    // 构建 data URI
-    const dataUri = `data:${mimeType};base64,${imageBase64}`;
-
-    // 格式化笔记内容
-    const noteContent = this.formatImageNoteContent(itemTitle, dataUri);
-
     // 检查是否已存在一图总结笔记
-    const existing = await this.findExistingImageNote(item);
-    if (existing) {
-      // 更新已存在的笔记
-      (existing as any).setNote?.(noteContent);
-      await (existing as any).saveTx?.();
-      ztoolkit.log(`[AI-Butler] 更新已存在的一图总结笔记: ${existing.id}`);
-      return existing;
+    let note = await this.findExistingImageNote(item);
+    const isUpdate = !!note;
+
+    if (!note) {
+      // 创建新笔记（先设置临时内容）
+      note = new Zotero.Item("note");
+      note.parentID = item.id;
+      note.setNote("<p>正在生成一图总结...</p>");
+      note.addTag(this.IMAGE_NOTE_TAG);
+      await note.saveTx();
+      ztoolkit.log(`[AI-Butler] 创建新的一图总结笔记: ${note.id}`);
     }
 
-    // 创建新笔记
-    const note = new Zotero.Item("note");
-    note.parentID = item.id;
+    // 将 base64 转换为 Blob
+    const blob = this.base64ToBlob(imageBase64, mimeType);
+
+    // 使用官方 API 创建 embedded-image attachment
+    // 这样图片作为独立附件存储，笔记中只保留 data-attachment-key 引用
+    const attachment = await Zotero.Attachments.importEmbeddedImage({
+      blob: blob,
+      parentItemID: note.id,
+    });
+
+    ztoolkit.log(
+      `[AI-Butler] 创建图片附件: key=${attachment.key}, noteID=${note.id}`,
+    );
+
+    // 格式化笔记内容（使用 data-attachment-key 引用）
+    const noteContent = this.formatImageNoteContentWithAttachment(
+      itemTitle,
+      attachment.key,
+    );
+
+    // 更新笔记内容
     note.setNote(noteContent);
-    note.addTag(this.IMAGE_NOTE_TAG);
     await note.saveTx();
 
-    ztoolkit.log(`[AI-Butler] 创建一图总结笔记: ${note.id}`);
+    ztoolkit.log(
+      `[AI-Butler] ${isUpdate ? "更新" : "创建"}一图总结笔记完成: ${note.id}`,
+    );
     return note;
+  }
+
+  /**
+   * 将 Base64 字符串转换为 Blob 对象
+   *
+   * @param base64 Base64 编码的数据 (不含 data URI 前缀)
+   * @param mimeType MIME 类型
+   * @returns Blob 对象
+   */
+  private static base64ToBlob(base64: string, mimeType: string): Blob {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: mimeType });
+  }
+
+  /**
+   * 格式化使用附件引用的图片笔记 HTML 内容
+   *
+   * @param itemTitle 文献标题
+   * @param attachmentKey 图片附件的 key
+   * @returns 格式化后的 HTML 内容
+   */
+  private static formatImageNoteContentWithAttachment(
+    itemTitle: string,
+    attachmentKey: string,
+  ): string {
+    // 截断过长的标题
+    const maxTitleLength = 80;
+    let truncatedTitle = itemTitle;
+    if (truncatedTitle.length > maxTitleLength) {
+      truncatedTitle = truncatedTitle.substring(0, maxTitleLength) + "...";
+    }
+
+    // 构建笔记 HTML，使用 data-attachment-key 引用图片
+    return `<h2>${this.NOTE_TITLE_PREFIX}${this.escapeHtml(truncatedTitle)}</h2>
+<div style="text-align: center; padding: 10px;">
+  <img data-attachment-key="${attachmentKey}" alt="学术概念海报" style="max-width: 100%; height: auto;" />
+</div>
+<p style="text-align: center; color: #666; font-size: 12px;">
+  由 AI 管家自动生成的学术概念海报
+</p>`;
   }
 
   /**

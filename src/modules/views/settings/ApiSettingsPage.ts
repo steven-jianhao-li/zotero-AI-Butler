@@ -193,6 +193,7 @@ export class ApiSettingsPage {
           "openai",
         ),
         "【必填】您的 API 密钥,将安全存储在本地。点击 + 添加更多密钥启用轮换。",
+        "openai",
       ),
     );
     sectionOpenAI.appendChild(
@@ -249,6 +250,7 @@ export class ApiSettingsPage {
           "openai-compat",
         ),
         "【必填】对应第三方服务的密钥。点击 + 添加更多密钥启用轮换。",
+        "openai-compat",
       ),
     );
     sectionOpenAICompat.appendChild(
@@ -303,6 +305,7 @@ export class ApiSettingsPage {
           "google",
         ),
         "【必填】您的 Gemini API Key。点击 + 添加更多密钥启用轮换。",
+        "google",
       ),
     );
     sectionGemini.appendChild(
@@ -341,6 +344,7 @@ export class ApiSettingsPage {
           "anthropic",
         ),
         "【必填】您的 Anthropic API Key。点击 + 添加更多密钥启用轮换。",
+        "anthropic",
       ),
     );
     sectionAnthropic.appendChild(
@@ -379,6 +383,7 @@ export class ApiSettingsPage {
           "openrouter",
         ),
         "【必填】您的 OpenRouter API Key。点击 + 添加更多密钥启用轮换。",
+        "openrouter",
       ),
     );
     sectionOpenRouter.appendChild(
@@ -912,6 +917,7 @@ export class ApiSettingsPage {
     label: string,
     input: HTMLElement,
     description?: string,
+    providerId?: ProviderId,
   ): HTMLElement {
     const group = this.createElement("div", {
       styles: {
@@ -919,18 +925,44 @@ export class ApiSettingsPage {
       },
     });
 
+    // 标签行：包含标签和可选的密钥数量徽标
+    const labelRow = this.createElement("div", {
+      styles: {
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        marginBottom: "8px",
+      },
+    });
+
     const labelElement = this.createElement("label", {
       textContent: label,
       styles: {
-        display: "block",
-        marginBottom: "8px",
         fontSize: "14px",
         fontWeight: "600",
         color: "#333",
       },
     });
-    group.appendChild(labelElement);
+    labelRow.appendChild(labelElement);
 
+    // 密钥数量徽标（仅当 providerId 存在时显示）
+    if (providerId) {
+      const badge = this.createElement("span", {
+        styles: {
+          padding: "3px 8px",
+          backgroundColor: "#e3f2fd",
+          color: "#1565c0",
+          borderRadius: "10px",
+          fontSize: "11px",
+          fontWeight: "500",
+        },
+      });
+      badge.setAttribute("data-key-badge", providerId);
+      this.updateKeyBadge(badge, providerId);
+      labelRow.appendChild(badge);
+    }
+
+    group.appendChild(labelRow);
     group.appendChild(input);
 
     if (description) {
@@ -1004,36 +1036,72 @@ export class ApiSettingsPage {
       styles: {
         display: "flex",
         flexDirection: "column",
-        gap: "8px",
+        gap: "6px",
       },
     });
+    if (providerId) {
+      wrapper.setAttribute("data-key-wrapper", providerId);
+    }
 
+    // 第一行：状态 + 密钥1 + 输入框 + 按钮
     const container = this.createElement("div", {
       styles: {
-        position: "relative",
         display: "flex",
         gap: "8px",
+        alignItems: "center",
       },
     });
 
+    // 状态指示器（放最前面）
+    if (providerId) {
+      const statusIcon = this.createElement("span", {
+        textContent: "●",
+        styles: {
+          color: value?.trim() ? "#4caf50" : "#bbb",
+          fontSize: "14px",
+          lineHeight: "1",
+        },
+      });
+      statusIcon.title = value?.trim() ? "已配置" : "未配置";
+      statusIcon.setAttribute("data-key-status", `${providerId}-0`);
+      container.appendChild(statusIcon);
+    }
+
+    // 密钥1标签
+    if (providerId) {
+      const keyLabel = this.createElement("span", {
+        textContent: "密钥1",
+        styles: {
+          fontSize: "12px",
+          color: "#666",
+          whiteSpace: "nowrap",
+        },
+      });
+      container.appendChild(keyLabel);
+    }
+
+    // 输入框
     const input = this.createInput(id, "password", value, placeholder);
     input.style.flex = "1";
     container.appendChild(input);
 
+    // 显示/隐藏按钮
     const toggleButton = this.createElement("button", {
       textContent: "👁️",
       styles: {
-        padding: "10px 16px",
+        padding: "8px 12px",
         border: "1px solid #ddd",
         borderRadius: "4px",
         backgroundColor: "#f5f5f5",
         cursor: "pointer",
-        fontSize: "16px",
+        fontSize: "14px",
+        lineHeight: "1",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
       },
     });
+    toggleButton.title = "显示/隐藏密钥";
 
     let isVisible = false;
     toggleButton.addEventListener("click", (e) => {
@@ -1042,28 +1110,27 @@ export class ApiSettingsPage {
       input.type = isVisible ? "text" : "password";
       toggleButton.textContent = isVisible ? "🙈" : "👁️";
     });
-
     container.appendChild(toggleButton);
 
-    // 如果指定了 providerId，添加 "+" 按钮用于添加更多密钥
+    // 添加密钥按钮
     if (providerId) {
       const addButton = this.createElement("button", {
         textContent: "+",
         styles: {
-          padding: "10px 16px",
+          padding: "8px 12px",
           border: "1px solid #4caf50",
           borderRadius: "4px",
           backgroundColor: "#e8f5e9",
           color: "#2e7d32",
           cursor: "pointer",
-          fontSize: "16px",
+          fontSize: "14px",
           fontWeight: "bold",
+          lineHeight: "1",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
         },
       });
-
       addButton.title = "添加更多密钥";
 
       addButton.addEventListener("mouseenter", () => {
@@ -1078,33 +1145,15 @@ export class ApiSettingsPage {
       addButton.addEventListener("click", (e) => {
         e.preventDefault();
         this.addExtraKeyField(wrapper, providerId);
+        this.updateAllKeyBadges(providerId);
       });
 
       container.appendChild(addButton);
-
-      // 显示密钥数量提示
-      const keyCount = ApiKeyManager.getKeyCount(providerId);
-      if (keyCount > 1) {
-        const badge = this.createElement("span", {
-          textContent: `${keyCount}个密钥`,
-          styles: {
-            padding: "4px 8px",
-            backgroundColor: "#e3f2fd",
-            color: "#1565c0",
-            borderRadius: "12px",
-            fontSize: "12px",
-            fontWeight: "500",
-            display: "flex",
-            alignItems: "center",
-          },
-        });
-        container.appendChild(badge);
-      }
     }
 
     wrapper.appendChild(container);
 
-    // 如果有额外密钥，显示它们
+    // 渲染已有的额外密钥
     if (providerId) {
       const extraKeys = ApiKeyManager.getExtraKeys(providerId);
       for (let i = 0; i < extraKeys.length; i++) {
@@ -1116,18 +1165,44 @@ export class ApiSettingsPage {
   }
 
   /**
+   * 更新密钥数量徽标
+   */
+  private updateKeyBadge(badge: HTMLElement, providerId: ProviderId): void {
+    const allKeys = ApiKeyManager.getAllKeys(providerId);
+    const total = allKeys.length;
+    const valid = allKeys.filter((k) => k?.trim()).length;
+    badge.textContent = `共 ${total} 个密钥，${valid} 个有效`;
+  }
+
+  /**
+   * 更新所有徽标（删除或添加密钥后调用）
+   */
+  private updateAllKeyBadges(providerId: ProviderId): void {
+    const badges = this.container.querySelectorAll(
+      `[data-key-badge="${providerId}"]`,
+    );
+    badges.forEach((badge: Element) => {
+      this.updateKeyBadge(badge as HTMLElement, providerId);
+    });
+  }
+
+  /**
    * 添加额外密钥输入框
    */
   private addExtraKeyField(wrapper: HTMLElement, providerId: ProviderId): void {
     const extraKeys = ApiKeyManager.getExtraKeys(providerId);
     const index = extraKeys.length;
 
+    // 先保存一个空占位符
+    extraKeys.push("");
+    ApiKeyManager.saveExtraKeys(providerId, extraKeys);
+
     // 创建新的空输入框
     this.renderExtraKeyField(wrapper, providerId, index, "");
   }
 
   /**
-   * 渲染额外密钥输入框
+   * 渲染额外密钥输入框（自动保存）
    */
   private renderExtraKeyField(
     wrapper: HTMLElement,
@@ -1145,16 +1220,31 @@ export class ApiSettingsPage {
     container.setAttribute("data-extra-key-index", String(index));
     container.setAttribute("data-provider-id", providerId);
 
+    // 状态指示器（放最前面）
+    const statusIcon = this.createElement("span", {
+      textContent: "●",
+      styles: {
+        color: value?.trim() ? "#4caf50" : "#bbb",
+        fontSize: "14px",
+        lineHeight: "1",
+      },
+    });
+    statusIcon.title = value?.trim() ? "已配置" : "未配置";
+    statusIcon.setAttribute("data-key-status", `${providerId}-${index + 1}`);
+    container.appendChild(statusIcon);
+
+    // 密钥标签
     const label = this.createElement("span", {
-      textContent: `密钥 ${index + 2}:`,
+      textContent: `密钥${index + 2}`,
       styles: {
         fontSize: "12px",
         color: "#666",
-        minWidth: "60px",
+        whiteSpace: "nowrap",
       },
     });
     container.appendChild(label);
 
+    // 密码输入框
     const input = this.createInput(
       `${providerId}-extraKey-${index}`,
       "password",
@@ -1162,40 +1252,69 @@ export class ApiSettingsPage {
       "sk-...",
     );
     input.style.flex = "1";
+
+    // 自动保存（输入时延迟保存）
+    let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+    const saveKey = () => {
+      const newKey = input.value?.trim() || "";
+      const extraKeys = ApiKeyManager.getExtraKeys(providerId);
+      const currentIdx = parseInt(
+        container.getAttribute("data-extra-key-index") || "0",
+      );
+      // 确保数组足够大以容纳当前索引
+      while (extraKeys.length <= currentIdx) {
+        extraKeys.push("");
+      }
+      extraKeys[currentIdx] = newKey;
+      ApiKeyManager.saveExtraKeys(providerId, extraKeys);
+      // 更新状态图标
+      const statusIconEl = container.querySelector(
+        "[data-key-status]",
+      ) as HTMLElement;
+      if (statusIconEl) {
+        statusIconEl.style.color = newKey ? "#4caf50" : "#bbb";
+        statusIconEl.title = newKey ? "已配置" : "未配置";
+      }
+      // 更新徽标
+      this.updateAllKeyBadges(providerId);
+    };
+
+    input.addEventListener("input", () => {
+      if (saveTimeout) clearTimeout(saveTimeout);
+      saveTimeout = setTimeout(saveKey, 500);
+    });
+    input.addEventListener("blur", () => {
+      if (saveTimeout) clearTimeout(saveTimeout);
+      saveKey();
+    });
+
     container.appendChild(input);
 
-    // 保存按钮
-    const saveBtn = this.createElement("button", {
-      textContent: "✓",
+    // 显示/隐藏按钮
+    const toggleBtn = this.createElement("button", {
+      textContent: "👁️",
       styles: {
         padding: "8px 12px",
-        border: "1px solid #4caf50",
+        border: "1px solid #ddd",
         borderRadius: "4px",
-        backgroundColor: "#e8f5e9",
-        color: "#2e7d32",
+        backgroundColor: "#f5f5f5",
         cursor: "pointer",
         fontSize: "14px",
+        lineHeight: "1",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
       },
     });
-    saveBtn.title = "保存此密钥";
-    saveBtn.addEventListener("click", (e) => {
+    toggleBtn.title = "显示/隐藏";
+    let isVisible = false;
+    toggleBtn.addEventListener("click", (e) => {
       e.preventDefault();
-      const inputEl = container.querySelector("input") as HTMLInputElement;
-      const newKey = inputEl?.value?.trim() || "";
-      if (newKey) {
-        const extraKeys = ApiKeyManager.getExtraKeys(providerId);
-        if (index < extraKeys.length) {
-          extraKeys[index] = newKey;
-        } else {
-          extraKeys.push(newKey);
-        }
-        ApiKeyManager.saveExtraKeys(providerId, extraKeys);
-        new ztoolkit.ProgressWindow("API 配置", { closeTime: 1500 })
-          .createLine({ text: `✅ 密钥 ${index + 2} 已保存`, type: "success" })
-          .show();
-      }
+      isVisible = !isVisible;
+      input.type = isVisible ? "text" : "password";
+      toggleBtn.textContent = isVisible ? "🙈" : "👁️";
     });
-    container.appendChild(saveBtn);
+    container.appendChild(toggleBtn);
 
     // 删除按钮
     const deleteBtn = this.createElement("button", {
@@ -1209,18 +1328,22 @@ export class ApiSettingsPage {
         cursor: "pointer",
         fontSize: "14px",
         fontWeight: "bold",
+        lineHeight: "1",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
       },
     });
     deleteBtn.title = "删除此密钥";
     deleteBtn.addEventListener("click", (e) => {
       e.preventDefault();
-      ApiKeyManager.removeExtraKey(providerId, index);
+      const currentIdx = parseInt(
+        container.getAttribute("data-extra-key-index") || "0",
+      );
+      ApiKeyManager.removeExtraKey(providerId, currentIdx);
       container.remove();
-      // 刷新索引
       this.refreshExtraKeyIndices(wrapper, providerId);
-      new ztoolkit.ProgressWindow("API 配置", { closeTime: 1500 })
-        .createLine({ text: `🗑️ 密钥已删除`, type: "default" })
-        .show();
+      this.updateAllKeyBadges(providerId);
     });
     container.appendChild(deleteBtn);
 
@@ -1239,9 +1362,14 @@ export class ApiSettingsPage {
     );
     containers.forEach((container: Element, idx: number) => {
       container.setAttribute("data-extra-key-index", String(idx));
-      const label = container.querySelector("span");
-      if (label) {
+      const label = container.querySelector("span:first-child") as HTMLElement;
+      if (label && !label.hasAttribute("data-key-status")) {
         label.textContent = `密钥 ${idx + 2}:`;
+      }
+      // 更新状态指示器的ID
+      const statusIcon = container.querySelector("[data-key-status]");
+      if (statusIcon) {
+        statusIcon.setAttribute("data-key-status", `${providerId}-${idx + 1}`);
       }
     });
   }
@@ -1619,6 +1747,143 @@ export class ApiSettingsPage {
    * 测试 API 连接
    */
   private async testApiConnection(): Promise<void> {
+    // 获取当前提供商和密钥
+    const provider = (getPref("provider") as string) || "openai";
+    const keyManagerId = this.mapToKeyManagerId(provider);
+    const allKeys = ApiKeyManager.getAllKeys(keyManagerId);
+
+    // 如果有多个密钥，让用户选择
+    if (allKeys.length > 1) {
+      this.showKeySelectionPopup(keyManagerId, allKeys);
+      return;
+    }
+
+    // 只有一个密钥，直接测试
+    await this.runTestConnection();
+  }
+
+  /**
+   * 映射提供商ID到KeyManagerId
+   */
+  private mapToKeyManagerId(provider: string): ProviderId {
+    if (provider === "google") return "google";
+    if (provider === "anthropic") return "anthropic";
+    if (provider === "openrouter") return "openrouter";
+    if (provider === "openai-compat") return "openai-compat";
+    return "openai";
+  }
+
+  /**
+   * 显示密钥选择弹窗
+   */
+  private showKeySelectionPopup(providerId: ProviderId, keys: string[]): void {
+    // 创建遮罩层（固定定位，覆盖整个视口）
+    const overlay = this.createElement("div", {
+      styles: {
+        position: "fixed",
+        top: "0",
+        left: "0",
+        width: "100vw",
+        height: "100vh",
+        backgroundColor: "rgba(0,0,0,0.5)",
+        zIndex: "10000",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+    });
+
+    // 弹窗容器
+    const popup = this.createElement("div", {
+      styles: {
+        backgroundColor: "#fff",
+        borderRadius: "8px",
+        padding: "20px",
+        minWidth: "320px",
+        maxWidth: "420px",
+        boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+      },
+    });
+
+    // 标题
+    const title = this.createElement("div", {
+      textContent: "选择要测试的密钥",
+      styles: {
+        fontSize: "16px",
+        fontWeight: "600",
+        marginBottom: "16px",
+        color: "#333",
+      },
+    });
+    popup.appendChild(title);
+
+    // 密钥列表
+    keys.forEach((key, index) => {
+      const btn = this.createElement("button", {
+        textContent: `密钥 ${index + 1}: ${ApiKeyManager.maskKey(key)}`,
+        styles: {
+          display: "block",
+          width: "100%",
+          padding: "12px 14px",
+          marginBottom: "8px",
+          border: "1px solid #ddd",
+          borderRadius: "6px",
+          backgroundColor: "#f8f9fa",
+          cursor: "pointer",
+          fontSize: "14px",
+          textAlign: "left",
+        },
+      });
+      btn.addEventListener("mouseenter", () => {
+        btn.style.backgroundColor = "#e3f2fd";
+        btn.style.borderColor = "#2196f3";
+      });
+      btn.addEventListener("mouseleave", () => {
+        btn.style.backgroundColor = "#f8f9fa";
+        btn.style.borderColor = "#ddd";
+      });
+      btn.addEventListener("click", async () => {
+        overlay.remove();
+        await this.runTestConnectionWithKey(key, index);
+      });
+      popup.appendChild(btn);
+    });
+
+    // 取消按钮
+    const cancelBtn = this.createElement("button", {
+      textContent: "取消",
+      styles: {
+        display: "block",
+        width: "100%",
+        padding: "12px 14px",
+        marginTop: "8px",
+        border: "1px solid #ccc",
+        borderRadius: "6px",
+        backgroundColor: "#fff",
+        cursor: "pointer",
+        fontSize: "14px",
+        color: "#666",
+      },
+    });
+    cancelBtn.addEventListener("click", () => overlay.remove());
+    popup.appendChild(cancelBtn);
+
+    overlay.appendChild(popup);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+
+    // 附加到设置页容器
+    this.container.appendChild(overlay);
+    ztoolkit.log(
+      `[ApiSettingsPage] 显示密钥选择弹窗，共 ${keys.length} 个密钥`,
+    );
+  }
+
+  /**
+   * 执行测试连接（使用当前活动密钥）
+   */
+  private async runTestConnection(): Promise<void> {
     const progressWindow = new ztoolkit.ProgressWindow("API 连接测试", {
       closeTime: -1,
     });
@@ -1686,6 +1951,75 @@ export class ApiSettingsPage {
         resultBox.style.border = "1px solid #ffcdd2";
         resultPre.style.color = "#b71c1c";
         resultPre.textContent = fullMsg;
+      }
+
+      setTimeout(() => progressWindow.close(), 5000);
+    }
+  }
+
+  /**
+   * 执行测试连接（使用指定密钥）
+   */
+  private async runTestConnectionWithKey(
+    apiKey: string,
+    keyIndex: number,
+  ): Promise<void> {
+    const progressWindow = new ztoolkit.ProgressWindow("API 连接测试", {
+      closeTime: -1,
+    });
+    progressWindow.createLine({
+      text: `正在测试密钥 ${keyIndex + 1}...`,
+      type: "default",
+    });
+    progressWindow.show();
+
+    const resultBox = this.container.querySelector(
+      "#api-test-result",
+    ) as HTMLElement | null;
+    const resultPre = this.container.querySelector(
+      "#api-test-result-text",
+    ) as HTMLElement | null;
+    if (resultBox && resultPre) {
+      resultBox.style.display = "block";
+      resultBox.style.backgroundColor = "#fff8e1";
+      resultBox.style.border = "1px solid #ffe082";
+      resultPre.textContent = `正在测试密钥 ${keyIndex + 1}…\n请稍候。`;
+    }
+
+    try {
+      await this.saveSettings();
+      const result = await LLMClient.testConnectionWithKey(apiKey);
+
+      progressWindow.changeLine({
+        text: `✅ 密钥 ${keyIndex + 1} 测试成功`,
+        type: "success",
+        progress: 100,
+      });
+
+      if (resultBox && resultPre) {
+        resultBox.style.display = "block";
+        resultBox.style.backgroundColor = "#e8f5e9";
+        resultBox.style.border = "1px solid #a5d6a7";
+        resultPre.style.color = "#1b5e20";
+        resultPre.textContent = `密钥 ${keyIndex + 1} 测试结果:\n${result}`;
+      }
+
+      setTimeout(() => progressWindow.close(), 3000);
+    } catch (error: any) {
+      const fullMsg = error?.message || String(error);
+
+      progressWindow.changeLine({
+        text: `❌ 密钥 ${keyIndex + 1} 测试失败`,
+        type: "fail",
+        progress: 100,
+      });
+
+      if (resultBox && resultPre) {
+        resultBox.style.display = "block";
+        resultBox.style.backgroundColor = "#ffebee";
+        resultBox.style.border = "1px solid #ffcdd2";
+        resultPre.style.color = "#b71c1c";
+        resultPre.textContent = `密钥 ${keyIndex + 1} 测试失败:\n${fullMsg}`;
       }
 
       setTimeout(() => progressWindow.close(), 5000);

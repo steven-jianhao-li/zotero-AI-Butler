@@ -371,8 +371,12 @@ export class ApiKeyManager {
    * 遮罩密钥（只显示前4位和后4位）
    */
   static maskKey(key: string): string {
-    if (!key || key.length <= 8) {
-      return key ? "****" : "(空)";
+    if (!key) {
+      return "(空)";
+    }
+    // 短密钥直接显示
+    if (key.length <= 8) {
+      return key;
     }
     return `${key.slice(0, 4)}...${key.slice(-4)}`;
   }

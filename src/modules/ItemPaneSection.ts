@@ -1352,12 +1352,14 @@ async function loadImageSummary(
           const [header, base64Data] = imgSrc.split(",");
           const mimeMatch = header.match(/data:([^;]+)/);
           const mimeType = mimeMatch ? mimeMatch[1] : "image/png";
-          const ext = mimeType.split("/")[1] || "png";
+          // Map MIME type to common file extension (jpeg -> jpg)
+          const mimeExt = mimeType.split("/")[1] || "png";
+          const ext = mimeExt === "jpeg" ? "jpg" : mimeExt;
 
           const desktopDir = Services.dirsvc.get("Desk", Ci.nsIFile);
-          const filename = `一图总结_${targetItem
+          const filename = `AI管家_一图总结_${targetItem
             .getField("title")
-            .substring(0, 20)
+            .substring(0, 30)
             .replace(/[\\/:*?"<>|]/g, "_")}.${ext}`;
           const filePath = PathUtils.join(desktopDir.path, filename);
 
@@ -1397,6 +1399,67 @@ async function loadImageSummary(
       }
     });
     imageBtnContainer.appendChild(downloadBtn);
+
+    // 打开文件夹按钮
+    const openFolderBtn = doc.createElement("button");
+    openFolderBtn.textContent = "📂";
+    openFolderBtn.title = "打开图片所在文件夹";
+    openFolderBtn.style.cssText = `
+      padding: 4px 8px;
+      border: 1px solid #9c27b0;
+      border-radius: 4px;
+      background: transparent;
+      color: #9c27b0;
+      cursor: pointer;
+      font-size: 12px;
+    `;
+    openFolderBtn.addEventListener("click", async () => {
+      try {
+        // 获取图片附件的文件路径
+        const imagePath =
+          await ImageNoteGenerator.getImageAttachmentPath(imageNote);
+
+        if (imagePath) {
+          // 使用 Zotero 的方法打开文件所在文件夹
+          const file = Zotero.File.pathToFile(imagePath);
+          if (file.exists()) {
+            file.reveal();
+            new ztoolkit.ProgressWindow("AI Butler", {
+              closeOnClick: true,
+              closeTime: 2000,
+            })
+              .createLine({ text: "已打开图片所在文件夹", type: "success" })
+              .show();
+          } else {
+            new ztoolkit.ProgressWindow("AI Butler", {
+              closeOnClick: true,
+              closeTime: 3000,
+            })
+              .createLine({ text: "图片文件不存在", type: "error" })
+              .show();
+          }
+        } else {
+          new ztoolkit.ProgressWindow("AI Butler", {
+            closeOnClick: true,
+            closeTime: 3000,
+          })
+            .createLine({
+              text: "未找到图片附件（可能是旧版内嵌图片）",
+              type: "error",
+            })
+            .show();
+        }
+      } catch (err: any) {
+        ztoolkit.log("[AI-Butler] 打开文件夹失败:", err);
+        new ztoolkit.ProgressWindow("AI Butler", {
+          closeOnClick: true,
+          closeTime: 3000,
+        })
+          .createLine({ text: `打开失败: ${err.message}`, type: "error" })
+          .show();
+      }
+    });
+    imageBtnContainer.appendChild(openFolderBtn);
 
     imageContainer.innerHTML = "";
     imageContainer.appendChild(imgElement);

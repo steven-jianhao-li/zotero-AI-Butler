@@ -355,6 +355,43 @@ export class ImageNoteGenerator {
   }
 
   /**
+   * 获取笔记中图片附件的文件路径
+   *
+   * @param note Zotero 笔记对象
+   * @returns 图片附件的文件路径，如果未找到则返回 null
+   */
+  public static async getImageAttachmentPath(
+    note: Zotero.Item,
+  ): Promise<string | null> {
+    try {
+      // 尝试从附件获取文件路径
+      const attachmentKey = this.extractAttachmentKeyFromNote(note);
+      if (attachmentKey) {
+        // 通过 key 查找附件
+        const libraryID = note.libraryID;
+        const attachment = await Zotero.Items.getByLibraryAndKeyAsync(
+          libraryID,
+          attachmentKey,
+        );
+
+        if (attachment && (attachment as any).isFileAttachment?.()) {
+          const filePath = await (attachment as any).getFilePathAsync?.();
+          if (filePath) {
+            ztoolkit.log(`[AI-Butler] 获取图片附件路径: ${filePath}`);
+            return filePath;
+          }
+        }
+      }
+
+      ztoolkit.log("[AI-Butler] 无法获取图片附件路径");
+      return null;
+    } catch (error) {
+      ztoolkit.log("[AI-Butler] 获取图片附件路径失败:", error);
+      return null;
+    }
+  }
+
+  /**
    * 格式化图片笔记的 HTML 内容
    *
    * @param itemTitle 文献标题

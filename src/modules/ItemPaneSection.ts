@@ -1567,7 +1567,10 @@ function htmlToMarkdown(html: string): string {
   result = result.replace(/<pre[^>]*>(.*?)<\/pre>/gis, "```\n$1\n```\n");
 
   // 处理链接
-  result = result.replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, "[$2]($1)");
+  result = result.replace(
+    /<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi,
+    "[$2]($1)",
+  );
 
   // 处理列表项
   result = result.replace(/<li[^>]*>(.*?)<\/li>/gi, "- $1\n");
@@ -1646,4 +1649,3 @@ async function copyToClipboard(doc: Document, text: string): Promise<void> {
 }
 
 export default { registerItemPaneSection };
-

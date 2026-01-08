@@ -752,8 +752,8 @@ export class ApiSettingsPage {
     const sizeLimitContainer = this.createElement("div", {
       styles: { display: "flex", alignItems: "center", gap: "12px" },
     });
-    const enableSizeLimit =
-      ((getPref("enablePdfSizeLimit" as any) as any) ?? false) as boolean;
+    const enableSizeLimit = ((getPref("enablePdfSizeLimit" as any) as any) ??
+      false) as boolean;
     const sizeLimitToggle = this.createCheckbox(
       "enablePdfSizeLimit",
       enableSizeLimit,

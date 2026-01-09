@@ -741,17 +741,46 @@ function renderChatArea(
   chatArea.appendChild(inputArea);
   body.appendChild(chatArea);
 
-  // 快速提问按钮点击事件
+  // 快速提问按钮点击事件 - 打开时加载 PDF 内容
   const quickChatBtn = body.querySelector(
     "#ai-butler-quick-chat-btn",
   ) as HTMLButtonElement;
   if (quickChatBtn) {
-    quickChatBtn.addEventListener("click", () => {
+    quickChatBtn.addEventListener("click", async () => {
       if (chatArea.style.display === "none") {
         chatArea.style.display = "flex";
         quickChatBtn.style.background = "rgba(89, 192, 188, 0.15)";
         quickChatBtn.style.borderColor = "#4db6ac";
         inputBox.focus();
+
+        // 如果尚未加载 PDF 内容，则加载
+        if (!currentChatState.pdfContent && item) {
+          try {
+            const { PDFExtractor } = await import("./pdfExtractor");
+            const prefMode = (getPref("pdfProcessMode" as any) as string) || "base64";
+            const isBase64 = prefMode === "base64";
+
+            messagesArea.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">📄 正在加载论文内容...</div>`;
+
+            let pdfContent = "";
+            if (isBase64) {
+              pdfContent = await PDFExtractor.extractBase64FromItem(item);
+            } else {
+              pdfContent = await PDFExtractor.extractTextFromItem(item);
+            }
+
+            if (pdfContent) {
+              currentChatState.pdfContent = pdfContent;
+              currentChatState.isBase64 = isBase64;
+              messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">✅ 论文内容已加载，可以开始提问！</div>`;
+            } else {
+              messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 无法加载论文内容，请确保该文献有 PDF 附件</div>`;
+            }
+          } catch (err: any) {
+            ztoolkit.log("[AI-Butler] 快速提问加载 PDF 失败:", err);
+            messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 加载失败: ${err?.message || "未知错误"}</div>`;
+          }
+        }
       } else {
         chatArea.style.display = "none";
         quickChatBtn.style.background = "transparent";
@@ -760,13 +789,119 @@ function renderChatArea(
     });
   }
 
-  // 发送消息处理 (简化版，实际逻辑在 hooks.ts 中)
-  sendBtn.addEventListener("click", () => {
+  // 发送消息处理 - 快速提问（不保存历史，每次只发送论文+当前问题）
+  sendBtn.addEventListener("click", async () => {
     const question = inputBox.value.trim();
     if (!question) return;
-    // TODO: 调用 LLM 处理
+
+    // 检查是否正在聊天中
+    if (currentChatState.isChatting) {
+      return;
+    }
+
+    // 检查是否有 PDF 内容
+    if (!currentChatState.pdfContent) {
+      messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 请先等待论文内容加载完成</div>`;
+      return;
+    }
+
+    // 设置为正在聊天状态
+    currentChatState.isChatting = true;
+    sendBtn.textContent = "发送中...";
+    sendBtn.style.background = "#9e9e9e";
+    (sendBtn as HTMLButtonElement).disabled = true;
+    (inputBox as HTMLTextAreaElement).disabled = true;
+
+    // 显示用户问题
+    const userMsgDiv = doc.createElement("div");
+    userMsgDiv.style.cssText = `
+      margin-bottom: 8px;
+      padding: 8px;
+      background: rgba(89, 192, 188, 0.1);
+      border-radius: 6px;
+      border-left: 3px solid #59c0bc;
+    `;
+    userMsgDiv.innerHTML = `<strong>👤 您:</strong> ${escapeHtmlForChat(question)}`;
+    messagesArea.appendChild(userMsgDiv);
+
+    // 创建 AI 回复区域
+    const aiMsgDiv = doc.createElement("div");
+    aiMsgDiv.style.cssText = `
+      margin-bottom: 8px;
+      padding: 8px;
+      background: rgba(128, 128, 128, 0.05);
+      border-radius: 6px;
+      border-left: 3px solid #667eea;
+    `;
+    aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong> <em style="color: #999;">思考中...</em>`;
+    messagesArea.appendChild(aiMsgDiv);
+
+    // 清空输入框
     inputBox.value = "";
+
+    // 滚动到底部
+    messagesArea.scrollTop = messagesArea.scrollHeight;
+
+    try {
+      // 导入 LLMClient
+      const { default: LLMClient } = await import("./llmClient");
+
+      // 快速提问的关键：每次只发送论文+当前问题，不累积历史
+      const conversationHistory = [
+        { role: "user", content: question },
+      ];
+
+      let fullResponse = "";
+      await LLMClient.chatWithRetry(
+        currentChatState.pdfContent,
+        currentChatState.isBase64,
+        conversationHistory,
+        (chunk: string) => {
+          fullResponse += chunk;
+          // 流式更新 AI 回复
+          aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${escapeHtmlForChat(fullResponse)}`;
+          // 滚动到底部
+          messagesArea.scrollTop = messagesArea.scrollHeight;
+        },
+      );
+
+      // 完成后最终更新
+      aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${escapeHtmlForChat(fullResponse)}`;
+
+    } catch (err: any) {
+      ztoolkit.log("[AI-Butler] 快速提问发送失败:", err);
+      aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong> <span style="color: #f44336;">❌ 错误: ${err?.message || "发送失败"}</span>`;
+    } finally {
+      // 恢复状态
+      currentChatState.isChatting = false;
+      sendBtn.textContent = "发送";
+      sendBtn.style.background = "#59c0bc";
+      (sendBtn as HTMLButtonElement).disabled = false;
+      (inputBox as HTMLTextAreaElement).disabled = false;
+      inputBox.focus();
+    }
   });
+
+  // Enter 发送，Shift+Enter 换行
+  inputBox.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendBtn.click();
+    }
+  });
+}
+
+/**
+ * 转义 HTML 字符（用于聊天显示）
+ */
+function escapeHtmlForChat(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;")
+    .replace(/\n/g, "<br/>");
 }
 
 /**

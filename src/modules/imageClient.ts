@@ -79,6 +79,117 @@ export class ImageClient {
     return { mimeType: m[1], imageBase64: m[2] };
   }
 
+  private static guessMimeTypeFromUrl(url: string): string | null {
+    const clean = (url || "").toLowerCase().split(/[?#]/)[0];
+    if (clean.endsWith(".png")) return "image/png";
+    if (clean.endsWith(".jpg") || clean.endsWith(".jpeg")) return "image/jpeg";
+    if (clean.endsWith(".webp")) return "image/webp";
+    if (clean.endsWith(".gif")) return "image/gif";
+    if (clean.endsWith(".svg")) return "image/svg+xml";
+    return null;
+  }
+
+  private static extractHttpImageUrlFromText(text: string): string | null {
+    const t = (text || "").trim();
+    if (!t) return null;
+
+    // Markdown image: ![alt](https://...)
+    const md = t.match(/!\[[^\]]*]\((https?:\/\/[^)\s]+)\)/i);
+    if (md?.[1]) return md[1];
+
+    // HTML img src="https://..."
+    const html = t.match(/<img[^>]+src=["'](https?:\/\/[^"']+)["']/i);
+    if (html?.[1]) return html[1];
+
+    // Plain URL
+    const plain = t.match(/https?:\/\/[^\s<>()]+/i);
+    if (plain?.[0]) return plain[0];
+
+    return null;
+  }
+
+  private static arrayBufferToBase64(buf: ArrayBuffer): string {
+    const bytes = new Uint8Array(buf);
+    const chunkSize = 0x8000;
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(
+        null,
+        bytes.subarray(i, i + chunkSize) as unknown as number[],
+      );
+    }
+    return btoa(binary);
+  }
+
+  private static async downloadImageUrlAsBase64(
+    url: string,
+  ): Promise<{ imageBase64: string; mimeType: string }> {
+    const endpoint = url.trim();
+    if (!endpoint) throw new Error("Empty image URL");
+
+    let res: any;
+    try {
+      res = await Zotero.HTTP.request("GET", endpoint, {
+        headers: {
+          Accept: "image/*,*/*;q=0.8",
+        },
+        responseType: "arraybuffer",
+        timeout: 180000,
+      });
+    } catch (error: any) {
+      const statusCode = error?.xmlhttp?.status;
+      const responseBody =
+        error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
+      throw new ImageGenerationError("下载图片失败", {
+        errorName: "ImageDownloadError",
+        errorMessage: error?.message || "无法下载图片资源",
+        statusCode,
+        requestUrl: endpoint,
+        responseBody:
+          typeof responseBody === "string"
+            ? responseBody
+            : JSON.stringify(responseBody),
+      });
+    }
+
+    if (res?.status !== 200) {
+      throw new ImageGenerationError(`HTTP ${res?.status}`, {
+        errorName: `HTTP_${res?.status || "Unknown"}`,
+        errorMessage: `HTTP ${res?.status || "Unknown"}: ${res?.statusText || "下载失败"}`,
+        statusCode: res?.status,
+        requestUrl: endpoint,
+        responseBody: res?.response,
+      });
+    }
+
+    const contentTypeHeader =
+      (typeof res?.getResponseHeader === "function"
+        ? res.getResponseHeader("Content-Type")
+        : null) || "";
+    const headerMime =
+      typeof contentTypeHeader === "string" && contentTypeHeader
+        ? contentTypeHeader.split(";")[0].trim()
+        : "";
+    const mimeType =
+      headerMime || this.guessMimeTypeFromUrl(endpoint) || "image/jpeg";
+
+    const body = res?.response;
+    if (body instanceof ArrayBuffer) {
+      return { imageBase64: this.arrayBufferToBase64(body), mimeType };
+    }
+    if (typeof body === "string" && body) {
+      // 兜底：某些环境可能返回二进制字符串
+      return { imageBase64: btoa(body), mimeType };
+    }
+
+    throw new ImageGenerationError("下载图片失败", {
+      errorName: "EmptyImageBody",
+      errorMessage: "图片下载成功但响应体为空或无法解析",
+      requestUrl: endpoint,
+      responseBody: typeof body === "string" ? body : JSON.stringify(body),
+    });
+  }
+
   private static extractImageFromOpenAIChatMessage(message: any): {
     imageBase64: string;
     mimeType: string;
@@ -197,6 +308,89 @@ export class ImageClient {
         if (typeof url === "string") {
           const maybe = this.extractImageFromDataUrl(url.trim());
           if (maybe) return maybe;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private static extractHttpImageUrlFromOpenAIChatMessage(
+    message: any,
+  ): string | null {
+    // 1) message.images（某些兼容服务）
+    const images = message?.images;
+    if (Array.isArray(images)) {
+      for (const part of images) {
+        const url = part?.image_url?.url || part?.image_url?.uri || part?.url;
+        if (typeof url === "string" && /^https?:\/\//i.test(url.trim())) {
+          return url.trim();
+        }
+      }
+    }
+
+    // 2) 多模态 content 数组
+    const content = message?.content;
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        const url =
+          part?.image_url?.url ||
+          part?.image_url?.uri ||
+          part?.url ||
+          part?.uri;
+        if (typeof url === "string" && /^https?:\/\//i.test(url.trim())) {
+          return url.trim();
+        }
+      }
+    }
+
+    // 3) 文本 content（Markdown / HTML / 纯链接）
+    if (typeof content === "string" && content.trim()) {
+      const u = this.extractHttpImageUrlFromText(content);
+      if (u && /^https?:\/\//i.test(u)) return u;
+    }
+
+    return null;
+  }
+
+  private static extractHttpImageUrlFromOpenAIResponseJson(
+    json: any,
+  ): string | null {
+    // Images API: { data: [{ url }] }
+    if (Array.isArray(json?.data) && json.data.length > 0) {
+      const item = json.data.find((d: any) => d?.url) || json.data[0];
+      const url = item?.url;
+      if (typeof url === "string" && /^https?:\/\//i.test(url.trim())) {
+        return url.trim();
+      }
+    }
+
+    // Chat Completions: choices[].message
+    if (Array.isArray(json?.choices) && json.choices.length > 0) {
+      for (const choice of json.choices) {
+        const msg = choice?.message || choice?.delta || choice;
+        const url = this.extractHttpImageUrlFromOpenAIChatMessage(msg);
+        if (url) return url;
+      }
+    }
+
+    // Responses API: output[].content
+    if (Array.isArray(json?.output) && json.output.length > 0) {
+      for (const out of json.output) {
+        const url = this.extractHttpImageUrlFromOpenAIChatMessage(out);
+        if (url) return url;
+        const content = out?.content;
+        if (Array.isArray(content)) {
+          for (const part of content) {
+            const u =
+              part?.image_url?.url ||
+              part?.image_url?.uri ||
+              part?.url ||
+              part?.uri;
+            if (typeof u === "string" && /^https?:\/\//i.test(u.trim())) {
+              return u.trim();
+            }
+          }
         }
       }
     }
@@ -426,7 +620,24 @@ export class ImageClient {
           : response.response;
 
       const extracted = this.extractImageFromOpenAIResponseJson(json);
-      if (!extracted) {
+      if (extracted) {
+        ztoolkit.log(
+          `[AI-Butler] 成功生成图片，MIME: ${extracted.mimeType}, 大小: ${Math.round(extracted.imageBase64.length / 1024)} KB`,
+        );
+        return extracted;
+      }
+
+      // 兼容：模型可能返回一个可下载的图片 URL（Markdown / JSON url）
+      const remoteUrl = this.extractHttpImageUrlFromOpenAIResponseJson(json);
+      if (remoteUrl) {
+        const downloaded = await this.downloadImageUrlAsBase64(remoteUrl);
+        ztoolkit.log(
+          `[AI-Butler] 成功下载图片，MIME: ${downloaded.mimeType}, 大小: ${Math.round(downloaded.imageBase64.length / 1024)} KB`,
+        );
+        return downloaded;
+      }
+
+      {
         const preview =
           typeof response.response === "string"
             ? response.response.substring(0, 800)
@@ -439,12 +650,6 @@ export class ImageClient {
           responseBody: preview,
         });
       }
-
-      ztoolkit.log(
-        `[AI-Butler] 成功生成图片，MIME: ${extracted.mimeType}, 大小: ${Math.round(extracted.imageBase64.length / 1024)} KB`,
-      );
-
-      return extracted;
     } catch (error: any) {
       if (error instanceof ImageGenerationError) throw error;
       throw new ImageGenerationError("解析 API 响应失败", {

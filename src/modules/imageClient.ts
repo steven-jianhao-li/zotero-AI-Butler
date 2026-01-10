@@ -177,8 +177,20 @@ export class ImageClient {
       headerMime || this.guessMimeTypeFromUrl(endpoint) || "image/jpeg";
 
     const body = res?.response;
+    const bodyTag = Object.prototype.toString.call(body);
     if (body instanceof ArrayBuffer) {
       return { imageBase64: this.arrayBufferToBase64(body), mimeType };
+    }
+    // 跨窗口/跨 realm 的 ArrayBuffer：instanceof 可能失效
+    if (bodyTag === "[object ArrayBuffer]") {
+      try {
+        const bytes = new Uint8Array(body as any);
+        if (bytes.byteLength > 0) {
+          return { imageBase64: this.bytesToBase64(bytes), mimeType };
+        }
+      } catch {
+        /* ignore */
+      }
     }
     if (body && typeof body === "object" && ArrayBuffer.isView(body)) {
       const view = body as ArrayBufferView;
@@ -194,11 +206,43 @@ export class ImageClient {
       return { imageBase64: btoa(body), mimeType };
     }
 
+    // 兜底：尝试把“看起来像 ArrayBuffer”的对象转成 Uint8Array
+    if (
+      body &&
+      typeof body === "object" &&
+      typeof (body as any).byteLength === "number"
+    ) {
+      try {
+        const bytes = new Uint8Array(body as any);
+        if (bytes.byteLength > 0) {
+          return { imageBase64: this.bytesToBase64(bytes), mimeType };
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const bodyDebug = {
+      bodyType: bodyTag,
+      constructorName:
+        body && typeof body === "object" ? (body as any).constructor?.name : "",
+      byteLength:
+        body &&
+        typeof body === "object" &&
+        typeof (body as any).byteLength === "number"
+          ? (body as any).byteLength
+          : undefined,
+      keys:
+        body && typeof body === "object"
+          ? Object.keys(body as any).slice(0, 20)
+          : undefined,
+    };
+
     throw new ImageGenerationError("下载图片失败", {
       errorName: "EmptyImageBody",
       errorMessage: "图片下载成功但响应体为空或无法解析",
       requestUrl: endpoint,
-      responseBody: typeof body === "string" ? body : JSON.stringify(body),
+      responseBody: JSON.stringify(bodyDebug),
     });
   }
 

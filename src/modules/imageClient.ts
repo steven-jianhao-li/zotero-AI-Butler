@@ -84,6 +84,7 @@ export class ImageClient {
     mimeType: string;
   } | null {
     const content = message?.content;
+    const images = message?.images;
 
     // content 可能是 string
     if (typeof content === "string" && content.trim()) {
@@ -163,6 +164,31 @@ export class ImageClient {
         }
 
         // 兜底: 任何字段里出现 data URL
+        const url =
+          part?.url ||
+          part?.image?.url ||
+          part?.image_url?.url ||
+          part?.imageUrl?.url;
+        if (typeof url === "string") {
+          const maybe = this.extractImageFromDataUrl(url.trim());
+          if (maybe) return maybe;
+        }
+      }
+    }
+
+    // 一些 OpenAI 兼容服务会把图片放在 message.images 里
+    if (Array.isArray(images)) {
+      for (const part of images) {
+        const type = String(part?.type || "").toLowerCase();
+
+        if (type === "image_url") {
+          const url = part?.image_url?.url || part?.image_url?.uri;
+          if (typeof url === "string") {
+            const maybe = this.extractImageFromDataUrl(url.trim());
+            if (maybe) return maybe;
+          }
+        }
+
         const url =
           part?.url ||
           part?.image?.url ||

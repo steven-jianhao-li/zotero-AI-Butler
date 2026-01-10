@@ -763,7 +763,8 @@ function renderChatArea(
         if (!currentChatState.pdfContent && item) {
           try {
             const { PDFExtractor } = await import("./pdfExtractor");
-            const prefMode = (getPref("pdfProcessMode" as any) as string) || "base64";
+            const prefMode =
+              (getPref("pdfProcessMode" as any) as string) || "base64";
             const isBase64 = prefMode === "base64";
 
             messagesArea.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">📄 正在加载论文内容...</div>`;
@@ -891,9 +892,7 @@ function renderChatArea(
       const { default: LLMClient } = await import("./llmClient");
 
       // 快速提问的关键：每次只发送论文+当前问题，不累积历史
-      const conversationHistory = [
-        { role: "user", content: question },
-      ];
+      const conversationHistory = [{ role: "user", content: question }];
 
       let fullResponse = "";
       await LLMClient.chatWithRetry(
@@ -940,7 +939,6 @@ function renderChatArea(
           (saveBtn as HTMLButtonElement).disabled = false;
         }
       });
-
     } catch (err: any) {
       ztoolkit.log("[AI-Butler] 快速提问发送失败:", err);
       aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong> <span style="color: #f44336;">❌ 错误: ${err?.message || "发送失败"}</span>`;

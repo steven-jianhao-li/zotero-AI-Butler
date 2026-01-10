@@ -79,7 +79,7 @@ pref("__prefsPrefix__.fontSize", "14");
 pref("__prefsPrefix__.autoScroll", true);
 pref("__prefsPrefix__.windowWidth", "900");
 pref("__prefsPrefix__.windowHeight", "700");
-pref("__prefsPrefix__.saveChatHistory", false);
+pref("__prefsPrefix__.saveChatHistory", true);
 
 // ==================== 数据管理 ====================
 pref("__prefsPrefix__.notePrefix", "[AI-Butler]");

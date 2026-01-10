@@ -20,6 +20,8 @@
 
 import { getPref } from "../utils/prefs";
 
+export type ImageSummaryRequestMode = "gemini" | "openai";
+
 /**
  * 图片生成结果接口
  */
@@ -54,6 +56,380 @@ export class ImageGenerationError extends Error {
  * 图片生成客户端类
  */
 export class ImageClient {
+  private static resolveRequestMode(value: unknown): ImageSummaryRequestMode {
+    const raw = String(value || "")
+      .trim()
+      .toLowerCase();
+    if (raw === "openai" || raw === "openai-compat") return "openai";
+    return "gemini";
+  }
+
+  private static normalizeApiUrl(url: string): string {
+    return (url || "").trim().replace(/\/$/, "");
+  }
+
+  private static extractImageFromDataUrl(dataUrl: string): {
+    imageBase64: string;
+    mimeType: string;
+  } | null {
+    const m = dataUrl.match(
+      /^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)\s*$/i,
+    );
+    if (!m) return null;
+    return { mimeType: m[1], imageBase64: m[2] };
+  }
+
+  private static extractImageFromOpenAIChatMessage(message: any): {
+    imageBase64: string;
+    mimeType: string;
+  } | null {
+    const content = message?.content;
+
+    // content 可能是 string
+    if (typeof content === "string" && content.trim()) {
+      const trimmed = content.trim();
+
+      // JSON 字符串直出（部分兼容服务会这么返回）
+      if (
+        (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+        (trimmed.startsWith("[") && trimmed.endsWith("]"))
+      ) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          const b64 =
+            parsed?.imageBase64 ||
+            parsed?.image_base64 ||
+            parsed?.b64_json ||
+            parsed?.b64 ||
+            parsed?.data?.b64 ||
+            parsed?.data;
+          if (typeof b64 === "string" && b64.trim()) {
+            const mime = parsed?.mimeType || parsed?.mime_type;
+            return { mimeType: mime || "image/png", imageBase64: b64.trim() };
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      const maybe = this.extractImageFromDataUrl(trimmed);
+      if (maybe) return maybe;
+      // 尝试从文本中提取 data URL（例如 Markdown/JSON 中夹带）
+      const match = content.match(
+        /data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)/i,
+      );
+      if (match) {
+        return { mimeType: match[1], imageBase64: match[2] };
+      }
+
+      // 兜底：纯 Base64（没有 data: 前缀）
+      const normalized = trimmed.replace(/\s+/g, "");
+      if (
+        normalized.length > 1024 &&
+        /^[A-Za-z0-9+/=]+$/.test(normalized) &&
+        normalized.length % 4 === 0
+      ) {
+        return { mimeType: "image/png", imageBase64: normalized };
+      }
+    }
+
+    // content 也可能是多模态数组
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        const type = String(part?.type || "").toLowerCase();
+
+        // 常见: { type: "image_url", image_url: { url: "data:image/png;base64,..." } }
+        if (type === "image_url") {
+          const url = part?.image_url?.url || part?.image_url?.uri;
+          if (typeof url === "string") {
+            const maybe = this.extractImageFromDataUrl(url.trim());
+            if (maybe) return maybe;
+          }
+        }
+
+        // 兼容: { type: "image", image_base64: "...", mime_type: "image/png" }
+        if (type === "image" || type === "output_image") {
+          const b64 =
+            part?.image_base64 ||
+            part?.b64_json ||
+            part?.b64 ||
+            part?.data?.b64 ||
+            part?.data;
+          if (typeof b64 === "string" && b64.trim()) {
+            const mime =
+              part?.mime_type || part?.mimeType || part?.data?.mime_type;
+            return { mimeType: mime || "image/png", imageBase64: b64.trim() };
+          }
+        }
+
+        // 兜底: 任何字段里出现 data URL
+        const url =
+          part?.url ||
+          part?.image?.url ||
+          part?.image_url?.url ||
+          part?.imageUrl?.url;
+        if (typeof url === "string") {
+          const maybe = this.extractImageFromDataUrl(url.trim());
+          if (maybe) return maybe;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private static extractImageFromOpenAIResponseJson(json: any): {
+    imageBase64: string;
+    mimeType: string;
+  } | null {
+    // 1) OpenAI Images API: { data: [{ b64_json }] }
+    if (Array.isArray(json?.data) && json.data.length > 0) {
+      const item =
+        json.data.find((d: any) => d?.b64_json || d?.b64) || json.data[0];
+      const b64 = item?.b64_json || item?.b64;
+      if (typeof b64 === "string" && b64.trim()) {
+        return { mimeType: "image/png", imageBase64: b64.trim() };
+      }
+      const url = item?.url;
+      if (typeof url === "string") {
+        const maybe = this.extractImageFromDataUrl(url.trim());
+        if (maybe) return maybe;
+      }
+    }
+
+    // 2) Chat Completions: { choices: [{ message: { content } }] }
+    if (Array.isArray(json?.choices) && json.choices.length > 0) {
+      for (const choice of json.choices) {
+        const msg = choice?.message || choice?.delta || choice;
+        const maybe = this.extractImageFromOpenAIChatMessage(msg);
+        if (maybe) return maybe;
+      }
+    }
+
+    // 3) Responses API: { output: [{ content: [...] }] }
+    if (Array.isArray(json?.output) && json.output.length > 0) {
+      for (const out of json.output) {
+        const content = out?.content;
+        if (Array.isArray(content)) {
+          for (const part of content) {
+            const type = String(part?.type || "").toLowerCase();
+            if (type === "output_image" || type === "image") {
+              const b64 = part?.image_base64 || part?.b64_json || part?.data;
+              if (typeof b64 === "string" && b64.trim()) {
+                const mime = part?.mime_type || part?.mimeType;
+                return {
+                  mimeType: mime || "image/png",
+                  imageBase64: b64.trim(),
+                };
+              }
+            }
+            const url = part?.image_url?.url || part?.url;
+            if (typeof url === "string") {
+              const maybe = this.extractImageFromDataUrl(url.trim());
+              if (maybe) return maybe;
+            }
+          }
+        }
+      }
+    }
+
+    // 4) 有些代理会直接返回 Gemini 格式
+    if (Array.isArray(json?.candidates) && json.candidates.length > 0) {
+      const parts = json?.candidates?.[0]?.content?.parts || [];
+      const imagePart = parts.find((p: any) => p.inlineData);
+      if (imagePart?.inlineData?.data) {
+        return {
+          imageBase64: imagePart.inlineData.data,
+          mimeType: imagePart.inlineData.mimeType || "image/png",
+        };
+      }
+    }
+
+    return null;
+  }
+
+  private static async generateImageViaOpenAI(
+    prompt: string,
+    config: {
+      apiKey: string;
+      apiUrl: string;
+      model: string;
+      aspectRatio: string;
+      resolution: string;
+    },
+  ): Promise<ImageGenerationResult> {
+    const apiUrl = this.normalizeApiUrl(config.apiUrl);
+    const model = (config.model || "").trim();
+    let endpoint = apiUrl;
+    if (
+      !/(\/v1\/(chat\/completions|responses|images\/generations)\b|\/(chat\/completions|responses|images\/generations)\b)/i.test(
+        endpoint,
+      )
+    ) {
+      endpoint = /\/v1$/i.test(endpoint)
+        ? `${endpoint}/chat/completions`
+        : `${endpoint}/v1/chat/completions`;
+    }
+
+    const isImagesEndpoint =
+      /\/(v1\/)?images\/generations\b/i.test(endpoint) &&
+      !/\/chat\/completions\b/i.test(endpoint);
+    const isResponsesEndpoint =
+      /\/(v1\/)?responses\b/i.test(endpoint) &&
+      !/\/chat\/completions\b/i.test(endpoint);
+
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.apiKey}`,
+    } as Record<string, string>;
+
+    const payload: any = isImagesEndpoint
+      ? {
+          model,
+          prompt,
+          response_format: "b64_json",
+        }
+      : isResponsesEndpoint
+        ? {
+            model,
+            input: [
+              {
+                role: "system",
+                content: `You are an image generation model. Return a single image (no text). Aspect ratio: ${config.aspectRatio}; Resolution: ${config.resolution}.`,
+              },
+              { role: "user", content: prompt },
+            ],
+          }
+        : {
+            model,
+            messages: [
+              {
+                role: "system",
+                content: `You are an image generation model. Return a single image (no text). Aspect ratio: ${config.aspectRatio}; Resolution: ${config.resolution}.`,
+              },
+              { role: "user", content: prompt },
+            ],
+            temperature: 0.8,
+            stream: false,
+          };
+
+    ztoolkit.log(`[AI-Butler] 调用 OpenAI 兼容生图 API: ${endpoint}`);
+    ztoolkit.log(`[AI-Butler] 生图提示词长度: ${prompt.length} 字符`);
+
+    let response: any;
+    try {
+      response = await Zotero.HTTP.request("POST", endpoint, {
+        headers,
+        body: JSON.stringify(payload),
+        responseType: "text",
+        timeout: 300000,
+      });
+    } catch (error: any) {
+      const statusCode = error?.xmlhttp?.status;
+      const responseBody =
+        error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
+
+      let errorMessage = error?.message || "OpenAI 兼容生图请求失败";
+      let errorName = "NetworkError";
+
+      try {
+        if (responseBody) {
+          const parsed =
+            typeof responseBody === "string"
+              ? JSON.parse(responseBody)
+              : responseBody;
+
+          // 处理标准 OpenAI 错误格式
+          let err = parsed?.error || parsed;
+
+          // 处理代理服务器返回的嵌套错误 (如 {"detail": "...JSON..."})
+          if (parsed?.detail && typeof parsed.detail === "string") {
+            const detailMatch = parsed.detail.match(/\{[\s\S]*\}/);
+            if (detailMatch) {
+              try {
+                const nestedJson = JSON.parse(detailMatch[0]);
+                err = nestedJson?.error || nestedJson;
+              } catch {
+                errorMessage = parsed.detail;
+              }
+            } else {
+              errorMessage = parsed.detail;
+            }
+          }
+
+          errorName =
+            err?.code ||
+            err?.type ||
+            err?.status ||
+            err?.errorName ||
+            "APIError";
+          if (err?.message) {
+            errorMessage = err.message;
+          }
+        }
+      } catch {
+        /* ignore parse error */
+      }
+
+      throw new ImageGenerationError(errorMessage, {
+        errorName,
+        errorMessage,
+        statusCode,
+        requestUrl: endpoint,
+        responseBody:
+          typeof responseBody === "string"
+            ? responseBody
+            : JSON.stringify(responseBody),
+      });
+    }
+
+    if (response.status !== 200) {
+      throw new ImageGenerationError(`HTTP ${response.status}`, {
+        errorName: `HTTP_${response.status}`,
+        errorMessage: `HTTP ${response.status}: ${response.statusText || "请求失败"}`,
+        statusCode: response.status,
+        requestUrl: endpoint,
+        responseBody: response.response,
+      });
+    }
+
+    try {
+      const json =
+        typeof response.response === "string"
+          ? JSON.parse(response.response)
+          : response.response;
+
+      const extracted = this.extractImageFromOpenAIResponseJson(json);
+      if (!extracted) {
+        const preview =
+          typeof response.response === "string"
+            ? response.response.substring(0, 800)
+            : JSON.stringify(response.response).substring(0, 800);
+        throw new ImageGenerationError("API 未返回图片数据", {
+          errorName: "NoImageData",
+          errorMessage:
+            "OpenAI 兼容接口响应中未识别到图片数据。请确认接口是否支持图片输出，或尝试将 API 地址设置为完整端点（如 /v1/chat/completions 或 /v1/images/generations）。",
+          requestUrl: endpoint,
+          responseBody: preview,
+        });
+      }
+
+      ztoolkit.log(
+        `[AI-Butler] 成功生成图片，MIME: ${extracted.mimeType}, 大小: ${Math.round(extracted.imageBase64.length / 1024)} KB`,
+      );
+
+      return extracted;
+    } catch (error: any) {
+      if (error instanceof ImageGenerationError) throw error;
+      throw new ImageGenerationError("解析 API 响应失败", {
+        errorName: "ParseError",
+        errorMessage: error?.message || "无法解析 OpenAI 兼容接口响应",
+        requestUrl: endpoint,
+        responseBody: response.response,
+      });
+    }
+  }
+
   /**
    * 生成学术概念海报图片
    *
@@ -69,15 +445,25 @@ export class ImageClient {
       model?: string;
       aspectRatio?: string;
       resolution?: string;
+      requestMode?: ImageSummaryRequestMode;
     },
   ): Promise<ImageGenerationResult> {
+    const requestMode = this.resolveRequestMode(
+      options?.requestMode ||
+        (getPref("imageSummaryRequestMode" as any) as string) ||
+        "gemini",
+    );
+
     // 从设置中获取 API 配置
     const apiKey =
       options?.apiKey || (getPref("imageSummaryApiKey" as any) as string) || "";
+    const apiUrlPref = (getPref("imageSummaryApiUrl" as any) as string) || "";
     const apiUrl =
       options?.apiUrl ||
-      (getPref("imageSummaryApiUrl" as any) as string) ||
-      "https://generativelanguage.googleapis.com";
+      apiUrlPref ||
+      (requestMode === "openai"
+        ? "https://api.openai.com/v1/chat/completions"
+        : "https://generativelanguage.googleapis.com");
     const model =
       options?.model ||
       (getPref("imageSummaryModel" as any) as string) ||
@@ -94,7 +480,20 @@ export class ImageClient {
     if (!apiKey) {
       throw new ImageGenerationError("一图总结 API Key 未配置", {
         errorName: "ConfigurationError",
-        errorMessage: "请在设置页面配置一图总结的 Gemini API Key",
+        errorMessage:
+          requestMode === "openai"
+            ? "请在设置页面配置一图总结的 OpenAI API Key"
+            : "请在设置页面配置一图总结的 Gemini API Key",
+      });
+    }
+
+    if (requestMode === "openai") {
+      return await this.generateImageViaOpenAI(prompt, {
+        apiKey,
+        apiUrl,
+        model,
+        aspectRatio,
+        resolution,
       });
     }
 

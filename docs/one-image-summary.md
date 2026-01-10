@@ -18,10 +18,13 @@
 ### 1. 配置 API
 
 1. 打开 AI 管家仪表盘 → **设置** → **🖼️ 一图总结**
-2. 填写 **Gemini API Key**（支持与论文总结使用相同的 Key）
-3. 确认 **API 基础地址**（默认为 `https://generativelanguage.googleapis.com`）
-4. 选择 **生图模型**（推荐 `gemini-3-pro-image-preview`）
-5. 点击 **测试 API** 验证配置
+2. 选择 **请求方式**（Gemini 原生接口 / OpenAI 兼容接口）
+3. 填写 **API Key**（可与论文总结使用相同的 Key）
+4. 确认 **API 基础地址**
+   - Gemini：默认为 `https://generativelanguage.googleapis.com`
+   - OpenAI：填写您的兼容服务地址（可填基础地址或完整端点如 `/v1/chat/completions`）
+5. 选择 **生图模型**（推荐 `gemini-3-pro-image-preview`）
+6. 点击 **测试 API** 验证配置
 
 ![一图总结设置页面](images/一图总结设置页面.png)
 

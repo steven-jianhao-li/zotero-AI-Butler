@@ -22,6 +22,7 @@ import {
   getDefaultImageSummaryPrompt,
   getDefaultImageGenerationPrompt,
 } from "../../../utils/prompts";
+import { ImageClient, ImageGenerationError } from "../../imageClient";
 
 /**
  * 一图总结设置页面类
@@ -54,7 +55,7 @@ export class ImageSummarySettingsPage {
 
     // 功能说明
     const notice = createNotice(
-      "📝 <strong>功能说明</strong>：一图总结使用 Gemini 的图片生成功能 (gemini-3-pro-image-preview) 为论文生成学术概念海报，帮助您快速理解论文核心内容。",
+      "📝 <strong>功能说明</strong>：一图总结使用生图模型 (默认 gemini-3-pro-image-preview) 为论文生成学术概念海报，支持 Gemini 原生接口与 OpenAI 兼容接口两种请求方式。",
       "info",
     );
     this.container.appendChild(notice);
@@ -69,16 +70,53 @@ export class ImageSummarySettingsPage {
     // === API 配置区域 ===
     form.appendChild(createSectionTitle("🔌 API 配置"));
 
+    // 请求方式
+    const requestModeValue =
+      (getPref("imageSummaryRequestMode" as any) as string) || "gemini";
+    const requestModeSelect = createSelect(
+      "imageSummaryRequestMode",
+      [
+        { value: "gemini", label: "Gemini 原生接口 (x-goog-api-key)" },
+        { value: "openai", label: "OpenAI 兼容接口 (Bearer)" },
+      ],
+      requestModeValue,
+      (newVal) => {
+        // 切换时，如 API 地址保持默认且用户尚未手动修改，则自动填充更合适的默认值
+        const urlInput = this.container.querySelector(
+          "#setting-imageSummaryApiUrl",
+        ) as HTMLInputElement | null;
+        if (!urlInput) return;
+        const cur = (urlInput.value || "").trim();
+        const isDefaultGemini =
+          !cur || cur === "https://generativelanguage.googleapis.com";
+        const isDefaultOpenAI =
+          cur === "https://api.openai.com/v1/chat/completions";
+        if (newVal === "openai" && isDefaultGemini) {
+          urlInput.value = "https://api.openai.com/v1/chat/completions";
+        }
+        if (newVal === "gemini" && (isDefaultOpenAI || !cur)) {
+          urlInput.value = "https://generativelanguage.googleapis.com";
+        }
+      },
+    );
+    form.appendChild(
+      createFormGroup(
+        "请求方式",
+        requestModeSelect,
+        "选择使用 Gemini 原生接口或 OpenAI 兼容接口来调用生图模型",
+      ),
+    );
+
     // API Key
     form.appendChild(
       createFormGroup(
-        "Gemini API Key *",
+        "API Key *",
         this.createPasswordInput(
           "imageSummaryApiKey",
           (getPref("imageSummaryApiKey" as any) as string) || "",
-          "您的 Gemini API Key",
+          "您的 API Key",
         ),
-        "【必填】用于调用 Gemini 图片生成 API。可与 API 配置页面中的 Gemini Key 相同。",
+        "【必填】Gemini 模式使用 x-goog-api-key；OpenAI 模式使用 Authorization Bearer。",
       ),
     );
 
@@ -90,10 +128,14 @@ export class ImageSummarySettingsPage {
           "imageSummaryApiUrl",
           "text",
           (getPref("imageSummaryApiUrl" as any) as string) ||
-            "https://generativelanguage.googleapis.com",
-          "https://generativelanguage.googleapis.com",
+            (requestModeValue === "openai"
+              ? "https://api.openai.com/v1/chat/completions"
+              : "https://generativelanguage.googleapis.com"),
+          requestModeValue === "openai"
+            ? "https://api.openai.com/v1/chat/completions"
+            : "https://generativelanguage.googleapis.com",
         ),
-        "Gemini API 基础地址，默认为官方地址",
+        "Gemini: 填基础地址；OpenAI: 可填基础地址或完整端点（如 /v1/chat/completions）",
       ),
     );
 
@@ -434,6 +476,18 @@ export class ImageSummarySettingsPage {
         }
       }
 
+      // 下拉框单独处理 (requestMode)
+      const modeSelect = this.container.querySelector(
+        "#setting-imageSummaryRequestMode",
+      ) as HTMLElement | null;
+      if (modeSelect) {
+        const modeValue =
+          (modeSelect as any).getValue?.() ||
+          modeSelect.getAttribute("data-value") ||
+          "gemini";
+        setPref("imageSummaryRequestMode" as any, modeValue);
+      }
+
       // 下拉框单独处理 (resolution)
       const resolutionSelect = this.container.querySelector(
         "#setting-imageSummaryResolution",
@@ -483,6 +537,14 @@ export class ImageSummarySettingsPage {
    * 测试 API 连接
    */
   private async testConnection(): Promise<void> {
+    const modeEl = this.container.querySelector(
+      "#setting-imageSummaryRequestMode",
+    ) as HTMLElement | null;
+    const requestMode =
+      (modeEl as any)?.getValue?.() ||
+      modeEl?.getAttribute("data-value") ||
+      "gemini";
+
     const apiKey =
       (
         this.container.querySelector(
@@ -531,108 +593,30 @@ export class ImageSummarySettingsPage {
     }
 
     try {
-      // 简单的测试请求
-      const url = `${apiUrl.replace(/\/$/, "")}/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-      const payload = {
-        contents: [
-          {
-            parts: [{ text: "Generate a simple test image of a blue circle." }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.7,
+      const result = await ImageClient.generateImage(
+        "Generate a simple test image: a blue circle on white background.",
+        {
+          apiKey,
+          apiUrl,
+          model,
+          requestMode: requestMode as any,
         },
-      };
+      );
 
-      const response = await Zotero.HTTP.request("POST", url, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify(payload),
-        responseType: "text",
-        timeout: 60000,
-      });
-
-      if (response.status === 200) {
-        const json = JSON.parse(response.response);
-        // 检查是否返回了图片
-        const hasImage = json?.candidates?.[0]?.content?.parts?.some(
-          (p: any) => p.inlineData,
-        );
-        if (hasImage) {
-          if (resultBox && resultPre) {
-            resultBox.style.display = "block";
-            resultBox.style.backgroundColor = "#e8f5e9";
-            resultBox.style.border = "1px solid #a5d6a7";
-            resultPre.style.color = "#1b5e20";
-            resultPre.textContent = "✅ API 连接成功，生图功能正常！";
-          }
-        } else {
-          if (resultBox && resultPre) {
-            resultBox.style.display = "block";
-            resultBox.style.backgroundColor = "#fff8e1";
-            resultBox.style.border = "1px solid #ffe082";
-            resultPre.style.color = "#f57f17";
-            resultPre.textContent =
-              "⚠️ API 连接成功，但未返回图片\n\n可能原因：模型不支持生图功能";
-          }
-        }
-      } else {
-        throw new Error(`HTTP ${response.status}`);
+      if (resultBox && resultPre) {
+        resultBox.style.display = "block";
+        resultBox.style.backgroundColor = "#e8f5e9";
+        resultBox.style.border = "1px solid #a5d6a7";
+        resultPre.style.color = "#1b5e20";
+        resultPre.textContent = `✅ API 连接成功，生成了 ${result.mimeType} 图片 (${Math.round(result.imageBase64.length / 1024)} KB)`;
       }
     } catch (error: any) {
       ztoolkit.log("[AI-Butler] 一图总结 API 测试失败:", error);
 
-      // 构建详细错误信息
-      const lines: string[] = [];
-      lines.push(`❌ 测试失败`);
-      lines.push("");
-      lines.push(`错误信息: ${error?.message || "连接失败"}`);
-      lines.push(`请求地址: ${apiUrl}`);
-      lines.push(`模型名称: ${model}`);
-
-      // 尝试解析响应体中的详细错误
-      try {
-        const responseText =
-          error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-        if (responseText) {
-          const parsed =
-            typeof responseText === "string"
-              ? JSON.parse(responseText)
-              : responseText;
-          if (parsed?.error) {
-            lines.push("");
-            lines.push(`API 错误码: ${parsed.error.code || "N/A"}`);
-            lines.push(`API 错误信息: ${parsed.error.message || "N/A"}`);
-            if (parsed.error.status) {
-              lines.push(`API 状态: ${parsed.error.status}`);
-            }
-          }
-        }
-      } catch {
-        // 如果无法解析响应，尝试获取原始响应
-        try {
-          const rawResponse =
-            error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-          if (rawResponse) {
-            lines.push("");
-            lines.push(
-              `原始响应: ${typeof rawResponse === "string" ? rawResponse.substring(0, 500) : JSON.stringify(rawResponse).substring(0, 500)}`,
-            );
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-
-      // HTTP 状态码
-      if (error?.xmlhttp?.status) {
-        lines.push("");
-        lines.push(`HTTP 状态码: ${error.xmlhttp.status}`);
-      }
-
-      const fullMsg = lines.join("\n");
+      const fullMsg =
+        error instanceof ImageGenerationError
+          ? ImageClient.formatError(error)
+          : `错误信息: ${error?.message || "连接失败"}`;
 
       if (resultBox && resultPre) {
         resultBox.style.display = "block";
@@ -652,7 +636,7 @@ export class ImageSummarySettingsPage {
     const message =
       "⚠️ 费用警告\n\n" +
       "开启『自动添加一图总结』功能后，每当论文AI总结完成时，" +
-      "系统将自动调用 Gemini 生图 API 生成学术概念海报。\n\n" +
+      "系统将自动调用生图 API 生成学术概念海报。\n\n" +
       "这将消耗大量 API 调用次数和费用！\n\n" +
       "确定要开启此功能吗？";
 

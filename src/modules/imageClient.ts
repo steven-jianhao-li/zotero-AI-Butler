@@ -109,7 +109,10 @@ export class ImageClient {
   }
 
   private static arrayBufferToBase64(buf: ArrayBuffer): string {
-    const bytes = new Uint8Array(buf);
+    return this.bytesToBase64(new Uint8Array(buf));
+  }
+
+  private static bytesToBase64(bytes: Uint8Array): string {
     const chunkSize = 0x8000;
     let binary = "";
     for (let i = 0; i < bytes.length; i += chunkSize) {
@@ -176,6 +179,15 @@ export class ImageClient {
     const body = res?.response;
     if (body instanceof ArrayBuffer) {
       return { imageBase64: this.arrayBufferToBase64(body), mimeType };
+    }
+    if (body && typeof body === "object" && ArrayBuffer.isView(body)) {
+      const view = body as ArrayBufferView;
+      const bytes = new Uint8Array(
+        view.buffer,
+        view.byteOffset,
+        view.byteLength,
+      );
+      return { imageBase64: this.bytesToBase64(bytes), mimeType };
     }
     if (typeof body === "string" && body) {
       // 兜底：某些环境可能返回二进制字符串

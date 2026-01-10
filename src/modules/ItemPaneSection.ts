@@ -22,7 +22,11 @@ interface ChatState {
   isBase64: boolean;
   conversationHistory: Array<{ role: string; content: string }>;
   isChatting: boolean;
+  savedPairIds: Set<string>; // 已保存的对话对 ID，防止重复保存
 }
+
+// 递增的对话对 ID 计数器
+let quickChatPairIdCounter = 0;
 
 // 当前聊天状态
 let currentChatState: ChatState = {
@@ -31,6 +35,7 @@ let currentChatState: ChatState = {
   isBase64: false,
   conversationHistory: [],
   isChatting: false,
+  savedPairIds: new Set(),
 };
 
 /**
@@ -119,6 +124,7 @@ function renderItemPaneSection(
       isBase64: false,
       conversationHistory: [],
       isChatting: false,
+      savedPairIds: new Set(),
     };
   }
 
@@ -741,17 +747,46 @@ function renderChatArea(
   chatArea.appendChild(inputArea);
   body.appendChild(chatArea);
 
-  // 快速提问按钮点击事件
+  // 快速提问按钮点击事件 - 打开时加载 PDF 内容
   const quickChatBtn = body.querySelector(
     "#ai-butler-quick-chat-btn",
   ) as HTMLButtonElement;
   if (quickChatBtn) {
-    quickChatBtn.addEventListener("click", () => {
+    quickChatBtn.addEventListener("click", async () => {
       if (chatArea.style.display === "none") {
         chatArea.style.display = "flex";
         quickChatBtn.style.background = "rgba(89, 192, 188, 0.15)";
         quickChatBtn.style.borderColor = "#4db6ac";
         inputBox.focus();
+
+        // 如果尚未加载 PDF 内容，则加载
+        if (!currentChatState.pdfContent && item) {
+          try {
+            const { PDFExtractor } = await import("./pdfExtractor");
+            const prefMode = (getPref("pdfProcessMode" as any) as string) || "base64";
+            const isBase64 = prefMode === "base64";
+
+            messagesArea.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">📄 正在加载论文内容...</div>`;
+
+            let pdfContent = "";
+            if (isBase64) {
+              pdfContent = await PDFExtractor.extractBase64FromItem(item);
+            } else {
+              pdfContent = await PDFExtractor.extractTextFromItem(item);
+            }
+
+            if (pdfContent) {
+              currentChatState.pdfContent = pdfContent;
+              currentChatState.isBase64 = isBase64;
+              messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">✅ 论文内容已加载，可以开始提问！</div>`;
+            } else {
+              messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 无法加载论文内容，请确保该文献有 PDF 附件</div>`;
+            }
+          } catch (err: any) {
+            ztoolkit.log("[AI-Butler] 快速提问加载 PDF 失败:", err);
+            messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 加载失败: ${err?.message || "未知错误"}</div>`;
+          }
+        }
       } else {
         chatArea.style.display = "none";
         quickChatBtn.style.background = "transparent";
@@ -760,13 +795,268 @@ function renderChatArea(
     });
   }
 
-  // 发送消息处理 (简化版，实际逻辑在 hooks.ts 中)
-  sendBtn.addEventListener("click", () => {
+  // 发送消息处理 - 快速提问（不保存历史，每次只发送论文+当前问题）
+  sendBtn.addEventListener("click", async () => {
     const question = inputBox.value.trim();
     if (!question) return;
-    // TODO: 调用 LLM 处理
+
+    // 检查是否正在聊天中
+    if (currentChatState.isChatting) {
+      return;
+    }
+
+    // 检查是否有 PDF 内容
+    if (!currentChatState.pdfContent) {
+      messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 请先等待论文内容加载完成</div>`;
+      return;
+    }
+
+    // 设置为正在聊天状态
+    currentChatState.isChatting = true;
+    sendBtn.textContent = "发送中...";
+    sendBtn.style.background = "#9e9e9e";
+    (sendBtn as HTMLButtonElement).disabled = true;
+    (inputBox as HTMLTextAreaElement).disabled = true;
+
+    // 生成唯一对话对 ID
+    quickChatPairIdCounter++;
+    const pairId = `quick_${Date.now()}_${quickChatPairIdCounter}`;
+
+    // 创建对话对容器
+    const pairWrapper = doc.createElement("div");
+    pairWrapper.style.cssText = `
+      margin-bottom: 12px;
+      padding: 8px;
+      border: 1px solid rgba(128, 128, 128, 0.2);
+      border-radius: 8px;
+      background: transparent;
+    `;
+    pairWrapper.setAttribute("data-pair-id", pairId);
+
+    // 显示用户问题
+    const userMsgDiv = doc.createElement("div");
+    userMsgDiv.style.cssText = `
+      margin-bottom: 8px;
+      padding: 8px;
+      background: rgba(89, 192, 188, 0.1);
+      border-radius: 6px;
+      border-left: 3px solid #59c0bc;
+    `;
+    userMsgDiv.innerHTML = `<strong>👤 您:</strong> ${escapeHtmlForChat(question)}`;
+    pairWrapper.appendChild(userMsgDiv);
+
+    // 创建 AI 回复区域
+    const aiMsgDiv = doc.createElement("div");
+    aiMsgDiv.style.cssText = `
+      margin-bottom: 8px;
+      padding: 8px;
+      background: rgba(128, 128, 128, 0.05);
+      border-radius: 6px;
+      border-left: 3px solid #667eea;
+    `;
+    aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong> <em style="color: #999;">思考中...</em>`;
+    pairWrapper.appendChild(aiMsgDiv);
+
+    // 创建保存按钮区域（初始隐藏）
+    const saveArea = doc.createElement("div");
+    saveArea.style.cssText = `
+      display: none;
+      justify-content: flex-end;
+      margin-top: 4px;
+    `;
+    const saveBtn = doc.createElement("button");
+    saveBtn.textContent = "💾 保存为笔记";
+    saveBtn.style.cssText = `
+      padding: 4px 10px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+    `;
+    saveArea.appendChild(saveBtn);
+    pairWrapper.appendChild(saveArea);
+
+    messagesArea.appendChild(pairWrapper);
+
+    // 清空输入框
     inputBox.value = "";
+
+    // 滚动到底部
+    messagesArea.scrollTop = messagesArea.scrollHeight;
+
+    try {
+      // 导入 LLMClient
+      const { default: LLMClient } = await import("./llmClient");
+
+      // 快速提问的关键：每次只发送论文+当前问题，不累积历史
+      const conversationHistory = [
+        { role: "user", content: question },
+      ];
+
+      let fullResponse = "";
+      await LLMClient.chatWithRetry(
+        currentChatState.pdfContent,
+        currentChatState.isBase64,
+        conversationHistory,
+        (chunk: string) => {
+          fullResponse += chunk;
+          // 流式更新 AI 回复
+          aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${escapeHtmlForChat(fullResponse)}`;
+          // 滚动到底部
+          messagesArea.scrollTop = messagesArea.scrollHeight;
+        },
+      );
+
+      // 完成后最终更新
+      aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${escapeHtmlForChat(fullResponse)}`;
+
+      // 显示保存按钮
+      saveArea.style.display = "flex";
+
+      // 保存按钮点击事件
+      saveBtn.addEventListener("click", async () => {
+        // 检查是否已保存过
+        if (currentChatState.savedPairIds.has(pairId)) {
+          saveBtn.textContent = "✅ 已保存";
+          return;
+        }
+
+        // 标记正在保存
+        saveBtn.textContent = "💾 保存中...";
+        saveBtn.style.background = "#9e9e9e";
+        (saveBtn as HTMLButtonElement).disabled = true;
+
+        try {
+          await saveChatPairToNote(item, pairId, question, fullResponse);
+          currentChatState.savedPairIds.add(pairId);
+          saveBtn.textContent = "✅ 已保存";
+          saveBtn.style.background = "#4caf50";
+        } catch (err: any) {
+          ztoolkit.log("[AI-Butler] 保存快速提问对话失败:", err);
+          saveBtn.textContent = "❌ 保存失败";
+          saveBtn.style.background = "#f44336";
+          (saveBtn as HTMLButtonElement).disabled = false;
+        }
+      });
+
+    } catch (err: any) {
+      ztoolkit.log("[AI-Butler] 快速提问发送失败:", err);
+      aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong> <span style="color: #f44336;">❌ 错误: ${err?.message || "发送失败"}</span>`;
+    } finally {
+      // 恢复状态
+      currentChatState.isChatting = false;
+      sendBtn.textContent = "发送";
+      sendBtn.style.background = "#59c0bc";
+      (sendBtn as HTMLButtonElement).disabled = false;
+      (inputBox as HTMLTextAreaElement).disabled = false;
+      inputBox.focus();
+    }
   });
+
+  // Enter 发送，Shift+Enter 换行
+  inputBox.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendBtn.click();
+    }
+  });
+}
+
+/**
+ * 转义 HTML 字符（用于聊天显示）
+ */
+function escapeHtmlForChat(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;")
+    .replace(/\n/g, "<br/>");
+}
+
+/**
+ * 获取或创建"AI管家-后续追问"独立笔记
+ */
+async function getOrCreateChatNote(item: Zotero.Item): Promise<Zotero.Item> {
+  const title = (item.getField("title") as string) || "文献";
+
+  // 查找已有的聊天笔记
+  const noteIDs = (item as any).getNotes?.() || [];
+  for (const nid of noteIDs) {
+    try {
+      const n = await Zotero.Items.getAsync(nid);
+      if (!n) continue;
+      const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
+      const hasChatTag = tags.some((t) => t.tag === "AI-Butler-Chat");
+      const html: string = (n as any).getNote?.() || "";
+      const titleMatch = /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(html);
+      if (hasChatTag || titleMatch) {
+        return n as Zotero.Item;
+      }
+    } catch (e) {
+      continue;
+    }
+  }
+
+  // 创建新笔记
+  const note = new Zotero.Item("note");
+  note.parentID = item.id;
+  const header = `<h2>AI 管家 - 后续追问 - ${escapeHtmlForNote(title)}</h2>`;
+  note.setNote(header);
+  note.addTag("AI-Butler-Chat");
+  await note.saveTx();
+  return note;
+}
+
+/**
+ * 转义 HTML 字符（用于笔记保存）
+ */
+function escapeHtmlForNote(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
+ * 将对话对保存到后续追问笔记
+ */
+async function saveChatPairToNote(
+  item: Zotero.Item,
+  pairId: string,
+  userMessage: string,
+  assistantMessage: string,
+): Promise<void> {
+  const note = await getOrCreateChatNote(item);
+  let noteHtml = (note as any).getNote?.() || "";
+
+  // 检查是否已存在相同 pairId 的对话对，防止重复保存
+  if (noteHtml.includes(`AI_BUTLER_CHAT_PAIR_START id=${pairId}`)) {
+    ztoolkit.log("[AI-Butler] 该对话对已保存过，跳过重复保存");
+    return;
+  }
+
+  const jsonMarker = `<!-- AI_BUTLER_CHAT_JSON: ${JSON.stringify({ id: pairId, user: userMessage, assistant: assistantMessage })} -->`;
+  const block = `
+<!-- AI_BUTLER_CHAT_PAIR_START id=${escapeHtmlForNote(pairId)} -->
+${jsonMarker}
+<div id="ai-butler-pair-${escapeHtmlForNote(pairId)}" style="margin-top:14px; padding-top:8px; border-top:1px dashed #ccc;">
+  <div style="background-color:#e3f2fd; padding:10px; border-radius:6px; margin-bottom:8px;"><strong>👤 用户:</strong> ${escapeHtmlForNote(userMessage)}</div>
+  <div style="background-color:#f5f5f5; padding:10px; border-radius:6px;"><strong>🤖 AI管家:</strong><br/>${escapeHtmlForNote(assistantMessage).replace(/\n/g, "<br/>")}</div>
+  <div style="font-size:11px; color:#999; margin-top:6px;">保存时间: ${new Date().toLocaleString("zh-CN")} (来自快速提问)</div>
+</div>
+<!-- AI_BUTLER_CHAT_PAIR_END id=${escapeHtmlForNote(pairId)} -->
+`;
+
+  noteHtml += block;
+  (note as any).setNote(noteHtml);
+  await (note as any).saveTx();
+  ztoolkit.log("[AI-Butler] 快速提问对话已保存到笔记");
 }
 
 /**

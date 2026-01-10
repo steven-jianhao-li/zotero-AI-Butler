@@ -683,6 +683,8 @@ export class TaskQueueManager {
 
   /**
    * 执行下一批任务
+   *
+   * 并行执行 batchSize 个任务，所有任务完成后再进入下一个间隔周期
    */
   private async executeNextBatch(): Promise<void> {
     if (this.isBatchRunning) {
@@ -692,54 +694,58 @@ export class TaskQueueManager {
     this.isBatchRunning = true;
 
     try {
-      // 追踪本批次实际调用 LLM 的任务数（无 PDF 失败不计入）
-      let llmTasksProcessed = 0;
+      // 获取待处理任务
+      const pendingTasks = this.getAllTasks()
+        .filter(
+          (task) =>
+            task.status === TaskStatus.PRIORITY ||
+            task.status === TaskStatus.PENDING,
+        )
+        .sort((a, b) => {
+          if (
+            a.status === TaskStatus.PRIORITY &&
+            b.status !== TaskStatus.PRIORITY
+          ) {
+            return -1;
+          }
+          if (
+            a.status !== TaskStatus.PRIORITY &&
+            b.status === TaskStatus.PRIORITY
+          ) {
+            return 1;
+          }
+          return a.createdAt.getTime() - b.createdAt.getTime();
+        });
 
-      while (llmTasksProcessed < this.batchSize) {
-        // 每次循环重新获取待处理任务（因为状态可能已变化）
-        const pendingTasks = this.getAllTasks()
-          .filter(
-            (task) =>
-              task.status === TaskStatus.PRIORITY ||
-              task.status === TaskStatus.PENDING,
-          )
-          .sort((a, b) => {
-            if (
-              a.status === TaskStatus.PRIORITY &&
-              b.status !== TaskStatus.PRIORITY
-            ) {
-              return -1;
-            }
-            if (
-              a.status !== TaskStatus.PRIORITY &&
-              b.status === TaskStatus.PRIORITY
-            ) {
-              return 1;
-            }
-            return a.createdAt.getTime() - b.createdAt.getTime();
-          });
-
-        if (pendingTasks.length === 0) {
-          break;
-        }
-
-        const task = pendingTasks[0];
-        ztoolkit.log(
-          `执行任务 (${llmTasksProcessed + 1}/${this.batchSize}): ${task.title}`,
-        );
-
-        // 执行任务并获取是否为快速失败（无 PDF）
-        const wasQuickFail = await this.executeTask(task.id);
-
-        // 只有非快速失败的任务才计入批次配额
-        if (!wasQuickFail) {
-          llmTasksProcessed++;
-        } else {
-          ztoolkit.log(`任务快速失败（无 PDF），不计入批次配额: ${task.title}`);
-        }
+      if (pendingTasks.length === 0) {
+        ztoolkit.log("没有待处理的任务");
+        return;
       }
 
-      ztoolkit.log(`批次执行完成，实际处理 ${llmTasksProcessed} 个任务`);
+      // 选取本批次要执行的任务（最多 batchSize 个）
+      const tasksToExecute = pendingTasks.slice(0, this.batchSize);
+
+      ztoolkit.log(
+        `开始并行执行批次任务: ${tasksToExecute.length} 个 (批次大小=${this.batchSize})`,
+      );
+
+      // 并行执行所有任务
+      const taskPromises = tasksToExecute.map(async (task) => {
+        ztoolkit.log(`启动任务: ${task.title}`);
+        const wasQuickFail = await this.executeTask(task.id);
+        return { taskId: task.id, title: task.title, wasQuickFail };
+      });
+
+      // 等待所有任务完成
+      const results = await Promise.all(taskPromises);
+
+      // 统计结果
+      const llmTasksProcessed = results.filter((r) => !r.wasQuickFail).length;
+      const quickFailCount = results.filter((r) => r.wasQuickFail).length;
+
+      ztoolkit.log(
+        `批次执行完成，实际处理 ${llmTasksProcessed} 个任务，快速失败 ${quickFailCount} 个`,
+      );
     } finally {
       this.isBatchRunning = false;
 

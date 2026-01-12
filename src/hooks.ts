@@ -449,7 +449,10 @@ function registerLibraryToolbarButton(win: Window) {
     // 创建按钮
     const button = doc.createXULElement("toolbarbutton") as XULElement;
     button.setAttribute("label", "🤖");
-    button.setAttribute("tooltiptext", getString("library-toolbar-ai-butler" as any));
+    button.setAttribute(
+      "tooltiptext",
+      getString("library-toolbar-ai-butler" as any),
+    );
     button.setAttribute("class", "zotero-tb-button");
     (button as any).style.cssText = `
       font-size: 16px;
@@ -951,7 +954,6 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   // 防止窗口对象悬空导致内存泄漏
   addon.data.dialog?.window?.close();
 }
-
 
 /**
  * 插件关闭钩子函数

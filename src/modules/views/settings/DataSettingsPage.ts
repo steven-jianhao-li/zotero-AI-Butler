@@ -96,10 +96,7 @@ export class DataSettingsPage {
         .createLine({ text: "所有任务已清空", type: "success" })
         .show();
     });
-    const btnClearEmptyNotes = createStyledButton(
-      "🧹 清空空笔记",
-      "#ff9800",
-    );
+    const btnClearEmptyNotes = createStyledButton("🧹 清空空笔记", "#ff9800");
     btnClearEmptyNotes.addEventListener("click", () => this.clearEmptyNotes());
     row1.appendChild(btnClearDone);
     row1.appendChild(btnClearAll);

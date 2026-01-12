@@ -242,14 +242,20 @@ function renderActionButtons(
     refreshBtn.style.pointerEvents = "none";
     try {
       // 刷新 AI 笔记
-      const noteContent = doc.getElementById("ai-butler-note-content") as HTMLElement | null;
+      const noteContent = doc.getElementById(
+        "ai-butler-note-content",
+      ) as HTMLElement | null;
       if (noteContent) {
         noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
         await loadNoteContent(doc, item, noteContent);
       }
       // 刷新一图总结
-      const imageContainer = doc.getElementById("ai-butler-image-container") as HTMLElement | null;
-      const imageBtnContainer = doc.getElementById("ai-butler-image-btn-container") as HTMLElement | null;
+      const imageContainer = doc.getElementById(
+        "ai-butler-image-container",
+      ) as HTMLElement | null;
+      const imageBtnContainer = doc.getElementById(
+        "ai-butler-image-btn-container",
+      ) as HTMLElement | null;
       if (imageContainer && imageBtnContainer) {
         imageContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
         imageBtnContainer.innerHTML = "";

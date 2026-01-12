@@ -28,6 +28,7 @@ export type FluentMessageId =
   | 'itempane-ai-section-header'
   | 'itempane-ai-section-sidenav'
   | 'itempane-ai-temp-chat'
+  | 'library-toolbar-ai-butler'
   | 'menuitem-chatWithAI'
   | 'menuitem-filemenulabel'
   | 'menuitem-generateSummary'

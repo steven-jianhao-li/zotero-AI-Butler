@@ -15,3 +15,4 @@ aibutler-itempane-ai-section-sidenav = AI Butler
 itempane-ai-open-chat = 📝 Full Chat (Save History)
 itempane-ai-temp-chat = 💬 Quick Ask (Temporary)
 itempane-ai-no-item = Please select an item
+library-toolbar-ai-butler = AI Butler

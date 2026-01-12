@@ -15,3 +15,4 @@ aibutler-itempane-ai-section-sidenav = AI 管家
 itempane-ai-open-chat = 📝 完整追问 (保存记录)
 itempane-ai-temp-chat = 💬 快速提问 (不保存记录)
 itempane-ai-no-item = 请选择一篇文献
+library-toolbar-ai-butler = AI 管家

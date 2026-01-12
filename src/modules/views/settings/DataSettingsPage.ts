@@ -96,8 +96,11 @@ export class DataSettingsPage {
         .createLine({ text: "所有任务已清空", type: "success" })
         .show();
     });
+    const btnClearEmptyNotes = createStyledButton("🧹 清空空笔记", "#ff9800");
+    btnClearEmptyNotes.addEventListener("click", () => this.clearEmptyNotes());
     row1.appendChild(btnClearDone);
     row1.appendChild(btnClearAll);
+    row1.appendChild(btnClearEmptyNotes);
     section.appendChild(row1);
 
     // 设置导出/导入
@@ -292,5 +295,79 @@ export class DataSettingsPage {
       .createLine({ text: "✅ 已恢复默认设置", type: "success" })
       .show();
     this.render();
+  }
+
+  /**
+   * 清空所有空的 AI 笔记
+   *
+   * 扫描库中所有论文，删除只有标题没有实际内容的 AI 笔记
+   */
+  private async clearEmptyNotes(): Promise<void> {
+    const ok = Services.prompt.confirm(
+      Zotero.getMainWindow() as any,
+      "清空空笔记",
+      "此操作将扫描库中所有论文，删除只有标题没有实际内容的 AI 笔记。\n\n确定继续吗？",
+    );
+    if (!ok) return;
+
+    let deletedCount = 0;
+    let scannedCount = 0;
+
+    try {
+      // 获取所有条目
+      const allItems = await Zotero.Items.getAll(
+        Zotero.Libraries.userLibraryID,
+      );
+
+      for (const item of allItems) {
+        // 跳过非普通条目（如笔记、附件等）
+        if (!item.isRegularItem()) continue;
+
+        scannedCount++;
+        const noteIDs = (item as any).getNotes?.() || [];
+
+        for (const noteID of noteIDs) {
+          const note = await Zotero.Items.getAsync(noteID);
+          if (!note) continue;
+
+          // 检查是否是 AI 生成的笔记
+          const tags: Array<{ tag: string }> = (note as any).getTags?.() || [];
+          const hasTag = tags.some((t) => t.tag === "AI-Generated");
+          const noteHtml: string = (note as any).getNote?.() || "";
+          const titleMatch = /<h2>\s*AI 管家\s*-/.test(noteHtml);
+
+          if (!hasTag && !titleMatch) continue;
+
+          // 检查笔记内容是否为空
+          // 移除标题和包装标签后检查剩余内容
+          const contentWithoutTitle = noteHtml
+            .replace(/<h2>.*?<\/h2>/gi, "")
+            .replace(/<div>|<\/div>/gi, "")
+            .replace(/<[^>]+>/g, "") // 移除所有 HTML 标签
+            .trim();
+
+          if (!contentWithoutTitle) {
+            // 这是一个空笔记，删除它
+            await (note as any).eraseTx?.();
+            deletedCount++;
+          }
+        }
+      }
+
+      new ztoolkit.ProgressWindow("数据管理")
+        .createLine({
+          text: `✅ 已扫描 ${scannedCount} 篇论文，删除 ${deletedCount} 个空笔记`,
+          type: "success",
+        })
+        .show();
+    } catch (error: any) {
+      ztoolkit.log("[AI Butler] 清空空笔记失败:", error);
+      new ztoolkit.ProgressWindow("数据管理")
+        .createLine({
+          text: `❌ 操作失败: ${error.message}`,
+          type: "fail",
+        })
+        .show();
+    }
   }
 }

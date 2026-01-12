@@ -201,6 +201,11 @@ export class NoteGenerator {
       // 通知进度回调开始创建笔记 (80% 完成)
       progressCallback?.("正在创建笔记...", 80);
 
+      // 检查内容是否为空，防止创建空笔记
+      if (!fullContent || !fullContent.trim()) {
+        throw new Error("AI 返回内容为空，笔记未创建");
+      }
+
       // 格式化笔记内容,添加标题和样式
       const noteContent = this.formatNoteContent(itemTitle, fullContent);
 

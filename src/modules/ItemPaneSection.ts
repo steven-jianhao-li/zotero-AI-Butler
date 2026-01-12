@@ -211,8 +211,68 @@ function renderActionButtons(
   );
   quickChatBtn.id = "ai-butler-quick-chat-btn";
 
+  // 刷新按钮
+  const refreshBtn = doc.createElement("button");
+  refreshBtn.id = "ai-butler-refresh-btn";
+  refreshBtn.title = "刷新AI笔记和一图总结";
+  refreshBtn.textContent = "🔄";
+  refreshBtn.style.cssText = `
+    padding: 8px 12px;
+    border: 1px solid #59c0bc;
+    border-radius: 4px;
+    background: transparent;
+    color: #59c0bc;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+  `;
+  refreshBtn.addEventListener("mouseenter", () => {
+    refreshBtn.style.background = "rgba(89, 192, 188, 0.1)";
+  });
+  refreshBtn.addEventListener("mouseleave", () => {
+    refreshBtn.style.background = "transparent";
+  });
+  refreshBtn.addEventListener("click", async () => {
+    // 显示刷新中状态
+    refreshBtn.textContent = "⏳";
+    refreshBtn.style.pointerEvents = "none";
+    try {
+      // 刷新 AI 笔记
+      const noteContent = doc.getElementById(
+        "ai-butler-note-content",
+      ) as HTMLElement | null;
+      if (noteContent) {
+        noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+        await loadNoteContent(doc, item, noteContent);
+      }
+      // 刷新一图总结
+      const imageContainer = doc.getElementById(
+        "ai-butler-image-container",
+      ) as HTMLElement | null;
+      const imageBtnContainer = doc.getElementById(
+        "ai-butler-image-btn-container",
+      ) as HTMLElement | null;
+      if (imageContainer && imageBtnContainer) {
+        imageContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+        imageBtnContainer.innerHTML = "";
+        await loadImageSummary(doc, item, imageContainer, imageBtnContainer);
+      }
+    } catch (err: any) {
+      ztoolkit.log("[AI-Butler] 刷新失败:", err);
+    } finally {
+      // 恢复按钮状态
+      refreshBtn.textContent = "🔄";
+      refreshBtn.style.pointerEvents = "auto";
+    }
+  });
+
   btnContainer.appendChild(fullChatBtn);
   btnContainer.appendChild(quickChatBtn);
+  btnContainer.appendChild(refreshBtn);
   body.appendChild(btnContainer);
 }
 

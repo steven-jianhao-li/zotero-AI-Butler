@@ -131,6 +131,10 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   // 为用户提供快速访问插件功能的入口
   registerContextMenuItem();
 
+  // 注册文献库工具栏按钮
+  // 用户可以在文献库界面快速访问 AI 管家
+  registerLibraryToolbarButton(win);
+
   // 显示启动成功提示（仅一次）
   if (!(addon.data as any).startupPopupShown) {
     (addon.data as any).startupPopupShown = true;
@@ -405,6 +409,86 @@ function registerContextMenuItem() {
 }
 
 /**
+ * 注册文献库工具栏按钮
+ *
+ * 在 Zotero 主窗口的文献库工具栏中添加"AI 管家"按钮
+ * 用户点击后可以打开 AI 管家主界面
+ *
+ * 技术实现:
+ * - 在 onMainWindowLoad 时创建按钮并添加到工具栏
+ * - 使用唯一 ID 防止重复创建
+ * - 点击后打开 AI 管家仪表盘
+ */
+function registerLibraryToolbarButton(win: Window) {
+  try {
+    const doc = win.document;
+    const buttonId = "ai-butler-library-toolbar-btn";
+
+    // 检查是否已存在按钮，避免重复创建
+    if (doc.getElementById(buttonId)) {
+      return;
+    }
+
+    // 获取 Zotero 工具栏区域
+    // zotero-items-toolbar 是文献列表上方的工具栏
+    const toolbar = doc.getElementById("zotero-items-toolbar");
+    if (!toolbar) {
+      ztoolkit.log("[AI-Butler] 找不到文献库工具栏");
+      return;
+    }
+
+    // 创建按钮容器
+    const buttonContainer = doc.createXULElement("hbox") as XULElement;
+    buttonContainer.id = buttonId;
+    buttonContainer.setAttribute("align", "center");
+    (buttonContainer as any).style.cssText = `
+      margin-left: 4px;
+      margin-right: 4px;
+    `;
+
+    // 创建按钮
+    const button = doc.createXULElement("toolbarbutton") as XULElement;
+    button.setAttribute("label", "🤖");
+    button.setAttribute(
+      "tooltiptext",
+      getString("library-toolbar-ai-butler" as any),
+    );
+    button.setAttribute("class", "zotero-tb-button");
+    (button as any).style.cssText = `
+      font-size: 16px;
+      cursor: pointer;
+    `;
+
+    // 点击事件
+    button.addEventListener("click", async () => {
+      try {
+        const mainWin = MainWindow.getInstance();
+        await mainWin.open("dashboard");
+      } catch (error: any) {
+        ztoolkit.log("[AI-Butler] 打开 AI 管家失败:", error);
+        new ztoolkit.ProgressWindow("AI Butler", {
+          closeOnClick: true,
+          closeTime: 3000,
+        })
+          .createLine({
+            text: `打开失败: ${error.message || error}`,
+            type: "error",
+          })
+          .show();
+      }
+    });
+
+    buttonContainer.appendChild(button);
+    toolbar.appendChild(buttonContainer);
+
+    ztoolkit.log("[AI-Butler] 文献库工具栏按钮已添加");
+  } catch (error) {
+    ztoolkit.log("[AI-Butler] 注册文献库工具栏按钮失败:", error);
+  }
+}
+
+/**
+
  * 注册 PDF 阅读器工具栏按钮
  *
  * 在 PDF 阅读器顶部工具栏中添加"AI 追问"按钮
@@ -852,6 +936,16 @@ async function handleGenerateSummary() {
  * @returns Promise<void> 清理完成的承诺
  */
 async function onMainWindowUnload(win: Window): Promise<void> {
+  // 移除文献库工具栏按钮
+  try {
+    const button = win.document.getElementById("ai-butler-library-toolbar-btn");
+    if (button) {
+      button.remove();
+    }
+  } catch (e) {
+    // 忽略清理错误
+  }
+
   // 注销所有工具包注册的UI组件
   // 包括菜单项、键盘快捷键、工具栏按钮等
   ztoolkit.unregisterAll();

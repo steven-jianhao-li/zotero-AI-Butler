@@ -566,28 +566,42 @@ export class ImageClient {
           response_format: "b64_json",
         }
       : isResponsesEndpoint
-        ? {
-            model,
-            input: [
-              {
-                role: "system",
-                content: `You are an image generation model. Return a single image (no text). Aspect ratio: ${config.aspectRatio}; Resolution: ${config.resolution}.`,
-              },
-              { role: "user", content: prompt },
-            ],
-          }
-        : {
-            model,
-            messages: [
-              {
-                role: "system",
-                content: `You are an image generation model. Return a single image (no text). Aspect ratio: ${config.aspectRatio}; Resolution: ${config.resolution}.`,
-              },
-              { role: "user", content: prompt },
-            ],
-            temperature: 0.8,
-            stream: false,
-          };
+        ? (() => {
+            // 动态构建 system prompt，只包含非空的参数
+            const parts = [
+              "You are an image generation model. Return a single image (no text).",
+            ];
+            if (config.aspectRatio)
+              parts.push(`Aspect ratio: ${config.aspectRatio}.`);
+            if (config.resolution)
+              parts.push(`Resolution: ${config.resolution}.`);
+            return {
+              model,
+              input: [
+                { role: "system", content: parts.join(" ") },
+                { role: "user", content: prompt },
+              ],
+            };
+          })()
+        : (() => {
+            // 动态构建 system prompt，只包含非空的参数
+            const parts = [
+              "You are an image generation model. Return a single image (no text).",
+            ];
+            if (config.aspectRatio)
+              parts.push(`Aspect ratio: ${config.aspectRatio}.`);
+            if (config.resolution)
+              parts.push(`Resolution: ${config.resolution}.`);
+            return {
+              model,
+              messages: [
+                { role: "system", content: parts.join(" ") },
+                { role: "user", content: prompt },
+              ],
+              temperature: 0.8,
+              stream: false,
+            };
+          })();
 
     ztoolkit.log(`[AI-Butler] 调用 OpenAI 兼容生图 API: ${endpoint}`);
     ztoolkit.log(`[AI-Butler] 生图提示词长度: ${prompt.length} 字符`);
@@ -763,6 +777,11 @@ export class ImageClient {
       options?.resolution ||
       (getPref("imageSummaryResolution" as any) as string) ||
       "1K";
+    // 读取启用/禁用设置（默认禁用以兼容更多 API 代理）
+    const aspectRatioEnabled =
+      (getPref("imageSummaryAspectRatioEnabled" as any) as boolean) ?? false;
+    const resolutionEnabled =
+      (getPref("imageSummaryResolutionEnabled" as any) as boolean) ?? false;
 
     if (!apiKey) {
       throw new ImageGenerationError("一图总结 API Key 未配置", {
@@ -779,28 +798,39 @@ export class ImageClient {
         apiKey,
         apiUrl,
         model,
-        aspectRatio,
-        resolution,
+        aspectRatio: aspectRatioEnabled ? aspectRatio : "",
+        resolution: resolutionEnabled ? resolution : "",
       });
     }
 
     const endpoint = `${apiUrl.replace(/\/$/, "")}/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 
-    const payload = {
+    // 动态构建 imageConfig，只包含启用的参数
+    const imageConfig: Record<string, string> = {};
+    if (aspectRatioEnabled) {
+      imageConfig.aspectRatio = aspectRatio;
+    }
+    if (resolutionEnabled) {
+      imageConfig.imageSize = resolution;
+    }
+
+    const payload: any = {
       contents: [
         {
+          role: "user",
           parts: [{ text: prompt }],
         },
       ],
       generationConfig: {
         temperature: 0.8, // 稍高的温度以增加创造性
         responseModalities: ["TEXT", "IMAGE"],
-        imageConfig: {
-          aspectRatio: aspectRatio,
-          imageSize: resolution,
-        },
       },
     };
+
+    // 只有在有启用的参数时才添加 imageConfig
+    if (Object.keys(imageConfig).length > 0) {
+      payload.generationConfig.imageConfig = imageConfig;
+    }
 
     ztoolkit.log(`[AI-Butler] 调用 Gemini 生图 API: ${endpoint}`);
     ztoolkit.log(`[AI-Butler] 生图提示词长度: ${prompt.length} 字符`);

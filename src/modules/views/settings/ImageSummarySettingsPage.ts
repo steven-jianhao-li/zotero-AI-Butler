@@ -171,6 +171,19 @@ export class ImageSummarySettingsPage {
       ),
     );
 
+    // 启用图片宽高比参数
+    form.appendChild(
+      createFormGroup(
+        "启用宽高比参数",
+        createCheckbox(
+          "imageSummaryAspectRatioEnabled",
+          (getPref("imageSummaryAspectRatioEnabled" as any) as boolean) ??
+            false,
+        ),
+        "是否在 API 请求中包含宽高比参数（关闭此选项可兼容不支持该参数的 API 代理）",
+      ),
+    );
+
     // 图片宽高比
     form.appendChild(
       createFormGroup(
@@ -182,6 +195,18 @@ export class ImageSummarySettingsPage {
           "16:9",
         ),
         "生成图片的宽高比，如 16:9、1:1、9:16、4:3 等",
+      ),
+    );
+
+    // 启用图片分辨率参数
+    form.appendChild(
+      createFormGroup(
+        "启用分辨率参数",
+        createCheckbox(
+          "imageSummaryResolutionEnabled",
+          (getPref("imageSummaryResolutionEnabled" as any) as boolean) ?? false,
+        ),
+        "是否在 API 请求中包含分辨率参数（关闭此选项可兼容不支持该参数的 API 代理）",
       ),
     );
 
@@ -514,6 +539,28 @@ export class ImageSummarySettingsPage {
       ) as HTMLInputElement;
       if (autoSummaryCb) {
         setPref("autoImageSummaryOnComplete" as any, autoSummaryCb.checked);
+      }
+
+      // 宽高比参数启用复选框
+      const aspectRatioEnabledCb = this.container.querySelector(
+        "#setting-imageSummaryAspectRatioEnabled",
+      ) as HTMLInputElement;
+      if (aspectRatioEnabledCb) {
+        setPref(
+          "imageSummaryAspectRatioEnabled" as any,
+          aspectRatioEnabledCb.checked,
+        );
+      }
+
+      // 分辨率参数启用复选框
+      const resolutionEnabledCb = this.container.querySelector(
+        "#setting-imageSummaryResolutionEnabled",
+      ) as HTMLInputElement;
+      if (resolutionEnabledCb) {
+        setPref(
+          "imageSummaryResolutionEnabled" as any,
+          resolutionEnabledCb.checked,
+        );
       }
 
       new ztoolkit.ProgressWindow("AI Butler", {

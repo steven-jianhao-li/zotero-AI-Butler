@@ -13,3 +13,5 @@ itempane-ai-section-header =
     .label = AI Butler
 itempane-ai-section-sidenav =
     .tooltiptext = AI Butler
+
+menuitem-literatureReview = AI Butler Literature Review

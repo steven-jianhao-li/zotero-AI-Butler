@@ -508,6 +508,271 @@ export class GeminiProvider implements ILlmProvider {
       return "";
     }
   }
+
+  /**
+   * 使用 Gemini File API 上传文件
+   *
+   * @param filePath 文件路径
+   * @param displayName 显示名称
+   * @param apiKey API 密钥
+   * @param baseUrl API 基础 URL
+   * @returns 上传后的文件 URI
+   */
+  private async uploadFileToGemini(
+    filePath: string,
+    displayName: string,
+    apiKey: string,
+    baseUrl: string,
+  ): Promise<string> {
+    // 读取文件内容
+    const fileData = await IOUtils.read(filePath);
+    const numBytes = fileData.byteLength;
+    const mimeType = "application/pdf";
+
+    // 步骤 1: 开始可恢复上传
+    const startUploadUrl = `${baseUrl}/upload/v1beta/files`;
+
+    let uploadUrl: string;
+    try {
+      const startResponse = await Zotero.HTTP.request("POST", startUploadUrl, {
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+          "X-Goog-Upload-Protocol": "resumable",
+          "X-Goog-Upload-Command": "start",
+          "X-Goog-Upload-Header-Content-Length": String(numBytes),
+          "X-Goog-Upload-Header-Content-Type": mimeType,
+        },
+        body: JSON.stringify({
+          file: { display_name: displayName },
+        }),
+        responseType: "text",
+        timeout: 60000,
+      });
+
+      // 从响应头获取上传 URL
+      const headers = startResponse.getAllResponseHeaders?.() || "";
+      const urlMatch = headers.match(/x-goog-upload-url:\s*(.+?)(?:\r?\n|$)/i);
+      if (!urlMatch) {
+        throw new Error("无法获取 Gemini 文件上传 URL");
+      }
+      uploadUrl = urlMatch[1].trim();
+    } catch (error: any) {
+      ztoolkit.log("[AI-Butler] Gemini 文件上传初始化失败:", error);
+      throw new Error(`Gemini 文件上传初始化失败: ${error.message}`);
+    }
+
+    // 步骤 2: 上传文件内容
+    try {
+      const uploadResponse = await Zotero.HTTP.request("POST", uploadUrl, {
+        headers: {
+          "Content-Length": String(numBytes),
+          "X-Goog-Upload-Offset": "0",
+          "X-Goog-Upload-Command": "upload, finalize",
+        },
+        body: new Uint8Array(fileData),
+        responseType: "json",
+        timeout: 120000, // 文件上传可能需要更长时间
+      });
+
+      const fileInfo = uploadResponse.response;
+      const fileUri = fileInfo?.file?.uri;
+      if (!fileUri) {
+        throw new Error("无法获取上传文件的 URI");
+      }
+
+      ztoolkit.log(`[AI-Butler] 文件上传成功: ${displayName} -> ${fileUri}`);
+      return fileUri;
+    } catch (error: any) {
+      ztoolkit.log("[AI-Butler] Gemini 文件上传失败:", error);
+      throw new Error(`Gemini 文件上传失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 多文件摘要生成
+   * 使用 inline_data 方式发送多个 PDF 文件
+   */
+  async generateMultiFileSummary(
+    pdfFiles: Array<{
+      filePath: string;
+      displayName: string;
+      base64Content?: string;
+    }>,
+    prompt: string,
+    options: LLMOptions,
+    onProgress?: ProgressCb,
+  ): Promise<string> {
+    const baseUrl = (
+      options.apiUrl || "https://generativelanguage.googleapis.com"
+    ).replace(/\/$/, "");
+    const apiKey = (options.apiKey || "").trim();
+    const model = (options.model || "gemini-2.5-pro").trim();
+    const temperature = options.temperature ?? 0.7;
+    const topP = options.topP ?? 1.0;
+    const maxTokens = options.maxTokens ?? 8192;
+
+    if (!baseUrl) throw new Error("Gemini API URL 未配置");
+    if (!apiKey) throw new Error("Gemini API Key 未配置");
+    if (pdfFiles.length === 0) throw new Error("没有要处理的 PDF 文件");
+
+    // 构建 inline_data 部分
+    const fileParts: any[] = [];
+
+    for (let i = 0; i < pdfFiles.length; i++) {
+      const pdfFile = pdfFiles[i];
+
+      if (pdfFile.base64Content && pdfFile.base64Content.length > 0) {
+        // 直接使用已有的 base64 内容
+        fileParts.push({
+          inline_data: {
+            mime_type: "application/pdf",
+            data: pdfFile.base64Content,
+          },
+        });
+        ztoolkit.log(
+          `[AI-Butler] 添加 PDF 附件 (${i + 1}/${pdfFiles.length}): ${pdfFile.displayName}, base64 长度: ${pdfFile.base64Content.length}`,
+        );
+      } else {
+        ztoolkit.log(
+          `[AI-Butler] PDF 文件 ${pdfFile.displayName} 无 base64 内容，跳过`,
+        );
+      }
+    }
+
+    if (fileParts.length === 0) {
+      throw new Error("没有成功处理任何 PDF 文件");
+    }
+
+    ztoolkit.log(
+      `[AI-Butler] 准备发送 ${fileParts.length} 个 PDF 附件到 Gemini`,
+    );
+
+    // 构建请求
+    const endpoint = `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
+
+    const generationConfig: any = {
+      temperature,
+      topP,
+      maxOutputTokens: maxTokens,
+    };
+
+    const payload = {
+      generationConfig,
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: prompt }, ...fileParts],
+        },
+      ],
+      systemInstruction: { parts: [{ text: SYSTEM_ROLE_PROMPT }] },
+    };
+
+    // 发送请求并处理流式响应
+    const chunks: string[] = [];
+    let delivered = 0;
+    let processedLength = 0;
+    let partialLine = "";
+    let gotAnyDelta = false;
+
+    try {
+      await Zotero.HTTP.request("POST", endpoint, {
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify(payload),
+        responseType: "text",
+        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        requestObserver: (xmlhttp: XMLHttpRequest) => {
+          xmlhttp.onprogress = (e: any) => {
+            const status = e.target.status;
+            if (status >= 400) {
+              try {
+                const errorResponse = e.target.response;
+                const parsed = errorResponse ? JSON.parse(errorResponse) : null;
+                const err = parsed?.error || parsed || {};
+                const code = err?.code || `HTTP ${status}`;
+                const msg = err?.message || "请求失败";
+                xmlhttp.abort();
+                throw new Error(`${code}: ${msg}`);
+              } catch {
+                xmlhttp.abort();
+                throw new Error(`HTTP ${status}: 请求失败`);
+              }
+            }
+
+            try {
+              const resp: string = e.target.response || "";
+              if (resp.length > processedLength) {
+                const slice = partialLine + resp.slice(processedLength);
+                processedLength = resp.length;
+                const parts = slice.split(/\r?\n/);
+                partialLine =
+                  parts[parts.length - 1].indexOf("data: ") === 0 &&
+                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                    ? ""
+                    : parts.pop() || "";
+
+                for (const raw of parts) {
+                  if (raw.indexOf("data: ") !== 0) continue;
+                  const jsonStr = raw.replace(/^data:\s*/, "").trim();
+                  if (!jsonStr) continue;
+                  try {
+                    const json = JSON.parse(jsonStr);
+                    const text = this.extractGeminiText(json);
+                    if (text) {
+                      gotAnyDelta = true;
+                      chunks.push(text.replace(/\n+/g, "\n"));
+                      const current = chunks.join("");
+                      if (onProgress && current.length > delivered) {
+                        const newChunk = current.slice(delivered);
+                        delivered = current.length;
+                        Promise.resolve(onProgress(newChunk)).catch((err) => {
+                          ztoolkit.log(
+                            "[AI-Butler] onProgress callback error:",
+                            err,
+                          );
+                        });
+                      }
+                    }
+                  } catch {
+                    /* ignore */
+                  }
+                }
+              }
+            } catch (err) {
+              ztoolkit.log("[AI-Butler] Gemini stream parse error:", err);
+            }
+          };
+        },
+      });
+    } catch (error: any) {
+      let errorMessage = error?.message || "Gemini 请求失败";
+      try {
+        const responseText =
+          error?.xmlhttp?.response || error?.xmlhttp?.responseText;
+        if (responseText) {
+          const parsed =
+            typeof responseText === "string"
+              ? JSON.parse(responseText)
+              : responseText;
+          const err = parsed?.error || parsed;
+          const code = err?.code || "Error";
+          const msg = err?.message || error?.message || String(error);
+          errorMessage = `${code}: ${msg}`;
+        }
+      } catch {
+        /* ignore */
+      }
+      if (gotAnyDelta && chunks.length > 0) return chunks.join("");
+      throw new Error(errorMessage);
+    }
+
+    const streamed = chunks.join("");
+    if (gotAnyDelta && streamed) return streamed;
+    return "";
+  }
 }
 
 // 自注册

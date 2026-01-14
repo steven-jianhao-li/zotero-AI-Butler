@@ -406,6 +406,17 @@ function registerContextMenuItem() {
       );
     },
   });
+
+  // 注册"AI管家文献综述"菜单项 (分类右键)
+  ztoolkit.Menu.register("collection", {
+    tag: "menuitem",
+    label: getString("menuitem-literatureReview" as any),
+    icon: menuIcon,
+    commandListener: async () => {
+      await handleLiteratureReview();
+    },
+    getVisibility: () => true, // 分类菜单始终显示
+  });
 }
 
 /**
@@ -1106,6 +1117,54 @@ async function handleImageSummary() {
     })
       .createLine({
         text: `❌ 添加任务失败: ${error.message || error}`,
+        type: "error",
+      })
+      .show();
+  }
+}
+
+/**
+ * 处理文献综述生成
+ *
+ * 当用户在分类上右键点击"AI管家文献综述"时触发
+ * 获取当前选中的分类，打开综述配置界面
+ */
+async function handleLiteratureReview() {
+  try {
+    // 获取当前选中的分类
+    const zoteroPane = Zotero.getActiveZoteroPane();
+    const collection = zoteroPane.getSelectedCollection();
+
+    if (!collection) {
+      new ztoolkit.ProgressWindow("AI Butler", {
+        closeOnClick: true,
+        closeTime: 3000,
+      })
+        .createLine({
+          text: "请先选择一个分类",
+          type: "error",
+        })
+        .show();
+      return;
+    }
+
+    // 打开主窗口并切换到文献综述视图
+    const mainWin = MainWindow.getInstance();
+    await mainWin.open("literature-review");
+
+    // 获取综述视图并设置当前分类
+    const reviewView = mainWin.getLiteratureReviewView();
+    if (reviewView) {
+      await reviewView.setCollection(collection);
+    }
+  } catch (error: any) {
+    ztoolkit.log("[AI-Butler] 打开文献综述失败:", error);
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 5000,
+    })
+      .createLine({
+        text: `打开文献综述失败: ${error.message || error}`,
         type: "error",
       })
       .show();

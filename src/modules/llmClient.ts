@@ -165,6 +165,14 @@ export class LLMClient {
   }
 
   /**
+   * 获取当前 LLM 选项（用于直接调用 provider 方法）
+   */
+  static getLLMOptions(): LLMOptions {
+    const { id } = this.resolveProvider();
+    return this.buildOptions(id);
+  }
+
+  /**
    * 测试指定密钥的连接（用于多密钥测试UI）
    *
    * @param apiKey 要测试的密钥

@@ -301,7 +301,7 @@ export class NoteGenerator {
    * // 返回: <h2>AI 管家 - 深度学习综述</h2><div>...</div>
    * ```
    */
-  private static formatNoteContent(itemTitle: string, summary: string): string {
+  public static formatNoteContent(itemTitle: string, summary: string): string {
     // 将 Markdown 转换为笔记格式的 HTML
     const htmlContent = this.convertMarkdownToNoteHTML(summary);
 
@@ -471,7 +471,7 @@ export class NoteGenerator {
    * console.log(note.id); // 新创建的笔记 ID
    * ```
    */
-  private static async createNote(
+  public static async createNote(
     item: Zotero.Item,
     initialContent: string = "",
   ): Promise<Zotero.Item> {

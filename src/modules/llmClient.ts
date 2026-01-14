@@ -121,6 +121,20 @@ export class LLMClient {
     return { id: providerId, impl };
   }
 
+  /**
+   * 获取当前 Provider 实例
+   *
+   * 用于检查 Provider 是否支持特定功能（如多文件上传）
+   */
+  static getCurrentProvider(): any | null {
+    try {
+      const { impl } = LLMClient.resolveProvider();
+      return impl;
+    } catch {
+      return null;
+    }
+  }
+
   static async generateSummary(
     content: string,
     isBase64 = false,
@@ -136,6 +150,36 @@ export class LLMClient {
       content,
       isBase64,
       summaryPrompt,
+      options,
+      onProgress as ProviderProgressCb,
+    );
+  }
+
+  /**
+   * 多文件摘要生成
+   *
+   * 调用 provider 的 generateMultiFileSummary 方法处理多个 PDF
+   * 仅当 provider 支持此方法时可用
+   */
+  static async generateMultiFileSummary(
+    pdfFiles: Array<{
+      filePath: string;
+      displayName: string;
+      base64Content?: string;
+    }>,
+    prompt: string,
+    onProgress?: ProgressCb,
+  ): Promise<string> {
+    const { id, impl } = this.resolveProvider();
+    const options = this.buildOptions(id);
+
+    if (typeof impl.generateMultiFileSummary !== "function") {
+      throw new Error(`Provider ${id} 不支持多文件摘要生成`);
+    }
+
+    return impl.generateMultiFileSummary(
+      pdfFiles,
+      prompt,
       options,
       onProgress as ProviderProgressCb,
     );

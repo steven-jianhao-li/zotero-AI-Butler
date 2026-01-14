@@ -253,6 +253,8 @@ AI管家支持对分类下的多篇论文进行综合分析，自动生成文献
 - 附件命名格式：`[论文标题前30字] 原附件名`
 - 自动生成综合文献综述笔记
 
+![Literature Review Interface](assets/images/literature-review-config.png)
+
 > 📖 详细使用说明请参阅 [文献综述文档](https://steven-jianhao-li.github.io/zotero-AI-Butler/#/literature-review)
 
 ## 🚀 安装与快速上手

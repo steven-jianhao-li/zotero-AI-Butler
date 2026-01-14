@@ -38,7 +38,8 @@ interface PromptPreset {
 
 /** 预设存储的 Pref 键名 */
 const PRESETS_PREF_KEY = "extensions.zotero.ai-butler.literatureReviewPresets";
-const CURRENT_PRESET_PREF_KEY = "extensions.zotero.ai-butler.literatureReviewCurrentPreset";
+const CURRENT_PRESET_PREF_KEY =
+  "extensions.zotero.ai-butler.literatureReviewCurrentPreset";
 
 /**
  * PDF 附件节点接口
@@ -115,7 +116,7 @@ export class LiteratureReviewView extends BaseView {
         display: "flex",
         flexDirection: "column",
         width: "100%",
-        height: "100%",
+        height: "100%", // Match parent container height
         overflow: "hidden",
         fontFamily: "system-ui, -apple-system, sans-serif",
       },
@@ -324,17 +325,31 @@ export class LiteratureReviewView extends BaseView {
     selectionHeader.appendChild(selectionTitle);
     selectionHeader.appendChild(btnGroup);
 
-    // 树形结构容器
-    this.treeContainer = this.createElement("div", {
-      id: "review-tree-container",
+    // 树形结构容器包装 (用于内滚动布局)
+    const treeWrapper = this.createElement("div", {
       styles: {
         flex: "1",
         minHeight: "0",
-        overflow: "auto",
-        padding: "15px 20px",
+        position: "relative",
         background: "#fff",
       },
     });
+
+    // 实际树形结构容器 (绝对定位填满包装器)
+    this.treeContainer = this.createElement("div", {
+      id: "review-tree-container",
+      styles: {
+        position: "absolute",
+        top: "0",
+        left: "0",
+        right: "0",
+        bottom: "0",
+        overflowY: "auto",
+        padding: "15px 20px",
+      },
+    });
+
+    treeWrapper.appendChild(this.treeContainer);
 
     // 底部操作栏
     const footer = this.createElement("div", {
@@ -346,6 +361,7 @@ export class LiteratureReviewView extends BaseView {
         alignItems: "center",
         justifyContent: "space-between",
         flexShrink: "0",
+        zIndex: "10",
       },
     });
 
@@ -389,7 +405,7 @@ export class LiteratureReviewView extends BaseView {
     container.appendChild(header);
     container.appendChild(formContainer);
     container.appendChild(selectionHeader);
-    container.appendChild(this.treeContainer);
+    container.appendChild(treeWrapper); // Append wrapper instead of treeContainer
     container.appendChild(footer);
 
     return container;
@@ -938,7 +954,10 @@ export class LiteratureReviewView extends BaseView {
     }
 
     // 加载上次选择的预设
-    const savedCurrentId = Zotero.Prefs.get(CURRENT_PRESET_PREF_KEY, true) as string;
+    const savedCurrentId = Zotero.Prefs.get(
+      CURRENT_PRESET_PREF_KEY,
+      true,
+    ) as string;
     if (savedCurrentId && this.presets.find((p) => p.id === savedCurrentId)) {
       this.currentPresetId = savedCurrentId;
     } else {
@@ -1166,7 +1185,12 @@ export class LiteratureReviewView extends BaseView {
     });
 
     // 输入框
-    const input = createInput("rename-preset", "text", preset.name, "请输入新名称...");
+    const input = createInput(
+      "rename-preset",
+      "text",
+      preset.name,
+      "请输入新名称...",
+    );
     input.style.marginBottom = "20px";
 
     // 自动聚焦并选中文本
@@ -1380,4 +1404,3 @@ export class LiteratureReviewView extends BaseView {
     this.container.appendChild(overlay);
   }
 }
-

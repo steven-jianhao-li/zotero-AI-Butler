@@ -525,6 +525,194 @@ export class OpenAICompatProvider implements ILlmProvider {
       responseBody: rawResponse,
     });
   }
+
+  /**
+   * 多文件摘要生成
+   * 使用 OpenAI 兼容 Chat Completions 格式发送多个 PDF 文件
+   */
+  async generateMultiFileSummary(
+    pdfFiles: Array<{
+      filePath: string;
+      displayName: string;
+      base64Content?: string;
+    }>,
+    prompt: string,
+    options: LLMOptions,
+    onProgress?: ProgressCb,
+  ): Promise<string> {
+    const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
+    const model = (options.model || "gpt-3.5-turbo").trim();
+
+    if (pdfFiles.length === 0) throw new Error("没有要处理的 PDF 文件");
+
+    // 构建 image_url 部分（使用 PDF data URI）
+    const fileParts: any[] = [];
+    for (let i = 0; i < pdfFiles.length; i++) {
+      const pdfFile = pdfFiles[i];
+      if (pdfFile.base64Content && pdfFile.base64Content.length > 0) {
+        fileParts.push({
+          type: "image_url",
+          image_url: {
+            url: `data:application/pdf;base64,${pdfFile.base64Content}`,
+          },
+        });
+        ztoolkit.log(
+          `[AI-Butler] 添加 PDF 附件 (${i + 1}/${pdfFiles.length}): ${pdfFile.displayName}, base64 长度: ${pdfFile.base64Content.length}`,
+        );
+      } else {
+        ztoolkit.log(
+          `[AI-Butler] PDF 文件 ${pdfFile.displayName} 无 base64 内容，跳过`,
+        );
+      }
+    }
+
+    if (fileParts.length === 0) {
+      throw new Error("没有成功处理任何 PDF 文件");
+    }
+
+    ztoolkit.log(
+      `[AI-Butler] 准备发送 ${fileParts.length} 个 PDF 附件到 OpenAI 兼容接口`,
+    );
+
+    const messages: Array<{
+      role: "system" | "user" | "assistant";
+      content: any;
+    }> = [];
+    messages.push({ role: "system", content: SYSTEM_ROLE_PROMPT });
+    messages.push({
+      role: "user",
+      content: [{ type: "text", text: prompt }, ...fileParts],
+    });
+
+    const payload = {
+      model,
+      messages,
+      stream: true,
+      ...this.buildGenParams(options),
+    } as any;
+
+    const chunks: string[] = [];
+    let delivered = 0;
+    let processedLength = 0;
+    let partialLine = "";
+    let gotAnyDelta = false;
+    let abortError: Error | null = null;
+
+    try {
+      await Zotero.HTTP.request("POST", apiUrl, {
+        headers: this.buildHeaders(apiKey),
+        body: JSON.stringify(payload),
+        responseType: "text",
+        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        requestObserver: (xmlhttp: XMLHttpRequest) => {
+          xmlhttp.onprogress = (e: any) => {
+            const status = e.target.status;
+            if (status >= 400) {
+              try {
+                const errorResponse = e.target.response;
+                const parsed = errorResponse
+                  ? JSON.parse(errorResponse)
+                  : null;
+                const err = parsed?.error || parsed || {};
+                const code = err?.code || `HTTP ${status}`;
+                const msg = err?.message || "请求失败";
+                abortError = new Error(`${code}: ${msg}`);
+                xmlhttp.abort();
+              } catch {
+                abortError = new Error(`HTTP ${status}: 请求失败`);
+                xmlhttp.abort();
+              }
+              return;
+            }
+
+            try {
+              const resp: string = e.target.response || "";
+              if (resp.length > processedLength) {
+                const slice = partialLine + resp.slice(processedLength);
+                processedLength = resp.length;
+                const parts = slice.split(/\r?\n/);
+                partialLine =
+                  parts[parts.length - 1].indexOf("data:") === 0 &&
+                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                    ? ""
+                    : parts.pop() || "";
+
+                for (const raw of parts) {
+                  if (raw.indexOf("data:") !== 0) continue;
+                  const jsonStr = raw.replace(/^data:\s*/, "").trim();
+                  if (!jsonStr || jsonStr === "[DONE]") continue;
+                  try {
+                    const evt = JSON.parse(jsonStr);
+                    const delta = evt?.choices?.[0]?.delta?.content;
+                    if (typeof delta === "string" && delta.length > 0) {
+                      gotAnyDelta = true;
+                      chunks.push(delta.replace(/\n+/g, "\n"));
+                      const current = chunks.join("");
+                      if (onProgress && current.length > delivered) {
+                        const newChunk = current.slice(delivered);
+                        delivered = current.length;
+                        Promise.resolve(onProgress(newChunk)).catch((err) =>
+                          ztoolkit.log(
+                            "[AI-Butler] onProgress error (OpenAI Compat multi-PDF):",
+                            err,
+                          ),
+                        );
+                      }
+                    }
+                  } catch {
+                    /* ignore */
+                  }
+                }
+              }
+            } catch (err) {
+              ztoolkit.log(
+                "[AI-Butler] OpenAI Compat multi-PDF SSE parse error:",
+                err,
+              );
+            }
+          };
+          xmlhttp.onerror = () => {
+            if (!abortError)
+              abortError = new Error("NetworkError: XHR onerror");
+          };
+          xmlhttp.ontimeout = () => {
+            if (!abortError)
+              abortError = new Error(
+                `Timeout: 请求超过 ${options.requestTimeoutMs ?? getRequestTimeoutMs()} ms`,
+              );
+          };
+        },
+      });
+    } catch (error: any) {
+      if (abortError) {
+        if (gotAnyDelta && chunks.length > 0) return chunks.join("");
+        throw abortError;
+      }
+      let errorMessage = error?.message || "OpenAI 兼容多文件请求失败";
+      try {
+        const responseText =
+          error?.xmlhttp?.response || error?.xmlhttp?.responseText;
+        if (responseText) {
+          const parsed =
+            typeof responseText === "string"
+              ? JSON.parse(responseText)
+              : responseText;
+          const err = parsed?.error || parsed;
+          const code = err?.code || "Error";
+          const msg = err?.message || error?.message || String(error);
+          errorMessage = `${code}: ${msg}`;
+        }
+      } catch {
+        /* ignore */
+      }
+      if (gotAnyDelta && chunks.length > 0) return chunks.join("");
+      throw new Error(errorMessage);
+    }
+
+    const streamed = chunks.join("");
+    if (gotAnyDelta && streamed) return streamed;
+    return "";
+  }
 }
 
 // 自注册

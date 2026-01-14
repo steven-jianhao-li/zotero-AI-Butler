@@ -23,8 +23,22 @@ import {
   createInput,
   createTextarea,
   createStyledButton,
+  createSelect,
 } from "./ui/components";
 import { DEFAULT_LITERATURE_REVIEW_PROMPT } from "../../utils/prompts";
+
+/**
+ * 提示词预设接口
+ */
+interface PromptPreset {
+  id: string;
+  name: string;
+  prompt: string;
+}
+
+/** 预设存储的 Pref 键名 */
+const PRESETS_PREF_KEY = "extensions.zotero.ai-butler.literatureReviewPresets";
+const CURRENT_PRESET_PREF_KEY = "extensions.zotero.ai-butler.literatureReviewCurrentPreset";
 
 /**
  * PDF 附件节点接口
@@ -68,11 +82,18 @@ export class LiteratureReviewView extends BaseView {
   private selectedCountElement: HTMLElement | null = null;
   private generateButton: HTMLButtonElement | null = null;
 
+  // 预设管理
+  private presets: PromptPreset[] = [];
+  private currentPresetId: string = "default";
+  private presetSelect: HTMLElement | null = null;
+  private presetControlsContainer: HTMLElement | null = null;
+
   /**
    * 构造函数
    */
   constructor() {
     super("literature-review-view");
+    this.loadPresets();
   }
 
   /**
@@ -169,17 +190,25 @@ export class LiteratureReviewView extends BaseView {
     nameGroup.appendChild(nameLabel);
     nameGroup.appendChild(this.nameInput);
 
-    // 提示词输入
+    // 提示词预设区域
     const promptGroup = this.createElement("div", {
       styles: {
         marginBottom: "0",
       },
     });
 
+    // 提示词标签与预设控制区
+    const promptHeader = this.createElement("div", {
+      styles: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: "8px",
+      },
+    });
+
     const promptLabel = this.createElement("label", {
       styles: {
-        display: "block",
-        marginBottom: "6px",
         fontSize: "14px",
         fontWeight: "500",
         color: "#374151",
@@ -187,15 +216,67 @@ export class LiteratureReviewView extends BaseView {
       textContent: "自定义提示词",
     });
 
+    // 预设控制栏
+    const presetControls = this.createElement("div", {
+      styles: {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+      },
+    });
+
+    // 预设下拉选择
+    this.presetSelect = createSelect(
+      "preset-select",
+      this.getPresetOptions(),
+      this.currentPresetId,
+      (newValue: string) => {
+        this.handlePresetChange(newValue);
+      },
+    );
+    this.presetSelect.style.minWidth = "120px";
+    this.presetSelect.style.fontSize = "12px";
+
+    // 新增按钮
+    const newBtn = this.createSmallButton("➕", "新建预设");
+    newBtn.addEventListener("click", () => this.handleNewPreset());
+
+    // 保存按钮
+    const saveBtn = this.createSmallButton("💾", "保存到当前预设");
+    saveBtn.addEventListener("click", () => this.handleSavePreset());
+
+    // 重命名按钮
+    const renameBtn = this.createSmallButton("✏️", "重命名当前预设");
+    renameBtn.addEventListener("click", () => this.handleRenamePreset());
+
+    // 删除按钮
+    const deleteBtn = this.createSmallButton("🗑️", "删除当前预设");
+    deleteBtn.addEventListener("click", () => this.handleDeletePreset());
+
+    // 保存控件容器引用，便于后续更新
+    this.presetControlsContainer = presetControls;
+
+    if (this.presetSelect) {
+      presetControls.appendChild(this.presetSelect);
+    }
+    presetControls.appendChild(newBtn);
+    presetControls.appendChild(saveBtn);
+    presetControls.appendChild(renameBtn);
+    presetControls.appendChild(deleteBtn);
+
+    promptHeader.appendChild(promptLabel);
+    promptHeader.appendChild(presetControls);
+
+    // 提示词文本框
     this.promptTextarea = createTextarea(
       "review-prompt-input",
-      DEFAULT_LITERATURE_REVIEW_PROMPT,
+      this.getCurrentPresetPrompt(),
       6,
       "请输入提示词...",
     );
     this.promptTextarea.style.width = "100%";
 
-    promptGroup.appendChild(promptLabel);
+    promptGroup.appendChild(promptHeader);
     promptGroup.appendChild(this.promptTextarea);
 
     formContainer.appendChild(nameGroup);
@@ -831,4 +912,357 @@ export class LiteratureReviewView extends BaseView {
       }
     }
   }
+
+  // ==================== 预设管理方法 ====================
+
+  /**
+   * 加载预设
+   */
+  private loadPresets(): void {
+    try {
+      const savedPresets = Zotero.Prefs.get(PRESETS_PREF_KEY, true) as string;
+      if (savedPresets) {
+        this.presets = JSON.parse(savedPresets);
+      }
+    } catch (e) {
+      ztoolkit.log("[AI-Butler] 加载预设失败:", e);
+    }
+
+    // 确保有默认预设
+    if (!this.presets.find((p) => p.id === "default")) {
+      this.presets.unshift({
+        id: "default",
+        name: "默认",
+        prompt: DEFAULT_LITERATURE_REVIEW_PROMPT,
+      });
+    }
+
+    // 加载上次选择的预设
+    const savedCurrentId = Zotero.Prefs.get(CURRENT_PRESET_PREF_KEY, true) as string;
+    if (savedCurrentId && this.presets.find((p) => p.id === savedCurrentId)) {
+      this.currentPresetId = savedCurrentId;
+    } else {
+      this.currentPresetId = "default";
+    }
+  }
+
+  /**
+   * 保存预设到偏好设置
+   */
+  private savePresets(): void {
+    try {
+      Zotero.Prefs.set(PRESETS_PREF_KEY, JSON.stringify(this.presets), true);
+      Zotero.Prefs.set(CURRENT_PRESET_PREF_KEY, this.currentPresetId, true);
+    } catch (e) {
+      ztoolkit.log("[AI-Butler] 保存预设失败:", e);
+    }
+  }
+
+  /**
+   * 获取预设下拉选项
+   */
+  private getPresetOptions(): Array<{ value: string; label: string }> {
+    return this.presets.map((p) => ({
+      value: p.id,
+      label: p.name,
+    }));
+  }
+
+  /**
+   * 获取当前预设的提示词
+   */
+  private getCurrentPresetPrompt(): string {
+    const preset = this.presets.find((p) => p.id === this.currentPresetId);
+    return preset?.prompt || DEFAULT_LITERATURE_REVIEW_PROMPT;
+  }
+
+  /**
+   * 更新预设下拉选项（重新创建选择器）
+   */
+  private updatePresetSelect(): void {
+    if (!this.presetControlsContainer || !this.presetSelect) return;
+
+    // 移除旧的选择器
+    this.presetSelect.remove();
+
+    // 创建新的选择器
+    this.presetSelect = createSelect(
+      "preset-select",
+      this.getPresetOptions(),
+      this.currentPresetId,
+      (newValue: string) => {
+        this.handlePresetChange(newValue);
+      },
+    );
+    this.presetSelect.style.minWidth = "120px";
+    this.presetSelect.style.fontSize = "12px";
+
+    // 插入到容器的第一个位置
+    this.presetControlsContainer.insertBefore(
+      this.presetSelect,
+      this.presetControlsContainer.firstChild,
+    );
+  }
+
+  /**
+   * 处理预设切换
+   */
+  private handlePresetChange(presetId: string): void {
+    this.currentPresetId = presetId;
+    this.savePresets();
+
+    // 更新文本框内容
+    if (this.promptTextarea) {
+      this.promptTextarea.value = this.getCurrentPresetPrompt();
+    }
+  }
+
+  /**
+   * 创建小型按钮
+   */
+  private createSmallButton(text: string, title: string): HTMLElement {
+    const btn = this.createElement("button", {
+      attributes: { type: "button", title },
+      styles: {
+        padding: "4px 8px",
+        fontSize: "12px",
+        background: "#f3f4f6",
+        border: "1px solid #d1d5db",
+        borderRadius: "4px",
+        cursor: "pointer",
+        transition: "all 0.2s",
+      },
+      textContent: text,
+    });
+
+    btn.addEventListener("mouseenter", () => {
+      btn.style.background = "#e5e7eb";
+    });
+    btn.addEventListener("mouseleave", () => {
+      btn.style.background = "#f3f4f6";
+    });
+
+    return btn;
+  }
+
+  /**
+   * 处理新建预设
+   */
+  private handleNewPreset(): void {
+    // 生成唯一 ID
+    let counter = 1;
+    while (this.presets.find((p) => p.id === `untitled-${counter}`)) {
+      counter++;
+    }
+
+    const newPreset: PromptPreset = {
+      id: `untitled-${counter}`,
+      name: `未命名-${counter}`,
+      prompt: DEFAULT_LITERATURE_REVIEW_PROMPT,
+    };
+
+    this.presets.push(newPreset);
+    this.currentPresetId = newPreset.id;
+    this.savePresets();
+    this.updatePresetSelect();
+
+    // 更新文本框
+    if (this.promptTextarea) {
+      this.promptTextarea.value = newPreset.prompt;
+    }
+  }
+
+  /**
+   * 处理保存预设
+   */
+  private handleSavePreset(): void {
+    const preset = this.presets.find((p) => p.id === this.currentPresetId);
+    if (!preset) return;
+
+    if (this.promptTextarea) {
+      preset.prompt = this.promptTextarea.value;
+    }
+
+    this.savePresets();
+
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 2000,
+    })
+      .createLine({
+        text: `✅ 预设 "${preset.name}" 已保存`,
+        type: "success",
+      })
+      .show();
+  }
+
+  /**
+   * 处理重命名预设
+   */
+  private handleRenamePreset(): void {
+    const preset = this.presets.find((p) => p.id === this.currentPresetId);
+    if (!preset) return;
+
+    // 默认预设不允许重命名
+    if (preset.id === "default") {
+      new ztoolkit.ProgressWindow("AI Butler", {
+        closeOnClick: true,
+        closeTime: 2000,
+      })
+        .createLine({
+          text: "❌ 默认预设不能重命名",
+          type: "error",
+        })
+        .show();
+      return;
+    }
+
+    const win = ztoolkit.getGlobal("window");
+    const newName = win.prompt("请输入新的预设名称:", preset.name);
+    if (newName && newName.trim()) {
+      preset.name = newName.trim();
+      this.savePresets();
+      this.updatePresetSelect();
+    }
+  }
+
+  /**
+   * 处理删除预设
+   */
+  private handleDeletePreset(): void {
+    const preset = this.presets.find((p) => p.id === this.currentPresetId);
+    if (!preset) return;
+
+    // 默认预设不允许删除
+    if (preset.id === "default") {
+      new ztoolkit.ProgressWindow("AI Butler", {
+        closeOnClick: true,
+        closeTime: 2000,
+      })
+        .createLine({
+          text: "❌ 默认预设不能删除",
+          type: "error",
+        })
+        .show();
+      return;
+    }
+
+    // 显示内联确认对话框
+    this.showDeleteConfirmDialog(preset);
+  }
+
+  /**
+   * 显示内联删除确认对话框
+   */
+  private showDeleteConfirmDialog(preset: PromptPreset): void {
+    if (!this.container) return;
+
+    // 创建遮罩层
+    const overlay = this.createElement("div", {
+      styles: {
+        position: "absolute",
+        top: "0",
+        left: "0",
+        right: "0",
+        bottom: "0",
+        background: "rgba(0, 0, 0, 0.5)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: "9999",
+      },
+    });
+
+    // 创建确认对话框
+    const dialog = this.createElement("div", {
+      styles: {
+        background: "#fff",
+        borderRadius: "8px",
+        padding: "24px",
+        maxWidth: "320px",
+        boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)",
+        textAlign: "center",
+      },
+    });
+
+    // 标题
+    const title = this.createElement("h3", {
+      styles: {
+        margin: "0 0 12px 0",
+        fontSize: "16px",
+        color: "#1f2937",
+      },
+      textContent: "确认删除",
+    });
+
+    // 消息
+    const message = this.createElement("p", {
+      styles: {
+        margin: "0 0 20px 0",
+        fontSize: "14px",
+        color: "#6b7280",
+      },
+      textContent: `确定要删除预设 "${preset.name}" 吗？`,
+    });
+
+    // 按钮容器
+    const buttons = this.createElement("div", {
+      styles: {
+        display: "flex",
+        gap: "12px",
+        justifyContent: "center",
+      },
+    });
+
+    // 取消按钮
+    const cancelBtn = createStyledButton("取消", "#94a3b8", "small");
+    cancelBtn.addEventListener("click", () => {
+      overlay.remove();
+    });
+
+    // 确认按钮
+    const confirmBtn = createStyledButton("删除", "#ef4444", "small");
+    confirmBtn.addEventListener("click", () => {
+      // 执行删除
+      this.presets = this.presets.filter((p) => p.id !== preset.id);
+      this.currentPresetId = "default";
+      this.savePresets();
+      this.updatePresetSelect();
+
+      // 更新文本框
+      if (this.promptTextarea) {
+        this.promptTextarea.value = this.getCurrentPresetPrompt();
+      }
+
+      overlay.remove();
+
+      new ztoolkit.ProgressWindow("AI Butler", {
+        closeOnClick: true,
+        closeTime: 2000,
+      })
+        .createLine({
+          text: `✅ 预设 "${preset.name}" 已删除`,
+          type: "success",
+        })
+        .show();
+    });
+
+    buttons.appendChild(cancelBtn);
+    buttons.appendChild(confirmBtn);
+
+    dialog.appendChild(title);
+    dialog.appendChild(message);
+    dialog.appendChild(buttons);
+    overlay.appendChild(dialog);
+
+    // 点击遮罩关闭
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) {
+        overlay.remove();
+      }
+    });
+
+    this.container.appendChild(overlay);
+  }
 }
+

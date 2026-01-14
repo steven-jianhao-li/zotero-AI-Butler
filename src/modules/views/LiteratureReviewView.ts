@@ -1117,13 +1117,128 @@ export class LiteratureReviewView extends BaseView {
       return;
     }
 
-    const win = ztoolkit.getGlobal("window");
-    const newName = win.prompt("请输入新的预设名称:", preset.name);
-    if (newName && newName.trim()) {
-      preset.name = newName.trim();
-      this.savePresets();
-      this.updatePresetSelect();
-    }
+    // 显示内联重命名对话框
+    this.showRenameDialog(preset);
+  }
+
+  /**
+   * 显示内联重命名对话框
+   */
+  private showRenameDialog(preset: PromptPreset): void {
+    if (!this.container) return;
+
+    // 创建遮罩层
+    const overlay = this.createElement("div", {
+      styles: {
+        position: "absolute",
+        top: "0",
+        left: "0",
+        right: "0",
+        bottom: "0",
+        background: "rgba(0, 0, 0, 0.5)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: "9999",
+      },
+    });
+
+    // 创建对话框
+    const dialog = this.createElement("div", {
+      styles: {
+        background: "#fff",
+        borderRadius: "8px",
+        padding: "24px",
+        minWidth: "300px",
+        maxWidth: "400px",
+        boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)",
+      },
+    });
+
+    // 标题
+    const title = this.createElement("h3", {
+      styles: {
+        margin: "0 0 16px 0",
+        fontSize: "16px",
+        color: "#1f2937",
+      },
+      textContent: "重命名预设",
+    });
+
+    // 输入框
+    const input = createInput("rename-preset", "text", preset.name, "请输入新名称...");
+    input.style.marginBottom = "20px";
+
+    // 自动聚焦并选中文本
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 100);
+
+    // 按钮容器
+    const buttons = this.createElement("div", {
+      styles: {
+        display: "flex",
+        gap: "12px",
+        justifyContent: "flex-end",
+      },
+    });
+
+    // 取消按钮
+    const cancelBtn = createStyledButton("取消", "#94a3b8", "small");
+    cancelBtn.addEventListener("click", () => {
+      overlay.remove();
+    });
+
+    // 确认按钮
+    const confirmBtn = createStyledButton("确认", "#6366f1", "small");
+    const doRename = () => {
+      const newName = input.value.trim();
+      if (newName) {
+        preset.name = newName;
+        this.savePresets();
+        this.updatePresetSelect();
+        overlay.remove();
+
+        new ztoolkit.ProgressWindow("AI Butler", {
+          closeOnClick: true,
+          closeTime: 2000,
+        })
+          .createLine({
+            text: `✅ 预设已重命名为 "${newName}"`,
+            type: "success",
+          })
+          .show();
+      }
+    };
+
+    confirmBtn.addEventListener("click", doRename);
+
+    // 回车确认
+    input.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        doRename();
+      } else if (e.key === "Escape") {
+        overlay.remove();
+      }
+    });
+
+    buttons.appendChild(cancelBtn);
+    buttons.appendChild(confirmBtn);
+
+    dialog.appendChild(title);
+    dialog.appendChild(input);
+    dialog.appendChild(buttons);
+    overlay.appendChild(dialog);
+
+    // 点击遮罩关闭
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) {
+        overlay.remove();
+      }
+    });
+
+    this.container.appendChild(overlay);
   }
 
   /**

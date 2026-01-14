@@ -58,6 +58,44 @@ export class PDFExtractor {
   }
 
   /**
+   * 获取条目的所有 PDF 附件
+   *
+   * 用于多 PDF 上传模式,返回按添加时间排序的所有 PDF 附件
+   *
+   * @param item Zotero 文献条目对象
+   * @returns 按添加时间排序的 PDF 附件数组
+   */
+  public static async getAllPdfAttachments(
+    item: Zotero.Item,
+  ): Promise<Zotero.Item[]> {
+    try {
+      const attachments = item.getAttachments();
+      if (attachments.length === 0) {
+        return [];
+      }
+
+      const pdfAttachments: Zotero.Item[] = [];
+
+      for (const attachmentID of attachments) {
+        const attachment = await Zotero.Items.getAsync(attachmentID);
+        if (attachment.attachmentContentType === "application/pdf") {
+          pdfAttachments.push(attachment);
+        }
+      }
+
+      // 按 dateAdded 升序排序 (最早的在前)
+      return pdfAttachments.sort((a, b) => {
+        const dateA = new Date(a.dateAdded).getTime();
+        const dateB = new Date(b.dateAdded).getTime();
+        return dateA - dateB;
+      });
+    } catch (error) {
+      ztoolkit.log("[PDFExtractor] 获取所有 PDF 附件时出错:", error);
+      return [];
+    }
+  }
+
+  /**
    * 获取 PDF 附件的文件大小 (MB)
    *
    * 用于在处理前检查文件大小，避免处理过大的扫描版 PDF

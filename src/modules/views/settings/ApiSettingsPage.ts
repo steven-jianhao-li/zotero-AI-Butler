@@ -801,7 +801,41 @@ export class ApiSettingsPage {
       ),
     );
 
-    // 按钮组
+    // PDF 附件选择模式
+    const pdfAttachmentModeValue =
+      (getPref("pdfAttachmentMode" as any) as string) || "default";
+    const pdfAttachmentModeSelect = createSelect(
+      "pdfAttachmentMode",
+      [
+        { value: "default", label: "仅默认 PDF (最早添加的附件)" },
+        { value: "all", label: "全部 PDF (多文件上传，仅支持 Gemini)" },
+      ],
+      pdfAttachmentModeValue,
+      (newVal) => {
+        const msg =
+          newVal === "all"
+            ? "已选择全部 PDF 模式：将同时发送所有附件给大模型（仅 Gemini 支持）"
+            : "已选择默认 PDF 模式：仅使用最早添加的附件";
+        try {
+          new ztoolkit.ProgressWindow("AI Butler", {
+            closeOnClick: true,
+            closeTime: 2500,
+          })
+            .createLine({ text: msg, type: "info" })
+            .show();
+        } catch (e) {
+          ztoolkit.log("[API Settings] 显示 PDF 附件模式提示失败:", e);
+        }
+      },
+    );
+    form.appendChild(
+      this.createFormGroup(
+        "多 PDF 附件模式",
+        pdfAttachmentModeSelect,
+        "当论文有多个 PDF 附件时的处理方式。全部 PDF 模式仅支持 Gemini，其他提供商将自动回退到默认模式",
+      ),
+    );
+
     const buttonGroup = this.createElement("div", {
       styles: {
         display: "flex",
@@ -1885,7 +1919,16 @@ export class ApiSettingsPage {
         setPref("maxPdfSizeMB" as any, maxPdfSizeEl.value?.trim() || "50");
       }
 
-      // 不再在保存时强制调整 PDF 模式
+      // PDF 附件选择模式
+      const pdfAttachmentModeEl = this.container.querySelector(
+        "#setting-pdfAttachmentMode",
+      ) as HTMLElement | null;
+      if (pdfAttachmentModeEl && (pdfAttachmentModeEl as any).getValue) {
+        setPref(
+          "pdfAttachmentMode" as any,
+          (pdfAttachmentModeEl as any).getValue() || "default",
+        );
+      }
 
       ztoolkit.log("[API Settings] Settings saved successfully");
 

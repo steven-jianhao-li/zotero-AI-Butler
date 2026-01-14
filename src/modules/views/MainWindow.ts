@@ -33,6 +33,7 @@ import { SummaryView } from "./SummaryView";
 import { TaskQueueView } from "./TaskQueueView";
 import { SettingsView } from "./SettingsView";
 import { LibraryScannerView } from "./LibraryScannerView";
+import { LiteratureReviewView } from "./LiteratureReviewView";
 import { BaseView } from "./BaseView";
 // 移除对窗口尺寸偏好的依赖,窗口/内容区域使用 100% 填充
 
@@ -44,7 +45,8 @@ export type TabType =
   | "summary"
   | "tasks"
   | "settings"
-  | "scanner";
+  | "scanner"
+  | "literature-review";
 
 /**
  * 主窗口类
@@ -99,6 +101,9 @@ export class MainWindow {
   /** 库扫描视图 */
   private libraryScannerView: LibraryScannerView;
 
+  /** 文献综述视图 */
+  private literatureReviewView: LiteratureReviewView;
+
   /**
    * 构造函数
    */
@@ -109,6 +114,7 @@ export class MainWindow {
     this.taskQueueView = new TaskQueueView();
     this.settingsView = new SettingsView();
     this.libraryScannerView = new LibraryScannerView();
+    this.literatureReviewView = new LiteratureReviewView();
 
     // 为总结视图设置默认的“返回任务队列”行为，避免未设置回调时按钮无效
     // 当外部未覆盖回调时，点击按钮将直接切换到任务队列标签页
@@ -122,6 +128,7 @@ export class MainWindow {
     this.views.set("tasks", this.taskQueueView);
     this.views.set("settings", this.settingsView);
     this.views.set("scanner", this.libraryScannerView);
+    this.views.set("literature-review", this.literatureReviewView);
   }
 
   /** 获取主窗口单例 */
@@ -486,9 +493,10 @@ export class MainWindow {
     // 更新激活状态
     this.activeTab = tabId;
 
-    // 如果是 scanner 视图,隐藏标签栏
+    // 如果是 scanner 或 literature-review 视图,隐藏标签栏
     if (this.tabBar) {
-      this.tabBar.style.display = tabId === "scanner" ? "none" : "flex";
+      this.tabBar.style.display =
+        tabId === "scanner" || tabId === "literature-review" ? "none" : "flex";
     }
 
     // 更新标签按钮样式
@@ -646,5 +654,14 @@ export class MainWindow {
    */
   public isWindowOpen(): boolean {
     return this.isOpen;
+  }
+
+  /**
+   * 获取文献综述视图
+   *
+   * @returns 文献综述视图实例
+   */
+  public getLiteratureReviewView(): LiteratureReviewView {
+    return this.literatureReviewView;
   }
 }

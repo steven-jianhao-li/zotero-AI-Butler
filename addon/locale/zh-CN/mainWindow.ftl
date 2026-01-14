@@ -16,3 +16,5 @@ itempane-ai-section-header =
     .label = AI 管家
 itempane-ai-section-sidenav =
     .tooltiptext = AI 管家
+
+menuitem-literatureReview = AI管家文献综述

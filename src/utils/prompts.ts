@@ -384,3 +384,31 @@ export function getDefaultImageSummaryPrompt(): string {
 export function getDefaultImageGenerationPrompt(): string {
   return DEFAULT_IMAGE_GENERATION_PROMPT;
 }
+
+// ================================================================
+// 文献综述提示词相关功能
+// ================================================================
+
+/**
+ * 默认的文献综述提示词
+ *
+ * 用于综合多篇论文生成文献综述报告
+ */
+export const DEFAULT_LITERATURE_REVIEW_PROMPT = `请阅读以下多篇学术论文，生成一份综合性文献综述报告，包括：
+
+1. **研究主题概述**: 简述这些论文共同关注的研究领域和核心问题
+2. **各论文主要贡献**: 逐一总结每篇论文的核心观点、方法和发现
+3. **研究方法对比**: 分析各论文采用的研究方法的异同
+4. **主要发现汇总**: 综合各论文的主要结论和发现
+5. **研究趋势与展望**: 基于这些论文，分析该领域的发展趋势和未来研究方向
+
+请使用清晰的结构和学术性语言，确保综述内容准确、逻辑连贯。使用中文输出。`;
+
+/**
+ * 获取默认的文献综述提示词
+ *
+ * @returns 默认文献综述提示词
+ */
+export function getDefaultLiteratureReviewPrompt(): string {
+  return DEFAULT_LITERATURE_REVIEW_PROMPT;
+}

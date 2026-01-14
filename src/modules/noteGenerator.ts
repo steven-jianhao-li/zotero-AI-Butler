@@ -120,22 +120,92 @@ export class NoteGenerator {
         }
       }
 
-      // 尊重用户在设置中的 PDF 处理模式选择（不再根据 Provider 强制联动）
+      // 读取 PDF 处理模式和附件选择模式
       const prefMode = (getPref("pdfProcessMode") as string) || "base64";
-      const effectiveMode = prefMode;
+      const pdfAttachmentMode =
+        (getPref("pdfAttachmentMode" as any) as string) || "default";
 
       let pdfContent: string;
       let isBase64 = false;
-      if (effectiveMode === "base64") {
-        // Base64 模式: 直接编码 PDF 文件
-        pdfContent = await PDFExtractor.extractBase64FromItem(item);
-        isBase64 = true;
+      let useMultiPdfMode = false;
+
+      // 调试: 输出 PDF 设置
+      ztoolkit.log(
+        `[NoteGenerator] PDF 设置: pdfAttachmentMode=${pdfAttachmentMode}, prefMode=${prefMode}`,
+      );
+
+      // 检查是否应该使用多 PDF 模式
+      if (pdfAttachmentMode === "all" && prefMode === "base64") {
+        const allPdfs = await PDFExtractor.getAllPdfAttachments(item);
+        ztoolkit.log(`[NoteGenerator] 找到 ${allPdfs.length} 个 PDF 附件`);
+
+        if (allPdfs.length > 1) {
+          // 检查当前 provider 是否支持多文件上传
+          const provider = LLMClient.getCurrentProvider();
+          const supportsMultiFile =
+            provider && typeof provider.generateMultiFileSummary === "function";
+          ztoolkit.log(
+            `[NoteGenerator] Provider 是否支持多文件: ${supportsMultiFile}`,
+          );
+
+          if (supportsMultiFile) {
+            useMultiPdfMode = true;
+            progressCallback?.(
+              `使用多 PDF 模式 (${allPdfs.length} 个文件)...`,
+              15,
+            );
+            ztoolkit.log(
+              `[NoteGenerator] 使用多 PDF 模式，共 ${allPdfs.length} 个附件`,
+            );
+          } else {
+            // Provider 不支持多文件，回退到默认模式
+            ztoolkit.log(
+              "[NoteGenerator] 当前 Provider 不支持多 PDF 上传，使用默认 PDF 模式",
+            );
+            try {
+              new ztoolkit.ProgressWindow("AI Butler", {
+                closeOnClick: true,
+                closeTime: 3000,
+              })
+                .createLine({
+                  text: "当前 API 不支持多 PDF 上传，已使用默认 PDF",
+                  type: "warning",
+                })
+                .show();
+            } catch {
+              // Ignore notification error
+            }
+          }
+        } else {
+          ztoolkit.log(
+            `[NoteGenerator] 只有 ${allPdfs.length} 个 PDF，不启用多 PDF 模式`,
+          );
+        }
       } else {
-        // 文本模式: 提取并清理文本
-        const fullText = await PDFExtractor.extractTextFromItem(item);
-        const cleanedText = PDFExtractor.cleanText(fullText);
-        pdfContent = PDFExtractor.truncateText(cleanedText);
-        isBase64 = false;
+        ztoolkit.log(
+          `[NoteGenerator] 多 PDF 模式未启用: pdfAttachmentMode=${pdfAttachmentMode}, prefMode=${prefMode}`,
+        );
+      }
+
+      ztoolkit.log(`[NoteGenerator] 最终 useMultiPdfMode=${useMultiPdfMode}`);
+
+      // 根据模式处理 PDF
+      if (!useMultiPdfMode) {
+        // 单 PDF 模式 (默认)
+        if (prefMode === "base64") {
+          pdfContent = await PDFExtractor.extractBase64FromItem(item);
+          isBase64 = true;
+        } else {
+          const fullText = await PDFExtractor.extractTextFromItem(item);
+          const cleanedText = PDFExtractor.cleanText(fullText);
+          pdfContent = PDFExtractor.truncateText(cleanedText);
+          isBase64 = false;
+        }
+      } else {
+        // 多 PDF 模式 - 将在后续 AI 调用时直接使用
+        // 这里设置占位符，实际处理在 LLMClient 中
+        pdfContent = "__MULTI_PDF_MODE__";
+        isBase64 = true;
       }
 
       // 步骤 2: AI 模型总结生成
@@ -177,12 +247,52 @@ export class NoteGenerator {
           }
         };
 
-        const summary = await LLMClient.generateSummaryWithRetry(
-          pdfContent,
-          isBase64,
-          undefined,
-          onProgress,
-        );
+        let summary: string;
+        if (useMultiPdfMode) {
+          // 多 PDF 模式：获取所有 PDF 并调用多文件接口
+          const allPdfs = await PDFExtractor.getAllPdfAttachments(item);
+          const pdfFiles = await Promise.all(
+            allPdfs.map(async (pdf) => {
+              const path = await pdf.getFilePathAsync();
+              if (!path || typeof path !== "string") {
+                throw new Error(`无法获取 PDF 文件路径: ${pdf.id}`);
+              }
+              // 获取 Base64 内容
+              const pdfData = await Zotero.File.getBinaryContentsAsync(path);
+              const bytes = new Uint8Array(pdfData.length);
+              for (let i = 0; i < pdfData.length; i++) {
+                bytes[i] = pdfData.charCodeAt(i);
+              }
+              let binary = "";
+              const len = bytes.byteLength;
+              for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+              }
+              const base64Content = btoa(binary);
+
+              return {
+                filePath: path || "",
+                displayName:
+                  (pdf.getField("title") as string) || `PDF-${pdf.id}`,
+                base64Content,
+              };
+            }),
+          );
+
+          summary = await LLMClient.generateMultiFileSummary(
+            pdfFiles,
+            (getPref("customPrompt" as any) as string) || "",
+            onProgress,
+          );
+        } else {
+          // 单 PDF 模式：使用原有方法
+          summary = await LLMClient.generateSummaryWithRetry(
+            pdfContent,
+            isBase64,
+            undefined,
+            onProgress,
+          );
+        }
         fullContent = summary;
       } else {
         // 多轮对话模式
@@ -301,7 +411,7 @@ export class NoteGenerator {
    * // 返回: <h2>AI 管家 - 深度学习综述</h2><div>...</div>
    * ```
    */
-  private static formatNoteContent(itemTitle: string, summary: string): string {
+  public static formatNoteContent(itemTitle: string, summary: string): string {
     // 将 Markdown 转换为笔记格式的 HTML
     const htmlContent = this.convertMarkdownToNoteHTML(summary);
 
@@ -471,7 +581,7 @@ export class NoteGenerator {
    * console.log(note.id); // 新创建的笔记 ID
    * ```
    */
-  private static async createNote(
+  public static async createNote(
     item: Zotero.Item,
     initialContent: string = "",
   ): Promise<Zotero.Item> {

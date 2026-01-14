@@ -167,6 +167,12 @@ export class AutoScanManager {
       return false;
     }
 
+    // 排除报告类型（文献综述生成的条目）
+    const itemType = item.itemType || (item as any).getType?.() || "";
+    if (itemType === "report") {
+      return false;
+    }
+
     // 必须有标题
     const title = item.getField("title") as string;
     if (!title || title.trim() === "") {

@@ -957,9 +957,7 @@ export class OpenAIProvider implements ILlmProvider {
             if (status >= 400) {
               try {
                 const errorResponse = e.target.response;
-                const parsed = errorResponse
-                  ? JSON.parse(errorResponse)
-                  : null;
+                const parsed = errorResponse ? JSON.parse(errorResponse) : null;
                 const err = parsed?.error || parsed || {};
                 const code = err?.code || `HTTP ${status}`;
                 const msg = err?.message || "请求失败";

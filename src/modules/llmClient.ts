@@ -33,8 +33,10 @@ export class LLMClient {
     const id = providerId.toLowerCase();
 
     // 检查参数启用状态
-    const enableTemperature = (getPref("enableTemperature" as any) as boolean) ?? true;
-    const enableMaxTokens = (getPref("enableMaxTokens" as any) as boolean) ?? true;
+    const enableTemperature =
+      (getPref("enableTemperature" as any) as boolean) ?? true;
+    const enableMaxTokens =
+      (getPref("enableMaxTokens" as any) as boolean) ?? true;
     const enableTopP = (getPref("enableTopP" as any) as boolean) ?? true;
 
     const common: LLMOptions = {
@@ -51,7 +53,8 @@ export class LLMClient {
       common.topP = parseFloat((getPref("topP") as string) || "1.0") || 1.0;
     }
     if (enableMaxTokens) {
-      common.maxTokens = parseInt((getPref("maxTokens") as string) || "4096") || 4096;
+      common.maxTokens =
+        parseInt((getPref("maxTokens") as string) || "4096") || 4096;
     }
 
     // 映射到 ApiKeyManager 的 ProviderId

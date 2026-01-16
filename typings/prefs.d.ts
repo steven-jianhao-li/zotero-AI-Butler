@@ -54,6 +54,8 @@ declare namespace _ZoteroTypes {
       "windowWidth": string;
       "windowHeight": string;
       "saveChatHistory": boolean;
+      "sidebarNoteCollapsed": boolean;
+      "sidebarImageCollapsed": boolean;
       "notePrefix": string;
       "noteStrategy": string;
     };

@@ -496,13 +496,26 @@ export class GeminiProvider implements ILlmProvider {
     try {
       const cand0 = json?.candidates?.[0];
       if (!cand0) return "";
+
+      // 提取文本时过滤掉 thought: true 的 parts（Gemini 思考模式的思考过程）
+      const extractTextFromParts = (parts: any[]): string => {
+        if (!Array.isArray(parts)) return "";
+        return parts
+          .filter((p: any) => !p?.thought) // 过滤掉思考内容
+          .map((p: any) => p?.text || "")
+          .join("");
+      };
+
       const deltaParts = cand0?.delta?.content?.parts || cand0?.delta?.parts;
-      if (Array.isArray(deltaParts))
-        return deltaParts.map((p: any) => p?.text || "").join("");
+      if (Array.isArray(deltaParts)) return extractTextFromParts(deltaParts);
+
       const parts = cand0?.content?.parts;
-      if (Array.isArray(parts))
-        return parts.map((p: any) => p?.text || "").join("");
-      const text = cand0?.content?.parts?.[0]?.text || cand0?.text;
+      if (Array.isArray(parts)) return extractTextFromParts(parts);
+
+      // 单个 part 的情况，检查是否是思考内容
+      const singlePart = cand0?.content?.parts?.[0];
+      if (singlePart?.thought) return "";
+      const text = singlePart?.text || cand0?.text;
       return typeof text === "string" ? text : "";
     } catch {
       return "";

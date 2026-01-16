@@ -18,7 +18,8 @@ export type ProviderId =
   | "openai-compat"
   | "google"
   | "anthropic"
-  | "openrouter";
+  | "openrouter"
+  | "volcanoark";
 
 /**
  * 提供商密钥配置映射
@@ -53,6 +54,10 @@ const PROVIDER_KEY_MAPPINGS: Record<ProviderId, ProviderKeyMapping> = {
   openrouter: {
     primaryPrefKey: "openRouterApiKey",
     extraKeysPrefKey: "openRouterApiKeysFallback",
+  },
+  volcanoark: {
+    primaryPrefKey: "volcanoArkApiKey",
+    extraKeysPrefKey: "volcanoArkApiKeysFallback",
   },
 };
 

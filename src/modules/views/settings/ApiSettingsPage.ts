@@ -84,6 +84,7 @@ export class ApiSettingsPage {
         { value: "google", label: "Google Gemini" },
         { value: "anthropic", label: "Anthropic Claude" },
         { value: "openrouter", label: "OpenRouter" },
+        { value: "volcanoark", label: "火山方舟 (Volcano Ark)" },
       ],
       providerValue,
       (newVal) => {
@@ -147,6 +148,26 @@ export class ApiSettingsPage {
             modelInput.value = "google/gemma-3-27b-it";
           }
         }
+        // 若切换到火山方舟且未填写，填充默认
+        if (newVal === "volcanoark") {
+          const curUrl = (getPref("volcanoArkApiUrl") as string) || "";
+          const urlInput = this.container.querySelector(
+            "#setting-volcanoArkApiUrl",
+          ) as HTMLInputElement;
+          const modelInput = this.container.querySelector(
+            "#setting-volcanoArkModel",
+          ) as HTMLInputElement;
+          if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
+            urlInput.value =
+              "https://ark.cn-beijing.volces.com/api/v3/chat/completions";
+          }
+          if (
+            modelInput &&
+            (!modelInput.value || modelInput.value.trim() === "")
+          ) {
+            modelInput.value = "doubao-seed-1-8-251228";
+          }
+        }
       },
     );
     form.appendChild(
@@ -168,6 +189,9 @@ export class ApiSettingsPage {
     });
     const sectionOpenRouter = this.createElement("div", {
       id: "provider-openrouter",
+    });
+    const sectionVolcanoArk = this.createElement("div", {
+      id: "provider-volcanoark",
     });
 
     // OpenAI 字段（Responses 新接口）
@@ -399,19 +423,79 @@ export class ApiSettingsPage {
       ),
     );
 
+    // 火山方舟字段
+    sectionVolcanoArk.appendChild(
+      this.createFormGroup(
+        "API 地址 *",
+        this.createInput(
+          "volcanoArkApiUrl",
+          "text",
+          getPref("volcanoArkApiUrl") as string,
+          "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+        ),
+        "【必填】火山方舟 API 完整地址",
+      ),
+    );
+    sectionVolcanoArk.appendChild(
+      this.createFormGroup(
+        "API 密钥 *",
+        this.createPasswordInput(
+          "volcanoArkApiKey",
+          getPref("volcanoArkApiKey") as string,
+          "ark-...",
+          "volcanoark",
+        ),
+        "【必填】您的火山方舟 API Key。点击 + 添加更多密钥启用轮换。",
+        "volcanoark",
+      ),
+    );
+    sectionVolcanoArk.appendChild(
+      this.createFormGroup(
+        "模型 *",
+        this.createInput(
+          "volcanoArkModel",
+          "text",
+          getPref("volcanoArkModel") as string,
+          "doubao-seed-1-8-251228",
+        ),
+        "【必填】豆包大模型名称, 如 doubao-seed-1-8-251228",
+      ),
+    );
+    // 火山方舟说明
+    const volcanoArkNote = this.createElement("div", {
+      innerHTML:
+        "ℹ️ <strong>说明</strong>：火山方舟提供每日 200 万 tokens 免费额度，支持多模态理解。<br/>推荐模型：<code>doubao-seed-1-8-251228</code>、<code>doubao-seed-1-6-250615</code>",
+      styles: {
+        padding: "10px 12px",
+        backgroundColor: "#e8f5e9",
+        border: "1px solid #a5d6a7",
+        borderRadius: "6px",
+        color: "#2e7d32",
+        fontSize: "13px",
+        marginBottom: "16px",
+      },
+    });
+    sectionVolcanoArk.appendChild(volcanoArkNote);
+
     form.appendChild(sectionOpenAI);
     form.appendChild(sectionOpenAICompat);
     form.appendChild(sectionGemini);
     form.appendChild(sectionAnthropic);
     form.appendChild(sectionOpenRouter);
+    form.appendChild(sectionVolcanoArk);
 
     const renderProviderSections = (prov: string) => {
       const isGemini = prov === "google";
       const isAnthropic = prov === "anthropic";
       const isOpenRouter = prov === "openrouter";
       const isOpenAICompat = prov === "openai-compat";
+      const isVolcanoArk = prov === "volcanoark";
       (sectionOpenAI as HTMLElement).style.display =
-        isGemini || isAnthropic || isOpenAICompat || isOpenRouter
+        isGemini ||
+        isAnthropic ||
+        isOpenAICompat ||
+        isOpenRouter ||
+        isVolcanoArk
           ? "none"
           : "block";
       (sectionOpenAICompat as HTMLElement).style.display = isOpenAICompat
@@ -424,6 +508,9 @@ export class ApiSettingsPage {
         ? "block"
         : "none";
       (sectionOpenRouter as HTMLElement).style.display = isOpenRouter
+        ? "block"
+        : "none";
+      (sectionVolcanoArk as HTMLElement).style.display = isVolcanoArk
         ? "block"
         : "none";
     };
@@ -808,13 +895,13 @@ export class ApiSettingsPage {
       "pdfAttachmentMode",
       [
         { value: "default", label: "仅默认 PDF (最早添加的附件)" },
-        { value: "all", label: "全部 PDF (多文件上传，仅支持 Gemini)" },
+        { value: "all", label: "全部 PDF (多文件上传)" },
       ],
       pdfAttachmentModeValue,
       (newVal) => {
         const msg =
           newVal === "all"
-            ? "已选择全部 PDF 模式：将同时发送所有附件给大模型（仅 Gemini 支持）"
+            ? "已选择全部 PDF 模式：将同时发送所有附件给大模型"
             : "已选择默认 PDF 模式：仅使用最早添加的附件";
         try {
           new ztoolkit.ProgressWindow("AI Butler", {
@@ -1207,6 +1294,7 @@ export class ApiSettingsPage {
         google: "geminiApiKey",
         anthropic: "anthropicApiKey",
         openrouter: "openRouterApiKey",
+        volcanoark: "volcanoArkApiKey",
       };
       const prefKey = mapping[providerId];
       if (prefKey) {

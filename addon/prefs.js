@@ -31,6 +31,12 @@ pref(
 );
 pref("__prefsPrefix__.openRouterApiKey", "");
 pref("__prefsPrefix__.openRouterModel", "google/gemma-3-27b-it");
+pref(
+  "__prefsPrefix__.volcanoArkApiUrl",
+  "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+);
+pref("__prefsPrefix__.volcanoArkApiKey", "");
+pref("__prefsPrefix__.volcanoArkModel", "doubao-seed-1-8-251228");
 pref("__prefsPrefix__.temperature", "0.7");
 pref("__prefsPrefix__.enableTemperature", true);
 pref("__prefsPrefix__.maxTokens", "8192");

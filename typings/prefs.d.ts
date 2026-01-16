@@ -23,6 +23,9 @@ declare namespace _ZoteroTypes {
       "openRouterApiUrl": string;
       "openRouterApiKey": string;
       "openRouterModel": string;
+      "volcanoArkApiUrl": string;
+      "volcanoArkApiKey": string;
+      "volcanoArkModel": string;
       "temperature": string;
       "enableTemperature": boolean;
       "maxTokens": string;

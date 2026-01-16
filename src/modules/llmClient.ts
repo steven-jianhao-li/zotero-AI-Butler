@@ -101,6 +101,16 @@ export class LLMClient {
       common.model = (
         (getPref("openRouterModel" as any) as string) || "google/gemma-3-27b-it"
       ).trim();
+    } else if (id === "volcanoark") {
+      common.apiUrl = (
+        (getPref("volcanoArkApiUrl" as any) as string) ||
+        "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+      ).trim();
+      common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
+      common.model = (
+        (getPref("volcanoArkModel" as any) as string) ||
+        "doubao-seed-1-8-251228"
+      ).trim();
     } else {
       common.apiUrl = ((getPref("openaiApiUrl" as any) as string) || "").trim();
       common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
@@ -120,6 +130,7 @@ export class LLMClient {
     if (id.includes("anthropic") || id.includes("claude")) return "anthropic";
     if (id === "openai-compat") return "openai-compat";
     if (id === "openrouter") return "openrouter";
+    if (id === "volcanoark") return "volcanoark";
     return "openai";
   }
 

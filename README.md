@@ -132,6 +132,7 @@ AI管家支持多种主流大模型平台，满足不同用户的需求：
 | **OpenAI**           | gpt-5                    | 官方新接口                                                                          |
 | **Anthropic Claude** | claude-opus-4-5-20251101 | 综合能力优秀                                                                        |
 | **OpenAI 兼容**      | 自定义                   | OpenAI旧接口，使用标准的 Chat Completions 接口格式，支持 SiliconFlow 等第三方服务商 |
+| **火山方舟**         | doubao-seed-1-8-251228   | 🆕 每日200万tokens免费额度，支持豆包大模型系列                                      |
 
 ![多平台API配置](./assets/images/多平台API配置.png)
 

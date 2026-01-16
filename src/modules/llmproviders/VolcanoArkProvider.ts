@@ -4,21 +4,25 @@ import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
 
 /**
- * OpenAI 旧接口兼容 Provider（Chat Completions 格式）
+ * 火山方舟 (Volcano Ark Engine) Provider
  *
- * 使用 /v1/chat/completions 接口，适配第三方 API 服务商（例如 SiliconFlow 等）
- * 注意：如果使用 OpenAI 官方 API，请不要选择本接口，请改用 “OpenAI” 提供商（/v1/responses）。
+ * 使用火山方舟大模型服务平台的 Chat Completions 接口
+ * API 文档: https://www.volcengine.com/docs/82379/1399009
  *
- * URL 要求：必须是完整的端点地址，例如：
- *   https://api.openai.com/v1/chat/completions
- * 不会在代码中自动追加路径。
+ * 特点:
+ * - 使用完整的 API URL，不会自动追加路径
+ * - Base64 PDF 格式: data:application/pdf;base64,{base64_data}
+ * - 支持豆包大模型 (doubao-seed) 系列
+ *
+ * 默认 URL: https://ark.cn-beijing.volces.com/api/v3/chat/completions
  */
-export class OpenAICompatProvider implements ILlmProvider {
-  readonly id = "openai-compat"; // 供偏好使用的唯一标识
+export class VolcanoArkProvider implements ILlmProvider {
+  readonly id = "volcanoark";
 
   private ensureUrlAndKey(options: LLMOptions) {
     const apiUrl = (
-      options.apiUrl || "https://api.openai.com/v1/chat/completions"
+      options.apiUrl ||
+      "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
     ).trim();
     const apiKey = (options.apiKey || "").trim();
     if (!apiUrl) throw new Error("API URL 未配置");
@@ -50,10 +54,9 @@ export class OpenAICompatProvider implements ILlmProvider {
     onProgress?: ProgressCb,
   ): Promise<string> {
     const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
-    const model = (options.model || "gpt-3.5-turbo").trim();
+    const model = (options.model || "doubao-seed-1-8-251228").trim();
     const streamEnabled = options.stream ?? true;
 
-    // Chat Completions 的消息结构
     const messages: Array<{
       role: "system" | "user" | "assistant";
       content: any;
@@ -61,7 +64,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     messages.push({ role: "system", content: SYSTEM_ROLE_PROMPT });
 
     if (isBase64) {
-      // 尝试使用多模态格式（某些兼容服务支持 image_url 或 vision）
+      // 火山方舟多模态格式: data:{mime_type};base64,{base64_data}
       messages.push({
         role: "user",
         content: [
@@ -147,7 +150,7 @@ export class OpenAICompatProvider implements ILlmProvider {
                           delivered = current.length;
                           Promise.resolve(onProgress(newChunk)).catch((err) =>
                             ztoolkit.log(
-                              "[AI-Butler] onProgress error (OpenAI Compat SSE):",
+                              "[AI-Butler] onProgress error (VolcanoArk SSE):",
                               err,
                             ),
                           );
@@ -159,7 +162,7 @@ export class OpenAICompatProvider implements ILlmProvider {
                   }
                 }
               } catch (err) {
-                ztoolkit.log("[AI-Butler] OpenAI Compat SSE parse error:", err);
+                ztoolkit.log("[AI-Butler] VolcanoArk SSE parse error:", err);
               }
             };
             xmlhttp.onerror = () => {
@@ -179,7 +182,7 @@ export class OpenAICompatProvider implements ILlmProvider {
           if (gotAnyDelta && chunks.length > 0) return chunks.join("");
           throw abortError;
         }
-        let errorMessage = error?.message || "OpenAI 兼容请求失败";
+        let errorMessage = error?.message || "火山方舟请求失败";
         try {
           const responseText =
             error?.xmlhttp?.response || error?.xmlhttp?.responseText;
@@ -217,7 +220,7 @@ export class OpenAICompatProvider implements ILlmProvider {
       if (onProgress && result) await onProgress(result);
       return result;
     } catch (e: any) {
-      let errorMessage = e?.message || "OpenAI 兼容请求失败";
+      let errorMessage = e?.message || "火山方舟请求失败";
       try {
         const responseText = e?.xmlhttp?.response || e?.xmlhttp?.responseText;
         if (responseText) {
@@ -245,7 +248,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     onProgress?: ProgressCb,
   ): Promise<string> {
     const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
-    const model = (options.model || "gpt-3.5-turbo").trim();
+    const model = (options.model || "doubao-seed-1-8-251228").trim();
 
     const messages: Array<{
       role: "system" | "user" | "assistant";
@@ -260,7 +263,6 @@ export class OpenAICompatProvider implements ILlmProvider {
         }
         const isFirstUserMessage = role === "user" && msg === conversation[0];
         if (isFirstUserMessage) {
-          // 第一条用户消息需要附带论文内容
           if (isBase64) {
             // Base64 模式：使用多模态格式
             messages.push({
@@ -276,7 +278,6 @@ export class OpenAICompatProvider implements ILlmProvider {
               ],
             });
           } else {
-            // 文本模式：将论文内容附加到消息中
             messages.push({
               role: "user",
               content: buildUserMessage(msg.content, pdfContent),
@@ -355,7 +356,7 @@ export class OpenAICompatProvider implements ILlmProvider {
                         delivered = current.length;
                         Promise.resolve(onProgress(newChunk)).catch((err) =>
                           ztoolkit.log(
-                            "[AI-Butler] onProgress error (OpenAI Compat chat SSE):",
+                            "[AI-Butler] onProgress error (VolcanoArk chat SSE):",
                             err,
                           ),
                         );
@@ -367,10 +368,7 @@ export class OpenAICompatProvider implements ILlmProvider {
                 }
               }
             } catch (err) {
-              ztoolkit.log(
-                "[AI-Butler] OpenAI Compat chat SSE parse error:",
-                err,
-              );
+              ztoolkit.log("[AI-Butler] VolcanoArk chat SSE parse error:", err);
             }
           };
           xmlhttp.onerror = () => {
@@ -390,7 +388,7 @@ export class OpenAICompatProvider implements ILlmProvider {
         if (gotAnyDelta && chunks.length > 0) return chunks.join("");
         throw abortError;
       }
-      let errorMessage = error?.message || "OpenAI 兼容请求失败";
+      let errorMessage = error?.message || "火山方舟请求失败";
       try {
         const responseText =
           error?.xmlhttp?.response || error?.xmlhttp?.responseText;
@@ -416,7 +414,7 @@ export class OpenAICompatProvider implements ILlmProvider {
 
   async testConnection(options: LLMOptions): Promise<string> {
     const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
-    const model = (options.model || "gpt-3.5-turbo").trim();
+    const model = (options.model || "doubao-seed-1-8-251228").trim();
 
     const payload = {
       model,
@@ -438,10 +436,9 @@ export class OpenAICompatProvider implements ILlmProvider {
       response = await Zotero.HTTP.request("POST", apiUrl, {
         headers: this.buildHeaders(apiKey),
         body: JSON.stringify(payload),
-        responseType: "text", // 使用 text 以获取原始响应
+        responseType: "text",
         timeout: options.requestTimeoutMs ?? 30000,
       });
-      // 提取响应首部
       try {
         const headerStr = response.getAllResponseHeaders?.() || "";
         headerStr.split(/\r?\n/).forEach((line: string) => {
@@ -456,7 +453,6 @@ export class OpenAICompatProvider implements ILlmProvider {
         /* ignore */
       }
     } catch (error: any) {
-      // 提取响应首部
       try {
         const headerStr = error?.xmlhttp?.getAllResponseHeaders?.() || "";
         headerStr.split(/\r?\n/).forEach((line: string) => {
@@ -473,7 +469,7 @@ export class OpenAICompatProvider implements ILlmProvider {
       const status = error?.xmlhttp?.status;
       const responseBody =
         error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
-      let errorMessage = error?.message || "OpenAI 兼容请求失败";
+      let errorMessage = error?.message || "火山方舟请求失败";
       let errorName = "NetworkError";
       try {
         if (responseBody) {
@@ -528,7 +524,7 @@ export class OpenAICompatProvider implements ILlmProvider {
 
   /**
    * 多文件摘要生成
-   * 使用 OpenAI 兼容 Chat Completions 格式发送多个 PDF 文件
+   * 使用火山方舟 Chat Completions 格式发送多个 PDF 文件
    */
   async generateMultiFileSummary(
     pdfFiles: Array<{
@@ -541,7 +537,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     onProgress?: ProgressCb,
   ): Promise<string> {
     const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
-    const model = (options.model || "gpt-3.5-turbo").trim();
+    const model = (options.model || "doubao-seed-1-8-251228").trim();
 
     if (pdfFiles.length === 0) throw new Error("没有要处理的 PDF 文件");
 
@@ -571,7 +567,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     }
 
     ztoolkit.log(
-      `[AI-Butler] 准备发送 ${fileParts.length} 个 PDF 附件到 OpenAI 兼容接口`,
+      `[AI-Butler] 准备发送 ${fileParts.length} 个 PDF 附件到火山方舟接口`,
     );
 
     const messages: Array<{
@@ -651,7 +647,7 @@ export class OpenAICompatProvider implements ILlmProvider {
                         delivered = current.length;
                         Promise.resolve(onProgress(newChunk)).catch((err) =>
                           ztoolkit.log(
-                            "[AI-Butler] onProgress error (OpenAI Compat multi-PDF):",
+                            "[AI-Butler] onProgress error (VolcanoArk multi-PDF):",
                             err,
                           ),
                         );
@@ -664,7 +660,7 @@ export class OpenAICompatProvider implements ILlmProvider {
               }
             } catch (err) {
               ztoolkit.log(
-                "[AI-Butler] OpenAI Compat multi-PDF SSE parse error:",
+                "[AI-Butler] VolcanoArk multi-PDF SSE parse error:",
                 err,
               );
             }
@@ -686,7 +682,7 @@ export class OpenAICompatProvider implements ILlmProvider {
         if (gotAnyDelta && chunks.length > 0) return chunks.join("");
         throw abortError;
       }
-      let errorMessage = error?.message || "OpenAI 兼容多文件请求失败";
+      let errorMessage = error?.message || "火山方舟多文件请求失败";
       try {
         const responseText =
           error?.xmlhttp?.response || error?.xmlhttp?.responseText;
@@ -715,6 +711,6 @@ export class OpenAICompatProvider implements ILlmProvider {
 
 // 自注册
 import { ProviderRegistry } from "./ProviderRegistry";
-ProviderRegistry.register(new OpenAICompatProvider());
+ProviderRegistry.register(new VolcanoArkProvider());
 
-export default OpenAICompatProvider;
+export default VolcanoArkProvider;

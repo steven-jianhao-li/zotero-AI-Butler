@@ -23,6 +23,9 @@ declare namespace _ZoteroTypes {
       "openRouterApiUrl": string;
       "openRouterApiKey": string;
       "openRouterModel": string;
+      "volcanoArkApiUrl": string;
+      "volcanoArkApiKey": string;
+      "volcanoArkModel": string;
       "temperature": string;
       "enableTemperature": boolean;
       "maxTokens": string;
@@ -51,6 +54,8 @@ declare namespace _ZoteroTypes {
       "windowWidth": string;
       "windowHeight": string;
       "saveChatHistory": boolean;
+      "sidebarNoteCollapsed": boolean;
+      "sidebarImageCollapsed": boolean;
       "notePrefix": string;
       "noteStrategy": string;
     };

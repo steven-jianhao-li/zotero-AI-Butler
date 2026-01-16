@@ -600,10 +600,21 @@ function renderNoteSection(
     "sidebarNoteHeight",
   );
 
-  // 折叠/展开功能
-  let isCollapsed = false;
+  // 折叠/展开功能 - 从首选项读取初始状态
+  let isCollapsed = getPref("sidebarNoteCollapsed" as any) === true;
+
+  // 根据初始状态设置UI
+  if (isCollapsed) {
+    noteContentWrapper.style.height = "0px";
+    noteContentWrapper.style.overflow = "hidden";
+    resizeHandle.style.display = "none";
+    toggleIcon.style.transform = "rotate(-90deg)";
+  }
+
   noteHeader.addEventListener("click", () => {
     isCollapsed = !isCollapsed;
+    // 保存折叠状态到首选项
+    setPref("sidebarNoteCollapsed" as any, isCollapsed as any);
     if (isCollapsed) {
       noteContentWrapper.style.height = "0px";
       noteContentWrapper.style.overflow = "hidden";
@@ -647,6 +658,9 @@ function renderImageSummarySection(
     border: 1px solid #e0e0e0;
     border-radius: 6px;
     overflow: hidden;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
   `;
 
   // 标题栏
@@ -710,12 +724,25 @@ function renderImageSummarySection(
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
   `;
 
-  // 折叠功能
-  let isImageCollapsed = false;
+  // 折叠功能 - 从首选项读取初始状态
+  let isImageCollapsed = getPref("sidebarImageCollapsed" as any) === true;
+
+  // 根据初始状态设置UI
+  if (isImageCollapsed) {
+    imageContainer.style.display = "none";
+    imageToggleIcon.style.transform = "rotate(-90deg)";
+  }
+
   imageSummaryHeader.addEventListener("click", () => {
     isImageCollapsed = !isImageCollapsed;
+    // 保存折叠状态到首选项
+    setPref("sidebarImageCollapsed" as any, isImageCollapsed as any);
     if (isImageCollapsed) {
       imageContainer.style.display = "none";
       imageToggleIcon.style.transform = "rotate(-90deg)";
@@ -1618,8 +1645,10 @@ async function loadImageSummary(
     imgElement.src = imgSrc;
     imgElement.alt = "一图总结";
     imgElement.style.cssText = `
+      width: 100%;
       max-width: 100%;
       height: auto;
+      object-fit: contain;
       border-radius: 4px;
       cursor: pointer;
       transition: transform 0.2s ease;

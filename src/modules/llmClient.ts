@@ -31,14 +31,31 @@ export class LLMClient {
     extra?: Partial<LLMOptions>,
   ): LLMOptions {
     const id = providerId.toLowerCase();
+
+    // 检查参数启用状态
+    const enableTemperature =
+      (getPref("enableTemperature" as any) as boolean) ?? true;
+    const enableMaxTokens =
+      (getPref("enableMaxTokens" as any) as boolean) ?? true;
+    const enableTopP = (getPref("enableTopP" as any) as boolean) ?? true;
+
     const common: LLMOptions = {
       stream: (getPref("stream") as boolean) ?? true,
-      temperature:
-        parseFloat((getPref("temperature") as string) || "0.7") || 0.7,
-      topP: parseFloat((getPref("topP") as string) || "1.0") || 1.0,
-      maxTokens: parseInt((getPref("maxTokens") as string) || "4096") || 4096,
       requestTimeoutMs: LLMClient.getRequestTimeout(),
     };
+
+    // 仅在启用时添加对应参数
+    if (enableTemperature) {
+      common.temperature =
+        parseFloat((getPref("temperature") as string) || "0.7") || 0.7;
+    }
+    if (enableTopP) {
+      common.topP = parseFloat((getPref("topP") as string) || "1.0") || 1.0;
+    }
+    if (enableMaxTokens) {
+      common.maxTokens =
+        parseInt((getPref("maxTokens") as string) || "4096") || 4096;
+    }
 
     // 映射到 ApiKeyManager 的 ProviderId
     const keyManagerId = this.mapToKeyManagerId(id);
@@ -84,6 +101,16 @@ export class LLMClient {
       common.model = (
         (getPref("openRouterModel" as any) as string) || "google/gemma-3-27b-it"
       ).trim();
+    } else if (id === "volcanoark") {
+      common.apiUrl = (
+        (getPref("volcanoArkApiUrl" as any) as string) ||
+        "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+      ).trim();
+      common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
+      common.model = (
+        (getPref("volcanoArkModel" as any) as string) ||
+        "doubao-seed-1-8-251228"
+      ).trim();
     } else {
       common.apiUrl = ((getPref("openaiApiUrl" as any) as string) || "").trim();
       common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
@@ -103,6 +130,7 @@ export class LLMClient {
     if (id.includes("anthropic") || id.includes("claude")) return "anthropic";
     if (id === "openai-compat") return "openai-compat";
     if (id === "openrouter") return "openrouter";
+    if (id === "volcanoark") return "volcanoark";
     return "openai";
   }
 
@@ -167,11 +195,16 @@ export class LLMClient {
       displayName: string;
       base64Content?: string;
     }>,
-    prompt: string,
+    prompt?: string,
     onProgress?: ProgressCb,
   ): Promise<string> {
     const { id, impl } = this.resolveProvider();
     const options = this.buildOptions(id);
+
+    // 使用与 generateSummary 相同的 prompt 解析逻辑
+    const saved = (getPref("summaryPrompt") as string) || "";
+    const summaryPrompt =
+      prompt || (saved.trim() ? saved : getDefaultSummaryPrompt());
 
     if (typeof impl.generateMultiFileSummary !== "function") {
       throw new Error(`Provider ${id} 不支持多文件摘要生成`);
@@ -179,7 +212,7 @@ export class LLMClient {
 
     return impl.generateMultiFileSummary(
       pdfFiles,
-      prompt,
+      summaryPrompt,
       options,
       onProgress as ProviderProgressCb,
     );

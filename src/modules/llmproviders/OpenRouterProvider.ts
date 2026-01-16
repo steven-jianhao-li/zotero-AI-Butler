@@ -418,6 +418,75 @@ export class OpenRouterProvider implements ILlmProvider {
       throw new Error(msg);
     }
   }
+
+  /**
+   * 多文件摘要生成
+   * 使用 OpenRouter API 发送多个 file 类型的 PDF 文件
+   */
+  async generateMultiFileSummary(
+    pdfFiles: Array<{
+      filePath: string;
+      displayName: string;
+      base64Content?: string;
+    }>,
+    prompt: string,
+    options: LLMOptions,
+    onProgress?: ProgressCb,
+  ): Promise<string> {
+    const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
+    const model = (options.model || "google/gemma-3-27b-it").trim();
+
+    if (pdfFiles.length === 0) throw new Error("没有要处理的 PDF 文件");
+
+    // 构建 file 部分
+    const fileParts: any[] = [];
+    for (let i = 0; i < pdfFiles.length; i++) {
+      const pdfFile = pdfFiles[i];
+      if (pdfFile.base64Content && pdfFile.base64Content.length > 0) {
+        fileParts.push({
+          type: "file",
+          file: {
+            filename: pdfFile.displayName || `document_${i + 1}.pdf`,
+            file_data: pdfFile.base64Content,
+          },
+        });
+        ztoolkit.log(
+          `[AI-Butler] 添加 PDF 附件 (${i + 1}/${pdfFiles.length}): ${pdfFile.displayName}, base64 长度: ${pdfFile.base64Content.length}`,
+        );
+      } else {
+        ztoolkit.log(
+          `[AI-Butler] PDF 文件 ${pdfFile.displayName} 无 base64 内容，跳过`,
+        );
+      }
+    }
+
+    if (fileParts.length === 0) {
+      throw new Error("没有成功处理任何 PDF 文件");
+    }
+
+    ztoolkit.log(
+      `[AI-Butler] 准备发送 ${fileParts.length} 个 PDF 附件到 OpenRouter`,
+    );
+
+    const messages: Array<{
+      role: "system" | "user" | "assistant";
+      content: any;
+    }> = [];
+    messages.push({ role: "system", content: SYSTEM_ROLE_PROMPT });
+    messages.push({
+      role: "user",
+      content: [{ type: "text", text: prompt }, ...fileParts],
+    });
+
+    const payload = {
+      model,
+      messages,
+      stream: true,
+      ...this.buildGenParams(options),
+    } as any;
+
+    return this.streamRequest(apiUrl, apiKey, payload, options, onProgress);
+  }
 }
 
 // Self-registration

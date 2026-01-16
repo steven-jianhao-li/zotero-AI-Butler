@@ -651,18 +651,20 @@ export class GeminiProvider implements ILlmProvider {
     // 构建请求
     const endpoint = `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
 
-    const generationConfig: any = {
-      temperature,
-      topP,
-      maxOutputTokens: maxTokens,
-    };
+    // 条件性地添加配置参数（与 generateSummary 保持一致）
+    const generationConfig: any = {};
+    if (options.temperature !== undefined)
+      generationConfig.temperature = temperature;
+    if (options.topP !== undefined) generationConfig.topP = topP;
+    if (options.maxTokens !== undefined)
+      generationConfig.maxOutputTokens = maxTokens;
 
     const payload = {
       generationConfig,
       contents: [
         {
           role: "user",
-          parts: [{ text: prompt }, ...fileParts],
+          parts: [{ text: prompt || "" }, ...fileParts],
         },
       ],
       systemInstruction: { parts: [{ text: SYSTEM_ROLE_PROMPT }] },

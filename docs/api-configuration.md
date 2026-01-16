@@ -4,7 +4,7 @@
 
 ## 支持的平台
 
-AI 管家目前支持以下 4 种 API 接入方式：
+AI 管家目前支持以下 6 种 API 接入方式：
 
 | 平台                 | 接口类型                          | 适用场景                              |
 | -------------------- | --------------------------------- | ------------------------------------- |
@@ -12,6 +12,8 @@ AI 管家目前支持以下 4 种 API 接入方式：
 | **OpenAI**           | OpenAI 新接口(v1/responses)       | GPT 系列模型                          |
 | **Anthropic Claude** | 原生 Claude API                   | Claude 系列模型                       |
 | **OpenAI 兼容**      | OpenAI 兼容接口(chat/completions) | 第三方服务商（硅基流动、DeepSeek 等） |
+| **OpenRouter**       | 统一 LLM 接口                     | 🌐 聚合数百种模型，一个 API 通用      |
+| **火山方舟**         | 火山引擎 Chat Completions         | 🆕 豆包大模型，每日200万tokens免费    |
 
 ---
 
@@ -147,6 +149,84 @@ Google AI Studio 免费层级对不同模型有不同的速率限制。查看可
 4. 在插件中配置：
    - **Base URL**：`https://api.deepseek.com/v1`
    - **模型名称**：例如 `deepseek-chat`
+
+---
+
+## OpenRouter 配置
+
+OpenRouter 提供统一的 LLM API 接口，聚合了数百种 AI 模型，让您能够通过一个 API 密钥访问来自 OpenAI、Anthropic、Google、Meta 等多家厂商的模型。
+
+### 官方文档
+
+- **官网**：[OpenRouter](https://openrouter.ai/)
+- **API 文档**：[OpenRouter Docs](https://openrouter.ai/docs)
+- **模型列表**：[OpenRouter Models](https://openrouter.ai/models)
+- **价格**：[OpenRouter Pricing](https://openrouter.ai/pricing)
+
+### 获取 API 密钥
+
+1. 访问 [OpenRouter](https://openrouter.ai/)
+2. 注册账号（支持 Google 登录）
+3. 进入 **Dashboard** → **Keys**
+4. 创建新的 API Key
+
+### 推荐理由
+
+- 🌐 **模型丰富**：一个 API 访问 GPT-5、Claude、Gemini、Llama 等数百种模型
+- 💰 **灵活定价**：按需付费，不同模型价格透明
+- 🔄 **高可用性**：自动故障转移，保证服务稳定
+
+### 在插件中配置
+
+1. 打开 **AI 管家仪表盘** → **快捷设置**
+2. 平台选择 **OpenRouter**
+3. 填写以下信息：
+   - **API 地址**：`https://openrouter.ai/api/v1/chat/completions`
+   - **API 密钥**：从 OpenRouter Dashboard 获取
+   - **模型名称**：例如 `google/gemini-3-pro-preview`、`openai/gpt-5.2`
+4. 点击 **"测试连接"**
+
+> 💡 **提示**：在 [模型列表](https://openrouter.ai/models) 页面可查看所有可用模型及其价格。
+
+---
+
+## 火山方舟（豆包大模型）配置
+
+火山引擎旗下的大模型服务平台，提供豆包 (Doubao) 系列大模型，支持多模态理解。
+
+### 官方文档
+
+- **API 文档**：[火山方舟 API Reference](https://www.volcengine.com/docs/82379/1399009)
+- **模型列表**：[豆包大模型](https://www.volcengine.com/docs/82379/1330310)
+- **控制台**：[火山方舟控制台](https://console.volcengine.com/ark)
+
+### 获取 API 密钥
+
+1. 访问 [火山引擎控制台](https://console.volcengine.com/)
+2. 注册并完成实名认证
+3. 进入 **火山方舟** → **API Key 管理**
+4. 创建 API Key
+
+### 推荐模型
+
+| 模型名称                 | 特点                  |
+| ------------------------ | --------------------- |
+| `doubao-seed-1-8-251228` | 🌟 推荐，多模态能力强 |
+| `doubao-seed-1-6-250615` | 性价比高              |
+
+### 免费额度
+
+🎁 **每日 200 万 tokens 免费**，足够个人日常使用。
+
+### 在插件中配置
+
+1. 打开 **AI 管家仪表盘** → **快捷设置**
+2. 平台选择 **火山方舟 (Volcano Ark)**
+3. 填写以下信息：
+   - **API 地址**：`https://ark.cn-beijing.volces.com/api/v3/chat/completions`
+   - **API 密钥**：从火山方舟控制台获取
+   - **模型名称**：例如 `doubao-seed-1-8-251228`
+4. 点击 **"测试连接"**
 
 ---
 

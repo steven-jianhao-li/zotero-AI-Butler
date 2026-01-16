@@ -129,24 +129,15 @@ export class NoteGenerator {
       let isBase64 = false;
       let useMultiPdfMode = false;
 
-      // 调试: 输出 PDF 设置
-      ztoolkit.log(
-        `[NoteGenerator] PDF 设置: pdfAttachmentMode=${pdfAttachmentMode}, prefMode=${prefMode}`,
-      );
-
       // 检查是否应该使用多 PDF 模式
       if (pdfAttachmentMode === "all" && prefMode === "base64") {
         const allPdfs = await PDFExtractor.getAllPdfAttachments(item);
-        ztoolkit.log(`[NoteGenerator] 找到 ${allPdfs.length} 个 PDF 附件`);
 
         if (allPdfs.length > 1) {
           // 检查当前 provider 是否支持多文件上传
           const provider = LLMClient.getCurrentProvider();
           const supportsMultiFile =
             provider && typeof provider.generateMultiFileSummary === "function";
-          ztoolkit.log(
-            `[NoteGenerator] Provider 是否支持多文件: ${supportsMultiFile}`,
-          );
 
           if (supportsMultiFile) {
             useMultiPdfMode = true;
@@ -154,14 +145,8 @@ export class NoteGenerator {
               `使用多 PDF 模式 (${allPdfs.length} 个文件)...`,
               15,
             );
-            ztoolkit.log(
-              `[NoteGenerator] 使用多 PDF 模式，共 ${allPdfs.length} 个附件`,
-            );
           } else {
             // Provider 不支持多文件，回退到默认模式
-            ztoolkit.log(
-              "[NoteGenerator] 当前 Provider 不支持多 PDF 上传，使用默认 PDF 模式",
-            );
             try {
               new ztoolkit.ProgressWindow("AI Butler", {
                 closeOnClick: true,
@@ -176,18 +161,8 @@ export class NoteGenerator {
               // Ignore notification error
             }
           }
-        } else {
-          ztoolkit.log(
-            `[NoteGenerator] 只有 ${allPdfs.length} 个 PDF，不启用多 PDF 模式`,
-          );
         }
-      } else {
-        ztoolkit.log(
-          `[NoteGenerator] 多 PDF 模式未启用: pdfAttachmentMode=${pdfAttachmentMode}, prefMode=${prefMode}`,
-        );
       }
-
-      ztoolkit.log(`[NoteGenerator] 最终 useMultiPdfMode=${useMultiPdfMode}`);
 
       // 根据模式处理 PDF
       if (!useMultiPdfMode) {
@@ -281,7 +256,7 @@ export class NoteGenerator {
 
           summary = await LLMClient.generateMultiFileSummary(
             pdfFiles,
-            (getPref("customPrompt" as any) as string) || "",
+            undefined, // 使用默认 prompt 解析逻辑
             onProgress,
           );
         } else {

@@ -486,6 +486,21 @@ export class TaskQueueView extends BaseView {
       classes: ["task-item"],
     });
     taskItem.style.marginBottom = "10px";
+    taskItem.style.cursor = "pointer";
+    taskItem.title = "双击可定位到对应文献"; // Tooltip hint
+
+    // 双击定位到 Zotero 文献列表中的对应条目
+    taskItem.addEventListener("dblclick", async () => {
+      try {
+        const zoteroPane = Zotero.getActiveZoteroPane();
+        await zoteroPane.selectItem(task.itemId);
+        ztoolkit.log(
+          `[AI-Butler] 定位到文献: ${task.title} (ID: ${task.itemId})`,
+        );
+      } catch (error) {
+        ztoolkit.log(`[AI-Butler] 定位文献失败:`, error);
+      }
+    });
 
     // 任务头部
     const taskHeader = this.createElement("div", {

@@ -1645,8 +1645,10 @@ async function loadImageSummary(
     imgElement.src = imgSrc;
     imgElement.alt = "一图总结";
     imgElement.style.cssText = `
+      width: 100%;
       max-width: 100%;
       height: auto;
+      object-fit: contain;
       border-radius: 4px;
       cursor: pointer;
       transition: transform 0.2s ease;

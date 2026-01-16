@@ -256,7 +256,7 @@ export class NoteGenerator {
 
           summary = await LLMClient.generateMultiFileSummary(
             pdfFiles,
-            (getPref("customPrompt" as any) as string) || "",
+            undefined, // 使用默认 prompt 解析逻辑
             onProgress,
           );
         } else {

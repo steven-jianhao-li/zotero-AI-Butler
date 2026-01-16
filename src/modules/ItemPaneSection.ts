@@ -647,6 +647,9 @@ function renderImageSummarySection(
     border: 1px solid #e0e0e0;
     border-radius: 6px;
     overflow: hidden;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
   `;
 
   // 标题栏
@@ -710,6 +713,10 @@ function renderImageSummarySection(
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
   `;
 
   // 折叠功能

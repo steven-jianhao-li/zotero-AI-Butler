@@ -758,7 +758,12 @@ export class LibraryScannerView extends BaseView {
     nodeContent.addEventListener("click", (e) => {
       // 如果点击的不是复选框或展开图标
       if (e.target !== checkbox && e.target !== expandIcon) {
-        // 有子节点的集合: 切换展开状态
+        // 切换选中状态（对所有节点类型都生效）
+        checkbox.checked = !checkbox.checked;
+        this.toggleNode(node, checkbox.checked);
+        this.updateSelectedCount();
+
+        // 有子节点的集合: 同时切换展开状态
         if (node.type === "collection" && node.children.length > 0) {
           node.expanded = !node.expanded;
           if (expandIcon) {
@@ -768,10 +773,6 @@ export class LibraryScannerView extends BaseView {
           if (node.expanded) {
             this.renderChildren(node, level + 1);
           }
-        } else {
-          // 叶子节点: 切换选中状态
-          checkbox.checked = !checkbox.checked;
-          checkbox.dispatchEvent(new Event("change"));
         }
       }
     });

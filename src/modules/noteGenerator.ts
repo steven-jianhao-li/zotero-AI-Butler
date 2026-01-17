@@ -438,21 +438,25 @@ export class NoteGenerator {
     const formulas: Array<{ content: string; isBlock: boolean }> = [];
     let processedMarkdown = markdown;
 
-    // 保护块级公式 $$...$$（跨行）
+    // 保护块级公式 $$...$$ 和 \[...\]
     processedMarkdown = processedMarkdown.replace(
-      /\$\$([\s\S]*?)\$\$/g,
-      (_match, formula) => {
+      /(\$\$|\\\[)([\s\S]*?)(\$\$|\\\])/g,
+      (_match, start, formula, end) => {
+        // 确保匹配闭合（虽然正则已经尽量做了，但防止 $$ 匹配到 \] 等情况，虽然正则结构保证了配对如果贪婪度控制得好）
+        // 这里简化处理：只要匹配到了就当做公式
         const placeholder = `FORMULA_BLOCK_${formulas.length}_END`;
         formulas.push({ content: formula.trim(), isBlock: true });
         return placeholder;
       },
     );
 
-    // 保护内联公式 $...$（单行，避免匹配 $$）
+    // 保护内联公式 $...$ 和 \(...\)
     processedMarkdown = processedMarkdown.replace(
       // eslint-disable-next-line no-useless-escape
-      /(?<!\$)\$(?!\$)([^\$\n]+?)\$(?!\$)/g,
-      (_match, formula) => {
+      /((?<!\$)\$(?!\$)|\\\()([^\$\n]+?)((?<!\$)\$(?!\$)|\\\))/g,
+      (_match, start, formula, end) => {
+        // 简单的完整性检查：start 和 end 应该属于同一类（$配$，\(配\)）
+        // 但为了宽容度，我们暂不严格校验配对，因为正则已经限制了内部不含 delimiters
         const placeholder = `FORMULA_INLINE_${formulas.length}_END`;
         formulas.push({ content: formula.trim(), isBlock: false });
         return placeholder;
@@ -477,18 +481,27 @@ export class NoteGenerator {
     // 移除所有内联样式,Zotero 笔记不支持 style 属性
     html = html.replace(/\s+style="[^"]*"/g, "");
 
-    // ===== 步骤 4: 恢复公式（保持原始格式，供侧边栏 KaTeX 渲染）=====
+    // ===== 步骤 4: 恢复公式（使用 Zotero 原生笔记编辑器识别的格式）=====
     html = html.replace(
       /FORMULA_(BLOCK|INLINE)_(\d+)_END/g,
       (_match, type, index) => {
         const formulaData = formulas[parseInt(index)];
         if (!formulaData) return _match;
         const { content, isBlock } = formulaData;
-        // 恢复为原始 $...$ 或 $$...$$ 格式，侧边栏会用 KaTeX 渲染
+        
+        // 关键修复：必须对 LaTeX 内容进行 HTML 转义，否则 <, >, & 等字符会破坏 XML 结构
+        const escapedContent = NoteGenerator.escapeHtml(content);
+
+        // 根据用户反馈和 Zotero 特性调整：
+        // 鉴于用户反馈块级公式 <math-display> 未渲染，而行内公式有效
+        // 为了稳妥，暂时将所有公式都作为 <math-inline> 生成
         if (isBlock) {
-          return `$$${content}$$`;
+          // 块级公式：必须使用 $ 包裹（Zotero不支持 $$），加上 \displaystyle 强制显示为块级样式
+          // 外层用 p 和 style 实现居中
+          return `<p style="text-align: center;"><span class="math">$\\displaystyle ${escapedContent}$</span></p>`;
         } else {
-          return `$${content}$`;
+          // 行内公式：使用 $ 包裹
+          return `<span class="math">$${escapedContent}$</span>`;
         }
       },
     );

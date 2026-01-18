@@ -488,7 +488,7 @@ export class NoteGenerator {
         const formulaData = formulas[parseInt(index)];
         if (!formulaData) return _match;
         const { content, isBlock } = formulaData;
-        
+
         // 关键修复：必须对 LaTeX 内容进行 HTML 转义，否则 <, >, & 等字符会破坏 XML 结构
         const escapedContent = NoteGenerator.escapeHtml(content);
 

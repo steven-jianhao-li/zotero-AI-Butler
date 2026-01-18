@@ -1331,28 +1331,30 @@ async function loadNoteContent(
             .replace(/&gt;/g, ">")
             .replace(/&quot;/g, '"')
             .replace(/&#039;/g, "'");
-          
+
           const trimmed = unescaped.trim();
-          
+
           // Check for block formula markers
           // 1. Double dollar signs $$...$$
           // 2. Single dollar sign with \displaystyle (Zotero native block format)
-          const isDoubleDollar = trimmed.startsWith("$$") && trimmed.endsWith("$$");
-          const isSingleDollar = trimmed.startsWith("$") && trimmed.endsWith("$");
+          const isDoubleDollar =
+            trimmed.startsWith("$$") && trimmed.endsWith("$$");
+          const isSingleDollar =
+            trimmed.startsWith("$") && trimmed.endsWith("$");
           const hasDisplayStyle = trimmed.includes("\\displaystyle");
 
           const isBlock = isDoubleDollar || (isSingleDollar && hasDisplayStyle);
-          
+
           if (isBlock) {
-             // Removing delimiters
-             let latex = "";
-             if (isDoubleDollar) {
-                 latex = trimmed.slice(2, -2);
-             } else {
-                 latex = trimmed.slice(1, -1);
-             }
-             
-             try {
+            // Removing delimiters
+            let latex = "";
+            if (isDoubleDollar) {
+              latex = trimmed.slice(2, -2);
+            } else {
+              latex = trimmed.slice(1, -1);
+            }
+
+            try {
               const rendered = katex.renderToString(latex, {
                 throwOnError: false,
                 displayMode: true,
@@ -1365,24 +1367,24 @@ async function loadNoteContent(
               return `<code>${innerContent}</code>`;
             }
           } else if (isSingleDollar) {
-             const latex = trimmed.slice(1, -1);
-             try {
-               const rendered = katex.renderToString(latex, {
-                 throwOnError: false,
-                 displayMode: false, // inline
-                 output: "html",
-                 trust: true,
-                 strict: false,
-               });
-               return `<span class="katex-inline">${rendered}</span>`;
-             } catch {
-               return `<code>${innerContent}</code>`;
-             }
+            const latex = trimmed.slice(1, -1);
+            try {
+              const rendered = katex.renderToString(latex, {
+                throwOnError: false,
+                displayMode: false, // inline
+                output: "html",
+                trust: true,
+                strict: false,
+              });
+              return `<span class="katex-inline">${rendered}</span>`;
+            } catch {
+              return `<code>${innerContent}</code>`;
+            }
           }
-          
+
           // plain text inside span.math? just return as is
           return _match;
-        }
+        },
       );
 
       // 3. Render legacy block formulas $$...$$ (backward compatibility)

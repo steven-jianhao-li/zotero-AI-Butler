@@ -1933,10 +1933,8 @@ export class ApiSettingsPage {
           missingFields.push("API 密钥(OpenRouter)");
         if (!values.openRouterModel) missingFields.push("模型名称(OpenRouter)");
       } else if (provider === "volcanoark") {
-        if (!values.volcanoArkApiUrl)
-          missingFields.push("API 地址(火山方舟)");
-        if (!values.volcanoArkApiKey)
-          missingFields.push("API 密钥(火山方舟)");
+        if (!values.volcanoArkApiUrl) missingFields.push("API 地址(火山方舟)");
+        if (!values.volcanoArkApiKey) missingFields.push("API 密钥(火山方舟)");
         if (!values.volcanoArkModel) missingFields.push("模型名称(火山方舟)");
       } else if (provider === "openai-compat") {
         if (!values.openaiCompatApiUrl)

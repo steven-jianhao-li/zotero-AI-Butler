@@ -1809,6 +1809,16 @@ export class ApiSettingsPage {
       const orModelEl = this.container.querySelector(
         "#setting-openRouterModel",
       ) as HTMLInputElement;
+      // Volcano Ark (火山方舟)
+      const vaUrlEl = this.container.querySelector(
+        "#setting-volcanoArkApiUrl",
+      ) as HTMLInputElement;
+      const vaKeyEl = this.container.querySelector(
+        "#setting-volcanoArkApiKey",
+      ) as HTMLInputElement;
+      const vaModelEl = this.container.querySelector(
+        "#setting-volcanoArkModel",
+      ) as HTMLInputElement;
       const temperatureEl = this.container.querySelector(
         "#setting-temperature",
       ) as HTMLInputElement;
@@ -1876,6 +1886,9 @@ export class ApiSettingsPage {
         openRouterApiUrl: orUrlEl?.value?.trim() || "",
         openRouterApiKey: orKeyEl?.value?.trim() || "",
         openRouterModel: orModelEl?.value?.trim() || "",
+        volcanoArkApiUrl: vaUrlEl?.value?.trim() || "",
+        volcanoArkApiKey: vaKeyEl?.value?.trim() || "",
+        volcanoArkModel: vaModelEl?.value?.trim() || "",
         temperature: temperatureEl?.value || "0.7",
         maxTokens: maxTokensEl?.value?.trim() || "4096",
         topP: topPEl?.value || "1.0",
@@ -1919,6 +1932,12 @@ export class ApiSettingsPage {
         if (!values.openRouterApiKey)
           missingFields.push("API 密钥(OpenRouter)");
         if (!values.openRouterModel) missingFields.push("模型名称(OpenRouter)");
+      } else if (provider === "volcanoark") {
+        if (!values.volcanoArkApiUrl)
+          missingFields.push("API 地址(火山方舟)");
+        if (!values.volcanoArkApiKey)
+          missingFields.push("API 密钥(火山方舟)");
+        if (!values.volcanoArkModel) missingFields.push("模型名称(火山方舟)");
       } else if (provider === "openai-compat") {
         if (!values.openaiCompatApiUrl)
           missingFields.push("兼容 API 地址(OpenAI兼容)");
@@ -1963,6 +1982,9 @@ export class ApiSettingsPage {
       setPref("openRouterApiUrl", values.openRouterApiUrl);
       setPref("openRouterApiKey", values.openRouterApiKey);
       setPref("openRouterModel", values.openRouterModel);
+      setPref("volcanoArkApiUrl", values.volcanoArkApiUrl);
+      setPref("volcanoArkApiKey", values.volcanoArkApiKey);
+      setPref("volcanoArkModel", values.volcanoArkModel);
       setPref("temperature", values.temperature);
       setPref("maxTokens", values.maxTokens);
       setPref("topP", values.topP);

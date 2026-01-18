@@ -1,24 +1,65 @@
 name: 🐞 提交 Bug
 title: "[BUG] - "
-description: 详细地报告一个 Bug，帮助我们更快地修复它。
+description: 详细地报告一个 Bug，帮助我更快地修复它。
 labels: ["type: bug"]
 
 body:
   - type: markdown
     attributes:
       value: |
-        ## 感谢您提交 Bug！请先阅读以下内容：
-        1.  请先搜索 [zotero-AI-Butler/issues](https://github.com/steven-jianhao-li/zotero-AI-Butler/issues) 确保此问题尚未被报告。
-        2.  尝试下载[最新版本](https://github.com/steven-jianhao-li/zotero-AI-Butler/releases/latest)的 Zotero AI Butler 并测试是否还存在此问题。
-        3.  请确保这是插件本身的问题，而不是由 AI 模型（如 API key、网络超时）或本地代理设置引起的。
-        4.  请按照下方的模板详细描述 Bug，提供全面的信息。
-        5.  请在社区内友善发言，互相尊重。
+        作为开源作者，我的精力有限，无法处理信息不完整或无法复现的 Issue。
+        请在提交前完成以下步骤，这能帮助我更快地定位和解决问题。
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: 📋 提交前确认
+      description: 请确认已完成以下步骤。
+      options:
+        - label: 我已给本仓库点了 ⭐ Star
+          required: true
+        - label: 我已阅读 [Wiki 文档](https://steven-jianhao-li.github.io/zotero-AI-Butler/)，了解功能的正确使用方式
+          required: true
+        - label: 我已搜索 [现有 Issues](https://github.com/steven-jianhao-li/zotero-AI-Butler/issues)，确认没有相似的问题
+          required: true
+        - label: 我正在使用 [最新版本](https://github.com/steven-jianhao-li/zotero-AI-Butler/releases) 的 AI 管家插件
+          required: true
+
+  - type: checkboxes
+    id: commitment
+    attributes:
+      label: 🤝 跟进承诺
+      description: 未响应的 Issue 可能会被关闭。
+      options:
+        - label: 我会持续跟进此 Issue，并在作者需要时提供补充信息或配合调试
+          required: true
+
+  - type: checkboxes
+    id: api-verification
+    attributes:
+      label: 🔑 API 相关问题验证
+      description: 如果问题与 AI 大模型 API 调用相关（如生成失败、超时等），请确认以下内容。如与 API 无关可跳过。
+      options:
+        - label: 我已确认 API Key 有效，并已在第三方工具（如 Cherry Studio）中成功配置使用相同的 API Key
+
+  - type: dropdown
+    id: reproducibility
+    attributes:
+      label: 🔄 问题可复现性
+      description: 此问题多久出现一次？
+      options:
+        - 每次都会出现（稳定复现）
+        - 经常出现（大于50%概率）
+        - 偶尔出现（小于50%概率）
+        - 仅出现过一次
+    validations:
+      required: true
 
   - type: textarea
     id: description
     attributes:
       label: 🐞 Bug 描述
-      description: 请清晰、简洁地描述你遇到的问题。
+      description: 清晰、简洁地描述遇到的问题。
       placeholder: 例如：当我对一篇中文论文使用右键分析时，插件卡住并且没有生成笔记。
     validations:
       required: true
@@ -27,7 +68,7 @@ body:
     id: steps-to-reproduce
     attributes:
       label: 👣 重现步骤
-      description: 请详细列出重现这个 Bug 的步骤。
+      description: 详细列出重现这个 Bug 的步骤。
       placeholder: |
         1. 选中一篇...
         2. 右键点击...
@@ -40,7 +81,7 @@ body:
     id: zotero-version
     attributes:
       label: 📚 Zotero 版本
-      description: "你正在使用的 Zotero 版本是多少？(例如: 7.0.1)"
+      description: "Zotero 版本号 (例如: 7.0.1)"
       placeholder: "7.0.1"
     validations:
       required: true
@@ -49,8 +90,8 @@ body:
     id: plugin-version
     attributes:
       label: 🤖 Zotero AI Butler 版本
-      description: 你当前使用的 Zotero AI Butler 版本是多少？
-      placeholder: "e.g., 1.0.0 (请在 AI管家仪表盘-仪表盘 页面查看)"
+      description: AI 管家版本号（在 AI管家仪表盘-仪表盘 页面查看）
+      placeholder: "e.g., 1.0.0"
     validations:
       required: true
 
@@ -58,7 +99,7 @@ body:
     id: expected-result
     attributes:
       label: 🤔 期望的结果
-      description: 你期望发生什么？
+      description: 期望发生什么？
       placeholder: 插件应该开始分析，并在几分钟后生成一篇笔记。
 
   - type: textarea
@@ -71,21 +112,24 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: 📄 错误信息 / 日志
+      label: 📄 Error Console 日志（必填）
       description: |
-        请提供完整的错误信息或堆栈跟踪。
-        你可以在 Zotero 顶部菜单 > 工具 > 开发者 > Error Console 中找到与Zotero-AI-Butler相关的报错日志。
-      placeholder: "将错误日志粘贴在这里..."
+        提供 Error Console 中的相关错误信息，这是定位问题的关键。
+        获取方法：Zotero 菜单 → **工具** → **开发者** → **Error Console**，然后复现问题，复制与 `AI-Butler` 或 `AIButler` 相关的日志。
+        详细指引参考 [故障排除文档](https://steven-jianhao-li.github.io/zotero-AI-Butler/#/troubleshooting?id=查看-zotero-error-console)
+      placeholder: "将 Error Console 日志粘贴在这里..."
       render: shell
+    validations:
+      required: true
 
   - type: textarea
     id: screenshots
     attributes:
       label: 📷 截图 / 视频
       description: |
-        如果可能，请提供截图或录屏来更直观地展示问题。
-        你可以直接将图片或 GIF 拖拽到这个文本框中。
-        如果与API调用相关，请上传API配置页面的截图。
+        如果可能，提供截图或录屏来更直观地展示问题。
+        可以直接将图片或 GIF 拖拽到这个文本框中。
+        如果与 API 调用相关，请上传 API 配置页面的截图。
       placeholder: "将截图或视频粘贴在这里..."
 
   - type: textarea
@@ -94,8 +138,8 @@ body:
       label: 💡 其他上下文
       description: 还有其他关于这个问题的上下文吗？
       placeholder: |
-        - 你正在使用的 AI 平台 (e.g., Gemini, OpenAI)
-        - 使用的 AI 模型 (e.g., Gemini 2.5 Pro)
-        - 是否使用第三方中转API服务，问题是否来自中转服务？
+        - AI 平台 (e.g., Gemini, OpenAI)
+        - AI 模型 (e.g., Gemini 2.5 Pro)
+        - 是否使用第三方中转 API 服务，问题是否来自中转服务？
         - PDF 处理方式 (e.g., 多模态 Base64 还是 文本提取)
         - 论文 PDF 是扫描版还是文本版？

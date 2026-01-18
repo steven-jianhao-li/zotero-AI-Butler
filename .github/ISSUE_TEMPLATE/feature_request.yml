@@ -1,13 +1,65 @@
-name: 💡 改进建议
-title: "[feat] "
-description: 你有什么好的灵感？
+name: 💡 功能建议
+title: "[feat] - "
+description: 提出新功能或改进建议。
 labels: ["type: feat"]
 
 body:
+  - type: markdown
+    attributes:
+      value: |
+        作为开源作者，我的精力有限，只能优先处理需求明确、有实际使用场景的建议。
+        在提交前，请先确认了解项目的现有功能，并检查是否有类似的建议已被提出。
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: 📋 提交前确认
+      description: 请确认已完成以下步骤。
+      options:
+        - label: 我已给本仓库点了 ⭐ Star
+          required: true
+        - label: 我已阅读 [Wiki 文档](https://steven-jianhao-li.github.io/zotero-AI-Butler/)，确认该功能目前不存在
+          required: true
+        - label: 我已搜索 [现有 Issues](https://github.com/steven-jianhao-li/zotero-AI-Butler/issues)，确认没有类似的建议
+          required: true
+
+  - type: checkboxes
+    id: commitment
+    attributes:
+      label: 🤝 跟进承诺
+      description: 未响应的 Issue 可能会被关闭。
+      options:
+        - label: 我会持续跟进此 Issue，并在作者需要时提供补充信息或配合调试
+          required: true
+
   - type: textarea
     id: problem
     attributes:
-      label: 描述你的建议
-      description: 清楚的描述这个建议可以解决什么问题
+      label: 🎯 问题描述
+      description: 描述遇到的问题或不便之处，这个功能建议是为了解决什么问题？
+      placeholder: 例如：当我需要批量处理大量论文时，无法暂停队列中的任务...
     validations:
       required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 💡 建议的解决方案
+      description: 清晰地描述期望的功能或改进。
+      placeholder: 例如：希望在任务队列中添加"暂停所有"按钮，可以一键暂停队列处理...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 🔄 备选方案
+      description: 是否考虑过其他解决方案或替代方法？
+      placeholder: 例如：目前我通过手动取消每个任务来实现，但效率很低...
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 📝 其他信息
+      description: 还有其他相关的背景信息、截图或参考资料吗？
+      placeholder: 可以附上截图、其他软件的类似功能示例等...

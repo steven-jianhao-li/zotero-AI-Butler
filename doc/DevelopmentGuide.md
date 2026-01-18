@@ -112,24 +112,124 @@ TA 是您7x24小时待命、不知疲倦且绝对忠诚的私人管家。
 - `ProviderRegistry`：集中管理注册的 Provider，通过 id 查找；新增 Provider 不需修改已有文件。
 - Provider 能力标记：在类上定义 `capabilities`，例如 `supportsStreaming`、`supportsPdfBase64`，测试与界面可据此自适应。
 
-### 新增 Provider 步骤
+### 新增 Provider 完整检查清单
+
+> ⚠️ **重要**: 新增 Provider 需要修改多个文件，遗漏任何一项都可能导致功能异常。请严格按照以下清单逐项完成。
+
+#### 1. 创建 Provider 类文件
 
 ```powershell
+# 可使用脚本生成模板（如有）
 node scripts/create-provider.mjs myNewProvider
 ```
 
-脚本自动：
+或手动创建 `src/modules/llmproviders/MyNewProvider.ts`，实现 `ILlmProvider` 接口：
 
-1. 生成模板文件（含接口占位实现与注册样例）。
-2. 在 `test/` 添加对应测试骨架。
-3. 将密钥与端点占位写入 `.env`（如 `MYNEWPROVIDER_API_KEY=`）。
+- [ ] 实现 `generateSummary(content, isBase64, prompt, options, onProgress)`
+- [ ] 实现 `chat(pdfContent, isBase64, conversation, options, onProgress)`
+- [ ] 实现 `testConnection(options)`
+- [ ] 实现 `generateMultiFileSummary(pdfFiles, prompt, options, onProgress)`（如支持多文件）
+- [ ] 在文件末尾添加自注册代码：`ProviderRegistry.register(new MyNewProvider())`
 
-然后你需要：
+#### 2. 导出 Provider
 
-- 实现核心方法：`generateSummary(options)`、`chat(messages, options)`、`testConnection()`。
-- 根据是否支持多模态，决定是否实现 Base64 PDF 注入逻辑。
-- 针对流式：使用 `ReadableStream`/事件分块解析 SSE 或 Websocket（根据服务端协议）。
-- 错误处理：统一抛出带 `code`/`message` 的 Error，门面会捕获并调用 `notifyError`。
+**文件**: `src/modules/llmproviders/index.ts`
+
+```typescript
+export { default as MyNewProvider } from "./MyNewProvider";
+```
+
+#### 3. 配置 API Key 管理
+
+**文件**: `src/modules/apiKeyManager.ts`
+
+- [ ] 在 `ProviderId` 类型中添加新 ID
+- [ ] 在 `PROVIDER_KEY_MAPPINGS` 中添加映射：
+
+```typescript
+mynewprovider: {
+  primaryPrefKey: "myNewProviderApiKey",
+  extraKeysPrefKey: "myNewProviderApiKeysFallback",
+},
+```
+
+#### 4. 添加默认偏好设置
+
+**文件**: `addon/prefs.js`
+
+```javascript
+pref("__prefsPrefix__.myNewProviderApiUrl", "https://api.example.com");
+pref("__prefsPrefix__.myNewProviderApiKey", "");
+pref("__prefsPrefix__.myNewProviderModel", "default-model");
+```
+
+#### 5. 添加类型定义
+
+**文件**: `typings/prefs.d.ts`
+
+```typescript
+"myNewProviderApiUrl": string;
+"myNewProviderApiKey": string;
+"myNewProviderModel": string;
+```
+
+#### 6. 更新 LLM 客户端映射
+
+**文件**: `src/modules/llmClient.ts`
+
+- [ ] 在 `buildOptions` 方法中添加 `else if (id === "mynewprovider")` 分支
+- [ ] 在 `mapToKeyManagerId` 方法中添加映射：`if (id === "mynewprovider") return "mynewprovider";`
+
+#### 7. 添加 UI 设置界面 ⚠️ 容易遗漏
+
+**文件**: `src/modules/views/settings/ApiSettingsPage.ts`
+
+需要修改 **5 个位置**：
+
+1. **Provider 下拉选项** (约 line 76-88)
+
+   ```typescript
+   { value: "mynewprovider", label: "My New Provider" },
+   ```
+
+2. **添加设置区域 Section** (约 line 400-480)
+   - 创建 `sectionMyNewProvider` 元素
+   - 添加 API URL、API Key、Model 输入框
+   - 添加到 `form.appendChild(sectionMyNewProvider)`
+
+3. **`renderProviderSections` 函数** (约 line 490-520)
+
+   ```typescript
+   const isMyNewProvider = prov === "mynewprovider";
+   (sectionMyNewProvider as HTMLElement).style.display = isMyNewProvider
+     ? "block"
+     : "none";
+   ```
+
+4. **`saveSettings` 方法中的 DOM 元素获取** (约 line 1750-1820)
+
+   ```typescript
+   const mnpUrlEl = this.container.querySelector(
+     "#setting-myNewProviderApiUrl",
+   ) as HTMLInputElement;
+   const mnpKeyEl = this.container.querySelector(
+     "#setting-myNewProviderApiKey",
+   ) as HTMLInputElement;
+   const mnpModelEl = this.container.querySelector(
+     "#setting-myNewProviderModel",
+   ) as HTMLInputElement;
+   ```
+
+5. **`saveSettings` 方法中的 values 对象、验证和保存**
+   - [ ] 在 `values` 对象中添加属性
+   - [ ] 添加 `else if (provider === "mynewprovider")` 验证分支
+   - [ ] 添加 `setPref` 保存调用
+
+#### 8. 更新文档
+
+- [ ] `README.md` - 支持平台表格
+- [ ] `doc/DevelopmentGuide.md` - 环境变量示例
+- [ ] `docs/api-configuration.md` - 配置指南
 
 ### 选项传递约定 (LLMOptions)
 

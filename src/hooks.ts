@@ -856,6 +856,12 @@ async function handleGenerateSummary() {
       true,
     ) as string;
     providerName = "OpenRouter";
+  } else if (pLower === "volcanoark") {
+    selectedApiKey = Zotero.Prefs.get(
+      `${config.prefsPrefix}.volcanoArkApiKey`,
+      true,
+    ) as string;
+    providerName = "火山方舟";
   } else {
     selectedApiKey = Zotero.Prefs.get(
       `${config.prefsPrefix}.openaiApiKey`,

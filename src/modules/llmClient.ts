@@ -104,7 +104,7 @@ export class LLMClient {
     } else if (id === "volcanoark") {
       common.apiUrl = (
         (getPref("volcanoArkApiUrl" as any) as string) ||
-        "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+        "https://ark.cn-beijing.volces.com/api/v3/responses"
       ).trim();
       common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
       common.model = (

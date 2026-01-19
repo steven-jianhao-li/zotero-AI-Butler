@@ -324,6 +324,27 @@ PDF_MODE=base64
 - 临时禁用流式：设置 `STREAM=false`。
 - 快速验证 token 限制：将 `MAX_TOKENS` 调低，比如 256，观察截断行为。
 
+## 🎨 UI 显示配置常量
+
+以下常量位于 `src/modules/ItemPaneSection.ts`，可根据需要调整：
+
+| 常量名                              | 默认值 | 说明                                                         |
+| ----------------------------------- | ------ | ------------------------------------------------------------ |
+| `INLINE_FORMULA_TO_BLOCK_THRESHOLD` | 2000   | 内联公式渲染后 HTML 字符数阈值，超过则转换为可滚动的块级公式 |
+
+**调整方法**：
+
+```typescript
+// src/modules/ItemPaneSection.ts 文件头部
+const INLINE_FORMULA_TO_BLOCK_THRESHOLD = 2000; // 调整此值
+```
+
+**工作原理**：
+
+- 当 KaTeX 渲染内联公式后，检查生成的 HTML 字符串长度
+- 如果超过阈值，自动将其包装为 `katex-scroll-container` 块级容器
+- 块级容器带有横向滚动条，避免撑宽侧边栏
+
 ## 📝 提示词模板扩展
 
 新增模板步骤：

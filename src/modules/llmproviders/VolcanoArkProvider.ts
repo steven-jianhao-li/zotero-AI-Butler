@@ -1,50 +1,15 @@
-import { ILlmProvider } from "./ILlmProvider";
+import { ILlmProvider, PdfFileInfo } from "./ILlmProvider";
 import { ConversationMessage, LLMOptions, ProgressCb } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
 
 /**
- * 火山方舟 (Volcano Ark Engine) Provider
- *
- * 使用火山方舟大模型服务平台的 Chat Completions 接口
- * API 文档: https://www.volcengine.com/docs/82379/1399009
- *
- * 特点:
- * - 使用完整的 API URL，不会自动追加路径
- * - Base64 PDF 格式: data:application/pdf;base64,{base64_data}
- * - 支持豆包大模型 (doubao-seed) 系列
- *
- * 默认 URL: https://ark.cn-beijing.volces.com/api/v3/chat/completions
+ * 火山引擎 Ark Provider
+ * 使用 Response API 接口
+ * 文档: https://www.volcengine.com/docs/82379/1902647
  */
 export class VolcanoArkProvider implements ILlmProvider {
   readonly id = "volcanoark";
-
-  private ensureUrlAndKey(options: LLMOptions) {
-    const apiUrl = (
-      options.apiUrl ||
-      "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
-    ).trim();
-    const apiKey = (options.apiKey || "").trim();
-    if (!apiUrl) throw new Error("API URL 未配置");
-    if (!apiKey) throw new Error("API Key 未配置");
-    return { apiUrl, apiKey };
-  }
-
-  private buildHeaders(apiKey: string) {
-    return {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    } as Record<string, string>;
-  }
-
-  private buildGenParams(options: LLMOptions) {
-    const params: any = {};
-    if (options.temperature !== undefined)
-      params.temperature = options.temperature;
-    if (options.topP !== undefined) params.top_p = options.topP;
-    if (options.maxTokens !== undefined) params.max_tokens = options.maxTokens;
-    return params;
-  }
 
   async generateSummary(
     content: string,
@@ -53,259 +18,84 @@ export class VolcanoArkProvider implements ILlmProvider {
     options: LLMOptions,
     onProgress?: ProgressCb,
   ): Promise<string> {
-    const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
-    const model = (options.model || "doubao-seed-1-8-251228").trim();
-    const streamEnabled = options.stream ?? true;
+    const baseUrl = (
+      options.apiUrl || "https://ark.cn-beijing.volces.com/api/v3/responses"
+    ).replace(/\/$/, "");
+    const apiKey = (options.apiKey || "").trim();
+    const model = (options.model || "doubao-seed-1-6-251015").trim();
+    const temperature = options.temperature ?? 0.7;
+    const maxTokens = options.maxTokens ?? 4096;
 
-    const messages: Array<{
-      role: "system" | "user" | "assistant";
-      content: any;
-    }> = [];
-    messages.push({ role: "system", content: SYSTEM_ROLE_PROMPT });
+    if (!baseUrl) throw new Error("火山引擎 API URL 未配置");
+    if (!apiKey) throw new Error("火山引擎 API Key 未配置");
 
+    // 如果 baseUrl 已经以 /responses 结尾，直接使用；否则追加
+    const endpoint = baseUrl.endsWith("/responses")
+      ? baseUrl
+      : `${baseUrl}/responses`;
+
+    let payload: any;
     if (isBase64) {
-      // 火山方舟多模态格式: data:{mime_type};base64,{base64_data}
-      messages.push({
-        role: "user",
-        content: [
-          { type: "text", text: prompt || "请分析这个文档。" },
+      // PDF Base64 模式 - 使用 input_file
+      payload = {
+        model,
+        stream: true,
+        temperature,
+        max_output_tokens: maxTokens,
+        input: [
           {
-            type: "image_url",
-            image_url: { url: `data:application/pdf;base64,${content}` },
+            role: "system",
+            content: SYSTEM_ROLE_PROMPT,
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_file",
+                file_data: `data:application/pdf;base64,${content}`,
+                filename: "document.pdf",
+              },
+              {
+                type: "input_text",
+                text: prompt || "",
+              },
+            ],
           },
         ],
-      });
+      };
     } else {
-      const userText = buildUserMessage(prompt || "", content);
-      messages.push({ role: "user", content: userText });
-    }
-
-    const basePayload: any = {
-      model,
-      messages,
-      ...this.buildGenParams(options),
-    };
-
-    if (streamEnabled && onProgress) {
-      const payload = { ...basePayload, stream: true };
-      const chunks: string[] = [];
-      let delivered = 0;
-      let processedLength = 0;
-      let partialLine = "";
-      let gotAnyDelta = false;
-      let abortError: Error | null = null;
-
-      try {
-        await Zotero.HTTP.request("POST", apiUrl, {
-          headers: this.buildHeaders(apiKey),
-          body: JSON.stringify(payload),
-          responseType: "text",
-          timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-          requestObserver: (xmlhttp: XMLHttpRequest) => {
-            xmlhttp.onprogress = (e: any) => {
-              const status = e.target.status;
-              if (status >= 400) {
-                try {
-                  const errorResponse = e.target.response;
-                  const parsed = errorResponse
-                    ? JSON.parse(errorResponse)
-                    : null;
-                  const err = parsed?.error || parsed || {};
-                  const code = err?.code || `HTTP ${status}`;
-                  const msg = err?.message || "请求失败";
-                  abortError = new Error(`${code}: ${msg}`);
-                  xmlhttp.abort();
-                } catch {
-                  abortError = new Error(`HTTP ${status}: 请求失败`);
-                  xmlhttp.abort();
-                }
-                return;
-              }
-
-              try {
-                const resp: string = e.target.response || "";
-                if (resp.length > processedLength) {
-                  const slice = partialLine + resp.slice(processedLength);
-                  processedLength = resp.length;
-                  const parts = slice.split(/\r?\n/);
-                  partialLine =
-                    parts[parts.length - 1].indexOf("data:") === 0 &&
-                    slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                      ? ""
-                      : parts.pop() || "";
-
-                  for (const raw of parts) {
-                    if (raw.indexOf("data:") !== 0) continue;
-                    const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                    if (!jsonStr || jsonStr === "[DONE]") continue;
-                    try {
-                      const evt = JSON.parse(jsonStr);
-                      const delta = evt?.choices?.[0]?.delta?.content;
-                      if (typeof delta === "string" && delta.length > 0) {
-                        gotAnyDelta = true;
-                        chunks.push(delta.replace(/\n+/g, "\n"));
-                        const current = chunks.join("");
-                        if (onProgress && current.length > delivered) {
-                          const newChunk = current.slice(delivered);
-                          delivered = current.length;
-                          Promise.resolve(onProgress(newChunk)).catch((err) =>
-                            ztoolkit.log(
-                              "[AI-Butler] onProgress error (VolcanoArk SSE):",
-                              err,
-                            ),
-                          );
-                        }
-                      }
-                    } catch {
-                      /* ignore */
-                    }
-                  }
-                }
-              } catch (err) {
-                ztoolkit.log("[AI-Butler] VolcanoArk SSE parse error:", err);
-              }
-            };
-            xmlhttp.onerror = () => {
-              if (!abortError)
-                abortError = new Error("NetworkError: XHR onerror");
-            };
-            xmlhttp.ontimeout = () => {
-              if (!abortError)
-                abortError = new Error(
-                  `Timeout: 请求超过 ${options.requestTimeoutMs ?? getRequestTimeoutMs()} ms`,
-                );
-            };
+      // 纯文本模式
+      const userContent = buildUserMessage(prompt || "", content);
+      payload = {
+        model,
+        stream: true,
+        temperature,
+        max_output_tokens: maxTokens,
+        input: [
+          {
+            role: "system",
+            content: SYSTEM_ROLE_PROMPT,
           },
-        });
-      } catch (error: any) {
-        if (abortError) {
-          if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-          throw abortError;
-        }
-        let errorMessage = error?.message || "火山方舟请求失败";
-        try {
-          const responseText =
-            error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-          if (responseText) {
-            const parsed =
-              typeof responseText === "string"
-                ? JSON.parse(responseText)
-                : responseText;
-            const err = parsed?.error || parsed;
-            const code = err?.code || "Error";
-            const msg = err?.message || error?.message || String(error);
-            errorMessage = `${code}: ${msg}`;
-          }
-        } catch {
-          /* ignore */
-        }
-        if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-        throw new Error(errorMessage);
-      }
-
-      return chunks.join("");
+          {
+            role: "user",
+            content: userContent,
+          },
+        ],
+      };
     }
-
-    // 非流式
-    try {
-      const res = await Zotero.HTTP.request("POST", apiUrl, {
-        headers: this.buildHeaders(apiKey),
-        body: JSON.stringify(basePayload),
-        responseType: "json",
-        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-      });
-      const data = res.response || res;
-      const text = data?.choices?.[0]?.message?.content || "";
-      const result = typeof text === "string" ? text : JSON.stringify(text);
-      if (onProgress && result) await onProgress(result);
-      return result;
-    } catch (e: any) {
-      let errorMessage = e?.message || "火山方舟请求失败";
-      try {
-        const responseText = e?.xmlhttp?.response || e?.xmlhttp?.responseText;
-        if (responseText) {
-          const parsed =
-            typeof responseText === "string"
-              ? JSON.parse(responseText)
-              : responseText;
-          const err = parsed?.error || parsed;
-          const code = err?.code || "Error";
-          const msg = err?.message || e?.message || String(e);
-          errorMessage = `${code}: ${msg}`;
-        }
-      } catch {
-        /* ignore */
-      }
-      throw new Error(errorMessage);
-    }
-  }
-
-  async chat(
-    pdfContent: string,
-    isBase64: boolean,
-    conversation: ConversationMessage[],
-    options: LLMOptions,
-    onProgress?: ProgressCb,
-  ): Promise<string> {
-    const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
-    const model = (options.model || "doubao-seed-1-8-251228").trim();
-
-    const messages: Array<{
-      role: "system" | "user" | "assistant";
-      content: any;
-    }> = [{ role: "system", content: SYSTEM_ROLE_PROMPT }];
-
-    if (conversation && conversation.length > 0) {
-      for (const msg of conversation) {
-        let role: "system" | "user" | "assistant" = msg.role as any;
-        if (role !== "system" && role !== "user" && role !== "assistant") {
-          role = "user";
-        }
-        const isFirstUserMessage = role === "user" && msg === conversation[0];
-        if (isFirstUserMessage) {
-          if (isBase64) {
-            // Base64 模式：使用多模态格式
-            messages.push({
-              role: "user",
-              content: [
-                { type: "text", text: msg.content },
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: `data:application/pdf;base64,${pdfContent}`,
-                  },
-                },
-              ],
-            });
-          } else {
-            messages.push({
-              role: "user",
-              content: buildUserMessage(msg.content, pdfContent),
-            });
-          }
-        } else {
-          messages.push({ role, content: msg.content });
-        }
-      }
-    }
-
-    const payload = {
-      model,
-      messages,
-      stream: true,
-      ...this.buildGenParams(options),
-    } as any;
 
     const chunks: string[] = [];
     let delivered = 0;
     let processedLength = 0;
     let partialLine = "";
     let gotAnyDelta = false;
-    let abortError: Error | null = null;
 
     try {
-      await Zotero.HTTP.request("POST", apiUrl, {
-        headers: this.buildHeaders(apiKey),
+      await Zotero.HTTP.request("POST", endpoint, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -319,13 +109,13 @@ export class VolcanoArkProvider implements ILlmProvider {
                 const err = parsed?.error || parsed || {};
                 const code = err?.code || `HTTP ${status}`;
                 const msg = err?.message || "请求失败";
-                abortError = new Error(`${code}: ${msg}`);
+                const errorMessage = `${code}: ${msg}`;
                 xmlhttp.abort();
+                throw new Error(errorMessage);
               } catch {
-                abortError = new Error(`HTTP ${status}: 请求失败`);
                 xmlhttp.abort();
+                throw new Error(`HTTP ${status}: 请求失败`);
               }
-              return;
             }
 
             try {
@@ -345,21 +135,21 @@ export class VolcanoArkProvider implements ILlmProvider {
                   const jsonStr = raw.replace(/^data:\s*/, "").trim();
                   if (!jsonStr || jsonStr === "[DONE]") continue;
                   try {
-                    const evt = JSON.parse(jsonStr);
-                    const delta = evt?.choices?.[0]?.delta?.content;
-                    if (typeof delta === "string" && delta.length > 0) {
+                    const json = JSON.parse(jsonStr);
+                    const text = this.extractVolcanoText(json);
+                    if (text) {
                       gotAnyDelta = true;
-                      chunks.push(delta.replace(/\n+/g, "\n"));
+                      chunks.push(text.replace(/\n+/g, "\n"));
                       const current = chunks.join("");
                       if (onProgress && current.length > delivered) {
                         const newChunk = current.slice(delivered);
                         delivered = current.length;
-                        Promise.resolve(onProgress(newChunk)).catch((err) =>
+                        Promise.resolve(onProgress(newChunk)).catch((err) => {
                           ztoolkit.log(
-                            "[AI-Butler] onProgress error (VolcanoArk chat SSE):",
+                            "[AI-Butler] onProgress callback error:",
                             err,
-                          ),
-                        );
+                          );
+                        });
                       }
                     }
                   } catch {
@@ -368,27 +158,13 @@ export class VolcanoArkProvider implements ILlmProvider {
                 }
               }
             } catch (err) {
-              ztoolkit.log("[AI-Butler] VolcanoArk chat SSE parse error:", err);
+              ztoolkit.log("[AI-Butler] VolcanoArk stream parse error:", err);
             }
-          };
-          xmlhttp.onerror = () => {
-            if (!abortError)
-              abortError = new Error("NetworkError: XHR onerror");
-          };
-          xmlhttp.ontimeout = () => {
-            if (!abortError)
-              abortError = new Error(
-                `Timeout: 请求超过 ${options.requestTimeoutMs ?? getRequestTimeoutMs()} ms`,
-              );
           };
         },
       });
     } catch (error: any) {
-      if (abortError) {
-        if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-        throw abortError;
-      }
-      let errorMessage = error?.message || "火山方舟请求失败";
+      let errorMessage = error?.message || "火山引擎请求失败";
       try {
         const responseText =
           error?.xmlhttp?.response || error?.xmlhttp?.responseText;
@@ -409,194 +185,103 @@ export class VolcanoArkProvider implements ILlmProvider {
       throw new Error(errorMessage);
     }
 
-    return chunks.join("");
+    const streamed = chunks.join("");
+    if (gotAnyDelta && streamed) return streamed;
+    return "";
   }
 
-  async testConnection(options: LLMOptions): Promise<string> {
-    const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
-    const model = (options.model || "doubao-seed-1-8-251228").trim();
-
-    const payload = {
-      model,
-      stream: false,
-      messages: [
-        { role: "system", content: SYSTEM_ROLE_PROMPT },
-        {
-          role: "user",
-          content: "Hello! Please respond with 'OK' to confirm connection.",
-        },
-      ],
-      ...this.buildGenParams(options),
-    } as any;
-    const payloadStr = JSON.stringify(payload, null, 2);
-
-    let response: any;
-    const responseHeaders: Record<string, string> = {};
-    try {
-      response = await Zotero.HTTP.request("POST", apiUrl, {
-        headers: this.buildHeaders(apiKey),
-        body: JSON.stringify(payload),
-        responseType: "text",
-        timeout: options.requestTimeoutMs ?? 30000,
-      });
-      try {
-        const headerStr = response.getAllResponseHeaders?.() || "";
-        headerStr.split(/\r?\n/).forEach((line: string) => {
-          const idx = line.indexOf(":");
-          if (idx > 0) {
-            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line
-              .slice(idx + 1)
-              .trim();
-          }
-        });
-      } catch {
-        /* ignore */
-      }
-    } catch (error: any) {
-      try {
-        const headerStr = error?.xmlhttp?.getAllResponseHeaders?.() || "";
-        headerStr.split(/\r?\n/).forEach((line: string) => {
-          const idx = line.indexOf(":");
-          if (idx > 0) {
-            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line
-              .slice(idx + 1)
-              .trim();
-          }
-        });
-      } catch {
-        /* ignore */
-      }
-      const status = error?.xmlhttp?.status;
-      const responseBody =
-        error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
-      let errorMessage = error?.message || "火山方舟请求失败";
-      let errorName = "NetworkError";
-      try {
-        if (responseBody) {
-          const parsed =
-            typeof responseBody === "string"
-              ? JSON.parse(responseBody)
-              : responseBody;
-          const err = parsed?.error || parsed;
-          errorName = err?.code || err?.type || "APIError";
-          errorMessage = err?.message || errorMessage;
-        }
-      } catch {
-        /* ignore */
-      }
-
-      const { APITestError } = await import("./types");
-      throw new APITestError(errorMessage, {
-        errorName,
-        errorMessage,
-        statusCode: status,
-        requestUrl: apiUrl,
-        requestBody: payloadStr,
-        responseHeaders,
-        responseBody:
-          typeof responseBody === "string"
-            ? responseBody
-            : JSON.stringify(responseBody),
-      });
-    }
-
-    const status = response.status;
-    const rawResponse = response.response || "";
-
-    if (status === 200) {
-      const json =
-        typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
-      const content = json?.choices?.[0]?.message?.content || "";
-      return `✅ 连接成功!\n模型: ${model}\n响应: ${content}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
-    }
-
-    const { APITestError } = await import("./types");
-    throw new APITestError(`HTTP ${status}`, {
-      errorName: `HTTP_${status}`,
-      errorMessage: `HTTP ${status}: ${response.statusText || "请求失败"}`,
-      statusCode: status,
-      requestUrl: apiUrl,
-      requestBody: payloadStr,
-      responseHeaders,
-      responseBody: rawResponse,
-    });
-  }
-
-  /**
-   * 多文件摘要生成
-   * 使用火山方舟 Chat Completions 格式发送多个 PDF 文件
-   */
-  async generateMultiFileSummary(
-    pdfFiles: Array<{
-      filePath: string;
-      displayName: string;
-      base64Content?: string;
-    }>,
-    prompt: string,
+  async chat(
+    pdfContent: string,
+    isBase64: boolean,
+    conversation: ConversationMessage[],
     options: LLMOptions,
     onProgress?: ProgressCb,
   ): Promise<string> {
-    const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
-    const model = (options.model || "doubao-seed-1-8-251228").trim();
+    const baseUrl = (
+      options.apiUrl || "https://ark.cn-beijing.volces.com/api/v3/responses"
+    ).replace(/\/$/, "");
+    const apiKey = (options.apiKey || "").trim();
+    const model = (options.model || "doubao-seed-1-6-251015").trim();
+    const temperature = options.temperature ?? 0.7;
 
-    if (pdfFiles.length === 0) throw new Error("没有要处理的 PDF 文件");
+    if (!baseUrl) throw new Error("火山引擎 API URL 未配置");
+    if (!apiKey) throw new Error("火山引擎 API Key 未配置");
 
-    // 构建 image_url 部分（使用 PDF data URI）
-    const fileParts: any[] = [];
-    for (let i = 0; i < pdfFiles.length; i++) {
-      const pdfFile = pdfFiles[i];
-      if (pdfFile.base64Content && pdfFile.base64Content.length > 0) {
-        fileParts.push({
-          type: "image_url",
-          image_url: {
-            url: `data:application/pdf;base64,${pdfFile.base64Content}`,
-          },
+    // 如果 baseUrl 已经以 /responses 结尾，直接使用；否则追加
+    const endpoint = baseUrl.endsWith("/responses")
+      ? baseUrl
+      : `${baseUrl}/responses`;
+
+    // 构建消息列表
+    const inputMessages: any[] = [
+      {
+        role: "system",
+        content: SYSTEM_ROLE_PROMPT,
+      },
+    ];
+
+    if (conversation && conversation.length > 0) {
+      const firstUserMsg = conversation[0];
+      if (isBase64) {
+        // 第一条消息包含 PDF
+        inputMessages.push({
+          role: "user",
+          content: [
+            {
+              type: "input_file",
+              file_data: `data:application/pdf;base64,${pdfContent}`,
+              filename: "document.pdf",
+            },
+            {
+              type: "input_text",
+              text: firstUserMsg.content,
+            },
+          ],
         });
-        ztoolkit.log(
-          `[AI-Butler] 添加 PDF 附件 (${i + 1}/${pdfFiles.length}): ${pdfFile.displayName}, base64 长度: ${pdfFile.base64Content.length}`,
-        );
       } else {
-        ztoolkit.log(
-          `[AI-Butler] PDF 文件 ${pdfFile.displayName} 无 base64 内容，跳过`,
-        );
+        inputMessages.push({
+          role: "user",
+          content: buildUserMessage(firstUserMsg.content, pdfContent || ""),
+        });
+      }
+
+      // 添加后续对话
+      if (conversation.length > 1) {
+        inputMessages.push({
+          role: "assistant",
+          content: conversation[1].content,
+        });
+      }
+
+      for (let i = 2; i < conversation.length; i++) {
+        const msg = conversation[i];
+        inputMessages.push({
+          role: msg.role === "user" ? "user" : "assistant",
+          content: msg.content,
+        });
       }
     }
 
-    if (fileParts.length === 0) {
-      throw new Error("没有成功处理任何 PDF 文件");
-    }
-
-    ztoolkit.log(
-      `[AI-Butler] 准备发送 ${fileParts.length} 个 PDF 附件到火山方舟接口`,
-    );
-
-    const messages: Array<{
-      role: "system" | "user" | "assistant";
-      content: any;
-    }> = [];
-    messages.push({ role: "system", content: SYSTEM_ROLE_PROMPT });
-    messages.push({
-      role: "user",
-      content: [{ type: "text", text: prompt }, ...fileParts],
-    });
-
     const payload = {
       model,
-      messages,
       stream: true,
-      ...this.buildGenParams(options),
-    } as any;
+      temperature,
+      input: inputMessages,
+    };
 
     const chunks: string[] = [];
     let delivered = 0;
     let processedLength = 0;
     let partialLine = "";
-    let gotAnyDelta = false;
     let abortError: Error | null = null;
+    let gotAnyDelta = false;
 
     try {
-      await Zotero.HTTP.request("POST", apiUrl, {
-        headers: this.buildHeaders(apiKey),
+      await Zotero.HTTP.request("POST", endpoint, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -610,10 +295,22 @@ export class VolcanoArkProvider implements ILlmProvider {
                 const err = parsed?.error || parsed || {};
                 const code = err?.code || `HTTP ${status}`;
                 const msg = err?.message || "请求失败";
-                abortError = new Error(`${code}: ${msg}`);
+                const errorMessage = `${code}: ${msg}`;
+                abortError = new Error(errorMessage);
+                ztoolkit.log("[AI-Butler] VolcanoArk HTTP error:", {
+                  status,
+                  code,
+                  msg,
+                  response: errorResponse,
+                });
                 xmlhttp.abort();
-              } catch {
-                abortError = new Error(`HTTP ${status}: 请求失败`);
+              } catch (parseErr) {
+                const errorMessage = `HTTP ${status}: 请求失败`;
+                abortError = new Error(errorMessage);
+                ztoolkit.log("[AI-Butler] VolcanoArk HTTP error:", {
+                  status,
+                  parseErr,
+                });
                 xmlhttp.abort();
               }
               return;
@@ -635,22 +332,20 @@ export class VolcanoArkProvider implements ILlmProvider {
                   if (raw.indexOf("data:") !== 0) continue;
                   const jsonStr = raw.replace(/^data:\s*/, "").trim();
                   if (!jsonStr || jsonStr === "[DONE]") continue;
+
                   try {
-                    const evt = JSON.parse(jsonStr);
-                    const delta = evt?.choices?.[0]?.delta?.content;
-                    if (typeof delta === "string" && delta.length > 0) {
+                    const json = JSON.parse(jsonStr);
+                    const text = this.extractVolcanoText(json);
+                    if (text) {
                       gotAnyDelta = true;
-                      chunks.push(delta.replace(/\n+/g, "\n"));
+                      chunks.push(text.replace(/\n+/g, "\n"));
                       const current = chunks.join("");
                       if (onProgress && current.length > delivered) {
                         const newChunk = current.slice(delivered);
                         delivered = current.length;
-                        Promise.resolve(onProgress(newChunk)).catch((err) =>
-                          ztoolkit.log(
-                            "[AI-Butler] onProgress error (VolcanoArk multi-PDF):",
-                            err,
-                          ),
-                        );
+                        Promise.resolve(onProgress(newChunk)).catch((err) => {
+                          ztoolkit.log("[AI-Butler] onProgress error:", err);
+                        });
                       }
                     }
                   } catch {
@@ -659,10 +354,7 @@ export class VolcanoArkProvider implements ILlmProvider {
                 }
               }
             } catch (err) {
-              ztoolkit.log(
-                "[AI-Butler] VolcanoArk multi-PDF SSE parse error:",
-                err,
-              );
+              ztoolkit.log("[AI-Butler] VolcanoArk stream parse error:", err);
             }
           };
           xmlhttp.onerror = () => {
@@ -679,10 +371,447 @@ export class VolcanoArkProvider implements ILlmProvider {
       });
     } catch (error: any) {
       if (abortError) {
-        if (gotAnyDelta && chunks.length > 0) return chunks.join("");
+        if (gotAnyDelta && chunks.length > 0) {
+          return chunks.join("");
+        }
         throw abortError;
       }
-      let errorMessage = error?.message || "火山方舟多文件请求失败";
+      let errorMessage = error?.message || "火山引擎请求失败";
+      try {
+        const responseText =
+          error?.xmlhttp?.response || error?.xmlhttp?.responseText;
+        if (responseText) {
+          const parsed =
+            typeof responseText === "string"
+              ? JSON.parse(responseText)
+              : responseText;
+          const err = parsed?.error || parsed;
+          const code = err?.code || "Error";
+          const msg = err?.message || error?.message || String(error);
+          errorMessage = `${code}: ${msg}`;
+        }
+      } catch {
+        /* ignore */
+      }
+      ztoolkit.log("[AI-Butler] VolcanoArk request error:", {
+        status: error?.xmlhttp?.status,
+        statusText: error?.xmlhttp?.statusText,
+        message: errorMessage,
+      });
+      if (gotAnyDelta && chunks.length > 0) return chunks.join("");
+      throw new Error(errorMessage);
+    }
+
+    return chunks.join("");
+  }
+
+  async testConnection(options: LLMOptions): Promise<string> {
+    const baseUrl = (
+      options.apiUrl || "https://ark.cn-beijing.volces.com/api/v3/responses"
+    ).replace(/\/$/, "");
+    const apiKey = (options.apiKey || "").trim();
+    const model = (options.model || "doubao-seed-1-6-251015").trim();
+    if (!baseUrl) throw new Error("火山引擎 API URL 未配置");
+    if (!apiKey) throw new Error("火山引擎 API Key 未配置");
+
+    // 如果 baseUrl 已经以 /responses 结尾，直接使用；否则追加
+    const url = baseUrl.endsWith("/responses")
+      ? baseUrl
+      : `${baseUrl}/responses`;
+    const payload = {
+      model,
+      input: [
+        {
+          role: "user",
+          content: "Hello! Please respond with 'OK' to confirm connection.",
+        },
+      ],
+      max_output_tokens: 16,
+      temperature: 0.1,
+    };
+    const payloadStr = JSON.stringify(payload, null, 2);
+
+    let response: any;
+    const responseHeaders: Record<string, string> = {};
+    try {
+      response = await Zotero.HTTP.request("POST", url, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+        responseType: "text",
+        timeout: 30000,
+      });
+      // 提取响应首部
+      try {
+        const headerStr = response.getAllResponseHeaders?.() || "";
+        headerStr.split(/\r?\n/).forEach((line: string) => {
+          const idx = line.indexOf(":");
+          if (idx > 0) {
+            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line
+              .slice(idx + 1)
+              .trim();
+          }
+        });
+      } catch {
+        /* ignore */
+      }
+    } catch (error: any) {
+      // 提取响应首部
+      try {
+        const headerStr = error?.xmlhttp?.getAllResponseHeaders?.() || "";
+        headerStr.split(/\r?\n/).forEach((line: string) => {
+          const idx = line.indexOf(":");
+          if (idx > 0) {
+            responseHeaders[line.slice(0, idx).trim().toLowerCase()] = line
+              .slice(idx + 1)
+              .trim();
+          }
+        });
+      } catch {
+        /* ignore */
+      }
+      const status = error?.xmlhttp?.status;
+      const responseBody =
+        error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
+      let errorMessage = error?.message || "火山引擎请求失败";
+      let errorName = "NetworkError";
+      try {
+        if (responseBody) {
+          const parsed =
+            typeof responseBody === "string"
+              ? JSON.parse(responseBody)
+              : responseBody;
+          const err = parsed?.error || parsed;
+          errorName = err?.code || err?.status || "APIError";
+          errorMessage = err?.message || errorMessage;
+        }
+      } catch {
+        /* ignore */
+      }
+
+      // 导入并抛出 APITestError
+      const { APITestError } = await import("./types");
+      throw new APITestError(errorMessage, {
+        errorName,
+        errorMessage,
+        statusCode: status,
+        requestUrl: url,
+        requestBody: payloadStr,
+        responseHeaders,
+        responseBody:
+          typeof responseBody === "string"
+            ? responseBody
+            : JSON.stringify(responseBody),
+      });
+    }
+
+    const status = response.status;
+    const rawResponse = response.response || "";
+
+    if (status === 200) {
+      const json =
+        typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
+      // 从 Response API 格式提取文本
+      const text = this.extractVolcanoTextFromFull(json);
+      return `✅ 连接成功!\n模型: ${model}\n响应: ${text}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
+    }
+
+    // 非 200 但未抛出异常的情况
+    const { APITestError } = await import("./types");
+    throw new APITestError(`HTTP ${status}`, {
+      errorName: `HTTP_${status}`,
+      errorMessage: `HTTP ${status}: ${response.statusText || "请求失败"}`,
+      statusCode: status,
+      requestUrl: url,
+      requestBody: payloadStr,
+      responseHeaders,
+      responseBody: rawResponse,
+    });
+  }
+
+  /**
+   * 从火山引擎 Response API 流式响应中提取文本
+   * 流式响应格式: {"type":"response.output_text.delta","delta":"文本内容",...}
+   */
+  private extractVolcanoText(json: any): string {
+    try {
+      // 优先检查 response.output_text.delta 格式（流式响应的主要格式）
+      // 格式: {"type":"response.output_text.delta","delta":"text",...}
+      if (json?.type === "response.output_text.delta" && json?.delta) {
+        return json.delta;
+      }
+
+      // 检查完整响应中的 output 数组格式（非流式或响应完成事件）
+      const output = json?.output;
+      if (Array.isArray(output)) {
+        for (const item of output) {
+          if (item?.type === "message" && item?.content) {
+            const content = item.content;
+            if (Array.isArray(content)) {
+              const texts: string[] = [];
+              for (const c of content) {
+                if (c?.type === "output_text" && c?.text) {
+                  texts.push(c.text);
+                }
+              }
+              if (texts.length > 0) return texts.join("");
+            }
+          }
+        }
+      }
+
+      // 也检查 response 包装的格式（如 response.completed 事件）
+      if (json?.response?.output) {
+        const respOutput = json.response.output;
+        if (Array.isArray(respOutput)) {
+          for (const item of respOutput) {
+            if (item?.type === "message" && item?.content) {
+              const content = item.content;
+              if (Array.isArray(content)) {
+                const texts: string[] = [];
+                for (const c of content) {
+                  if (c?.type === "output_text" && c?.text) {
+                    texts.push(c.text);
+                  }
+                }
+                if (texts.length > 0) return texts.join("");
+              }
+            }
+          }
+        }
+      }
+
+      // 兼容 choices 格式（如果火山引擎也支持 OpenAI 兼容格式）
+      const choices = json?.choices;
+      if (Array.isArray(choices) && choices.length > 0) {
+        const choice = choices[0];
+        if (choice?.delta?.content) {
+          return choice.delta.content;
+        }
+        if (choice?.message?.content) {
+          return choice.message.content;
+        }
+      }
+
+      return "";
+    } catch {
+      return "";
+    }
+  }
+
+  /**
+   * 从火山引擎 Response API 完整响应中提取文本
+   */
+  private extractVolcanoTextFromFull(json: any): string {
+    try {
+      const output = json?.output;
+      if (Array.isArray(output)) {
+        const texts: string[] = [];
+        for (const item of output) {
+          // 优先处理 message 类型
+          if (item?.type === "message" && item?.content) {
+            const content = item.content;
+            if (Array.isArray(content)) {
+              for (const c of content) {
+                if (c?.type === "output_text" && c?.text) {
+                  texts.push(c.text);
+                }
+              }
+            }
+          }
+          // 也处理 reasoning 类型的 summary（用于测试连接等短输出场景）
+          if (item?.type === "reasoning" && item?.summary) {
+            const summary = item.summary;
+            if (Array.isArray(summary)) {
+              for (const s of summary) {
+                if (s?.type === "summary_text" && s?.text) {
+                  texts.push(s.text);
+                }
+              }
+            }
+          }
+        }
+        if (texts.length > 0) return texts.join("");
+      }
+
+      // 兼容 choices 格式
+      const choices = json?.choices;
+      if (Array.isArray(choices) && choices.length > 0) {
+        const choice = choices[0];
+        if (choice?.message?.content) {
+          return choice.message.content;
+        }
+      }
+
+      return "";
+    } catch {
+      return "";
+    }
+  }
+
+  /**
+   * 多文件摘要生成
+   * 使用 input_file 方式发送多个 PDF 文件
+   */
+  async generateMultiFileSummary(
+    pdfFiles: PdfFileInfo[],
+    prompt: string,
+    options: LLMOptions,
+    onProgress?: ProgressCb,
+  ): Promise<string> {
+    const baseUrl = (
+      options.apiUrl || "https://ark.cn-beijing.volces.com/api/v3/responses"
+    ).replace(/\/$/, "");
+    const apiKey = (options.apiKey || "").trim();
+    const model = (options.model || "doubao-seed-1-6-251015").trim();
+    const temperature = options.temperature ?? 0.7;
+    const maxTokens = options.maxTokens ?? 8192;
+
+    if (!baseUrl) throw new Error("火山引擎 API URL 未配置");
+    if (!apiKey) throw new Error("火山引擎 API Key 未配置");
+    if (pdfFiles.length === 0) throw new Error("没有要处理的 PDF 文件");
+
+    // 如果 baseUrl 已经以 /responses 结尾，直接使用；否则追加
+    const endpoint = baseUrl.endsWith("/responses")
+      ? baseUrl
+      : `${baseUrl}/responses`;
+
+    // 构建 input_file 部分
+    const contentParts: any[] = [];
+
+    for (let i = 0; i < pdfFiles.length; i++) {
+      const pdfFile = pdfFiles[i];
+
+      if (pdfFile.base64Content && pdfFile.base64Content.length > 0) {
+        contentParts.push({
+          type: "input_file",
+          file_data: `data:application/pdf;base64,${pdfFile.base64Content}`,
+          filename: pdfFile.displayName || `document_${i + 1}.pdf`,
+        });
+        ztoolkit.log(
+          `[AI-Butler] 添加 PDF 附件 (${i + 1}/${pdfFiles.length}): ${pdfFile.displayName}, base64 长度: ${pdfFile.base64Content.length}`,
+        );
+      } else {
+        ztoolkit.log(
+          `[AI-Butler] PDF 文件 ${pdfFile.displayName} 无 base64 内容，跳过`,
+        );
+      }
+    }
+
+    if (contentParts.length === 0) {
+      throw new Error("没有成功处理任何 PDF 文件");
+    }
+
+    // 添加文本提示
+    contentParts.push({
+      type: "input_text",
+      text: prompt || "",
+    });
+
+    ztoolkit.log(
+      `[AI-Butler] 准备发送 ${contentParts.length - 1} 个 PDF 附件到火山引擎`,
+    );
+
+    const payload = {
+      model,
+      stream: true,
+      temperature,
+      max_output_tokens: maxTokens,
+      input: [
+        {
+          role: "system",
+          content: SYSTEM_ROLE_PROMPT,
+        },
+        {
+          role: "user",
+          content: contentParts,
+        },
+      ],
+    };
+
+    // 发送请求并处理流式响应
+    const chunks: string[] = [];
+    let delivered = 0;
+    let processedLength = 0;
+    let partialLine = "";
+    let gotAnyDelta = false;
+
+    try {
+      await Zotero.HTTP.request("POST", endpoint, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+        responseType: "text",
+        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        requestObserver: (xmlhttp: XMLHttpRequest) => {
+          xmlhttp.onprogress = (e: any) => {
+            const status = e.target.status;
+            if (status >= 400) {
+              try {
+                const errorResponse = e.target.response;
+                const parsed = errorResponse ? JSON.parse(errorResponse) : null;
+                const err = parsed?.error || parsed || {};
+                const code = err?.code || `HTTP ${status}`;
+                const msg = err?.message || "请求失败";
+                xmlhttp.abort();
+                throw new Error(`${code}: ${msg}`);
+              } catch {
+                xmlhttp.abort();
+                throw new Error(`HTTP ${status}: 请求失败`);
+              }
+            }
+
+            try {
+              const resp: string = e.target.response || "";
+              if (resp.length > processedLength) {
+                const slice = partialLine + resp.slice(processedLength);
+                processedLength = resp.length;
+                const parts = slice.split(/\r?\n/);
+                partialLine =
+                  parts[parts.length - 1].indexOf("data:") === 0 &&
+                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
+                    ? ""
+                    : parts.pop() || "";
+
+                for (const raw of parts) {
+                  if (raw.indexOf("data:") !== 0) continue;
+                  const jsonStr = raw.replace(/^data:\s*/, "").trim();
+                  if (!jsonStr || jsonStr === "[DONE]") continue;
+                  try {
+                    const json = JSON.parse(jsonStr);
+                    const text = this.extractVolcanoText(json);
+                    if (text) {
+                      gotAnyDelta = true;
+                      chunks.push(text.replace(/\n+/g, "\n"));
+                      const current = chunks.join("");
+                      if (onProgress && current.length > delivered) {
+                        const newChunk = current.slice(delivered);
+                        delivered = current.length;
+                        Promise.resolve(onProgress(newChunk)).catch((err) => {
+                          ztoolkit.log(
+                            "[AI-Butler] onProgress callback error:",
+                            err,
+                          );
+                        });
+                      }
+                    }
+                  } catch {
+                    /* ignore */
+                  }
+                }
+              }
+            } catch (err) {
+              ztoolkit.log("[AI-Butler] VolcanoArk stream parse error:", err);
+            }
+          };
+        },
+      });
+    } catch (error: any) {
+      let errorMessage = error?.message || "火山引擎请求失败";
       try {
         const responseText =
           error?.xmlhttp?.response || error?.xmlhttp?.responseText;

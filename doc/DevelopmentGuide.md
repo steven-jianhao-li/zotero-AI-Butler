@@ -225,7 +225,28 @@ pref("__prefsPrefix__.myNewProviderModel", "default-model");
    - [ ] 添加 `else if (provider === "mynewprovider")` 验证分支
    - [ ] 添加 `setPref` 保存调用
 
-#### 8. 更新文档
+6. **`resetSettings` 方法中添加默认值重置**
+   - [ ] 添加新 Provider 的 URL、API Key、Model 默认值
+
+#### 8. 更新 API Key 验证逻辑 ⚠️ 容易遗漏
+
+**文件**: `src/hooks.ts`
+
+在 `handleGenerateSummary` 函数中添加新 Provider 的 API Key 检查分支：
+
+```typescript
+} else if (pLower === "mynewprovider") {
+  selectedApiKey = Zotero.Prefs.get(
+    `${config.prefsPrefix}.myNewProviderApiKey`,
+    true,
+  ) as string;
+  providerName = "My New Provider";
+}
+```
+
+> ⚠️ **重要**: 如果遗漏此步骤，用户选择新 Provider 时会显示错误的提示信息（如"请先在设置中配置 OpenAI API Key"）。
+
+#### 9. 更新文档
 
 - [ ] `README.md` - 支持平台表格
 - [ ] `doc/DevelopmentGuide.md` - 环境变量示例
@@ -258,7 +279,7 @@ GEMINI_BASE_URL=https://generativelanguage.googleapis.com
 ANTHROPIC_API_KEY=sk-ant-xxxxx
 ANTHROPIC_BASE_URL=https://api.anthropic.com
 VOLCANOARK_API_KEY=ark-xxxxx
-VOLCANOARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3/chat/completions
+VOLCANOARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3/responses
 TEMPERATURE=0.7
 STREAM=true
 MAX_TOKENS=4096
@@ -302,6 +323,27 @@ PDF_MODE=base64
 - 仅调试某 Provider：直接改 `.env` 的 `ACTIVE_LLM_PROVIDER`。
 - 临时禁用流式：设置 `STREAM=false`。
 - 快速验证 token 限制：将 `MAX_TOKENS` 调低，比如 256，观察截断行为。
+
+## 🎨 UI 显示配置常量
+
+以下常量位于 `src/modules/ItemPaneSection.ts`，可根据需要调整：
+
+| 常量名                              | 默认值 | 说明                                                         |
+| ----------------------------------- | ------ | ------------------------------------------------------------ |
+| `INLINE_FORMULA_TO_BLOCK_THRESHOLD` | 2000   | 内联公式渲染后 HTML 字符数阈值，超过则转换为可滚动的块级公式 |
+
+**调整方法**：
+
+```typescript
+// src/modules/ItemPaneSection.ts 文件头部
+const INLINE_FORMULA_TO_BLOCK_THRESHOLD = 2000; // 调整此值
+```
+
+**工作原理**：
+
+- 当 KaTeX 渲染内联公式后，检查生成的 HTML 字符串长度
+- 如果超过阈值，自动将其包装为 `katex-scroll-container` 块级容器
+- 块级容器带有横向滚动条，避免撑宽侧边栏
 
 ## 📝 提示词模板扩展
 

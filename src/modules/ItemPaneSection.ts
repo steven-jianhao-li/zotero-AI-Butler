@@ -28,6 +28,13 @@ interface ChatState {
 // 递增的对话对 ID 计数器
 let quickChatPairIdCounter = 0;
 
+/**
+ * 内联公式转块级公式的阈值（渲染后HTML字符数）
+ * 当内联公式渲染后的HTML长度超过此阈值时，自动转换为可滚动的块级公式
+ * 调整此值可控制何时触发转换，详见 doc/DevelopmentGuide.md
+ */
+const INLINE_FORMULA_TO_BLOCK_THRESHOLD = 2000;
+
 // 当前聊天状态
 let currentChatState: ChatState = {
   itemId: null,
@@ -1315,6 +1322,16 @@ async function loadNoteContent(
     }
     styleEl.textContent = katexCss + "\n" + adaptedCss;
 
+    /**
+     * 清理 LaTeX 公式中的 HTML 标签
+     * LLM 有时会在公式中输出 <br> 等 HTML 标签，需要在渲染前移除
+     */
+    const cleanLatex = (latex: string): string => {
+      return latex
+        .replace(/<br\s*\/?>/gi, " ") // <br> or <br/> -> 空格
+        .replace(/<[^>]+>/g, ""); // 移除其他 HTML 标签
+    };
+
     // Pre-render LaTeX formulas BEFORE XML validation
     // This prevents LaTeX syntax (like \begin{cases}) from causing XML parsing errors
     const renderLatexFormulas = (content: string): string => {
@@ -1355,7 +1372,7 @@ async function loadNoteContent(
             }
 
             try {
-              const rendered = katex.renderToString(latex, {
+              const rendered = katex.renderToString(cleanLatex(latex), {
                 throwOnError: false,
                 displayMode: true,
                 output: "html",
@@ -1369,13 +1386,17 @@ async function loadNoteContent(
           } else if (isSingleDollar) {
             const latex = trimmed.slice(1, -1);
             try {
-              const rendered = katex.renderToString(latex, {
+              const rendered = katex.renderToString(cleanLatex(latex), {
                 throwOnError: false,
                 displayMode: false, // inline
                 output: "html",
                 trust: true,
                 strict: false,
               });
+              // 检查渲染后HTML长度，超过阈值则转为块级可滚动公式
+              if (rendered.length > INLINE_FORMULA_TO_BLOCK_THRESHOLD) {
+                return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;
+              }
               return `<span class="katex-inline">${rendered}</span>`;
             } catch {
               return `<code>${innerContent}</code>`;
@@ -1392,7 +1413,7 @@ async function loadNoteContent(
         /\$\$([\s\S]*?)\$\$/g,
         (_match: string, formula: string) => {
           try {
-            const rendered = katex.renderToString(formula.trim(), {
+            const rendered = katex.renderToString(cleanLatex(formula.trim()), {
               throwOnError: false,
               displayMode: true,
               output: "html",
@@ -1422,13 +1443,17 @@ async function loadNoteContent(
         inlineRegex,
         (_match: string, formula: string) => {
           try {
-            const rendered = katex.renderToString(formula.trim(), {
+            const rendered = katex.renderToString(cleanLatex(formula.trim()), {
               throwOnError: false,
               displayMode: false,
               output: "html",
               trust: true,
               strict: false,
             });
+            // 检查渲染后HTML长度，超过阈值则转为块级可滚动公式
+            if (rendered.length > INLINE_FORMULA_TO_BLOCK_THRESHOLD) {
+              return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;
+            }
             return `<span class="katex-inline">${rendered}</span>`;
           } catch {
             // Render failed, escape the formula for safe display
@@ -1619,7 +1644,8 @@ async function loadNoteContent(
       noteContent.appendChild(errorContainer);
     } else {
       // LaTeX formulas already rendered before XML validation
-      // Just use the sanitized content directly
+      // Oversized inline formulas are already converted to block format during rendering
+      // (see INLINE_FORMULA_TO_BLOCK_THRESHOLD constant)
       noteContent.innerHTML = sanitizedContent;
     }
   } catch (err: any) {

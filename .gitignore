@@ -17,3 +17,6 @@ logs
 
 # test
 test/00.env-setup.test.ts
+
+# agents
+AGENTS.md

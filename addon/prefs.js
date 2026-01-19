@@ -33,7 +33,7 @@ pref("__prefsPrefix__.openRouterApiKey", "");
 pref("__prefsPrefix__.openRouterModel", "google/gemma-3-27b-it");
 pref(
   "__prefsPrefix__.volcanoArkApiUrl",
-  "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+  "https://ark.cn-beijing.volces.com/api/v3/responses",
 );
 pref("__prefsPrefix__.volcanoArkApiKey", "");
 pref("__prefsPrefix__.volcanoArkModel", "doubao-seed-1-8-251228");

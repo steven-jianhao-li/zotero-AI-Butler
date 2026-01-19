@@ -159,7 +159,7 @@ export class ApiSettingsPage {
           ) as HTMLInputElement;
           if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
             urlInput.value =
-              "https://ark.cn-beijing.volces.com/api/v3/chat/completions";
+              "https://ark.cn-beijing.volces.com/api/v3/responses";
           }
           if (
             modelInput &&
@@ -431,9 +431,9 @@ export class ApiSettingsPage {
           "volcanoArkApiUrl",
           "text",
           getPref("volcanoArkApiUrl") as string,
-          "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+          "https://ark.cn-beijing.volces.com/api/v3/responses",
         ),
-        "【必填】火山方舟 API 完整地址",
+        "【必填】火山方舟 API 完整地址（使用 Responses API）",
       ),
     );
     sectionVolcanoArk.appendChild(
@@ -2421,6 +2421,13 @@ export class ApiSettingsPage {
     );
     setPref("openRouterApiKey", "");
     setPref("openRouterModel", "google/gemma-3-27b-it");
+    // 火山方舟默认
+    setPref(
+      "volcanoArkApiUrl",
+      "https://ark.cn-beijing.volces.com/api/v3/responses",
+    );
+    setPref("volcanoArkApiKey", "");
+    setPref("volcanoArkModel", "doubao-seed-1-8-251228");
     setPref("temperature", "0.7");
     setPref("maxTokens", "8192");
     setPref("topP", "1.0");

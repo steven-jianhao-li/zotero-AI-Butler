@@ -13,7 +13,7 @@ AI 管家目前支持以下 6 种 API 接入方式：
 | **Anthropic Claude** | 原生 Claude API                   | Claude 系列模型                       |
 | **OpenAI 兼容**      | OpenAI 兼容接口(chat/completions) | 第三方服务商（硅基流动、DeepSeek 等） |
 | **OpenRouter**       | 统一 LLM 接口                     | 🌐 聚合数百种模型，一个 API 通用      |
-| **火山方舟**         | 火山引擎 Chat Completions         | 🆕 豆包大模型，每日200万tokens免费    |
+| **火山方舟**         | 火山引擎 Responses API            | 🆕 豆包大模型，每日200万tokens免费    |
 
 ---
 
@@ -196,7 +196,7 @@ OpenRouter 提供统一的 LLM API 接口，聚合了数百种 AI 模型，让�
 
 ### 官方文档
 
-- **API 文档**：[火山方舟 API Reference](https://www.volcengine.com/docs/82379/1399009)
+- **API 文档**：[火山方舟 Responses API](https://www.volcengine.com/docs/82379/1902647)
 - **模型列表**：[豆包大模型](https://www.volcengine.com/docs/82379/1330310)
 - **控制台**：[火山方舟控制台](https://console.volcengine.com/ark)
 
@@ -223,10 +223,12 @@ OpenRouter 提供统一的 LLM API 接口，聚合了数百种 AI 模型，让�
 1. 打开 **AI 管家仪表盘** → **快捷设置**
 2. 平台选择 **火山方舟 (Volcano Ark)**
 3. 填写以下信息：
-   - **API 地址**：`https://ark.cn-beijing.volces.com/api/v3/chat/completions`
+   - **API 地址**：`https://ark.cn-beijing.volces.com/api/v3/responses`
    - **API 密钥**：从火山方舟控制台获取
    - **模型名称**：例如 `doubao-seed-1-8-251228`
 4. 点击 **"测试连接"**
+
+> ⚠️ **注意**：火山方舟现在使用 Responses API（`/api/v3/responses`）而非旧的 Chat Completions API。如果您之前配置了旧地址，请点击 **"重置默认"** 按钮更新配置。
 
 ---
 

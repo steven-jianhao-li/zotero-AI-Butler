@@ -1322,6 +1322,16 @@ async function loadNoteContent(
     }
     styleEl.textContent = katexCss + "\n" + adaptedCss;
 
+    /**
+     * 清理 LaTeX 公式中的 HTML 标签
+     * LLM 有时会在公式中输出 <br> 等 HTML 标签，需要在渲染前移除
+     */
+    const cleanLatex = (latex: string): string => {
+      return latex
+        .replace(/<br\s*\/?>/gi, " ") // <br> or <br/> -> 空格
+        .replace(/<[^>]+>/g, ""); // 移除其他 HTML 标签
+    };
+
     // Pre-render LaTeX formulas BEFORE XML validation
     // This prevents LaTeX syntax (like \begin{cases}) from causing XML parsing errors
     const renderLatexFormulas = (content: string): string => {
@@ -1362,7 +1372,7 @@ async function loadNoteContent(
             }
 
             try {
-              const rendered = katex.renderToString(latex, {
+              const rendered = katex.renderToString(cleanLatex(latex), {
                 throwOnError: false,
                 displayMode: true,
                 output: "html",
@@ -1376,7 +1386,7 @@ async function loadNoteContent(
           } else if (isSingleDollar) {
             const latex = trimmed.slice(1, -1);
             try {
-              const rendered = katex.renderToString(latex, {
+              const rendered = katex.renderToString(cleanLatex(latex), {
                 throwOnError: false,
                 displayMode: false, // inline
                 output: "html",
@@ -1403,7 +1413,7 @@ async function loadNoteContent(
         /\$\$([\s\S]*?)\$\$/g,
         (_match: string, formula: string) => {
           try {
-            const rendered = katex.renderToString(formula.trim(), {
+            const rendered = katex.renderToString(cleanLatex(formula.trim()), {
               throwOnError: false,
               displayMode: true,
               output: "html",
@@ -1433,7 +1443,7 @@ async function loadNoteContent(
         inlineRegex,
         (_match: string, formula: string) => {
           try {
-            const rendered = katex.renderToString(formula.trim(), {
+            const rendered = katex.renderToString(cleanLatex(formula.trim()), {
               throwOnError: false,
               displayMode: false,
               output: "html",

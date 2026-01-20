@@ -224,7 +224,7 @@ function renderActionButtons(
   // 刷新按钮
   const refreshBtn = doc.createElement("button");
   refreshBtn.id = "ai-butler-refresh-btn";
-  refreshBtn.title = "刷新AI笔记和一图总结";
+  refreshBtn.title = "刷新AI笔记、一图总结和思维导图";
   refreshBtn.textContent = "🔄";
   refreshBtn.style.cssText = `
     padding: 8px 12px;
@@ -270,6 +270,14 @@ function renderActionButtons(
         imageContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
         imageBtnContainer.innerHTML = "";
         await loadImageSummary(doc, item, imageContainer, imageBtnContainer);
+      }
+      // 刷新思维导图
+      const mindmapContainer = doc.getElementById(
+        "ai-butler-mindmap-container",
+      ) as HTMLElement | null;
+      if (mindmapContainer) {
+        mindmapContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+        await loadMindmapContent(doc, item, mindmapContainer);
       }
     } catch (err: any) {
       ztoolkit.log("[AI-Butler] 刷新失败:", err);

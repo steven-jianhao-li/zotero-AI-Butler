@@ -40,8 +40,7 @@ export class MindmapSettingsPage {
       id?: string;
     } = {},
   ): HTMLElement {
-    const doc =
-      this.container.ownerDocument || Zotero.getMainWindow().document;
+    const doc = this.container.ownerDocument || Zotero.getMainWindow().document;
     const el = doc.createElement(tag);
     if (options.textContent) el.textContent = options.textContent;
     if (options.innerHTML) el.innerHTML = options.innerHTML;
@@ -268,8 +267,7 @@ export class MindmapSettingsPage {
 
     const prompt =
       (getPref("mindmapPrompt" as any) as string) || "(使用默认提示词)";
-    const path =
-      (getPref("mindmapExportPath" as any) as string) || "(桌面)";
+    const path = (getPref("mindmapExportPath" as any) as string) || "(桌面)";
 
     previewBox.innerHTML = `
       <div style="margin-bottom: 10px;">

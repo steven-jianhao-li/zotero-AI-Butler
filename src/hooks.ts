@@ -438,7 +438,6 @@ function registerContextMenuItem() {
   });
 }
 
-
 /**
  * 注册文献库工具栏按钮
  *

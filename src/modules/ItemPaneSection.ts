@@ -951,19 +951,28 @@ async function loadMindmapContent(
     // 注意: 换行符可能是 \n 或实际的换行
     const markmapRegex = /```markmap\s*\n([\s\S]*?)\n```/;
     const match = noteHtml.match(markmapRegex);
-    
+
     ztoolkit.log("[AI-Butler] 思维导图笔记 HTML 长度:", noteHtml.length);
-    ztoolkit.log("[AI-Butler] 思维导图正则匹配结果:", match ? "匹配成功" : "匹配失败");
+    ztoolkit.log(
+      "[AI-Butler] 思维导图正则匹配结果:",
+      match ? "匹配成功" : "匹配失败",
+    );
     if (match) {
       ztoolkit.log("[AI-Butler] 匹配的内容长度:", match[1]?.length);
     } else {
       // 尝试调试：检查是否包含 markmap 关键字
-      ztoolkit.log("[AI-Butler] 笔记是否包含 markmap:", noteHtml.includes("markmap"));
+      ztoolkit.log(
+        "[AI-Butler] 笔记是否包含 markmap:",
+        noteHtml.includes("markmap"),
+      );
       ztoolkit.log("[AI-Butler] 笔记是否包含 ```:", noteHtml.includes("```"));
       // 尝试查找 markmap 位置
       const markmapIdx = noteHtml.indexOf("markmap");
       if (markmapIdx >= 0) {
-        ztoolkit.log("[AI-Butler] markmap 周围内容:", noteHtml.substring(Math.max(0, markmapIdx - 20), markmapIdx + 50));
+        ztoolkit.log(
+          "[AI-Butler] markmap 周围内容:",
+          noteHtml.substring(Math.max(0, markmapIdx - 20), markmapIdx + 50),
+        );
       }
     }
 
@@ -1043,65 +1052,81 @@ async function loadMindmapContent(
       // 监听 iframe 的消息（ready 和 export）
       const messageHandler = async (event: MessageEvent) => {
         if (event.data && event.data.type === "mindmap-ready") {
-          ztoolkit.log("[AI-Butler] 收到 iframe ready 消息，发送 markdown 数据");
+          ztoolkit.log(
+            "[AI-Butler] 收到 iframe ready 消息，发送 markdown 数据",
+          );
           try {
-            iframe.contentWindow?.postMessage({
-              type: "render-mindmap",
-              markdown: mdContent,
-            }, "*");
+            iframe.contentWindow?.postMessage(
+              {
+                type: "render-mindmap",
+                markdown: mdContent,
+              },
+              "*",
+            );
             ztoolkit.log("[AI-Butler] 已发送 markdown 数据到 iframe");
           } catch (e) {
             ztoolkit.log("[AI-Butler] 发送数据到 iframe 失败:", e);
           }
         }
-        
+
         // 处理导出请求
         if (event.data && event.data.type === "export-mindmap") {
           ztoolkit.log("[AI-Butler] 收到导出请求, 格式:", event.data.format);
           try {
             const format = event.data.format || "png";
             const filename = event.data.filename || `mindmap.${format}`;
-            
+
             // 获取导出目录（优先使用用户配置，否则使用桌面）
             let downloadDir: string = "";
-            const customPath = (getPref("mindmapExportPath" as any) as string) || "";
-            
+            const customPath =
+              (getPref("mindmapExportPath" as any) as string) || "";
+
             if (customPath && customPath.trim()) {
               // 使用用户自定义路径
               downloadDir = customPath.trim();
               // 确保目录存在
               try {
-                await IOUtils.makeDirectory(downloadDir, { ignoreExisting: true });
+                await IOUtils.makeDirectory(downloadDir, {
+                  ignoreExisting: true,
+                });
               } catch (e) {
                 ztoolkit.log("[AI-Butler] 自定义目录创建失败，回退到桌面:", e);
                 downloadDir = "";
               }
             }
-            
+
             if (!downloadDir) {
               try {
                 // 使用 Services.dirsvc 获取桌面目录
                 const desktopDir = Services.dirsvc.get("Desk", Ci.nsIFile);
                 downloadDir = desktopDir.path;
               } catch (e) {
-                ztoolkit.log("[AI-Butler] 无法获取桌面目录，使用 Zotero 数据目录:", e);
+                ztoolkit.log(
+                  "[AI-Butler] 无法获取桌面目录，使用 Zotero 数据目录:",
+                  e,
+                );
                 // 回退到 Zotero 数据目录
                 const dataDir = Zotero.DataDirectory.dir;
                 downloadDir = PathUtils.join(dataDir, "mindmaps");
                 try {
-                  await IOUtils.makeDirectory(downloadDir, { ignoreExisting: true });
+                  await IOUtils.makeDirectory(downloadDir, {
+                    ignoreExisting: true,
+                  });
                 } catch (e2) {
                   downloadDir = dataDir;
                 }
               }
             }
-            
+
             const filePath = PathUtils.join(downloadDir, filename);
-            
+
             if (format === "png") {
               // PNG 导出
               const dataUrl = event.data.dataUrl;
-              const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
+              const base64Data = dataUrl.replace(
+                /^data:image\/png;base64,/,
+                "",
+              );
               const binaryString = atob(base64Data);
               const bytes = new Uint8Array(binaryString.length);
               for (let i = 0; i < binaryString.length; i++) {
@@ -1115,9 +1140,9 @@ async function loadMindmapContent(
               const bytes = encoder.encode(content);
               await IOUtils.write(filePath, bytes);
             }
-            
+
             ztoolkit.log("[AI-Butler] 思维导图已保存到:", filePath);
-            
+
             // 显示通知
             new ztoolkit.ProgressWindow("思维导图已导出")
               .createLine({
@@ -1125,7 +1150,7 @@ async function loadMindmapContent(
                 type: "success",
               })
               .show();
-              
+
             // 打开文件
             try {
               Zotero.launchFile(filePath);
@@ -1143,21 +1168,24 @@ async function loadMindmapContent(
           }
         }
       };
-      
+
       doc.defaultView?.addEventListener("message", messageHandler);
 
       // 监听 iframe 加载完成（备用方案）
       iframe.addEventListener("load", () => {
         ztoolkit.log("[AI-Butler] mindmap.html 加载完成");
-        
+
         // 备用：如果 500ms 内没收到 ready 消息，直接发送
         setTimeout(() => {
           try {
             ztoolkit.log("[AI-Butler] 备用方案：直接发送数据");
-            iframe.contentWindow?.postMessage({
-              type: "render-mindmap",
-              markdown: mdContent,
-            }, "*");
+            iframe.contentWindow?.postMessage(
+              {
+                type: "render-mindmap",
+                markdown: mdContent,
+              },
+              "*",
+            );
           } catch (e) {
             ztoolkit.log("[AI-Butler] 发送数据到 iframe 失败:", e);
           }

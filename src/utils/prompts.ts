@@ -497,4 +497,3 @@ export const DEFAULT_MINDMAP_PROMPT = `# Role
 export function getDefaultMindmapPrompt(): string {
   return DEFAULT_MINDMAP_PROMPT;
 }
-

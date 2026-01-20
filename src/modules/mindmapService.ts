@@ -192,7 +192,6 @@ export class MindmapService {
 
     await note.saveTx();
 
-
     ztoolkit.log(`[AI-Butler] 思维导图笔记已创建: ${noteTitle}`);
 
     return note;

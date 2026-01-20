@@ -1,4 +1,3 @@
-
 import * as d3 from "d3";
 import { Transformer } from "markmap-lib";
 import { Markmap } from "markmap-view";

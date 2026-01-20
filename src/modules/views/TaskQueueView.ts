@@ -292,6 +292,7 @@ export class TaskQueueView extends BaseView {
     const typeButtons = [
       { label: "📝 论文总结", value: "summary" as TaskType | "all" },
       { label: "🖼️ 一图总结", value: "imageSummary" as TaskType | "all" },
+      { label: "🧠 思维导图", value: "mindmap" as TaskType | "all" },
     ];
 
     typeButtons.forEach((btn) => {
@@ -532,8 +533,9 @@ export class TaskQueueView extends BaseView {
     });
     taskHeader.appendChild(taskStatus);
 
-    // 任务类型标识 (一图总结特殊显示)
+    // 任务类型标识 (一图总结/思维导图特殊显示)
     const isImageSummary = task.taskType === "imageSummary";
+    const isMindmap = task.taskType === "mindmap";
     if (isImageSummary) {
       const typeBadge = this.createElement("span", {
         styles: {
@@ -545,6 +547,20 @@ export class TaskQueueView extends BaseView {
           marginLeft: "8px",
         },
         textContent: "🖼️ 一图总结",
+      });
+      taskHeader.appendChild(typeBadge);
+    }
+    if (isMindmap) {
+      const typeBadge = this.createElement("span", {
+        styles: {
+          fontSize: "11px",
+          padding: "2px 8px",
+          borderRadius: "10px",
+          backgroundColor: "#4caf50",
+          color: "white",
+          marginLeft: "8px",
+        },
+        textContent: "🧠 思维导图",
       });
       taskHeader.appendChild(typeBadge);
     }

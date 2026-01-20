@@ -47,7 +47,7 @@ export enum TaskStatus {
 /**
  * 任务类型枚举
  */
-export type TaskType = "summary" | "imageSummary";
+export type TaskType = "summary" | "imageSummary" | "mindmap";
 
 /**
  * 任务项接口
@@ -65,7 +65,7 @@ export interface TaskItem {
   retryCount: number; // 已重试次数
   maxRetries: number; // 最大重试次数
   duration?: number; // 处理耗时(秒)
-  /** 任务类型: summary(默认) 或 imageSummary(一图总结) */
+  /** 任务类型: summary(默认) 或 imageSummary(一图总结) 或 mindmap(思维导图) */
   taskType?: TaskType;
   /** 工作流阶段 (一图总结专用) */
   workflowStage?: string;
@@ -414,6 +414,142 @@ export class TaskQueueManager {
    */
   public getImageSummaryTasks(): TaskItem[] {
     return this.getAllTasks().filter((t) => t.taskType === "imageSummary");
+  }
+
+  /**
+   * 添加思维导图任务
+   *
+   * @param item Zotero 文献条目
+   * @returns 任务ID
+   */
+  public async addMindmapTask(item: Zotero.Item): Promise<string> {
+    const taskId = `mindmap-task-${item.id}`;
+
+    // 检查是否已存在
+    if (this.tasks.has(taskId)) {
+      ztoolkit.log(`思维导图任务已存在: ${taskId}`);
+      return taskId;
+    }
+
+    // 创建任务项
+    const task: TaskItem = {
+      id: taskId,
+      itemId: item.id,
+      title: item.getField("title") as string,
+      status: TaskStatus.PRIORITY, // 思维导图默认优先处理
+      progress: 0,
+      createdAt: new Date(),
+      retryCount: 0,
+      maxRetries: 2,
+      taskType: "mindmap",
+      workflowStage: "等待开始",
+    };
+
+    this.tasks.set(taskId, task);
+    await this.saveToStorage();
+
+    ztoolkit.log(`添加思维导图任务: ${task.title} (${taskId})`);
+
+    // 立即执行思维导图任务
+    this.executeMindmapTask(taskId).catch((e) => {
+      ztoolkit.log(`思维导图任务执行失败: ${e}`);
+    });
+
+    return taskId;
+  }
+
+  /**
+   * 执行思维导图任务
+   *
+   * @param taskId 任务ID
+   */
+  private async executeMindmapTask(taskId: string): Promise<void> {
+    const task = this.tasks.get(taskId);
+    if (!task || task.taskType !== "mindmap") {
+      return;
+    }
+
+    // 防止重复执行
+    if (
+      task.status === TaskStatus.PROCESSING ||
+      task.status === TaskStatus.COMPLETED
+    ) {
+      return;
+    }
+
+    // 更新任务状态
+    task.status = TaskStatus.PROCESSING;
+    task.startedAt = new Date();
+    task.progress = 0;
+    task.workflowStage = "正在初始化";
+    this.processingTasks.add(taskId);
+    await this.saveToStorage();
+
+    ztoolkit.log(`开始执行思维导图任务: ${task.title}`);
+
+    try {
+      // 获取 Zotero Item
+      const item = await Zotero.Items.getAsync(task.itemId);
+      if (!item) {
+        throw new Error("文献条目不存在");
+      }
+
+      // 动态导入 MindmapService
+      const { MindmapService } = await import("./mindmapService");
+
+      // 执行思维导图生成
+      await MindmapService.generateForItem(item, (stage, message, progress) => {
+        // 更新任务进度
+        task.progress = progress;
+        task.workflowStage = message;
+        this.notifyProgress(taskId, progress, message);
+        // 保存进度（但不要太频繁）
+        if (progress % 20 === 0 || progress === 100) {
+          this.saveToStorage().catch(() => {});
+        }
+      });
+
+      // 任务成功完成
+      task.status = TaskStatus.COMPLETED;
+      task.progress = 100;
+      task.workflowStage = "完成";
+      task.completedAt = new Date();
+      task.duration = Math.floor(
+        (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
+      );
+
+      ztoolkit.log(`思维导图任务完成: ${task.title} (耗时${task.duration}秒)`);
+      this.notifyComplete(taskId, true);
+    } catch (error: any) {
+      // 任务失败
+      task.error = error?.details?.errorMessage || error?.message || "未知错误";
+      task.workflowStage = "失败";
+
+      task.retryCount++;
+      if (task.retryCount < task.maxRetries) {
+        task.status = TaskStatus.PENDING;
+        task.progress = 0;
+        ztoolkit.log(
+          `思维导图任务失败,将重试 (${task.retryCount}/${task.maxRetries}): ${task.title}`,
+        );
+      } else {
+        task.status = TaskStatus.FAILED;
+        task.completedAt = new Date();
+        ztoolkit.log(`思维导图任务最终失败: ${task.title} - ${task.error}`);
+      }
+
+      this.notifyComplete(taskId, false, task.error);
+    } finally {
+      this.processingTasks.delete(taskId);
+      await this.saveToStorage();
+    }
+  }
+
+  /**
+   * 获取思维导图任务
+   */
+  public getMindmapTasks(): TaskItem[] {
+    return this.getAllTasks().filter((t) => t.taskType === "mindmap");
   }
 
   /**

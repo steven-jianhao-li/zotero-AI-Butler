@@ -35,6 +35,7 @@ export type FluentMessageId =
   | 'menuitem-imageSummary'
   | 'menuitem-label'
   | 'menuitem-literatureReview'
+  | 'menuitem-mindmap'
   | 'menuitem-multiRoundConcat'
   | 'menuitem-multiRoundReanalyze'
   | 'menuitem-multiRoundSummary'

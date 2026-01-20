@@ -15,6 +15,7 @@ import { UiSettingsPage } from "./settings/UiSettingsPage";
 import { DataSettingsPage } from "./settings/DataSettingsPage";
 import { AboutPage } from "./settings/AboutPage";
 import { ImageSummarySettingsPage } from "./settings/ImageSummarySettingsPage";
+import { MindmapSettingsPage } from "./settings/MindmapSettingsPage";
 
 /**
  * 设置分类类型
@@ -22,6 +23,7 @@ import { ImageSummarySettingsPage } from "./settings/ImageSummarySettingsPage";
 type SettingCategory =
   | "api"
   | "prompts"
+  | "mindmap"
   | "imageSummary"
   | "ui"
   | "data"
@@ -124,6 +126,7 @@ export class SettingsView extends BaseView {
     const categories = [
       { id: "api" as SettingCategory, label: "🔌 API 配置" },
       { id: "prompts" as SettingCategory, label: "📝 提示词模板" },
+      { id: "mindmap" as SettingCategory, label: "🧠 思维导图" },
       { id: "imageSummary" as SettingCategory, label: "🖼️ 一图总结" },
       { id: "ui" as SettingCategory, label: "🎨 界面设置" },
       { id: "data" as SettingCategory, label: "💾 数据管理" },
@@ -253,6 +256,9 @@ export class SettingsView extends BaseView {
           break;
         case "prompts":
           page = new PromptsSettingsPage(this.settingsContainer);
+          break;
+        case "mindmap":
+          page = new MindmapSettingsPage(this.settingsContainer);
           break;
         case "imageSummary":
           page = new ImageSummarySettingsPage(this.settingsContainer);

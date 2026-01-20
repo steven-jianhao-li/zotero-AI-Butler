@@ -407,6 +407,25 @@ function registerContextMenuItem() {
     },
   });
 
+  // 注册"AI管家生成思维导图"菜单项
+  ztoolkit.Menu.register("item", {
+    tag: "menuitem",
+    label: getString("menuitem-mindmap" as any),
+    icon: menuIcon,
+
+    commandListener: async () => {
+      await handleMindmapGeneration();
+    },
+
+    getVisibility: () => {
+      const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
+      return (
+        selectedItems?.every((item: Zotero.Item) => item.isRegularItem()) ||
+        false
+      );
+    },
+  });
+
   // 注册"AI管家文献综述"菜单项 (分类右键)
   ztoolkit.Menu.register("collection", {
     tag: "menuitem",
@@ -1130,7 +1149,65 @@ async function handleImageSummary() {
 }
 
 /**
+ * 处理思维导图生成请求
+ *
+ * 为选中的文献条目生成思维导图并保存到笔记中
+ */
+async function handleMindmapGeneration() {
+  // 1. 获取选中条目
+  const items = Zotero.getActiveZoteroPane().getSelectedItems();
+  if (!items || items.length === 0) {
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 3000,
+    })
+      .createLine({ text: "请先选择要处理的文献", type: "error" })
+      .show();
+    return;
+  }
+
+  // 只处理第一个选中的条目
+  const item = items[0];
+  if (!item.isRegularItem()) {
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 3000,
+    })
+      .createLine({ text: "请选择一个文献条目", type: "error" })
+      .show();
+    return;
+  }
+
+  try {
+    // 添加到任务队列
+    const { TaskQueueManager } = await import("./modules/taskQueue");
+    const manager = TaskQueueManager.getInstance();
+    await manager.addMindmapTask(item);
+
+    // 显示开始提示
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 3000,
+    })
+      .createLine({ text: "🧠 思维导图任务已加入队列", type: "success" })
+      .show();
+  } catch (error: any) {
+    ztoolkit.log("[AI-Butler] 添加思维导图任务失败:", error);
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 5000,
+    })
+      .createLine({
+        text: `❌ 添加任务失败: ${error.message || error}`,
+        type: "error",
+      })
+      .show();
+  }
+}
+
+/**
  * 处理文献综述生成
+
  *
  * 当用户在分类上右键点击"AI管家文献综述"时触发
  * 获取当前选中的分类，打开综述配置界面

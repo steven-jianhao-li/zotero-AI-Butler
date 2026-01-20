@@ -412,3 +412,88 @@ export const DEFAULT_LITERATURE_REVIEW_PROMPT = `请阅读以下多篇学术论�
 export function getDefaultLiteratureReviewPrompt(): string {
   return DEFAULT_LITERATURE_REVIEW_PROMPT;
 }
+
+// ================================================================
+// 思维导图提示词相关功能
+// ================================================================
+
+/**
+ * 默认的思维导图生成提示词
+ *
+ * 用于从论文中生成结构化 Markdown 列表，供 Markmap 渲染为思维导图
+ *
+ * 设计要点：
+ * - 使用 One-Shot 提示让 LLM 模仿固定格式
+ * - 根节点为论文标题
+ * - 一级分支固定为四个核心章节
+ * - 子节点层级控制在 3-4 层以内
+ */
+export const DEFAULT_MINDMAP_PROMPT = `# Role
+你是一个专业的学术论文分析助手。你的任务是将论文内容转化为结构化的思维导图数据。
+
+# Output Format Rules (必须严格遵守)
+1. 输出格式必须是 **Markdown 标题和无序列表**。
+2. **根节点 (\`#\`)**: 必须是论文的标题。
+3. **一级分支 (\`##\`)**: 必须严格包含且仅包含以下四个部分：
+   - 研究背景与目标
+   - 研究方法
+   - 关键研究结果
+   - 研究结论与意义
+4. **子节点 (\`-\`)**: 根据论文内容进行细分，层级控制在 3-4 层以内，保持精简。
+5. 不要输出任何 Markdown 代码块标记（如 \`\`\`markdown），直接输出内容即可。
+6. 语言：使用**中文**输出。
+
+# One-Shot Example (参考范例)
+## Input Text:
+[一篇关于 Deep Residual Learning (ResNet) 的论文摘要...]
+
+## Expected Output:
+# Deep Residual Learning for Image Recognition
+
+## 研究背景与目标
+- 梯度消失/爆炸
+  - 阻碍了深度神经网络的收敛
+- 退化问题 (Degradation Problem)
+  - 网络加深导致准确率饱和甚至下降
+- 核心目标
+  - 训练极深的网络 (100层+)
+  - 解决退化问题
+
+## 研究方法
+- 残差学习框架 (Residual Learning)
+  - 引入恒等映射 (Identity Mapping)
+  - 拟合残差函数 F(x) = H(x) - x
+- 网络架构
+  - 使用 3x3 卷积核
+  - 引入全局平均池化层
+- 训练策略
+  - 批量归一化 (Batch Normalization)
+
+## 关键研究结果
+- ImageNet 竞赛冠军
+  - Top-5 错误率降低至 3.57%
+- 深度优势验证
+  - 152层网络显著优于 VGG-16
+- 优化难易度
+  - ResNet 比普通平原网络更容易优化
+
+## 研究结论与意义
+- 核心贡献
+  - 证实了残差结构在深层网络中的有效性
+- 广泛影响
+  - 成为计算机视觉领域的标准骨干网络 (Backbone)
+- 局限性
+  - 极深网络的训练时间成本较高
+
+---
+# Current Task
+请阅读以下论文内容，并按照上述格式生成思维导图数据：`;
+
+/**
+ * 获取默认的思维导图提示词
+ *
+ * @returns 默认思维导图提示词
+ */
+export function getDefaultMindmapPrompt(): string {
+  return DEFAULT_MINDMAP_PROMPT;
+}

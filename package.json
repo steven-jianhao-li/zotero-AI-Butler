@@ -1,7 +1,7 @@
 {
   "name": "zotero-ai-butler",
   "type": "module",
-  "version": "3.1.1",
+  "version": "3.2.0-beta.2",
   "description": "Your personal AI butler, automatically and meticulously reads papers and summarizes notes.",
   "config": {
     "addonName": "zotero-ai-butler",
@@ -33,9 +33,13 @@
   },
   "dependencies": {
     "@types/marked": "^5.0.2",
+    "d3": "^7.9.0",
     "katex": "^0.16.27",
     "marked": "^16.4.1",
+    "markmap-lib": "^0.18.12",
+    "markmap-view": "^0.18.12",
     "mathjax": "^3.2.2",
+    "simple-mind-map": "^0.14.0-fix.1",
     "zotero-plugin-toolkit": "^5.1.0-beta.13"
   },
   "devDependencies": {

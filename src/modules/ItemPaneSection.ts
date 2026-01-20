@@ -14,8 +14,9 @@ import { config } from "../../package.json";
 import { getString, getLocaleID } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
 import katex from "katex";
-// 注意: 不使用 markmap-lib/markmap-view，因为 markmap-view 依赖 navigator 对象
-// 改用自定义 Markdown 解析器和纯 HTML/CSS 渲染思维导图
+// 注意: 不在主进程中直接 import 思维导图库（如 markmap-view、simple-mind-map）
+// 这些库在加载时会访问 document/window，而 Zotero Background 进程没有 DOM 环境
+// 改用 iframe 架构：在独立 HTML 页面中加载这些库
 
 // 侧边栏聊天状态类型
 interface ChatState {
@@ -995,166 +996,133 @@ async function loadMindmapContent(
     // 清空容器
     container.innerHTML = "";
 
-    // 直接解析 Markdown 列表结构，不使用 markmap-lib（避免 unicode 编码问题）
+    // 使用 iframe 架构渲染思维导图
+    // mindmap.html 在完整的 DOM 环境中运行，可以使用 markmap 等 UI 库
     try {
-      // 解析 Markdown 生成树结构
-      const parseMarkdown = (md: string): any => {
-        const lines = md.split("\n").filter((l) => l.trim());
-        const root: any = { text: "", children: [], level: -1 };
-        const stack: any[] = [root];
-
-        for (const line of lines) {
-          // 检查是否是标题
-          const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
-          if (headerMatch) {
-            const level = headerMatch[1].length;
-            const text = headerMatch[2].trim();
-            const node = { text, children: [], level, isHeader: true };
-
-            // 找到合适的父节点
-            while (stack.length > 1 && stack[stack.length - 1].level >= level) {
-              stack.pop();
-            }
-            stack[stack.length - 1].children.push(node);
-            stack.push(node);
-            continue;
-          }
-
-          // 检查是否是列表项
-          const listMatch = line.match(/^(\s*)[-*+]\s+(.+)$/);
-          if (listMatch) {
-            const indent = listMatch[1].length;
-            const level = Math.floor(indent / 2) + 10; // 列表层级从10开始
-            const text = listMatch[2].trim();
-            const node = { text, children: [], level, isHeader: false };
-
-            // 找到合适的父节点
-            while (stack.length > 1 && stack[stack.length - 1].level >= level) {
-              stack.pop();
-            }
-            stack[stack.length - 1].children.push(node);
-            stack.push(node);
-          }
-        }
-
-        return root.children.length === 1 ? root.children[0] : root;
-      };
-
-      const tree = parseMarkdown(markdownContent);
-
-      // 创建思维导图容器
-      const mindmapEl = doc.createElement("div");
-      mindmapEl.className = "ai-butler-mindmap";
-      mindmapEl.style.cssText = `
-        width: 100%;
-        max-height: 600px;
-        overflow: auto;
-        padding: 20px;
-        background: #ffffff;
-        border-radius: 8px;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        box-sizing: border-box;
-      `;
-
-      // 一级分支颜色
-      const branchColors = ["#1976d2", "#388e3c", "#f57c00", "#7b1fa2", "#c62828", "#00838f"];
-
-      // 递归渲染节点
-      const renderTreeNode = (node: any, level: number, branchColor: string): HTMLElement => {
-        const nodeEl = doc.createElement("div");
-        nodeEl.className = "mindmap-branch";
-        nodeEl.style.cssText = "display: flex; align-items: flex-start; margin: 4px 0;";
-
-        // 连接线容器
-        if (level > 0) {
-          const lineEl = doc.createElement("div");
-          lineEl.style.cssText = `
-            width: 20px;
-            height: 2px;
-            background: ${branchColor};
-            margin-top: 10px;
-            flex-shrink: 0;
-          `;
-          nodeEl.appendChild(lineEl);
-        }
-
-        // 内容区域
-        const contentWrapper = doc.createElement("div");
-        contentWrapper.style.cssText = "flex: 1; min-width: 0;";
-
-        // 节点文本
-        const textEl = doc.createElement("div");
-        textEl.className = "mindmap-text";
-        
-        if (level === 0) {
-          // 根节点
-          textEl.style.cssText = `
-            font-size: 15px;
-            font-weight: 700;
-            color: #333;
-            padding: 8px 12px;
-            background: #f5f5f5;
-            border-radius: 6px;
-            border-left: 4px solid ${branchColor};
-            margin-bottom: 10px;
-          `;
-        } else if (level === 1) {
-          // 一级分支
-          textEl.style.cssText = `
-            font-size: 14px;
-            font-weight: 600;
-            color: ${branchColor};
-            padding: 6px 10px;
-            background: rgba(255,255,255,0.9);
-            border-radius: 4px;
-            border-left: 3px solid ${branchColor};
-          `;
-        } else {
-          // 子节点
-          textEl.style.cssText = `
-            font-size: 12px;
-            color: #555;
-            padding: 3px 8px;
-            border-left: 2px solid ${branchColor};
-            margin-left: 2px;
-          `;
-        }
-        
-        textEl.textContent = node.text || "";
-        contentWrapper.appendChild(textEl);
-
-        // 渲染子节点
-        if (node.children && node.children.length > 0) {
-          const childrenEl = doc.createElement("div");
-          childrenEl.className = "mindmap-children";
-          childrenEl.style.cssText = "margin-left: 15px; border-left: 1px dashed #ddd; padding-left: 5px;";
-
-          node.children.forEach((child: any, idx: number) => {
-            // 一级子节点使用不同颜色
-            const childColor = level === 0 ? branchColors[idx % branchColors.length] : branchColor;
-            childrenEl.appendChild(renderTreeNode(child, level + 1, childColor));
-          });
-
-          contentWrapper.appendChild(childrenEl);
-        }
-
-        nodeEl.appendChild(contentWrapper);
-        return nodeEl;
-      };
-
-      // 渲染树
-      if (tree.children && tree.children.length > 0) {
-        tree.children.forEach((branch: any, idx: number) => {
-          const color = branchColors[idx % branchColors.length];
-          mindmapEl.appendChild(renderTreeNode(branch, 0, color));
-        });
-      } else if (tree.text) {
-        mindmapEl.appendChild(renderTreeNode(tree, 0, branchColors[0]));
+      // 高度控制
+      const DEFAULT_MINDMAP_HEIGHT = 400;
+      let savedMindmapHeight = parseInt(
+        (getPref("sidebarMindmapHeight" as any) as string) ||
+          String(DEFAULT_MINDMAP_HEIGHT),
+        10,
+      );
+      if (isNaN(savedMindmapHeight) || savedMindmapHeight < 100) {
+        savedMindmapHeight = DEFAULT_MINDMAP_HEIGHT;
       }
 
-      container.appendChild(mindmapEl);
+      // 创建 iframe 容器
+      const iframeWrapper = doc.createElement("div");
+      iframeWrapper.id = "ai-butler-mindmap-wrapper";
+      iframeWrapper.style.cssText = `
+        width: 100%;
+        height: ${savedMindmapHeight}px;
+        min-height: 100px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #fafafa;
+      `;
 
-      ztoolkit.log("[AI-Butler] 思维导图渲染成功");
+      // 创建 iframe
+      const iframe = doc.createElement("iframe");
+      iframe.id = "ai-butler-mindmap-iframe";
+      iframe.style.cssText = `
+        width: 100%;
+        height: 100%;
+        border: none;
+      `;
+
+      // 获取插件路径并构建 mindmap.html 的 URL
+      // Zotero 7 使用 chrome:// 协议访问插件资源
+      const rootURI = `chrome://${config.addonRef}/content/`;
+      iframe.src = rootURI + "mindmap.html";
+
+      // 保存 markdown 内容用于后续发送
+      const mdContent = markdownContent;
+
+      // 监听 iframe 的消息（ready 和 export）
+      const messageHandler = async (event: MessageEvent) => {
+        if (event.data && event.data.type === "mindmap-ready") {
+          ztoolkit.log("[AI-Butler] 收到 iframe ready 消息，发送 markdown 数据");
+          try {
+            iframe.contentWindow?.postMessage({
+              type: "render-mindmap",
+              markdown: mdContent,
+            }, "*");
+            ztoolkit.log("[AI-Butler] 已发送 markdown 数据到 iframe");
+          } catch (e) {
+            ztoolkit.log("[AI-Butler] 发送数据到 iframe 失败:", e);
+          }
+        }
+        
+        // 处理导出请求
+        if (event.data && event.data.type === "export-mindmap") {
+          ztoolkit.log("[AI-Butler] 收到导出请求");
+          try {
+            const dataUrl = event.data.dataUrl;
+            const filename = event.data.filename || "mindmap.png";
+            
+            // 使用 Zotero 文件选择器保存
+            // @ts-expect-error FilePicker is a Zotero global
+            const fp = new FilePicker();
+            fp.init(doc.defaultView, "保存思维导图", fp.modeSave);
+            fp.appendFilter("PNG 图片", "*.png");
+            fp.defaultString = filename;
+            
+            const result = await fp.show();
+            if (result === fp.returnOK || result === fp.returnReplace) {
+              const filePath = fp.file;
+              
+              // 将 base64 转换为二进制数据
+              const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
+              const binaryString = atob(base64Data);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              
+              // 写入文件
+              await IOUtils.write(filePath, bytes);
+              ztoolkit.log("[AI-Butler] 思维导图已保存到:", filePath);
+            }
+          } catch (e) {
+            ztoolkit.log("[AI-Butler] 保存思维导图失败:", e);
+          }
+        }
+      };
+      
+      doc.defaultView?.addEventListener("message", messageHandler);
+
+      // 监听 iframe 加载完成（备用方案）
+      iframe.addEventListener("load", () => {
+        ztoolkit.log("[AI-Butler] mindmap.html 加载完成");
+        
+        // 备用：如果 500ms 内没收到 ready 消息，直接发送
+        setTimeout(() => {
+          try {
+            ztoolkit.log("[AI-Butler] 备用方案：直接发送数据");
+            iframe.contentWindow?.postMessage({
+              type: "render-mindmap",
+              markdown: mdContent,
+            }, "*");
+          } catch (e) {
+            ztoolkit.log("[AI-Butler] 发送数据到 iframe 失败:", e);
+          }
+        }, 500);
+      });
+
+      iframeWrapper.appendChild(iframe);
+      container.appendChild(iframeWrapper);
+
+      // 创建高度调整手柄
+      const resizeHandle = createResizeHandle(
+        doc,
+        iframeWrapper,
+        "sidebarMindmapHeight",
+      );
+      container.appendChild(resizeHandle);
+
+      ztoolkit.log("[AI-Butler] 思维导图 iframe 创建成功");
     } catch (renderError: any) {
       ztoolkit.log("[AI-Butler] 思维导图渲染失败:", renderError);
 

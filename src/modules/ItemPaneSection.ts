@@ -1057,36 +1057,73 @@ async function loadMindmapContent(
         
         // 处理导出请求
         if (event.data && event.data.type === "export-mindmap") {
-          ztoolkit.log("[AI-Butler] 收到导出请求");
+          ztoolkit.log("[AI-Butler] 收到导出请求, 格式:", event.data.format);
           try {
-            const dataUrl = event.data.dataUrl;
-            const filename = event.data.filename || "mindmap.png";
+            const format = event.data.format || "png";
+            const filename = event.data.filename || `mindmap.${format}`;
             
-            // 使用 Zotero 文件选择器保存
-            // @ts-expect-error FilePicker is a Zotero global
-            const fp = new FilePicker();
-            fp.init(doc.defaultView, "保存思维导图", fp.modeSave);
-            fp.appendFilter("PNG 图片", "*.png");
-            fp.defaultString = filename;
+            // 获取桌面目录
+            let downloadDir: string;
+            try {
+              // 使用 Services.dirsvc 获取桌面目录
+              const desktopDir = Services.dirsvc.get("Desk", Ci.nsIFile);
+              downloadDir = desktopDir.path;
+            } catch (e) {
+              ztoolkit.log("[AI-Butler] 无法获取桌面目录，使用 Zotero 数据目录:", e);
+              // 回退到 Zotero 数据目录
+              const dataDir = Zotero.DataDirectory.dir;
+              downloadDir = PathUtils.join(dataDir, "mindmaps");
+              try {
+                await IOUtils.makeDirectory(downloadDir, { ignoreExisting: true });
+              } catch (e2) {
+                downloadDir = dataDir;
+              }
+            }
             
-            const result = await fp.show();
-            if (result === fp.returnOK || result === fp.returnReplace) {
-              const filePath = fp.file;
-              
-              // 将 base64 转换为二进制数据
+            const filePath = PathUtils.join(downloadDir, filename);
+            
+            if (format === "png") {
+              // PNG 导出
+              const dataUrl = event.data.dataUrl;
               const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
               const binaryString = atob(base64Data);
               const bytes = new Uint8Array(binaryString.length);
               for (let i = 0; i < binaryString.length; i++) {
                 bytes[i] = binaryString.charCodeAt(i);
               }
-              
-              // 写入文件
               await IOUtils.write(filePath, bytes);
-              ztoolkit.log("[AI-Butler] 思维导图已保存到:", filePath);
+            } else if (format === "opml") {
+              // OPML 导出
+              const content = event.data.content;
+              const encoder = new TextEncoder();
+              const bytes = encoder.encode(content);
+              await IOUtils.write(filePath, bytes);
+            }
+            
+            ztoolkit.log("[AI-Butler] 思维导图已保存到:", filePath);
+            
+            // 显示通知
+            new ztoolkit.ProgressWindow("思维导图已导出")
+              .createLine({
+                text: `已保存到桌面: ${filename}`,
+                type: "success",
+              })
+              .show();
+              
+            // 打开文件
+            try {
+              Zotero.launchFile(filePath);
+            } catch (e) {
+              // 忽略打开文件失败
             }
           } catch (e) {
             ztoolkit.log("[AI-Butler] 保存思维导图失败:", e);
+            new ztoolkit.ProgressWindow("导出失败")
+              .createLine({
+                text: `错误: ${e}`,
+                type: "error",
+              })
+              .show();
           }
         }
       };

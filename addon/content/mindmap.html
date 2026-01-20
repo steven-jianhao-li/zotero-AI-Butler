@@ -82,7 +82,8 @@
       <button id="zoom-out" title="缩小">➖</button>
       <button id="zoom-in" title="放大">➕</button>
       <button id="fit" title="适应画布">🎯</button>
-      <button id="export" class="primary" title="导出为PNG">📥 导出</button>
+      <button id="export-png" class="primary" title="导出为PNG图片">📷 PNG</button>
+      <button id="export-opml" class="primary" title="导出为OPML大纲">📄 OPML</button>
     </div>
     <div id="mindmap-container">
       <div class="loading">正在加载思维导图...</div>
@@ -161,79 +162,208 @@
         }
       });
 
-      // 导出功能
-      document.getElementById("export").addEventListener("click", async () => {
+      // PNG 导出功能
+      document.getElementById("export-png").addEventListener("click", async () => {
         if (!markmap) return;
 
-        const exportBtn = document.getElementById("export");
+        const exportBtn = document.getElementById("export-png");
         exportBtn.textContent = "⏳ 导出中...";
         exportBtn.disabled = true;
 
         try {
           const svg = document.getElementById("mindmap-svg");
-          const svgData = new XMLSerializer().serializeToString(svg);
-
-          // 创建 canvas
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-          const img = new Image();
-
-          // 设置画布大小（使用 viewBox、getBBox 或默认尺寸）
-          let width, height;
-          try {
-            const bbox = svg.getBBox();
-            width = bbox.width || svg.clientWidth || 800;
-            height = bbox.height || svg.clientHeight || 600;
-          } catch (e) {
-            width = svg.clientWidth || 800;
-            height = svg.clientHeight || 600;
-          }
-          const padding = 40;
-          canvas.width = width + padding * 2;
-          canvas.height = height + padding * 2;
-
-          // 填充白色背景
-          ctx.fillStyle = "white";
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-          // 绘制 SVG
-          const svgBlob = new Blob([svgData], {
-            type: "image/svg+xml;charset=utf-8",
+          
+          // 获取 SVG 的实际边界
+          const bbox = svg.getBBox();
+          const padding = 60;
+          
+          // 计算完整尺寸
+          const svgWidth = bbox.width + padding * 2;
+          const svgHeight = bbox.height + padding * 2;
+          
+          // 创建新的 SVG 字符串，直接包含完整内容
+          const svgClone = svg.cloneNode(true);
+          
+          // 设置正确的 viewBox 以包含所有内容
+          svgClone.setAttribute("width", svgWidth);
+          svgClone.setAttribute("height", svgHeight);
+          svgClone.setAttribute("viewBox", `${bbox.x - padding} ${bbox.y - padding} ${svgWidth} ${svgHeight}`);
+          svgClone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+          svgClone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+          
+          // 移除所有 class 属性并内联关键样式
+          svgClone.querySelectorAll("*").forEach(el => {
+            // 保留 fill, stroke 等关键属性
+            let originalEl = el;
+            try {
+              // 尝试通过 id 查找对应元素
+              const elId = el.id;
+              if (elId && elId.length > 0) {
+                const found = svg.querySelector(`#${CSS.escape(elId)}`);
+                if (found) originalEl = found;
+              }
+            } catch(e) {}
+            
+            if (originalEl && window.getComputedStyle) {
+              try {
+                const cs = window.getComputedStyle(originalEl);
+                const fill = cs.fill || cs.getPropertyValue("fill");
+                const stroke = cs.stroke || cs.getPropertyValue("stroke");
+                const strokeWidth = cs.strokeWidth || cs.getPropertyValue("stroke-width");
+                
+                if (fill && fill !== "none") el.setAttribute("fill", fill);
+                if (stroke && stroke !== "none") el.setAttribute("stroke", stroke);
+                if (strokeWidth) el.setAttribute("stroke-width", strokeWidth);
+              } catch(e) {}
+            }
           });
-          const svgUrl = URL.createObjectURL(svgBlob);
-
+          
+          // 在开头插入白色背景矩形
+          const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          bgRect.setAttribute("x", bbox.x - padding);
+          bgRect.setAttribute("y", bbox.y - padding);
+          bgRect.setAttribute("width", svgWidth);
+          bgRect.setAttribute("height", svgHeight);
+          bgRect.setAttribute("fill", "#ffffff");
+          svgClone.insertBefore(bgRect, svgClone.firstChild);
+          
+          const svgString = new XMLSerializer().serializeToString(svgClone);
+          
+          // 使用 Data URL 方式
+          const svgBase64 = btoa(unescape(encodeURIComponent(svgString)));
+          const imgSrc = `data:image/svg+xml;base64,${svgBase64}`;
+          
+          const canvas = document.createElement("canvas");
+          const scale = 2; // 高清
+          canvas.width = svgWidth * scale;
+          canvas.height = svgHeight * scale;
+          
+          const ctx = canvas.getContext("2d");
+          ctx.scale(scale, scale);
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, svgWidth, svgHeight);
+          
+          const img = new Image();
           img.onload = () => {
-            ctx.drawImage(img, padding, padding, width, height);
-            URL.revokeObjectURL(svgUrl);
-
-            // 获取 base64 数据
+            ctx.drawImage(img, 0, 0, svgWidth, svgHeight);
+            
             const dataUrl = canvas.toDataURL("image/png");
             
-            // 发送到父窗口处理保存
             window.parent.postMessage({
               type: "export-mindmap",
+              format: "png",
               dataUrl: dataUrl,
               filename: "mindmap-" + Date.now() + ".png",
             }, "*");
 
-            console.log("[AI-Butler Mindmap] 导出数据已发送");
-            exportBtn.textContent = "📥 导出";
+            console.log("[AI-Butler Mindmap] PNG 导出完成");
+            exportBtn.textContent = "📷 PNG";
             exportBtn.disabled = false;
           };
 
           img.onerror = (e) => {
-            console.error("Failed to load SVG:", e);
-            exportBtn.textContent = "📥 导出";
+            console.error("Failed to load SVG image:", e);
+            exportBtn.textContent = "📷 PNG";
             exportBtn.disabled = false;
           };
 
-          img.src = svgUrl;
+          img.src = imgSrc;
         } catch (err) {
-          console.error("[AI-Butler Mindmap] 导出失败:", err);
-          exportBtn.textContent = "📥 导出";
+          console.error("[AI-Butler Mindmap] PNG 导出失败:", err);
+          exportBtn.textContent = "📷 PNG";
           exportBtn.disabled = false;
         }
       });
+
+      // OPML 导出功能
+      document.getElementById("export-opml").addEventListener("click", async () => {
+        if (!currentMarkdown) return;
+
+        const exportBtn = document.getElementById("export-opml");
+        exportBtn.textContent = "⏳ 导出中...";
+        exportBtn.disabled = true;
+
+        try {
+          // 将 Markdown 转换为 OPML
+          const opmlContent = markdownToOpml(currentMarkdown);
+          
+          // 发送到父窗口处理保存
+          window.parent.postMessage({
+            type: "export-mindmap",
+            format: "opml",
+            content: opmlContent,
+            filename: "mindmap-" + Date.now() + ".opml",
+          }, "*");
+
+          console.log("[AI-Butler Mindmap] OPML 导出数据已发送");
+          exportBtn.textContent = "📄 OPML";
+          exportBtn.disabled = false;
+        } catch (err) {
+          console.error("[AI-Butler Mindmap] OPML 导出失败:", err);
+          exportBtn.textContent = "📄 OPML";
+          exportBtn.disabled = false;
+        }
+      });
+
+      // Markdown 转 OPML 函数
+      function markdownToOpml(markdown) {
+        const lines = markdown.split("\n").filter(l => l.trim());
+        let opml = `<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>思维导图</title>
+    <dateCreated>${new Date().toISOString()}</dateCreated>
+  </head>
+  <body>
+`;
+        
+        const stack = [{ indent: -1, closed: false }];
+        
+        for (const line of lines) {
+          let text = "";
+          let level = 0;
+          
+          // 解析标题
+          const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
+          if (headerMatch) {
+            level = headerMatch[1].length - 1;
+            text = headerMatch[2].trim();
+          } else {
+            // 解析列表项
+            const listMatch = line.match(/^(\s*)[-*+]\s+(.+)$/);
+            if (listMatch) {
+              level = Math.floor(listMatch[1].length / 2) + 3;
+              text = listMatch[2].trim();
+            }
+          }
+          
+          if (!text) continue;
+          
+          // 关闭更深层级的节点
+          while (stack.length > 1 && stack[stack.length - 1].indent >= level) {
+            const item = stack.pop();
+            if (!item.closed) {
+              opml += "    ".repeat(stack.length + 1) + "</outline>\n";
+            }
+          }
+          
+          // 添加新节点
+          const escapedText = text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+          opml += "    ".repeat(stack.length + 1) + `<outline text="${escapedText}">\n`;
+          stack.push({ indent: level, closed: false });
+        }
+        
+        // 关闭所有剩余节点
+        while (stack.length > 1) {
+          stack.pop();
+          opml += "    ".repeat(stack.length + 1) + "</outline>\n";
+        }
+        
+        opml += `  </body>
+</opml>`;
+        
+        return opml;
+      }
 
       // 监听来自父窗口的消息
       window.addEventListener("message", (event) => {

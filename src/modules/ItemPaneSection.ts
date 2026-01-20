@@ -14,6 +14,8 @@ import { config } from "../../package.json";
 import { getString, getLocaleID } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
 import katex from "katex";
+// 注意: 不使用 markmap-lib/markmap-view，因为 markmap-view 依赖 navigator 对象
+// 改用自定义 Markdown 解析器和纯 HTML/CSS 渲染思维导图
 
 // 侧边栏聊天状态类型
 interface ChatState {
@@ -139,6 +141,7 @@ function renderItemPaneSection(
   renderActionButtons(body, doc, item, handleOpenAIChat);
   renderNoteSection(body, doc, item);
   renderImageSummarySection(body, doc, item);
+  renderMindmapSection(body, doc, item);
   renderChatArea(body, doc, item);
 }
 
@@ -768,7 +771,399 @@ function renderImageSummarySection(
 }
 
 /**
+ * 渲染思维导图区域
+ */
+function renderMindmapSection(
+  body: HTMLElement,
+  doc: Document,
+  item: Zotero.Item,
+): void {
+  const mindmapSection = doc.createElement("div");
+  mindmapSection.className = "ai-butler-mindmap-section";
+  mindmapSection.style.cssText = `
+    margin-bottom: 12px;
+    margin-top: 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    overflow: hidden;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  `;
+
+  // 标题栏
+  const mindmapHeader = doc.createElement("div");
+  mindmapHeader.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    background: rgba(76, 175, 80, 0.1);
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid rgba(76, 175, 80, 0.2);
+  `;
+
+  const mindmapTitle = doc.createElement("span");
+  mindmapTitle.style.cssText = `
+    font-weight: 500;
+    font-size: 12px;
+    color: inherit;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  `;
+  mindmapTitle.innerHTML = `🧠 <span>思维导图</span>`;
+
+  const mindmapToggleIcon = doc.createElement("span");
+  mindmapToggleIcon.textContent = "▼";
+  mindmapToggleIcon.style.cssText = `
+    font-size: 10px;
+    color: inherit;
+    opacity: 0.6;
+    transition: transform 0.2s ease;
+  `;
+
+  mindmapHeader.appendChild(mindmapTitle);
+  mindmapHeader.appendChild(mindmapToggleIcon);
+
+  // 思维导图容器
+  const mindmapContainer = doc.createElement("div");
+  mindmapContainer.id = "ai-butler-mindmap-container";
+  mindmapContainer.style.cssText = `
+    padding: 10px;
+    text-align: center;
+    background: transparent;
+    min-height: 300px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  `;
+
+  // 折叠功能 - 从首选项读取初始状态
+  let isMindmapCollapsed = getPref("sidebarMindmapCollapsed" as any) === true;
+
+  // 根据初始状态设置UI
+  if (isMindmapCollapsed) {
+    mindmapContainer.style.display = "none";
+    mindmapToggleIcon.style.transform = "rotate(-90deg)";
+  }
+
+  mindmapHeader.addEventListener("click", () => {
+    isMindmapCollapsed = !isMindmapCollapsed;
+    // 保存折叠状态到首选项
+    setPref("sidebarMindmapCollapsed" as any, isMindmapCollapsed as any);
+    if (isMindmapCollapsed) {
+      mindmapContainer.style.display = "none";
+      mindmapToggleIcon.style.transform = "rotate(-90deg)";
+    } else {
+      mindmapContainer.style.display = "flex";
+      mindmapToggleIcon.style.transform = "rotate(0deg)";
+    }
+  });
+
+  mindmapSection.appendChild(mindmapHeader);
+  mindmapSection.appendChild(mindmapContainer);
+  body.appendChild(mindmapSection);
+
+  // 异步加载思维导图
+  loadMindmapContent(doc, item, mindmapContainer);
+}
+
+/**
+ * 异步加载思维导图内容
+ */
+async function loadMindmapContent(
+  doc: Document,
+  item: Zotero.Item,
+  container: HTMLElement,
+): Promise<void> {
+  try {
+    // 获取正确的父条目
+    let targetItem: any = item;
+    if (item.isAttachment && item.isAttachment()) {
+      const parentId = item.parentItemID;
+      if (parentId) {
+        targetItem = await Zotero.Items.getAsync(parentId);
+      }
+    }
+
+    // 查找思维导图笔记
+    const noteIDs = (targetItem as any).getNotes?.() || [];
+    let mindmapNote: any = null;
+
+    for (const nid of noteIDs) {
+      try {
+        const n = await Zotero.Items.getAsync(nid);
+        if (!n) continue;
+        const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
+        const noteHtml: string = (n as any).getNote?.() || "";
+
+        // 检查是否是思维导图笔记
+        // 优先检查标签，其次检查标题（支持新旧格式）
+        const isMindmapNote =
+          tags.some((t) => t.tag === "AI-Mindmap") ||
+          /AI\s*管家思维导图\s*-/.test(noteHtml);
+
+        if (isMindmapNote) {
+          if (!mindmapNote) {
+            mindmapNote = n;
+          } else {
+            const a = (mindmapNote as any).dateModified || 0;
+            const b = (n as any).dateModified || 0;
+            if (b > a) mindmapNote = n;
+          }
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+
+    if (!mindmapNote) {
+      container.innerHTML = `
+        <div style="text-align: center; color: #9e9e9e; padding: 16px;">
+          <div style="font-size: 24px; margin-bottom: 8px;">🧠</div>
+          <div>暂无思维导图</div>
+          <div style="font-size: 11px; margin-top: 4px; opacity: 0.7;">右键文献选择"AI管家生成思维导图"</div>
+        </div>
+      `;
+      return;
+    }
+
+    const noteHtml: string = (mindmapNote as any).getNote?.() || "";
+
+    // 提取 markmap 代码块
+    // 笔记 HTML 格式: <pre>```markmap\n[content]\n```</pre>
+    // 注意: 换行符可能是 \n 或实际的换行
+    const markmapRegex = /```markmap\s*\n([\s\S]*?)\n```/;
+    const match = noteHtml.match(markmapRegex);
+    
+    ztoolkit.log("[AI-Butler] 思维导图笔记 HTML 长度:", noteHtml.length);
+    ztoolkit.log("[AI-Butler] 思维导图正则匹配结果:", match ? "匹配成功" : "匹配失败");
+    if (match) {
+      ztoolkit.log("[AI-Butler] 匹配的内容长度:", match[1]?.length);
+    } else {
+      // 尝试调试：检查是否包含 markmap 关键字
+      ztoolkit.log("[AI-Butler] 笔记是否包含 markmap:", noteHtml.includes("markmap"));
+      ztoolkit.log("[AI-Butler] 笔记是否包含 ```:", noteHtml.includes("```"));
+      // 尝试查找 markmap 位置
+      const markmapIdx = noteHtml.indexOf("markmap");
+      if (markmapIdx >= 0) {
+        ztoolkit.log("[AI-Butler] markmap 周围内容:", noteHtml.substring(Math.max(0, markmapIdx - 20), markmapIdx + 50));
+      }
+    }
+
+    if (!match) {
+      container.innerHTML = `
+        <div style="text-align: center; color: #9e9e9e; padding: 16px;">
+          <div style="font-size: 24px; margin-bottom: 8px;">⚠️</div>
+          <div>思维导图格式错误</div>
+        </div>
+      `;
+      return;
+    }
+
+    // 解码 HTML 实体
+    const encodedMarkdown = match[1];
+    const tempDiv = doc.createElement("div");
+    tempDiv.innerHTML = encodedMarkdown;
+    const markdownContent = tempDiv.textContent || tempDiv.innerText || "";
+
+    if (!markdownContent.trim()) {
+      container.innerHTML = `
+        <div style="text-align: center; color: #9e9e9e; padding: 16px;">
+          <div style="font-size: 24px; margin-bottom: 8px;">📄</div>
+          <div>思维导图内容为空</div>
+        </div>
+      `;
+      return;
+    }
+
+    // 清空容器
+    container.innerHTML = "";
+
+    // 直接解析 Markdown 列表结构，不使用 markmap-lib（避免 unicode 编码问题）
+    try {
+      // 解析 Markdown 生成树结构
+      const parseMarkdown = (md: string): any => {
+        const lines = md.split("\n").filter((l) => l.trim());
+        const root: any = { text: "", children: [], level: -1 };
+        const stack: any[] = [root];
+
+        for (const line of lines) {
+          // 检查是否是标题
+          const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
+          if (headerMatch) {
+            const level = headerMatch[1].length;
+            const text = headerMatch[2].trim();
+            const node = { text, children: [], level, isHeader: true };
+
+            // 找到合适的父节点
+            while (stack.length > 1 && stack[stack.length - 1].level >= level) {
+              stack.pop();
+            }
+            stack[stack.length - 1].children.push(node);
+            stack.push(node);
+            continue;
+          }
+
+          // 检查是否是列表项
+          const listMatch = line.match(/^(\s*)[-*+]\s+(.+)$/);
+          if (listMatch) {
+            const indent = listMatch[1].length;
+            const level = Math.floor(indent / 2) + 10; // 列表层级从10开始
+            const text = listMatch[2].trim();
+            const node = { text, children: [], level, isHeader: false };
+
+            // 找到合适的父节点
+            while (stack.length > 1 && stack[stack.length - 1].level >= level) {
+              stack.pop();
+            }
+            stack[stack.length - 1].children.push(node);
+            stack.push(node);
+          }
+        }
+
+        return root.children.length === 1 ? root.children[0] : root;
+      };
+
+      const tree = parseMarkdown(markdownContent);
+
+      // 创建思维导图容器
+      const mindmapEl = doc.createElement("div");
+      mindmapEl.className = "ai-butler-mindmap";
+      mindmapEl.style.cssText = `
+        width: 100%;
+        max-height: 600px;
+        overflow: auto;
+        padding: 20px;
+        background: #ffffff;
+        border-radius: 8px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        box-sizing: border-box;
+      `;
+
+      // 一级分支颜色
+      const branchColors = ["#1976d2", "#388e3c", "#f57c00", "#7b1fa2", "#c62828", "#00838f"];
+
+      // 递归渲染节点
+      const renderTreeNode = (node: any, level: number, branchColor: string): HTMLElement => {
+        const nodeEl = doc.createElement("div");
+        nodeEl.className = "mindmap-branch";
+        nodeEl.style.cssText = "display: flex; align-items: flex-start; margin: 4px 0;";
+
+        // 连接线容器
+        if (level > 0) {
+          const lineEl = doc.createElement("div");
+          lineEl.style.cssText = `
+            width: 20px;
+            height: 2px;
+            background: ${branchColor};
+            margin-top: 10px;
+            flex-shrink: 0;
+          `;
+          nodeEl.appendChild(lineEl);
+        }
+
+        // 内容区域
+        const contentWrapper = doc.createElement("div");
+        contentWrapper.style.cssText = "flex: 1; min-width: 0;";
+
+        // 节点文本
+        const textEl = doc.createElement("div");
+        textEl.className = "mindmap-text";
+        
+        if (level === 0) {
+          // 根节点
+          textEl.style.cssText = `
+            font-size: 15px;
+            font-weight: 700;
+            color: #333;
+            padding: 8px 12px;
+            background: #f5f5f5;
+            border-radius: 6px;
+            border-left: 4px solid ${branchColor};
+            margin-bottom: 10px;
+          `;
+        } else if (level === 1) {
+          // 一级分支
+          textEl.style.cssText = `
+            font-size: 14px;
+            font-weight: 600;
+            color: ${branchColor};
+            padding: 6px 10px;
+            background: rgba(255,255,255,0.9);
+            border-radius: 4px;
+            border-left: 3px solid ${branchColor};
+          `;
+        } else {
+          // 子节点
+          textEl.style.cssText = `
+            font-size: 12px;
+            color: #555;
+            padding: 3px 8px;
+            border-left: 2px solid ${branchColor};
+            margin-left: 2px;
+          `;
+        }
+        
+        textEl.textContent = node.text || "";
+        contentWrapper.appendChild(textEl);
+
+        // 渲染子节点
+        if (node.children && node.children.length > 0) {
+          const childrenEl = doc.createElement("div");
+          childrenEl.className = "mindmap-children";
+          childrenEl.style.cssText = "margin-left: 15px; border-left: 1px dashed #ddd; padding-left: 5px;";
+
+          node.children.forEach((child: any, idx: number) => {
+            // 一级子节点使用不同颜色
+            const childColor = level === 0 ? branchColors[idx % branchColors.length] : branchColor;
+            childrenEl.appendChild(renderTreeNode(child, level + 1, childColor));
+          });
+
+          contentWrapper.appendChild(childrenEl);
+        }
+
+        nodeEl.appendChild(contentWrapper);
+        return nodeEl;
+      };
+
+      // 渲染树
+      if (tree.children && tree.children.length > 0) {
+        tree.children.forEach((branch: any, idx: number) => {
+          const color = branchColors[idx % branchColors.length];
+          mindmapEl.appendChild(renderTreeNode(branch, 0, color));
+        });
+      } else if (tree.text) {
+        mindmapEl.appendChild(renderTreeNode(tree, 0, branchColors[0]));
+      }
+
+      container.appendChild(mindmapEl);
+
+      ztoolkit.log("[AI-Butler] 思维导图渲染成功");
+    } catch (renderError: any) {
+      ztoolkit.log("[AI-Butler] 思维导图渲染失败:", renderError);
+
+      // 回退显示格式化的 Markdown
+      container.innerHTML = `
+        <div style="text-align: left; padding: 15px; font-size: 12px; background: #fff; border-radius: 8px; overflow: auto; max-height: 400px; white-space: pre-wrap; font-family: monospace; line-height: 1.6;">${markdownContent.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+      `;
+    }
+  } catch (err: any) {
+    ztoolkit.log("[AI-Butler] 加载思维导图失败:", err);
+    container.innerHTML = `<div style="color: #d32f2f; padding: 10px;">加载思维导图失败: ${err.message}</div>`;
+  }
+}
+
+/**
  * 渲染聊天区域
+
  */
 function renderChatArea(
   body: HTMLElement,
@@ -1268,13 +1663,27 @@ async function loadNoteContent(
         const noteHtml: string = (n as any).getNote?.() || "";
 
         // 检查是否是 AI-Butler 生成的摘要笔记
+        // 排除: 思维导图笔记、一图总结笔记、对话笔记
+        const isMindmapNote =
+          tags.some((t) => t.tag === "AI-Mindmap") ||
+          /AI\s*管家思维导图\s*-/.test(noteHtml);
+        const isImageSummaryNote =
+          tags.some((t) => t.tag === "AI-Image-Summary") ||
+          /AI\s*管家一图总结\s*-/.test(noteHtml);
         const isChatNote =
           tags.some((t) => t.tag === "AI-Butler-Chat") ||
-          /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(noteHtml);
+          /<h2>\s*AI\s+管家\s*-\s*后续追问\s*-/.test(noteHtml);
+        // 严格匹配: 必须满足以下条件之一
+        // 1. 有 AI-Generated 标签 且 不是其他特殊类型
+        // 2. 标题精确匹配 "<h2>AI 管家 - " 格式
+        const hasAiGeneratedTag = tags.some((t) => t.tag === "AI-Generated");
         const isAiSummaryNote =
-          tags.some((t) => t.tag === "AI-Generated") ||
-          (/<h2>\s*AI 管家\s*-/.test(noteHtml) && !isChatNote) ||
-          noteHtml.includes("[AI-Butler]");
+          !isMindmapNote &&
+          !isImageSummaryNote &&
+          !isChatNote &&
+          (hasAiGeneratedTag ||
+            noteHtml.includes("<h2>AI 管家 - ") ||
+            noteHtml.includes("[AI-Butler]"));
 
         if (isAiSummaryNote) {
           if (!targetNote) {

@@ -1062,21 +1062,37 @@ async function loadMindmapContent(
             const format = event.data.format || "png";
             const filename = event.data.filename || `mindmap.${format}`;
             
-            // 获取桌面目录
-            let downloadDir: string;
-            try {
-              // 使用 Services.dirsvc 获取桌面目录
-              const desktopDir = Services.dirsvc.get("Desk", Ci.nsIFile);
-              downloadDir = desktopDir.path;
-            } catch (e) {
-              ztoolkit.log("[AI-Butler] 无法获取桌面目录，使用 Zotero 数据目录:", e);
-              // 回退到 Zotero 数据目录
-              const dataDir = Zotero.DataDirectory.dir;
-              downloadDir = PathUtils.join(dataDir, "mindmaps");
+            // 获取导出目录（优先使用用户配置，否则使用桌面）
+            let downloadDir: string = "";
+            const customPath = (getPref("mindmapExportPath" as any) as string) || "";
+            
+            if (customPath && customPath.trim()) {
+              // 使用用户自定义路径
+              downloadDir = customPath.trim();
+              // 确保目录存在
               try {
                 await IOUtils.makeDirectory(downloadDir, { ignoreExisting: true });
-              } catch (e2) {
-                downloadDir = dataDir;
+              } catch (e) {
+                ztoolkit.log("[AI-Butler] 自定义目录创建失败，回退到桌面:", e);
+                downloadDir = "";
+              }
+            }
+            
+            if (!downloadDir) {
+              try {
+                // 使用 Services.dirsvc 获取桌面目录
+                const desktopDir = Services.dirsvc.get("Desk", Ci.nsIFile);
+                downloadDir = desktopDir.path;
+              } catch (e) {
+                ztoolkit.log("[AI-Butler] 无法获取桌面目录，使用 Zotero 数据目录:", e);
+                // 回退到 Zotero 数据目录
+                const dataDir = Zotero.DataDirectory.dir;
+                downloadDir = PathUtils.join(dataDir, "mindmaps");
+                try {
+                  await IOUtils.makeDirectory(downloadDir, { ignoreExisting: true });
+                } catch (e2) {
+                  downloadDir = dataDir;
+                }
               }
             }
             

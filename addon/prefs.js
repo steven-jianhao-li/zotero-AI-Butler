@@ -92,3 +92,7 @@ pref("__prefsPrefix__.sidebarImageCollapsed", false);
 // ==================== 数据管理 ====================
 pref("__prefsPrefix__.notePrefix", "[AI-Butler]");
 pref("__prefsPrefix__.noteStrategy", "skip");
+
+// ==================== 思维导图配置 ====================
+pref("__prefsPrefix__.mindmapPrompt", ""); // 空表示使用默认提示词
+pref("__prefsPrefix__.mindmapExportPath", ""); // 空表示使用桌面目录

@@ -279,6 +279,38 @@ export class ThemeManager {
   overflow: hidden !important;
 }
 
+/* 表格样式 - 动态宽度 + 自动换行 + 横向滚动 */
+.ai-butler-note-content table {
+  display: block !important;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+  border-collapse: collapse;
+  box-sizing: border-box;
+}
+.ai-butler-note-content table th,
+.ai-butler-note-content table td {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  padding: 6px 13px;
+}
+/* 表格滚动容器样式 */
+.ai-butler-note-content table::-webkit-scrollbar {
+  height: 8px;
+}
+.ai-butler-note-content table::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 4px;
+}
+.ai-butler-note-content table::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+.ai-butler-note-content table::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
 /* 暗色模式下的文字颜色修正 */
 @media (prefers-color-scheme: dark) {
   .ai-butler-note-content,

@@ -2222,7 +2222,10 @@ async function loadImageSummary(
     // 点击放大
     imgElement.addEventListener("click", () => {
       void openImageSummaryViewerWindow(imgSrc, targetItem).catch((err) => {
-        ztoolkit.log("[AI-Butler] 打开一图总结预览窗口失败，回退到覆盖层:", err);
+        ztoolkit.log(
+          "[AI-Butler] 打开一图总结预览窗口失败，回退到覆盖层:",
+          err,
+        );
         openImageOverlayFallback(doc, imgSrc);
       });
     });

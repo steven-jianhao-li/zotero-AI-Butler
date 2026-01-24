@@ -2221,36 +2221,10 @@ async function loadImageSummary(
 
     // 点击放大
     imgElement.addEventListener("click", () => {
-      const overlay = doc.createElement("div");
-      overlay.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        background: rgba(0, 0, 0, 0.9);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10000;
-        cursor: zoom-out;
-      `;
-
-      const fullImg = doc.createElement("img");
-      fullImg.src = imgSrc;
-      fullImg.style.cssText = `
-        max-width: 95%;
-        max-height: 95%;
-        object-fit: contain;
-      `;
-
-      overlay.appendChild(fullImg);
-      overlay.addEventListener("click", () => overlay.remove());
-      if (doc.body) {
-        doc.body.appendChild(overlay);
-      } else if (doc.documentElement) {
-        doc.documentElement.appendChild(overlay);
-      }
+      void openImageSummaryViewerWindow(imgSrc, targetItem).catch((err) => {
+        ztoolkit.log("[AI-Butler] 打开一图总结预览窗口失败，回退到覆盖层:", err);
+        openImageOverlayFallback(doc, imgSrc);
+      });
     });
 
     // 放大按钮
@@ -2402,6 +2376,146 @@ async function loadImageSummary(
   } catch (err: any) {
     ztoolkit.log("[AI-Butler] 加载一图总结失败:", err);
     imageContainer.innerHTML = `<div style="color: #d32f2f; font-size: 12px;">加载失败: ${err.message}</div>`;
+  }
+}
+
+async function openImageSummaryViewerWindow(
+  imageDataUri: string,
+  targetItem: any,
+): Promise<void> {
+  const mainWin: any =
+    Zotero && (Zotero as any).getMainWindow
+      ? (Zotero as any).getMainWindow()
+      : (globalThis as any);
+
+  if (typeof mainWin?.openDialog !== "function") {
+    throw new Error("openDialog not available");
+  }
+
+  let itemTitle = "";
+  try {
+    const t = targetItem?.getField?.("title");
+    itemTitle = typeof t === "string" ? t : "";
+  } catch {
+    // ignore
+  }
+
+  const screenObj: any = mainWin?.screen;
+  const width = screenObj
+    ? Math.max(800, Math.floor(screenObj.availWidth * 0.95))
+    : 1000;
+  const height = screenObj
+    ? Math.max(600, Math.floor(screenObj.availHeight * 0.95))
+    : 800;
+
+  const title = itemTitle ? `一图总结 - ${itemTitle}` : "一图总结";
+  const viewerURL = `chrome://${config.addonRef}/content/imageSummaryViewer.html`;
+
+  const dialogWin: any = mainWin.openDialog(
+    viewerURL,
+    "",
+    `chrome,centerscreen,resizable=yes,width=${width},height=${height}`,
+    { imageDataUri, title },
+  );
+
+  if (!dialogWin) {
+    throw new Error("Failed to open viewer window");
+  }
+
+  // Extra fallback channel in case window.arguments isn't available for some reason
+  try {
+    (dialogWin as any).__aiButlerImageDataUri = imageDataUri;
+    (dialogWin as any).__aiButlerTitle = title;
+  } catch {
+    // ignore
+  }
+
+  try {
+    dialogWin.focus();
+  } catch {
+    // ignore
+  }
+}
+
+function openImageOverlayFallback(doc: Document, imageDataUri: string): void {
+  const overlay = doc.createElement("div");
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    cursor: zoom-out;
+  `;
+
+  const fullImg = doc.createElement("img");
+  fullImg.src = imageDataUri;
+  fullImg.alt = "一图总结";
+  fullImg.style.cssText = `
+    max-width: 95%;
+    max-height: 95%;
+    object-fit: contain;
+  `;
+
+  overlay.appendChild(fullImg);
+
+  const win: any = doc.defaultView;
+  let disposed = false;
+
+  const cleanup = (): void => {
+    if (disposed) return;
+    disposed = true;
+    try {
+      overlay.remove();
+    } catch {
+      // ignore
+    }
+    try {
+      win?.removeEventListener("keydown", onKeyDown, true);
+    } catch {
+      // ignore
+    }
+    try {
+      win?.removeEventListener("close", onWindowClose, true);
+    } catch {
+      // ignore
+    }
+  };
+
+  const onKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      cleanup();
+    }
+  };
+
+  const onWindowClose = (e: any): any => {
+    if (!overlay.isConnected) return;
+    try {
+      e.preventDefault?.();
+      e.stopPropagation?.();
+      e.stopImmediatePropagation?.();
+      e.returnValue = false;
+    } catch {
+      // ignore
+    }
+    cleanup();
+    return false;
+  };
+
+  overlay.addEventListener("click", () => cleanup());
+  win?.addEventListener("keydown", onKeyDown, true);
+  win?.addEventListener("close", onWindowClose, true);
+
+  if (doc.body) {
+    doc.body.appendChild(overlay);
+  } else if (doc.documentElement) {
+    doc.documentElement.appendChild(overlay);
   }
 }
 

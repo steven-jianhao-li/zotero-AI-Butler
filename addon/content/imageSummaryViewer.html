@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>一图总结</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: rgba(0, 0, 0, 0.95);
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+
+      #root {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: zoom-out;
+      }
+
+      #img {
+        max-width: 98%;
+        max-height: 98%;
+        object-fit: contain;
+      }
+
+      #hint {
+        position: fixed;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 6px 10px;
+        background: rgba(0, 0, 0, 0.5);
+        color: rgba(255, 255, 255, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 999px;
+        font-size: 12px;
+        user-select: none;
+        pointer-events: none;
+      }
+
+      #error {
+        color: rgba(255, 255, 255, 0.85);
+        font-size: 14px;
+        padding: 20px;
+        text-align: center;
+        max-width: 600px;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <img id="img" alt="一图总结" />
+      <div id="error" style="display: none"></div>
+    </div>
+    <div id="hint">Click to close, or press Esc</div>
+
+    <script>
+      (function () {
+        function getArgs() {
+          try {
+            return (window.arguments && window.arguments[0]) || {};
+          } catch (e) {
+            return {};
+          }
+        }
+
+        const args = getArgs();
+        const title =
+          (args && args.title ? String(args.title) : "") ||
+          (window.__aiButlerTitle ? String(window.__aiButlerTitle) : "") ||
+          "一图总结";
+        const src =
+          (args && args.imageDataUri ? String(args.imageDataUri) : "") ||
+          (window.__aiButlerImageDataUri
+            ? String(window.__aiButlerImageDataUri)
+            : "");
+
+        document.title = title;
+
+        const img = document.getElementById("img");
+        const err = document.getElementById("error");
+
+        if (!src) {
+          img.style.display = "none";
+          err.style.display = "block";
+          err.textContent = "No image data provided.";
+          return;
+        }
+
+        img.src = src;
+        img.addEventListener("error", () => {
+          img.style.display = "none";
+          err.style.display = "block";
+          err.textContent = "Failed to load image.";
+        });
+
+        const close = () => {
+          try {
+            window.close();
+          } catch (e) {}
+        };
+
+        document.getElementById("root").addEventListener("click", close);
+        window.addEventListener(
+          "keydown",
+          (e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              close();
+            }
+          },
+          true,
+        );
+      })();
+    </script>
+  </body>
+</html>

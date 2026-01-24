@@ -8,16 +8,59 @@ import { MainWindow } from "./views/MainWindow";
 import { config } from "../../package.json";
 
 export async function registerPrefsScripts(_window: Window) {
-  // 先不用任何延迟,直接执行
+  const slog = (...args: any[]) => {
+    try {
+      ztoolkit?.log?.(...args);
+    } catch {
+      console.log(...args);
+    }
+  };
+
+  const logError = (label: string, error: any) => {
+    try {
+      const name = error?.name ? String(error.name) : "";
+      const message = error?.message ? String(error.message) : String(error);
+      const stack = error?.stack ? String(error.stack) : "";
+      slog(`[AI-Butler][Prefs] ${label} failed: ${name} ${message}`);
+      if (stack) {
+        slog(`[AI-Butler][Prefs] ${label} stack:`, stack);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // Run each step independently so a failure doesn't break the "Open Main Window" button.
   try {
     migrateToGlobalOnce();
+  } catch (e) {
+    logError("migrateToGlobalOnce", e);
+  }
+
+  try {
     initializeDefaultPrefs();
-    // diagnosePrefs(); // 仅在需要调试配置问题时启用
+  } catch (e) {
+    logError("initializeDefaultPrefs", e);
+  }
+
+  // diagnosePrefs(); // 仅在需要调试配置问题时启用
+
+  try {
     updatePrefsUI(_window);
+  } catch (e) {
+    logError("updatePrefsUI", e);
+  }
+
+  try {
     bindPrefEvents(_window);
+  } catch (e) {
+    logError("bindPrefEvents", e);
+  }
+
+  try {
     bindOpenMainWindowButton(_window); // 绑定打开主窗口按钮
-  } catch (error) {
-    ztoolkit.log("[AI-Butler][Prefs] 注册首选项脚本时出错:", error);
+  } catch (e) {
+    logError("bindOpenMainWindowButton", e);
   }
 }
 
@@ -328,88 +371,108 @@ function migrateToGlobalOnce() {
  */
 function bindOpenMainWindowButton(win: Window) {
   try {
-    // 等待 DOM 完全加载
     const doc = win.document;
 
-    // 延迟执行,确保 DOM 元素已渲染
-    win.setTimeout(() => {
-      // 安全日志函数: 若 ztoolkit 不可用则回退到 console
-      const slog = (...args: any[]) => {
-        try {
-          ztoolkit?.log?.(...args);
-        } catch {
-          console.log(...args);
-        }
-      };
+    // Safe logger: fall back to console if ztoolkit isn't ready in this context
+    const slog = (...args: any[]) => {
       try {
-        // 使用插件的 addonRef 构造按钮 ID
-        const buttonId = `${config.addonRef}-openMainWindow`;
-        const button = doc.getElementById(buttonId) as HTMLButtonElement | null;
-
-        if (button) {
-          slog(`[AI-Butler][Prefs] 成功找到按钮: ${buttonId}`);
-
-          // 移除旧的事件监听器(如果存在)
-          // 避免重复绑定导致多次触发
-          const oldListener = (button as any).__aiButlerListener;
-          if (oldListener) {
-            button.removeEventListener("click", oldListener);
-          }
-
-          // 定义新的事件监听器
-          const newListener = (event: Event) => {
-            event.preventDefault(); // 阻止默认行为
-            event.stopPropagation(); // 阻止事件冒泡
-
-            slog("[AI-Butler][Prefs] 按钮被点击,即将打开主窗口");
-
-            try {
-              // 创建主窗口实例并打开
-              const mainWindow = MainWindow.getInstance();
-              mainWindow.open("settings"); // 默认打开设置标签页
-
-              slog("[AI-Butler][Prefs] 主窗口打开成功");
-
-              // 可选:关闭偏好设置窗口
-              // win.close();
-            } catch (error) {
-              slog("[AI-Butler][Prefs] 打开主窗口时出错:", error);
-
-              // 向用户显示错误提示
-              const message =
-                error instanceof Error ? error.message : String(error);
-              new ztoolkit.ProgressWindow("AI Butler", {
-                closeOnClick: true,
-                closeTime: 5000,
-              })
-                .createLine({
-                  text: `打开主窗口失败: ${message}`,
-                  type: "error",
-                })
-                .show();
-            }
-          };
-
-          // 保存监听器引用,用于将来清理
-          (button as any).__aiButlerListener = newListener;
-
-          // 绑定事件监听器
-          button.addEventListener("click", newListener);
-
-          slog("[AI-Butler][Prefs] 按钮事件绑定成功");
-        } else {
-          slog(`[AI-Butler][Prefs] 警告: 未找到按钮 ${buttonId}`);
-          slog(
-            "[AI-Butler][Prefs] 可用的元素 ID:",
-            Array.from(doc.querySelectorAll("[id]"))
-              .map((el: any) => el.id)
-              .join(", "),
-          );
-        }
-      } catch (err) {
-        console.error("[AI-Butler][Prefs] 绑定按钮回调执行失败:", err);
+        ztoolkit?.log?.(...args);
+      } catch {
+        console.log(...args);
       }
-    }, 100); // 延迟 100ms 确保 DOM 就绪
+    };
+
+    const buttonId = `${config.addonRef}-openMainWindow`;
+    const maxAttempts = 50; // ~5s at 100ms interval
+    let attempts = 0;
+
+    const handler = (event: Event) => {
+      try {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+      } catch {
+        // ignore
+      }
+
+      slog("[AI-Butler][Prefs] Open main window button activated");
+
+      try {
+        // Open the control panel window and switch to Settings tab
+        const mainWindow = MainWindow.getInstance();
+        void mainWindow.open("settings").catch((error) => {
+          slog("[AI-Butler][Prefs] Failed to open main window:", error);
+
+          const message =
+            error instanceof Error ? error.message : String(error);
+          new ztoolkit.ProgressWindow("AI Butler", {
+            closeOnClick: true,
+            closeTime: 5000,
+          })
+            .createLine({
+              text: `打开主窗口失败: ${message}`,
+              type: "error",
+            })
+            .show();
+        });
+      } catch (error) {
+        slog("[AI-Butler][Prefs] Failed to open main window:", error);
+
+        const message = error instanceof Error ? error.message : String(error);
+        new ztoolkit.ProgressWindow("AI Butler", {
+          closeOnClick: true,
+          closeTime: 5000,
+        })
+          .createLine({
+            text: `打开主窗口失败: ${message}`,
+            type: "error",
+          })
+          .show();
+      }
+    };
+
+    const tryBind = () => {
+      attempts++;
+      const button = doc.getElementById(buttonId) as any;
+
+      if (!button) {
+        if (attempts === 1) {
+          slog(`[AI-Butler][Prefs] Waiting for button: ${buttonId}`);
+        }
+        if (attempts < maxAttempts) {
+          win.setTimeout(tryBind, 100);
+          return;
+        }
+
+        slog(`[AI-Butler][Prefs] Button not found after retries: ${buttonId}`);
+        return;
+      }
+
+      // Remove any previously bound handler (e.g. when the pane reloads)
+      const oldListener = (button as any).__aiButlerListener;
+      if (oldListener) {
+        try {
+          button.removeEventListener("click", oldListener);
+        } catch {
+          // ignore
+        }
+        try {
+          button.removeEventListener("command", oldListener);
+        } catch {
+          // ignore
+        }
+      }
+
+      (button as any).__aiButlerListener = handler;
+
+      // XUL buttons trigger "command"; keep "click" for compatibility.
+      button.addEventListener("command", handler);
+      button.addEventListener("click", handler);
+
+      slog(`[AI-Butler][Prefs] Button bound: ${buttonId}`);
+    };
+
+    // Don't assume the pane has already been inserted when the script runs.
+    win.setTimeout(tryBind, 0);
   } catch (error) {
     try {
       ztoolkit?.log?.("[AI-Butler][Prefs] 绑定按钮事件时出错:", error);

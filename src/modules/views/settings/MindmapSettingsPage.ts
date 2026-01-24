@@ -101,10 +101,25 @@ export class MindmapSettingsPage {
     form.appendChild(promptNotice);
 
     // 提示词编辑器
-    const currentPrompt = (getPref("mindmapPrompt" as any) as string) || "";
+    const savedPrompt = (getPref("mindmapPrompt" as any) as string) || "";
+    const defaultPrompt = getDefaultMindmapPrompt();
+    const isUsingDefaultPrompt = !savedPrompt.trim();
+    const effectivePrompt = isUsingDefaultPrompt ? defaultPrompt : savedPrompt;
+
+    const promptStatus = this.createElement("div", {
+      textContent: isUsingDefaultPrompt
+        ? "当前使用：默认提示词（未保存自定义）"
+        : "当前使用：自定义提示词",
+      styles: {
+        fontSize: "12px",
+        color: "var(--ai-text-muted)",
+        marginBottom: "8px",
+      },
+    });
+    form.appendChild(promptStatus);
     const promptTextarea = createTextarea(
       "mindmapPrompt",
-      currentPrompt,
+      effectivePrompt,
       15, // 行数
       "留空使用默认提示词模板...",
     );
@@ -132,16 +147,17 @@ export class MindmapSettingsPage {
       "medium",
     );
     viewDefaultBtn.addEventListener("click", () => {
-      const defaultPrompt = getDefaultMindmapPrompt();
       promptTextarea.value = defaultPrompt;
+      promptStatus.textContent = "当前编辑：默认提示词（未保存）";
     });
     promptButtonGroup.appendChild(viewDefaultBtn);
 
     // 清空按钮（使用默认）
     const clearBtn = createStyledButton("使用默认", "#ff9800", "medium");
     clearBtn.addEventListener("click", () => {
-      promptTextarea.value = "";
+      promptTextarea.value = defaultPrompt;
       setPref("mindmapPrompt" as any, "" as any);
+      promptStatus.textContent = "当前使用：默认提示词（未保存自定义）";
       this.showToast("已重置为默认提示词");
     });
     promptButtonGroup.appendChild(clearBtn);
@@ -150,7 +166,19 @@ export class MindmapSettingsPage {
     const savePromptBtn = createStyledButton("保存提示词", "#4caf50", "medium");
     savePromptBtn.addEventListener("click", () => {
       const value = promptTextarea.value.trim();
+      const defaultTrimmed = defaultPrompt.trim();
+
+      // Empty or unchanged default prompt means "use default" (keep pref empty)
+      if (!value || value === defaultTrimmed) {
+        setPref("mindmapPrompt" as any, "" as any);
+        promptTextarea.value = defaultPrompt;
+        promptStatus.textContent = "当前使用：默认提示词（未保存自定义）";
+        this.showToast("已使用默认提示词");
+        return;
+      }
+
       setPref("mindmapPrompt" as any, value as any);
+      promptStatus.textContent = "当前使用：自定义提示词";
       this.showToast("提示词已保存");
     });
     promptButtonGroup.appendChild(savePromptBtn);
@@ -265,15 +293,20 @@ export class MindmapSettingsPage {
       },
     });
 
-    const prompt =
-      (getPref("mindmapPrompt" as any) as string) || "(使用默认提示词)";
+    const promptPref = (getPref("mindmapPrompt" as any) as string) || "";
+    const promptText = promptPref.trim() ? promptPref : defaultPrompt;
+    const promptPreview =
+      promptText.length > 100
+        ? promptText.substring(0, 100) + "..."
+        : promptText;
+    const promptLabel = promptPref.trim() ? "自定义" : "默认";
     const path = (getPref("mindmapExportPath" as any) as string) || "(桌面)";
 
     previewBox.innerHTML = `
       <div style="margin-bottom: 10px;">
         <strong>提示词：</strong>
         <span style="color: var(--ai-text-muted);">
-          ${prompt === "(使用默认提示词)" ? prompt : prompt.substring(0, 100) + "..."}
+          (${promptLabel}) ${this.escapeHtml(promptPreview)}
         </span>
       </div>
       <div>
@@ -297,6 +330,15 @@ export class MindmapSettingsPage {
         type: "success",
       })
       .show();
+  }
+
+  private escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 }
 

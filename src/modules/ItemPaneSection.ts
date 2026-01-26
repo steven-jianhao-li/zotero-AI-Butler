@@ -988,9 +988,9 @@ async function loadMindmapContent(
 
     // 解码 HTML 实体
     const encodedMarkdown = match[1];
-    const tempDiv = doc.createElement("div");
-    tempDiv.innerHTML = encodedMarkdown;
-    const markdownContent = tempDiv.textContent || tempDiv.innerText || "";
+    const markdownContent = normalizeMindmapMarkdown(
+      decodeHtmlFragmentToText(doc, encodedMarkdown),
+    );
 
     if (!markdownContent.trim()) {
       container.innerHTML = `
@@ -2655,6 +2655,93 @@ function htmlToMarkdown(html: string): string {
   result = result.replace(/\n{3,}/g, "\n\n");
 
   return result.trim();
+}
+
+function decodeHtmlFragmentToText(doc: Document, html: string): string {
+  // Fast path: no tags or entities to decode
+  if (!/[&<]/.test(html)) return html;
+
+  try {
+    // Use an HTML document to decode named entities like &nbsp; safely.
+    // In XML/XUL documents, setting innerHTML with unknown HTML entities may throw.
+    const mainWin: any =
+      Zotero && (Zotero as any).getMainWindow
+        ? (Zotero as any).getMainWindow()
+        : (globalThis as any);
+
+    const implementation: any =
+      mainWin?.document?.implementation || doc.implementation;
+    const createHTMLDocument: any = implementation?.createHTMLDocument;
+
+    if (typeof createHTMLDocument === "function") {
+      const htmlDoc: Document = createHTMLDocument.call(implementation, "");
+      const container = htmlDoc.createElement("div");
+      container.innerHTML = html;
+      return (container as any).innerText || container.textContent || "";
+    }
+
+    // Fallback to DOMParser in HTML mode
+    const parsed = new DOMParser().parseFromString(
+      `<!doctype html><body>${html}`,
+      "text/html",
+    );
+    const body = parsed.body;
+    return (body as any)?.innerText || body?.textContent || "";
+  } catch (e) {
+    // Last resort: minimal decoding for common cases
+    const decodeNumericEntity = (raw: string): string => {
+      const codePoint =
+        raw.startsWith("x") || raw.startsWith("X")
+          ? parseInt(raw.slice(1), 16)
+          : parseInt(raw, 10);
+      if (
+        !Number.isFinite(codePoint) ||
+        codePoint < 0 ||
+        codePoint > 0x10ffff
+      ) {
+        return "";
+      }
+      try {
+        return String.fromCodePoint(codePoint);
+      } catch {
+        return "";
+      }
+    };
+
+    return html
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(div|p|pre)>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&amp;/gi, "&")
+      .replace(/&quot;/gi, '"')
+      .replace(/&apos;/gi, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&#x([0-9a-f]+);/gi, (_, hex) => decodeNumericEntity(`x${hex}`))
+      .replace(/&#(\d+);/g, (_, dec) => decodeNumericEntity(dec));
+  }
+}
+
+function normalizeMindmapMarkdown(markdown: string): string {
+  const normalized = markdown.replace(/\r\n?/g, "\n").replace(/\u00a0/g, " ");
+
+  // Strip ASCII control characters except for tab and newline.
+  let result = "";
+  for (const ch of normalized) {
+    const code = ch.charCodeAt(0);
+    if (code === 0x09 || code === 0x0a) {
+      result += ch;
+      continue;
+    }
+    if (code < 0x20 || code === 0x7f) {
+      continue;
+    }
+    result += ch;
+  }
+
+  return result;
 }
 
 /**

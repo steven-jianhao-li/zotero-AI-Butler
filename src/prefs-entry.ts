@@ -14,8 +14,12 @@ import { config } from "../package.json";
     const hooks = addonInstance?.hooks;
 
     if (hooks && typeof hooks.onPrefsEvent === "function") {
-      // Use globalThis to reference the current window object in this context
-      hooks.onPrefsEvent("load", { window: globalThis as unknown as Window });
+      // In PreferencePanes scripts, `globalThis` may be a sandbox global, not the actual Window.
+      // Prefer the real window from document.defaultView if available.
+      const doc: any = (globalThis as any).document;
+      const win: any =
+        doc?.defaultView || (globalThis as any).window || (globalThis as any);
+      hooks.onPrefsEvent("load", { window: win as Window });
     } else {
       console.warn("[AI-Butler][Prefs] hooks.onPrefsEvent not available");
     }

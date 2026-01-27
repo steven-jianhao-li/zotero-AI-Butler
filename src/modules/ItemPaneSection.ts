@@ -934,13 +934,49 @@ async function loadMindmapContent(
     }
 
     if (!mindmapNote) {
+      const generateMindmapBtn = doc.createElement("button");
+      generateMindmapBtn.textContent = "🧠 生成思维导图";
+      generateMindmapBtn.style.cssText = `
+        padding: 8px 16px;
+        border: 1px solid #4caf50;
+        border-radius: 4px;
+        background: transparent;
+        color: #4caf50;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+      `;
+      generateMindmapBtn.addEventListener("mouseenter", () => {
+        generateMindmapBtn.style.background = "rgba(76, 175, 80, 0.1)";
+      });
+      generateMindmapBtn.addEventListener("mouseleave", () => {
+        generateMindmapBtn.style.background = "transparent";
+      });
+      generateMindmapBtn.addEventListener("click", async () => {
+        try {
+          generateMindmapBtn.disabled = true;
+          generateMindmapBtn.textContent = "正在加入队列...";
+          const { TaskQueueManager } = await import("./taskQueue");
+          const queueManager = TaskQueueManager.getInstance();
+          await queueManager.addMindmapTask(targetItem);
+          generateMindmapBtn.textContent = "✅ 已加入队列";
+        } catch (err: any) {
+          generateMindmapBtn.textContent = "❌ 失败";
+          setTimeout(() => {
+            generateMindmapBtn.textContent = "🧠 生成思维导图";
+            generateMindmapBtn.disabled = false;
+          }, 2000);
+        }
+      });
+
       container.innerHTML = `
         <div style="text-align: center; color: #9e9e9e; padding: 16px;">
           <div style="font-size: 24px; margin-bottom: 8px;">🧠</div>
-          <div>暂无思维导图</div>
-          <div style="font-size: 11px; margin-top: 4px; opacity: 0.7;">右键文献选择"AI管家生成思维导图"</div>
+          <div style="font-size: 12px; margin-bottom: 8px;">暂无思维导图</div>
         </div>
       `;
+      container.appendChild(generateMindmapBtn);
       return;
     }
 

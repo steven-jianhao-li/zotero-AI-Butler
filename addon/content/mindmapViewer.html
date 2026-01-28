@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>思维导图</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #ffffff;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      #frame {
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+
+      #error {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: #d32f2f;
+        font-size: 14px;
+        padding: 20px;
+        text-align: center;
+        max-width: 720px;
+        line-height: 1.5;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <iframe id="frame" title="Mindmap"></iframe>
+    <div id="error"></div>
+
+    <script>
+      (function () {
+        function getArgs() {
+          try {
+            return (window.arguments && window.arguments[0]) || {};
+          } catch (e) {
+            return {};
+          }
+        }
+
+        const args = getArgs();
+        const title =
+          (args && args.title ? String(args.title) : "") ||
+          (window.__aiButlerTitle ? String(window.__aiButlerTitle) : "") ||
+          "思维导图";
+        const markdown =
+          (args && args.markdown ? String(args.markdown) : "") ||
+          (window.__aiButlerMindmapMarkdown
+            ? String(window.__aiButlerMindmapMarkdown)
+            : "");
+        const prefsPrefix =
+          (args && args.prefsPrefix ? String(args.prefsPrefix) : "") ||
+          (window.__aiButlerPrefsPrefix
+            ? String(window.__aiButlerPrefsPrefix)
+            : "");
+
+        document.title = title;
+
+        const errorEl = document.getElementById("error");
+        const frame = document.getElementById("frame");
+        frame.src = new URL(
+          "mindmap.html?mode=viewer",
+          window.location.href,
+        ).href;
+
+        if (!markdown) {
+          errorEl.style.display = "block";
+          errorEl.textContent = "未提供思维导图内容。";
+          return;
+        }
+
+        const getPref = (key) => {
+          if (!prefsPrefix) return undefined;
+          try {
+            if (typeof Zotero !== "undefined" && Zotero.Prefs) {
+              return Zotero.Prefs.get(`${prefsPrefix}.${key}`, true);
+            }
+          } catch (e) {}
+          return undefined;
+        };
+
+        const notify = (title, text, type) => {
+          try {
+            new ztoolkit.ProgressWindow(title, {
+              closeOnClick: true,
+              closeTime: 3000,
+            })
+              .createLine({ text, type })
+              .show();
+          } catch (e) {}
+        };
+
+        const saveExport = async (payload) => {
+          const format = payload.format || "png";
+          const filename = payload.filename || `mindmap.${format}`;
+
+          let downloadDir = "";
+          const customPath = String(getPref("mindmapExportPath") || "");
+
+          if (customPath && customPath.trim()) {
+            downloadDir = customPath.trim();
+            try {
+              await IOUtils.makeDirectory(downloadDir, {
+                ignoreExisting: true,
+              });
+            } catch (e) {
+              downloadDir = "";
+            }
+          }
+
+          if (!downloadDir) {
+            try {
+              const desktopDir = Services.dirsvc.get("Desk", Ci.nsIFile);
+              downloadDir = desktopDir.path;
+            } catch (e) {
+              try {
+                const dataDir = Zotero.DataDirectory.dir;
+                downloadDir = PathUtils.join(dataDir, "mindmaps");
+                await IOUtils.makeDirectory(downloadDir, {
+                  ignoreExisting: true,
+                });
+              } catch (e2) {
+                downloadDir = "";
+              }
+            }
+          }
+
+          if (!downloadDir) {
+            throw new Error("No writable export directory.");
+          }
+
+          const filePath = PathUtils.join(downloadDir, filename);
+
+          if (format === "png") {
+            const dataUrl = payload.dataUrl || "";
+            const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
+            const binaryString = atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            await IOUtils.write(filePath, bytes);
+          } else if (format === "opml") {
+            const content = String(payload.content || "");
+            const encoder = new TextEncoder();
+            await IOUtils.write(filePath, encoder.encode(content));
+          }
+
+          notify("思维导图已导出", `已保存到: ${filePath}`, "success");
+          try {
+            Zotero.launchFile(filePath);
+          } catch (e) {}
+        };
+
+        window.addEventListener("message", (event) => {
+          if (!event.data || typeof event.data !== "object") return;
+
+          if (event.data.type === "mindmap-ready") {
+            try {
+              frame.contentWindow.postMessage(
+                { type: "render-mindmap", markdown },
+                "*",
+              );
+            } catch (e) {
+              errorEl.style.display = "block";
+              errorEl.textContent = "发送思维导图数据失败。";
+            }
+          }
+
+          if (event.data.type === "export-mindmap") {
+            saveExport(event.data).catch((e) => {
+              notify("导出失败", `错误: ${e}`, "error");
+            });
+          }
+        });
+
+        // Fallback: if the iframe is already loaded and ready message is missed
+        frame.addEventListener("load", () => {
+          setTimeout(() => {
+            try {
+              frame.contentWindow.postMessage(
+                { type: "render-mindmap", markdown },
+                "*",
+              );
+            } catch (e) {}
+          }, 500);
+        });
+
+        window.addEventListener(
+          "keydown",
+          (e) => {
+            if (e.key === "Escape") {
+              try {
+                window.close();
+              } catch (err) {}
+            }
+          },
+          true,
+        );
+      })();
+    </script>
+  </body>
+</html>

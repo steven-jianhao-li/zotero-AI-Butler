@@ -82,6 +82,7 @@
       <button id="zoom-out" title="缩小">➖</button>
       <button id="zoom-in" title="放大">➕</button>
       <button id="fit" title="适应画布">🎯</button>
+      <button id="open-window" title="打开预览窗口">⛶</button>
       <button id="export-png" class="primary" title="导出为PNG图片">
         📷 PNG
       </button>
@@ -165,6 +166,41 @@
           markmap.fit();
         }
       });
+
+      // 在侧边栏 iframe 中显示"打开预览窗口"按钮；在独立预览窗口中隐藏
+      (function () {
+        const openBtn = document.getElementById("open-window");
+        if (!openBtn) return;
+
+        const isViewerMode = (() => {
+          try {
+            const params = new URLSearchParams(window.location.search);
+            return params.get("mode") === "viewer";
+          } catch (e) {
+            return false;
+          }
+        })();
+
+        // 顶层窗口（非 iframe）或 viewer 模式下，不需要该按钮
+        const isTopLevel = (() => {
+          try {
+            return window.parent === window;
+          } catch (e) {
+            return true;
+          }
+        })();
+
+        if (isViewerMode || isTopLevel) {
+          openBtn.style.display = "none";
+          return;
+        }
+
+        openBtn.addEventListener("click", () => {
+          try {
+            window.parent.postMessage({ type: "open-mindmap-viewer" }, "*");
+          } catch (e) {}
+        });
+      })();
 
       // PNG 导出功能
       document

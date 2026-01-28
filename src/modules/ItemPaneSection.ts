@@ -1105,6 +1105,24 @@ async function loadMindmapContent(
           }
         }
 
+        if (event.data && event.data.type === "open-mindmap-viewer") {
+          ztoolkit.log("[AI-Butler] 收到打开思维导图预览窗口请求");
+          try {
+            await openMindmapViewerWindow(mdContent, targetItem);
+          } catch (e) {
+            ztoolkit.log("[AI-Butler] 打开思维导图预览窗口失败:", e);
+            new ztoolkit.ProgressWindow("AI Butler", {
+              closeOnClick: true,
+              closeTime: 3000,
+            })
+              .createLine({
+                text: "打开思维导图预览窗口失败",
+                type: "error",
+              })
+              .show();
+          }
+        }
+
         // 处理导出请求
         if (event.data && event.data.type === "export-mindmap") {
           ztoolkit.log("[AI-Butler] 收到导出请求, 格式:", event.data.format);
@@ -2465,6 +2483,70 @@ async function openImageSummaryViewerWindow(
   try {
     (dialogWin as any).__aiButlerImageDataUri = imageDataUri;
     (dialogWin as any).__aiButlerTitle = title;
+  } catch {
+    // ignore
+  }
+
+  try {
+    dialogWin.focus();
+  } catch {
+    // ignore
+  }
+}
+
+async function openMindmapViewerWindow(
+  markdown: string,
+  targetItem: any,
+): Promise<void> {
+  const mainWin: any =
+    Zotero && (Zotero as any).getMainWindow
+      ? (Zotero as any).getMainWindow()
+      : (globalThis as any);
+
+  if (typeof mainWin?.openDialog !== "function") {
+    throw new Error("openDialog not available");
+  }
+
+  let itemTitle = "";
+  try {
+    const t = targetItem?.getField?.("title");
+    itemTitle = typeof t === "string" ? t : "";
+  } catch {
+    // ignore
+  }
+
+  const screenObj: any = mainWin?.screen;
+  const height = screenObj
+    ? Math.max(800, Math.floor(screenObj.availHeight * 0.9))
+    : 900;
+  let width = Math.max(650, Math.floor(height * 0.75));
+  if (screenObj) {
+    width = Math.min(width, Math.floor(screenObj.availWidth * 0.9));
+  }
+
+  const title = itemTitle ? `思维导图 - ${itemTitle}` : "思维导图";
+  const viewerURL = `chrome://${config.addonRef}/content/mindmapViewer.html`;
+
+  const dialogWin: any = mainWin.openDialog(
+    viewerURL,
+    "",
+    `chrome,centerscreen,resizable=yes,width=${width},height=${height}`,
+    {
+      markdown,
+      title,
+      prefsPrefix: config.prefsPrefix,
+    },
+  );
+
+  if (!dialogWin) {
+    throw new Error("Failed to open viewer window");
+  }
+
+  // Extra fallback channel in case window.arguments isn't available for some reason
+  try {
+    (dialogWin as any).__aiButlerMindmapMarkdown = markdown;
+    (dialogWin as any).__aiButlerTitle = title;
+    (dialogWin as any).__aiButlerPrefsPrefix = config.prefsPrefix;
   } catch {
     // ignore
   }

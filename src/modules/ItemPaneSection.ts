@@ -48,6 +48,133 @@ let currentChatState: ChatState = {
   savedPairIds: new Set(),
 };
 
+type SidebarAutoRefreshTarget = "summary" | "imageSummary" | "mindmap";
+
+let sidebarContext: {
+  doc: Document;
+  item: Zotero.Item;
+  itemId: number;
+} | null = null;
+
+let sidebarAutoRefreshBound = false;
+let sidebarRefreshTimer: number | null = null;
+const pendingSidebarRefreshTargets = new Set<SidebarAutoRefreshTarget>();
+
+function setSidebarContext(doc: Document, item: Zotero.Item | null): void {
+  sidebarContext = item
+    ? {
+        doc,
+        item,
+        itemId: item.id,
+      }
+    : null;
+
+  // Lazy-init listeners on first successful render
+  void ensureSidebarAutoRefresh();
+}
+
+function parseTaskTarget(taskId: string): {
+  itemId: number;
+  target: SidebarAutoRefreshTarget;
+} | null {
+  const match = /^(task|img-task|mindmap-task)-(\d+)$/.exec(taskId);
+  if (!match) return null;
+  const itemId = Number(match[2]);
+  if (!Number.isFinite(itemId)) return null;
+
+  const target: SidebarAutoRefreshTarget =
+    match[1] === "img-task"
+      ? "imageSummary"
+      : match[1] === "mindmap-task"
+        ? "mindmap"
+        : "summary";
+
+  return { itemId, target };
+}
+
+function scheduleSidebarRefresh(target: SidebarAutoRefreshTarget): void {
+  pendingSidebarRefreshTargets.add(target);
+  if (sidebarRefreshTimer) {
+    clearTimeout(sidebarRefreshTimer);
+  }
+  // Debounce: allow Zotero to finish saving notes/attachments
+  sidebarRefreshTimer = setTimeout(() => {
+    void runSidebarRefresh().catch((e) => {
+      ztoolkit.log("[AI-Butler] Sidebar auto-refresh failed:", e);
+    });
+  }, 500) as any as number;
+}
+
+async function runSidebarRefresh(): Promise<void> {
+  if (!sidebarContext) return;
+
+  const { doc, itemId } = sidebarContext;
+  const targets = Array.from(pendingSidebarRefreshTargets);
+  pendingSidebarRefreshTargets.clear();
+
+  let item: Zotero.Item = sidebarContext.item;
+  try {
+    item = await Zotero.Items.getAsync(itemId);
+  } catch {
+    // ignore and use cached item instance
+  }
+
+  if (!sidebarContext || sidebarContext.itemId !== itemId) return;
+
+  if (targets.includes("summary")) {
+    const noteContent = doc.getElementById(
+      "ai-butler-note-content",
+    ) as HTMLElement | null;
+    if (noteContent) {
+      noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+      await loadNoteContent(doc, item, noteContent);
+    }
+  }
+
+  if (targets.includes("imageSummary")) {
+    const imageContainer = doc.getElementById(
+      "ai-butler-image-container",
+    ) as HTMLElement | null;
+    const imageBtnContainer = doc.getElementById(
+      "ai-butler-image-btn-container",
+    ) as HTMLElement | null;
+    if (imageContainer && imageBtnContainer) {
+      imageContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+      await loadImageSummary(doc, item, imageContainer, imageBtnContainer);
+    }
+  }
+
+  if (targets.includes("mindmap")) {
+    const mindmapContainer = doc.getElementById(
+      "ai-butler-mindmap-container",
+    ) as HTMLElement | null;
+    if (mindmapContainer) {
+      mindmapContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+      await loadMindmapContent(doc, item, mindmapContainer);
+    }
+  }
+}
+
+async function ensureSidebarAutoRefresh(): Promise<void> {
+  if (sidebarAutoRefreshBound) return;
+  sidebarAutoRefreshBound = true;
+
+  try {
+    const { TaskQueueManager } = await import("./taskQueue");
+    const manager = TaskQueueManager.getInstance();
+
+    manager.onComplete((taskId, success) => {
+      if (!success) return;
+      const parsed = parseTaskTarget(taskId);
+      if (!parsed) return;
+      if (!sidebarContext || sidebarContext.itemId !== parsed.itemId) return;
+      scheduleSidebarRefresh(parsed.target);
+    });
+  } catch (error) {
+    ztoolkit.log("[AI-Butler] Sidebar auto-refresh bind failed:", error);
+  }
+}
+
 /**
  * 注册条目面板侧边栏区块
  *
@@ -114,6 +241,7 @@ function renderItemPaneSection(
 
   // 检查是否有有效的文献条目
   if (!item || !item.isRegularItem()) {
+    setSidebarContext(doc, null);
     const hint = doc.createElement("div");
     hint.style.cssText = `
       color: #9e9e9e;
@@ -125,6 +253,8 @@ function renderItemPaneSection(
     body.appendChild(hint);
     return;
   }
+
+  setSidebarContext(doc, item);
 
   // 重置聊天状态（如果切换了条目）
   if (currentChatState.itemId !== item.id) {
@@ -893,6 +1023,20 @@ async function loadMindmapContent(
   container: HTMLElement,
 ): Promise<void> {
   try {
+    // Avoid accumulating message listeners across re-renders/refreshes
+    const mindmapWin: any = doc.defaultView;
+    if (mindmapWin?.__aiButlerMindmapMessageHandler) {
+      try {
+        mindmapWin.removeEventListener(
+          "message",
+          mindmapWin.__aiButlerMindmapMessageHandler,
+        );
+      } catch {
+        // ignore
+      }
+      mindmapWin.__aiButlerMindmapMessageHandler = null;
+    }
+
     // 获取正确的父条目
     let targetItem: any = item;
     if (item.isAttachment && item.isAttachment()) {
@@ -1223,7 +1367,10 @@ async function loadMindmapContent(
         }
       };
 
-      doc.defaultView?.addEventListener("message", messageHandler);
+      if (mindmapWin) {
+        mindmapWin.__aiButlerMindmapMessageHandler = messageHandler;
+        mindmapWin.addEventListener("message", messageHandler);
+      }
 
       // 监听 iframe 加载完成（备用方案）
       iframe.addEventListener("load", () => {
@@ -2184,6 +2331,9 @@ async function loadImageSummary(
   imageBtnContainer: HTMLElement,
 ): Promise<void> {
   try {
+    // Clear buttons to avoid duplicates on refresh
+    imageBtnContainer.innerHTML = "";
+
     let targetItem: any = item;
     if (item.isAttachment && item.isAttachment()) {
       const parentId = item.parentItemID;

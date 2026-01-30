@@ -576,7 +576,9 @@ export class NoteGenerator {
     // 创建新的笔记对象
     const note = new Zotero.Item("note");
 
-    // 设置父条目 ID,将笔记关联到文献
+    // 设置库 ID 和父条目 ID,将笔记关联到文献
+    // 修复群组文献库中创建笔记时 "Parent item not found" 的问题
+    note.libraryID = item.libraryID;
     note.parentID = item.id;
 
     // 设置笔记内容

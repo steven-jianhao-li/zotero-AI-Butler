@@ -732,6 +732,7 @@ export class SummaryView extends BaseView {
 
     // 创建新笔记
     const note = new Zotero.Item("note");
+    note.libraryID = item.libraryID;
     note.parentID = item.id;
     const header = `<h2>AI 管家 - 后续追问 - ${this.escapeHtml(title)}</h2>`;
     note.setNote(header);

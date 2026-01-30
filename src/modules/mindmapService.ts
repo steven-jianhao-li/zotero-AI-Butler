@@ -184,6 +184,7 @@ export class MindmapService {
 
     // 创建新笔记
     const note = new Zotero.Item("note");
+    note.libraryID = item.libraryID;
     note.parentID = item.id;
     note.setNote(noteHtml);
 

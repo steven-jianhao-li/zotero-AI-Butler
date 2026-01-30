@@ -221,7 +221,6 @@ ${truncatedPrompt}
 ${truncatedRequest}`;
   }
 
-
   /**
    * 创建思维导图笔记
    *

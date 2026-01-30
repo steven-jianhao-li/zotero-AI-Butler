@@ -51,6 +51,7 @@ export class ImageNoteGenerator {
     if (!note) {
       // 创建新笔记（先设置临时内容）
       note = new Zotero.Item("note");
+      note.libraryID = item.libraryID;
       note.parentID = item.id;
       note.setNote("<p>正在生成一图总结...</p>");
       note.addTag(this.IMAGE_NOTE_TAG);

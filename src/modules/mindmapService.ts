@@ -142,7 +142,83 @@ export class MindmapService {
       prompt,
     );
 
+    // 校验返回内容是否有效
+    const trimmedContent = mindmapContent.trim();
+    if (!trimmedContent) {
+      const errorInfo = this.buildErrorDebugInfo(
+        "空内容",
+        mindmapContent,
+        pdfContent,
+        isBase64,
+        prompt,
+      );
+      throw new Error(`LLM 返回了空内容，无法生成思维导图\n\n${errorInfo}`);
+    }
+
+    // 检查是否包含有效的 Markdown 列表结构 (至少有一个 # 或 - 或 * 开头的行)
+    const hasValidStructure = /^[#\-*]/m.test(trimmedContent);
+    if (!hasValidStructure) {
+      const errorInfo = this.buildErrorDebugInfo(
+        "格式不符",
+        mindmapContent,
+        pdfContent,
+        isBase64,
+        prompt,
+      );
+      ztoolkit.log(
+        "[AI-Butler] 思维导图内容格式异常:",
+        trimmedContent.substring(0, 500),
+      );
+      throw new Error(
+        `LLM 返回的内容不符合思维导图格式要求（需包含 # 或 - 开头的列表）\n\n${errorInfo}`,
+      );
+    }
+
     return mindmapContent;
+  }
+
+  /**
+   * 构建错误调试信息（用于笔记记录和日志）
+   */
+  private static buildErrorDebugInfo(
+    errorType: string,
+    llmResponse: string,
+    pdfContent: string,
+    isBase64: boolean,
+    prompt: string,
+  ): string {
+    // 截断 LLM 响应（最多 500 字符）
+    const truncatedResponse =
+      llmResponse.length > 500
+        ? llmResponse.substring(0, 500) + "...[已截断]"
+        : llmResponse || "(空)";
+
+    // 截断请求内容（如果是 base64 只显示前 100 字符）
+    let truncatedRequest: string;
+    if (isBase64) {
+      truncatedRequest = `[Base64 PDF] ${pdfContent.substring(0, 100)}...[已截断，原长度: ${pdfContent.length}]`;
+    } else {
+      truncatedRequest =
+        pdfContent.length > 300
+          ? pdfContent.substring(0, 300) + "...[已截断]"
+          : pdfContent;
+    }
+
+    // 截断 prompt
+    const truncatedPrompt =
+      prompt.length > 200 ? prompt.substring(0, 200) + "...[已截断]" : prompt;
+
+    return `===== 调试信息 =====
+错误类型: ${errorType}
+
+----- LLM 实际响应 -----
+${truncatedResponse}
+
+----- 请求 Prompt -----
+${truncatedPrompt}
+
+----- 请求内容 -----
+${truncatedRequest}`;
   }
 
   /**
@@ -184,6 +260,7 @@ export class MindmapService {
 
     // 创建新笔记
     const note = new Zotero.Item("note");
+    note.libraryID = item.libraryID;
     note.parentID = item.id;
     note.setNote(noteHtml);
 

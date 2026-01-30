@@ -534,66 +534,45 @@ export class VolcanoArkProvider implements ILlmProvider {
   /**
    * 从火山引擎 Response API 流式响应中提取文本
    * 流式响应格式: {"type":"response.output_text.delta","delta":"文本内容",...}
+   *
+   * 注意：此方法仅用于流式响应的增量解析，只提取 delta 事件中的内容。
+   * 不处理 response.completed 等完整响应事件，因为这些事件包含的是已累加的完整内容，
+   * 会导致内容重复输出。
+   *
+   * 火山引擎（豆包模型）流式响应事件顺序：
+   * 1. response.output_text.delta - 实际输出的增量文本（我们需要提取的）
+   * 2. response.output_text.done - 输出完成标记（包含完整文本，不提取以避免重复）
+   * 3. response.output_item.done - 输出项完成标记
+   * 4. response.completed - 响应完成标记（包含完整文本，不提取以避免重复）
+   *
+   * 另外，豆包模型的思考过程会通过 response.reasoning_summary_text.delta 发送，
+   * 我们不提取这些内容，只提取最终的输出文本。
    */
   private extractVolcanoText(json: any): string {
     try {
-      // 优先检查 response.output_text.delta 格式（流式响应的主要格式）
+      // 只处理 response.output_text.delta 格式（流式响应的增量输出）
       // 格式: {"type":"response.output_text.delta","delta":"text",...}
+      // 这是我们唯一需要提取的事件类型，其他事件要么是控制事件，要么包含重复的完整内容
       if (json?.type === "response.output_text.delta" && json?.delta) {
         return json.delta;
       }
 
-      // 检查完整响应中的 output 数组格式（非流式或响应完成事件）
-      const output = json?.output;
-      if (Array.isArray(output)) {
-        for (const item of output) {
-          if (item?.type === "message" && item?.content) {
-            const content = item.content;
-            if (Array.isArray(content)) {
-              const texts: string[] = [];
-              for (const c of content) {
-                if (c?.type === "output_text" && c?.text) {
-                  texts.push(c.text);
-                }
-              }
-              if (texts.length > 0) return texts.join("");
-            }
-          }
-        }
-      }
-
-      // 也检查 response 包装的格式（如 response.completed 事件）
-      if (json?.response?.output) {
-        const respOutput = json.response.output;
-        if (Array.isArray(respOutput)) {
-          for (const item of respOutput) {
-            if (item?.type === "message" && item?.content) {
-              const content = item.content;
-              if (Array.isArray(content)) {
-                const texts: string[] = [];
-                for (const c of content) {
-                  if (c?.type === "output_text" && c?.text) {
-                    texts.push(c.text);
-                  }
-                }
-                if (texts.length > 0) return texts.join("");
-              }
-            }
-          }
-        }
-      }
-
-      // 兼容 choices 格式（如果火山引擎也支持 OpenAI 兼容格式）
+      // 兼容 OpenAI Chat Completions 格式的增量输出（delta.content）
+      // 某些火山引擎配置可能返回这种格式
       const choices = json?.choices;
       if (Array.isArray(choices) && choices.length > 0) {
         const choice = choices[0];
+        // 只处理流式增量内容（delta.content），不处理完整消息（message.content）
         if (choice?.delta?.content) {
           return choice.delta.content;
         }
-        if (choice?.message?.content) {
-          return choice.message.content;
-        }
       }
+
+      // 不处理以下事件类型以避免重复输出：
+      // - response.output_text.done: 包含完整的输出文本
+      // - response.output_item.done: 输出项完成标记
+      // - response.completed: 包含完整的响应输出
+      // - response.reasoning_summary_text.delta: 模型的思考过程（非最终输出）
 
       return "";
     } catch {

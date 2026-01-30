@@ -1065,8 +1065,11 @@ ${jsonMarker}
           const isChatNote =
             tags.some((t) => t.tag === "AI-Butler-Chat") ||
             /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(noteHtml);
+          // 支持所有 AI 生成的笔记类型：总结、思维导图、一图总结
           const isAiSummaryNote =
             tags.some((t) => t.tag === "AI-Generated") ||
+            tags.some((t) => t.tag === "AI-Mindmap") ||
+            tags.some((t) => t.tag === "AI-ImageSummary") ||
             (/<h2>\s*AI 管家\s*-/.test(noteHtml) && !isChatNote);
 
           if (isAiSummaryNote) {
@@ -1249,8 +1252,11 @@ ${jsonMarker}
           const isChatNote =
             tags.some((t) => t.tag === "AI-Butler-Chat") ||
             /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(noteHtml);
+          // 支持所有 AI 生成的笔记类型：总结、思维导图、一图总结
           const isAiSummaryNote =
             tags.some((t) => t.tag === "AI-Generated") ||
+            tags.some((t) => t.tag === "AI-Mindmap") ||
+            tags.some((t) => t.tag === "AI-ImageSummary") ||
             (/<h2>\s*AI 管家\s*-/.test(noteHtml) && !isChatNote);
 
           if (isAiSummaryNote) {

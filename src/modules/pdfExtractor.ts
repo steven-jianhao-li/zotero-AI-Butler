@@ -12,13 +12,15 @@
  * 4. 根据需要截断文本以适应 API 限制
  *
  * 技术实现:
- * - 依赖 Zotero 的全文索引功能,无需额外的 PDF 解析库
+ * - 可选Zotero 的全文索引功能, 或PDF解析APIMinerU
  * - 自动触发索引,确保文本可用性
  * - 提供多级文本清理,去除 PDF 常见伪影
  *
  * @module pdfExtractor
  * @author AI-Butler Team
  */
+
+import { getPref } from "../utils/prefs";
 
 /**
  * PDF文本提取器类
@@ -155,8 +157,11 @@ export class PDFExtractor {
    * 执行流程:
    * 1. 获取条目的所有附件
    * 2. 筛选出 PDF 类型的附件
-   * 3. 从 PDF 附件中提取文本内容
+   * 3. 从 PDF 附件中提取文本内容 
+   *    3.1 使用Zotero全文索引直接提取文本
+   *    3.2 依赖MinerU API提取文本， 需提供MinerU API Key
    * 4. 验证文本有效性
+   *
    *
    * 错误处理:
    * - 无附件:抛出明确的错误信息
@@ -210,6 +215,29 @@ export class PDFExtractor {
     );
 
     // 第三步:从 PDF 附件中提取文本
+    const currentPdfMode = (getPref("pdfProcessMode") as string) || "base64";
+    const mineruApiKey = (getPref("mineruApiKey") as string) || "";
+    // 若选择 MinerU API 模式且已配置 API Key，则使用 MinerU API 提取文本
+    if (
+      currentPdfMode === "mineru" &&
+      mineruApiKey &&
+      mineruApiKey.trim().length > 0
+    ) {
+      ztoolkit.log(
+        "[AI Butler] MinerU pdf process mode selected and API Key detected, routing to MineruClient for extraction...",
+      );
+      try {
+        const { MineruClient } = await import("./mineruIntegration");
+        return await MineruClient.extractMarkdown(item);
+      } catch (e) {
+        ztoolkit.log(
+          "[AI Butler] MinerU extraction failed, returning to Zotero built-in extraction",
+          e,
+        );
+      }
+    }
+
+    // 若选择 Zotero 全文索引模式或MinerU失效，则使用 Zotero 全文索引提取文本
     const text = await this.extractTextFromPDF(pdfAttachment);
 
     // 第四步:验证文本有效性

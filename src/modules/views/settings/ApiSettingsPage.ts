@@ -802,14 +802,28 @@ export class ApiSettingsPage {
       [
         { value: "base64", label: "Base64 编码(推荐,支持多模态)" },
         { value: "text", label: "文本提取(仅文字内容)" },
+        { value: "mineru", label: "MinerU (高质量排版还原)" },
       ],
       pdfModeValue,
       (newVal) => {
+        // Toggle Mineru API Key visibility
+        const mineruSection = this.container.querySelector(
+          "#provider-mineru",
+        ) as HTMLElement;
+        if (mineruSection) {
+          mineruSection.style.display = newVal === "mineru" ? "block" : "none";
+        }
+
         // 当用户手动调整 PDF 模式，也给出一个轻量提示
-        const msg =
-          newVal === "base64"
-            ? "已选择 Base64 模式：多模态更强，适用于 Gemini 等。"
-            : "已选择 文本提取 模式：仅文字，适用于 Anthropic 等。";
+        let msg = "";
+        if (newVal === "base64")
+          msg = "已选择 Base64 模式：多模态更强，适用于 Gemini 等。";
+        else if (newVal === "text")
+          msg = "已选择 文本提取 模式：仅文字，适用于 Anthropic 等。";
+        else if (newVal === "mineru")
+          msg =
+            "已选择 MinerU 模式：需要填写 API Key 以启用高级公式/表格还原。";
+
         try {
           new ztoolkit.ProgressWindow("AI Butler", {
             closeOnClick: true,
@@ -818,11 +832,10 @@ export class ApiSettingsPage {
             .createLine({ text: msg, type: "info" })
             .show();
         } catch (e) {
-          // 记录而不打断设置流，避免空代码块触发 eslint no-empty
           try {
             ztoolkit.log("[API Settings] 显示 PDF 模式提示失败:", e);
           } catch (_ignore) {
-            // 在罕见环境下 ztoolkit 不可用时静默忽略
+            // ignore
           }
         }
       },
@@ -831,9 +844,49 @@ export class ApiSettingsPage {
       this.createFormGroup(
         "PDF 处理模式",
         pdfModeSelect,
-        "Base64 模式:将 PDF 直接编码发送给多模态大模型,支持图片、表格、公式等。文本模式:仅提取文字内容,适合不支持多模态的模型",
+        "Base64:原生图片识别; 文本提取:Zotero默认提取; MinerU:调用API实现复杂公式/表格排版的高质量还原",
       ),
     );
+
+    // MinerU 专属配置区域
+    const sectionMineru = this.createElement("div", { id: "provider-mineru" });
+    sectionMineru.style.display = pdfModeValue === "mineru" ? "block" : "none";
+
+    const mineruInputWrapper = this.createPasswordInput(
+      "mineruApiKey",
+      (getPref("mineruApiKey") as string) || "",
+      "配置以启用高质量公式与表格识别...",
+    );
+
+    // 手动绑定保存事件，因为 createPasswordInput 只有存在 providerId 时才自动保存
+    const mineruInputEl = mineruInputWrapper.querySelector(
+      "input",
+    ) as HTMLInputElement;
+    if (mineruInputEl) {
+      let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+      const saveMineruKey = () => {
+        setPref("mineruApiKey" as any, mineruInputEl.value.trim());
+      };
+
+      mineruInputEl.addEventListener("input", () => {
+        if (saveTimeout) clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(saveMineruKey, 500);
+      });
+
+      mineruInputEl.addEventListener("blur", () => {
+        if (saveTimeout) clearTimeout(saveTimeout);
+        saveMineruKey();
+      });
+    }
+
+    sectionMineru.appendChild(
+      this.createFormGroup(
+        "MinerU API Key *",
+        mineruInputWrapper,
+        "【必填】请访问 https://mineru.net/ 申请 API Key",
+      ),
+    );
+    form.appendChild(sectionMineru);
 
     // PDF 大小限制设置
     const sizeLimitContainer = this.createElement("div", {

@@ -34,6 +34,7 @@ declare namespace _ZoteroTypes {
       "enableTopP": boolean;
       "stream": boolean;
       "requestTimeout": string;
+      "mineruApiKey": string;
       "summaryPrompt": string;
       "customPrompts": string;
       "summaryMode": string;

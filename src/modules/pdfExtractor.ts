@@ -157,7 +157,7 @@ export class PDFExtractor {
    * 执行流程:
    * 1. 获取条目的所有附件
    * 2. 筛选出 PDF 类型的附件
-   * 3. 从 PDF 附件中提取文本内容 
+   * 3. 从 PDF 附件中提取文本内容
    *    3.1 使用Zotero全文索引直接提取文本
    *    3.2 依赖MinerU API提取文本， 需提供MinerU API Key
    * 4. 验证文本有效性

@@ -35,26 +35,26 @@
     "@types/marked": "^5.0.2",
     "d3": "^7.9.0",
     "jszip": "^3.10.1",
-    "katex": "^0.16.28",
+    "katex": "^0.16.33",
     "marked": "^17.0.3",
     "markmap-lib": "^0.18.12",
     "markmap-view": "^0.18.12",
     "mathjax": "^4.1.1",
     "simple-mind-map": "^0.14.0-fix.1",
-    "zotero-plugin-toolkit": "^5.1.0-beta.13"
+    "zotero-plugin-toolkit": "^5.1.2"
   },
   "devDependencies": {
     "@types/chai": "^5.2.3",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^25.2.0",
+    "@types/node": "^25.3.3",
     "@zotero-plugin/eslint-config": "^0.6.7",
     "chai": "^6.2.2",
     "eslint": "^10.0.2",
     "mocha": "^11.7.5",
     "prettier": "^3.8.1",
     "typescript": "^5.9.3",
-    "zotero-plugin-scaffold": "^0.8.2",
-    "zotero-types": "^4.1.0-beta.1"
+    "zotero-plugin-scaffold": "^0.8.3",
+    "zotero-types": "^4.1.1"
   },
   "prettier": {
     "printWidth": 80,

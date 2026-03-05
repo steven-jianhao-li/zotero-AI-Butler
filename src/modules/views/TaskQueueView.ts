@@ -295,6 +295,7 @@ export class TaskQueueView extends BaseView {
       { label: "🧠 思维导图", value: "mindmap" as TaskType | "all" },
       { label: "📊 填表", value: "tableFill" as TaskType | "all" },
       { label: "📝 综述", value: "review" as TaskType | "all" },
+      { label: "🎯 针对性提问", value: "targetedQuestion" as TaskType | "all" },
     ];
 
     typeButtons.forEach((btn) => {
@@ -538,6 +539,7 @@ export class TaskQueueView extends BaseView {
     // 任务类型标识 (一图总结/思维导图特殊显示)
     const isImageSummary = task.taskType === "imageSummary";
     const isMindmap = task.taskType === "mindmap";
+    const isTargetedQuestion = task.taskType === "targetedQuestion";
     if (isImageSummary) {
       const typeBadge = this.createElement("span", {
         styles: {
@@ -591,6 +593,20 @@ export class TaskQueueView extends BaseView {
           marginLeft: "8px",
         },
         textContent: "📝 综述",
+      });
+      taskHeader.appendChild(typeBadge);
+    }
+    if (isTargetedQuestion) {
+      const typeBadge = this.createElement("span", {
+        styles: {
+          fontSize: "11px",
+          padding: "2px 8px",
+          borderRadius: "10px",
+          backgroundColor: "#0ea5e9",
+          color: "white",
+          marginLeft: "8px",
+        },
+        textContent: "🎯 针对性提问",
       });
       taskHeader.appendChild(typeBadge);
     }

@@ -52,7 +52,8 @@ export type TaskType =
   | "imageSummary"
   | "mindmap"
   | "tableFill"
-  | "review";
+  | "review"
+  | "targetedQuestion";
 
 /**
  * 任务项接口
@@ -82,6 +83,12 @@ export interface TaskItem {
   collectionId?: number;
   pdfAttachmentIds?: number[];
   reviewName?: string;
+  tableTemplate?: string;
+  /** 针对性提问任务参数 */
+  targetedPrompt?: string;
+  targetedNoteTitle?: string;
+  targetedSelectedTableEntries?: string[];
+  targetedAppendedTableEntries?: string[];
 }
 
 /**
@@ -707,6 +714,7 @@ export class TaskQueueManager {
     pdfAttachments: Zotero.Item[],
     reviewName: string,
     prompt?: string,
+    tableTemplate?: string,
   ): Promise<string> {
     const taskId = `review-task-${collection.id}`;
 
@@ -734,6 +742,7 @@ export class TaskQueueManager {
       collectionId: collection.id,
       pdfAttachmentIds: pdfAttachments.map((p) => p.id),
       reviewName,
+      tableTemplate,
     };
 
     this.tasks.set(taskId, task);
@@ -802,6 +811,7 @@ export class TaskQueueManager {
         pdfAttachments,
         reviewName,
         prompt || "",
+        task.tableTemplate || "",
         (message: string, progress: number) => {
           task.progress = progress;
           task.workflowStage = message;
@@ -846,6 +856,155 @@ export class TaskQueueManager {
    */
   public getReviewTasks(): TaskItem[] {
     return this.getAllTasks().filter((t) => t.taskType === "review");
+  }
+
+  /**
+   * 添加针对性提问任务
+   */
+  public async addTargetedQuestionTask(
+    collection: Zotero.Collection,
+    pdfAttachments: Zotero.Item[],
+    noteTitle: string,
+    targetedPrompt: string,
+    tableTemplate?: string,
+    options?: {
+      selectedTableEntries?: string[];
+      appendedTableEntries?: string[];
+    },
+  ): Promise<string> {
+    const taskId = `targeted-task-${collection.id}-${Date.now()}-${Math.floor(
+      Math.random() * 1000,
+    )}`;
+
+    const task: TaskItem = {
+      id: taskId,
+      itemId: collection.id,
+      title: noteTitle,
+      status: TaskStatus.PRIORITY,
+      progress: 0,
+      createdAt: new Date(),
+      retryCount: 0,
+      maxRetries: 1,
+      taskType: "targetedQuestion",
+      workflowStage: "等待开始",
+      collectionId: collection.id,
+      pdfAttachmentIds: pdfAttachments.map((p) => p.id),
+      tableTemplate,
+      targetedPrompt,
+      targetedNoteTitle: noteTitle,
+      targetedSelectedTableEntries: options?.selectedTableEntries || [],
+      targetedAppendedTableEntries: options?.appendedTableEntries || [],
+    };
+
+    this.tasks.set(taskId, task);
+    await this.saveToStorage();
+
+    ztoolkit.log(`添加针对性提问任务: ${task.title} (${taskId})`);
+
+    // 立即执行
+    this.executeTargetedQuestionTask(taskId).catch((e) => {
+      ztoolkit.log(`针对性提问任务执行失败: ${e}`);
+    });
+
+    return taskId;
+  }
+
+  /**
+   * 执行针对性提问任务
+   */
+  private async executeTargetedQuestionTask(taskId: string): Promise<void> {
+    const task = this.tasks.get(taskId);
+    if (!task || task.taskType !== "targetedQuestion") return;
+
+    if (
+      task.status === TaskStatus.PROCESSING ||
+      task.status === TaskStatus.COMPLETED
+    )
+      return;
+
+    task.status = TaskStatus.PROCESSING;
+    task.startedAt = new Date();
+    task.progress = 0;
+    task.workflowStage = "正在初始化";
+    this.processingTasks.add(taskId);
+    await this.saveToStorage();
+
+    try {
+      if (
+        !task.collectionId ||
+        !task.pdfAttachmentIds?.length ||
+        !task.targetedPrompt
+      ) {
+        throw new Error("针对性提问任务参数不完整");
+      }
+
+      const collection = Zotero.Collections.get(
+        task.collectionId,
+      ) as Zotero.Collection;
+      if (!collection) throw new Error("分类不存在");
+
+      const pdfAttachments: Zotero.Item[] = [];
+      for (const attId of task.pdfAttachmentIds) {
+        const att = await Zotero.Items.getAsync(attId);
+        if (att) pdfAttachments.push(att);
+      }
+      if (pdfAttachments.length === 0) throw new Error("没有可用的 PDF 附件");
+
+      const { LiteratureReviewService } =
+        await import("./literatureReviewService");
+      const noteTitle =
+        task.targetedNoteTitle ||
+        `针对性提问 ${new Date().toISOString().slice(2, 10)}`;
+
+      await LiteratureReviewService.generateTargetedAnswer(
+        collection,
+        pdfAttachments,
+        noteTitle,
+        task.targetedPrompt,
+        task.tableTemplate || "",
+        {
+          selectedTableEntries: task.targetedSelectedTableEntries || [],
+          appendedTableEntries: task.targetedAppendedTableEntries || [],
+        },
+        (message: string, progress: number) => {
+          task.progress = progress;
+          task.workflowStage = message;
+          this.notifyProgress(taskId, progress, message);
+          if (progress % 20 === 0 || progress === 100) {
+            this.saveToStorage().catch(() => {});
+          }
+        },
+      );
+
+      task.status = TaskStatus.COMPLETED;
+      task.progress = 100;
+      task.workflowStage = "完成";
+      task.completedAt = new Date();
+      task.duration = Math.floor(
+        (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
+      );
+
+      ztoolkit.log(
+        `针对性提问任务完成: ${task.title} (耗时${task.duration}秒)`,
+      );
+      this.notifyComplete(taskId, true);
+    } catch (error: any) {
+      task.error = error?.message || "未知错误";
+      task.workflowStage = "失败";
+      task.status = TaskStatus.FAILED;
+      task.completedAt = new Date();
+      this.notifyComplete(taskId, false, task.error);
+    } finally {
+      this.processingTasks.delete(taskId);
+      await this.saveToStorage();
+    }
+  }
+
+  /**
+   * 获取针对性提问任务
+   */
+  public getTargetedQuestionTasks(): TaskItem[] {
+    return this.getAllTasks().filter((t) => t.taskType === "targetedQuestion");
   }
 
   /**
@@ -1203,6 +1362,30 @@ export class TaskQueueManager {
     const task = this.tasks.get(taskId);
     if (!task) {
       return false;
+    }
+
+    // 非普通总结任务转交到各自执行器，避免误走默认总结流程
+    if (task.taskType && task.taskType !== "summary") {
+      if (task.taskType === "imageSummary") {
+        await this.executeImageSummaryTask(taskId);
+        return false;
+      }
+      if (task.taskType === "mindmap") {
+        await this.executeMindmapTask(taskId);
+        return false;
+      }
+      if (task.taskType === "tableFill") {
+        await this.executeTableFillTask(taskId);
+        return false;
+      }
+      if (task.taskType === "review") {
+        await this.executeReviewTask(taskId);
+        return false;
+      }
+      if (task.taskType === "targetedQuestion") {
+        await this.executeTargetedQuestionTask(taskId);
+        return false;
+      }
     }
 
     // 防止任务被重复执行（竞态条件保护）

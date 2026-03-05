@@ -15,6 +15,13 @@
   --ai-input-bg: #ffffff;
   --ai-input-border: #d9d9d9;
   --ai-input-text: #333333;
+  --ai-review-header-start: #6366f1;
+  --ai-review-header-end: #8b5cf6;
+  --ai-review-panel-bg: #f8fafc;
+  --ai-review-panel-border: #e2e8f0;
+  --ai-review-node-bg: #f9fafb;
+  --ai-review-node-hover: #f3f4f6;
+  --ai-review-children-bg: #fefefe;
 }
 
 /* 暗色变量（作用域：根容器 + 备用直接应用场景）*/
@@ -33,6 +40,13 @@
   --ai-input-bg: #2a2a2a;
   --ai-input-border: #444444;
   --ai-input-text: #e0e0e0;
+  --ai-review-header-start: #334155;
+  --ai-review-header-end: #4338ca;
+  --ai-review-panel-bg: #1f232b;
+  --ai-review-panel-border: #374151;
+  --ai-review-node-bg: #263140;
+  --ai-review-node-hover: #2f3d50;
+  --ai-review-children-bg: #1b2430;
 }
 
 /* 基础容器着色（尽量使用变量，避免硬编码）*/

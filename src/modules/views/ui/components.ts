@@ -47,6 +47,8 @@ export function createStyledButton(
     large: { padding: "15px", fontSize: "14px" },
   };
   const sizeStyle = sizeMap[size];
+  const maxFontSize = parseInt(sizeStyle.fontSize, 10) || 14;
+  const minFontSize = size === "small" ? 10 : 11;
 
   // 初始样式
   const baseStyle = {
@@ -63,6 +65,11 @@ export function createStyledButton(
     alignItems: "center",
     justifyContent: "center",
     gap: "10px",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    lineHeight: "1.1",
+    minWidth: "0",
   };
 
   // 设置初始状态 - 白色背景，文字显示颜色
@@ -75,9 +82,47 @@ export function createStyledButton(
   // 支持 HTML（如 emoji + 文本）
   button.innerHTML = text;
 
+  // 根据按钮宽度自动缩小字体，避免文字溢出/换行
+  const fitText = () => {
+    if (!button.isConnected) return;
+    const availableWidth = Math.max(button.clientWidth - 8, 0);
+    if (!availableWidth) return;
+
+    let font = maxFontSize;
+    button.style.fontSize = `${font}px`;
+    while (font > minFontSize && button.scrollWidth > availableWidth) {
+      font -= 1;
+      button.style.fontSize = `${font}px`;
+    }
+  };
+
+  // 初次渲染后拟合
+  setTimeout(fitText, 0);
+
+  // 尺寸变化时重算
+  if (typeof ResizeObserver !== "undefined") {
+    const observer = new ResizeObserver(() => fitText());
+    observer.observe(button);
+    button.addEventListener("DOMNodeRemoved", () => observer.disconnect(), {
+      once: true,
+    });
+  } else {
+    const win = doc.defaultView;
+    if (win) {
+      win.addEventListener("resize", fitText);
+      button.addEventListener(
+        "DOMNodeRemoved",
+        () => win.removeEventListener("resize", fitText),
+        { once: true },
+      );
+    }
+  }
+
   // 悬停效果：背景变色，文字变白
   button.addEventListener("mouseenter", () => {
     button.style.backgroundColor = color;
+    // 使用 important 避免被宿主样式覆盖导致文字不可见
+    button.style.setProperty("color", "#ffffff", "important");
     button.style.transform = "translateY(-1px)";
     button.style.boxShadow = `0 2px 8px ${color}40`;
   });
@@ -94,7 +139,7 @@ export function createStyledButton(
     }
 
     button.style.backgroundColor = isDark ? "#2b2b2b" : "#ffffff";
-    button.style.color = color;
+    button.style.setProperty("color", color, "important");
     button.style.transform = "translateY(0)";
     button.style.boxShadow = "none";
   });
@@ -106,6 +151,7 @@ export function createStyledButton(
 
   button.addEventListener("mouseup", () => {
     button.style.transform = "translateY(-1px)";
+    fitText();
   });
 
   return button;

@@ -768,6 +768,8 @@ export class DashboardView extends BaseView {
    * @private
    */
   private refreshData(): void {
+    this.taskQueueManager.refreshFromStorage();
+
     // 获取队列统计数据
     const queueStats = this.taskQueueManager.getStats();
 
@@ -930,8 +932,6 @@ export class DashboardView extends BaseView {
    * @protected
    */
   protected onShow(): void {
-    this.updateButlerStatus(this.butlerStatus);
-    this.updateStats({});
-    this.renderRecentActivities();
+    this.refreshData();
   }
 }

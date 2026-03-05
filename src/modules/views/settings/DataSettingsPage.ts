@@ -135,6 +135,7 @@ export class DataSettingsPage {
 
   private getStats() {
     const q = TaskQueueManager.getInstance();
+    q.refreshFromStorage();
     const all = q.getAllTasks();
     return {
       total: all.length,

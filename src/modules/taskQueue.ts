@@ -152,6 +152,9 @@ export class TaskQueueManager {
   /** 队列执行器定时器ID */
   private executorTimerId: number | null = null;
 
+  /** 最近一次加载到的持久化快照时间 */
+  private lastLoadedSnapshotAt: string | null = null;
+
   /** 最大并发数 */
   private maxConcurrency: number = 1;
 
@@ -171,7 +174,7 @@ export class TaskQueueManager {
    * 私有构造函数(单例模式)
    */
   private constructor() {
-    this.loadFromStorage();
+    this.loadFromStorage(true);
     this.loadSettings();
   }
 
@@ -1271,7 +1274,7 @@ export class TaskQueueManager {
       // 发送结束事件
       this.notifyStream(taskId, { type: "finish" });
       // 自动触发一图总结（如果设置已启用且是普通总结任务）
-      if (task.taskType !== "imageSummary") {
+      if (!task.taskType || task.taskType === "summary") {
         this.maybeAutoTriggerImageSummary(task.itemId);
       }
       return false; // 非快速失败，计入批次
@@ -1440,9 +1443,11 @@ export class TaskQueueManager {
   // ==================== 持久化 ====================
 
   /**
-   * 从 localStorage 加载任务队列
+   * 从持久化存储加载任务队列
+   *
+   * @param resetProcessingTasks 是否将处理中任务重置为待处理
    */
-  private loadFromStorage(): void {
+  private loadFromStorage(resetProcessingTasks: boolean): void {
     try {
       const stored = Zotero.Prefs.get(
         "extensions.zotero.aibutler.taskQueue",
@@ -1453,6 +1458,17 @@ export class TaskQueueManager {
       }
 
       const data = JSON.parse(stored);
+      const snapshotAt =
+        typeof data?.savedAt === "string" ? data.savedAt : undefined;
+
+      // 快照未变化时无需重复覆盖内存状态
+      if (
+        snapshotAt &&
+        this.lastLoadedSnapshotAt &&
+        snapshotAt === this.lastLoadedSnapshotAt
+      ) {
+        return;
+      }
 
       // 恢复任务数据
       this.tasks.clear();
@@ -1468,14 +1484,16 @@ export class TaskQueueManager {
             : undefined,
         };
 
-        // 重置处理中的任务为待处理
-        if (task.status === TaskStatus.PROCESSING) {
+        // 插件重启恢复时，处理中任务无法继续执行，改为待处理重新排队
+        if (resetProcessingTasks && task.status === TaskStatus.PROCESSING) {
           task.status = TaskStatus.PENDING;
           task.progress = 0;
         }
 
         this.tasks.set(task.id, task);
       }
+
+      this.lastLoadedSnapshotAt = snapshotAt || null;
 
       ztoolkit.log(`从存储加载 ${this.tasks.size} 个任务`);
     } catch (error) {
@@ -1484,13 +1502,26 @@ export class TaskQueueManager {
   }
 
   /**
+   * 主动从持久化存储刷新任务数据
+   *
+   * 用于跨窗口上下文读取最新快照；若本上下文正在执行任务，则以内存状态为准。
+   */
+  public refreshFromStorage(): void {
+    if (this.processingTasks.size > 0) {
+      return;
+    }
+    this.loadFromStorage(false);
+  }
+
+  /**
    * 保存任务队列到 localStorage
    */
   private async saveToStorage(): Promise<void> {
     try {
+      const savedAt = new Date().toISOString();
       const data = {
         tasks: Array.from(this.tasks.values()),
-        savedAt: new Date().toISOString(),
+        savedAt,
       };
 
       Zotero.Prefs.set(
@@ -1498,6 +1529,7 @@ export class TaskQueueManager {
         JSON.stringify(data),
         true,
       );
+      this.lastLoadedSnapshotAt = savedAt;
     } catch (error) {
       ztoolkit.log(`保存任务队列失败: ${error}`);
     }

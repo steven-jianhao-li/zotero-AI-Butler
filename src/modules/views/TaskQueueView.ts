@@ -611,6 +611,7 @@ export class TaskQueueView extends BaseView {
         ${isMindmap && task.workflowStage ? `<br/><strong style="color: #4caf50;">阶段: ${task.workflowStage}</strong>` : ""}
         ${task.taskType === "tableFill" && task.workflowStage ? `<br/><strong style="color: #ff9800;">阶段: ${task.workflowStage}</strong>` : ""}
         ${task.taskType === "review" && task.workflowStage ? `<br/><strong style="color: #2196f3;">阶段: ${task.workflowStage}</strong>` : ""}
+        ${isTargetedQuestion && task.workflowStage ? `<br/><strong style="color: #0ea5e9;">阶段: ${task.workflowStage}</strong>` : ""}
       `,
     });
 
@@ -991,8 +992,6 @@ export class TaskQueueView extends BaseView {
    */
   protected onShow(): void {
     this.attachToManager();
-    this.updateStats();
-    this.renderTaskList();
     // 重新应用主题(防止动态内容未应用主题)
     this.applyTheme();
   }
@@ -1021,14 +1020,19 @@ export class TaskQueueView extends BaseView {
     this.unsubscribeComplete?.();
 
     // 注册回调
-    this.unsubscribeProgress = this.manager.onProgress((taskId, progress) => {
-      const t = this.tasks.find((t) => t.id === taskId);
-      if (t) {
-        t.status = TaskStatus.PROCESSING;
-        t.progress = progress;
-        this.renderTaskList();
-      }
-    });
+    this.unsubscribeProgress = this.manager.onProgress(
+      (taskId, progress, message) => {
+        const t = this.tasks.find((t) => t.id === taskId);
+        if (t) {
+          t.status = TaskStatus.PROCESSING;
+          t.progress = progress;
+          if (message) {
+            t.workflowStage = message;
+          }
+          this.renderTaskList();
+        }
+      },
+    );
 
     this.unsubscribeComplete = this.manager.onComplete(
       (taskId, success, error) => {
@@ -1060,6 +1064,7 @@ export class TaskQueueView extends BaseView {
   /** 从管理器同步任务到视图 */
   private syncFromManager(): void {
     if (!this.manager) return;
+    this.manager.refreshFromStorage();
     this.tasks = this.manager.getAllTasks();
     this.updateStats();
     this.renderTaskList();

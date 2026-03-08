@@ -45,6 +45,11 @@ interface PdfFileData {
   isBase64: boolean;
 }
 
+interface TargetedAnswerOptions {
+  selectedTableEntries?: string[];
+  appendedTableEntries?: string[];
+}
+
 /**
  * 文献综述服务类
  */
@@ -71,11 +76,14 @@ export class LiteratureReviewService {
     pdfAttachments: Zotero.Item[],
     reviewName: string,
     prompt: string,
+    tableTemplateOverride?: string,
     progressCallback?: (message: string, progress: number) => void,
   ): Promise<Zotero.Item> {
     // 1. 逐篇填表阶段
     const tableTemplate =
-      (getPref("tableTemplate" as any) as string) || DEFAULT_TABLE_TEMPLATE;
+      tableTemplateOverride ||
+      (getPref("tableTemplate" as any) as string) ||
+      DEFAULT_TABLE_TEMPLATE;
     const fillPrompt =
       (getPref("tableFillPrompt" as any) as string) ||
       DEFAULT_TABLE_FILL_PROMPT;
@@ -103,6 +111,7 @@ export class LiteratureReviewService {
       tableTemplate,
       fillPrompt,
       concurrency,
+      undefined,
       (done, total) => {
         const progress = 10 + Math.floor((done / total) * 50);
         progressCallback?.(`正在填表 (${done}/${total})...`, progress);
@@ -163,6 +172,390 @@ export class LiteratureReviewService {
     progressCallback?.("完成!", 100);
 
     return reviewNote;
+  }
+
+  /**
+   * 基于表格进行独立的针对性提问
+   *
+   * 与综述流程独立，但同样通过表格汇总后作答。
+   */
+  static async generateTargetedAnswer(
+    collection: Zotero.Collection,
+    pdfAttachments: Zotero.Item[],
+    noteTitle: string,
+    questionPrompt: string,
+    tableTemplateOverride?: string,
+    options?: TargetedAnswerOptions,
+    progressCallback?: (message: string, progress: number) => void,
+  ): Promise<Zotero.Item> {
+    const tableTemplate =
+      tableTemplateOverride ||
+      (getPref("tableTemplate" as any) as string) ||
+      DEFAULT_TABLE_TEMPLATE;
+    const fillPrompt =
+      (getPref("tableFillPrompt" as any) as string) ||
+      DEFAULT_TABLE_FILL_PROMPT;
+    const concurrency = (getPref("tableFillConcurrency" as any) as number) || 3;
+    const appendedTableEntries = Array.from(
+      new Set(
+        (options?.appendedTableEntries || [])
+          .map((entry) => entry.trim())
+          .filter(Boolean),
+      ),
+    );
+    const forceMergeAppendedEntries = appendedTableEntries.length > 0;
+
+    const itemPdfPairs: Array<{
+      parentItem: Zotero.Item;
+      pdfAttachment: Zotero.Item;
+    }> = [];
+    const parentSeen = new Set<number>();
+    for (const pdfAtt of pdfAttachments) {
+      const parentID = pdfAtt.parentID;
+      if (!parentID || parentSeen.has(parentID)) continue;
+      const parentItem = await Zotero.Items.getAsync(parentID);
+      if (parentItem) {
+        parentSeen.add(parentID);
+        itemPdfPairs.push({ parentItem, pdfAttachment: pdfAtt });
+      }
+    }
+
+    progressCallback?.("正在逐篇填表...", 10);
+
+    const tableResults = forceMergeAppendedEntries
+      ? await this.appendTableEntriesInParallel(
+          itemPdfPairs,
+          appendedTableEntries,
+          fillPrompt,
+          concurrency,
+          (done, total) => {
+            const progress = 10 + Math.floor((done / total) * 50);
+            progressCallback?.(`正在追加填表 (${done}/${total})...`, progress);
+          },
+        )
+      : await this.fillTablesInParallel(
+          itemPdfPairs,
+          tableTemplate,
+          fillPrompt,
+          concurrency,
+          undefined,
+          (done, total) => {
+            const progress = 10 + Math.floor((done / total) * 50);
+            progressCallback?.(`正在填表 (${done}/${total})...`, progress);
+          },
+        );
+
+    const selectedTableEntries = Array.from(
+      new Set(
+        (options?.selectedTableEntries || [])
+          .map((entry) => entry.trim())
+          .filter(Boolean),
+      ),
+    );
+    const filteredTableResults = this.filterTableResultsByEntries(
+      tableResults,
+      selectedTableEntries,
+    );
+
+    progressCallback?.("正在汇总表格...", 65);
+    const aggregated = this.aggregateTableContents(
+      filteredTableResults,
+      itemPdfPairs,
+    );
+
+    const selectedEntriesInstruction =
+      selectedTableEntries.length > 0
+        ? `\n\n请仅使用以下表格条目回答问题：${selectedTableEntries.join("、")}。若条目证据不足，请明确说明。`
+        : "";
+
+    const fullPrompt = `${questionPrompt}${selectedEntriesInstruction}\n\n以下是各文献的结构化信息表格：\n\n${aggregated}`;
+
+    progressCallback?.("正在回答问题...", 75);
+    let answerContent = await LLMClient.generateSummaryWithRetry(
+      aggregated,
+      false,
+      fullPrompt,
+    );
+    answerContent = await this.postProcessCitations(
+      answerContent,
+      itemPdfPairs,
+    );
+
+    progressCallback?.("正在创建笔记...", 90);
+    const note = await this.createStandaloneReviewNote(
+      collection,
+      noteTitle,
+      answerContent,
+    );
+    progressCallback?.("完成!", 100);
+    return note;
+  }
+
+  private static normalizeTableEntryName(entry: string): string {
+    return entry.trim().replace(/\s+/g, " ").toLowerCase();
+  }
+
+  private static parseMarkdownTableCells(line: string): string[] {
+    const content = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+    return content.split("|").map((cell) => cell.trim());
+  }
+
+  private static isMarkdownSeparatorRow(cells: string[]): boolean {
+    return (
+      cells.length > 0 &&
+      cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")))
+    );
+  }
+
+  private static filterSingleTableByEntries(
+    tableContent: string,
+    selectedEntries: Set<string>,
+  ): string {
+    const lines = tableContent.split("\n");
+    const filtered: string[] = [];
+    let headerCaptured = false;
+    let separatorCaptured = false;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("|")) {
+        filtered.push(line);
+        continue;
+      }
+
+      const cells = this.parseMarkdownTableCells(trimmed);
+      if (!headerCaptured) {
+        headerCaptured = true;
+        filtered.push(line);
+        continue;
+      }
+      if (!separatorCaptured && this.isMarkdownSeparatorRow(cells)) {
+        separatorCaptured = true;
+        filtered.push(line);
+        continue;
+      }
+
+      const rowKey = this.normalizeTableEntryName(cells[0] || "");
+      if (rowKey && selectedEntries.has(rowKey)) {
+        filtered.push(line);
+      }
+    }
+
+    return filtered.join("\n");
+  }
+
+  private static filterTableResultsByEntries(
+    tableResults: Map<number, string>,
+    selectedEntries: string[],
+  ): Map<number, string> {
+    if (selectedEntries.length === 0) return tableResults;
+
+    const selectedEntrySet = new Set(
+      selectedEntries
+        .map((entry) => this.normalizeTableEntryName(entry))
+        .filter(Boolean),
+    );
+    if (selectedEntrySet.size === 0) return tableResults;
+
+    const filteredResults = new Map<number, string>();
+    for (const [itemId, tableContent] of tableResults) {
+      filteredResults.set(
+        itemId,
+        this.filterSingleTableByEntries(tableContent, selectedEntrySet),
+      );
+    }
+    return filteredResults;
+  }
+
+  private static buildTableTemplateFromEntries(entries: string[]): string {
+    if (entries.length === 0) {
+      return DEFAULT_TABLE_TEMPLATE;
+    }
+    const rows = entries.map((entry) => `| ${entry} | |`);
+    return ["| 维度 | 内容 |", "|------|------|", ...rows].join("\n");
+  }
+
+  private static buildAppendOnlyFillPrompt(
+    fillPrompt: string,
+    appendedEntries: string[],
+  ): string {
+    const entryList = appendedEntries.map((entry) => `- ${entry}`).join("\n");
+    return `${fillPrompt}
+
+【追加填表模式】
+仅填写以下新增条目：
+${entryList}
+
+额外要求：
+1. 不要重写已有条目
+2. 只输出新增条目的 Markdown 表格（或数据行）
+3. 不要输出解释性文字`;
+  }
+
+  private static extractTableDataRows(md: string): string[] {
+    const lines = md
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("|"));
+    if (lines.length === 0) return [];
+
+    const dataRows: string[] = [];
+    let headerDone = false;
+    for (const line of lines) {
+      const cells = this.parseMarkdownTableCells(line);
+      if (!headerDone) {
+        if (this.isMarkdownSeparatorRow(cells)) {
+          headerDone = true;
+        }
+        continue;
+      }
+      if (!this.isMarkdownSeparatorRow(cells)) {
+        dataRows.push(line);
+      }
+    }
+
+    if (dataRows.length > 0) return dataRows;
+
+    const nonSeparator = lines.filter(
+      (line) =>
+        !this.isMarkdownSeparatorRow(this.parseMarkdownTableCells(line)),
+    );
+    if (nonSeparator.length > 1) {
+      return nonSeparator.slice(1);
+    }
+    return nonSeparator.length === 1 ? nonSeparator : [];
+  }
+
+  private static extractRowEntryName(row: string): string {
+    const cells = this.parseMarkdownTableCells(row);
+    return this.normalizeTableEntryName(cells[0] || "");
+  }
+
+  private static mergeAppendRowsIntoExistingTable(
+    existingTable: string,
+    appendResult: string,
+    appendTemplate: string,
+    appendedEntries: string[],
+  ): string {
+    const allowedEntrySet = new Set(
+      appendedEntries
+        .map((entry) => this.normalizeTableEntryName(entry))
+        .filter(Boolean),
+    );
+
+    const appendRowsRaw = this.extractTableDataRows(appendResult);
+    const appendRows: string[] = [];
+    const appendSeen = new Set<string>();
+    for (const row of appendRowsRaw) {
+      const rowKey = this.extractRowEntryName(row);
+      if (!rowKey) continue;
+      if (allowedEntrySet.size > 0 && !allowedEntrySet.has(rowKey)) continue;
+      if (appendSeen.has(rowKey)) continue;
+      appendSeen.add(rowKey);
+      appendRows.push(row);
+    }
+
+    if (!existingTable.trim()) {
+      if (appendRows.length > 0) {
+        const templateLines = appendTemplate
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line.startsWith("|"));
+        const header = templateLines[0] || "| 维度 | 内容 |";
+        const separator =
+          templateLines.find((line) =>
+            this.isMarkdownSeparatorRow(this.parseMarkdownTableCells(line)),
+          ) || "|------|------|";
+        return [header, separator, ...appendRows].join("\n");
+      }
+      return appendResult.trim() || appendTemplate;
+    }
+
+    if (appendRows.length === 0) {
+      return existingTable;
+    }
+
+    const existingRows = this.extractTableDataRows(existingTable);
+    const existingEntrySet = new Set(
+      existingRows.map((row) => this.extractRowEntryName(row)).filter(Boolean),
+    );
+    const rowsToInsert = appendRows.filter(
+      (row) => !existingEntrySet.has(this.extractRowEntryName(row)),
+    );
+    if (rowsToInsert.length === 0) {
+      return existingTable;
+    }
+
+    const lines = existingTable.split("\n");
+    let insertPos = lines.length;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].trim().startsWith("|")) {
+        insertPos = i + 1;
+        break;
+      }
+    }
+    lines.splice(insertPos, 0, ...rowsToInsert);
+    return lines.join("\n");
+  }
+
+  private static async appendTableEntriesInParallel(
+    items: Array<{ parentItem: Zotero.Item; pdfAttachment: Zotero.Item }>,
+    appendedEntries: string[],
+    fillPrompt: string,
+    concurrency: number,
+    progressCallback?: (done: number, total: number) => void,
+  ): Promise<Map<number, string>> {
+    const results = new Map<number, string>();
+    let completed = 0;
+    const total = items.length;
+    const queue = [...items];
+    const appendTemplate = this.buildTableTemplateFromEntries(appendedEntries);
+    const appendPrompt = this.buildAppendOnlyFillPrompt(
+      fillPrompt,
+      appendedEntries,
+    );
+
+    const worker = async () => {
+      while (queue.length > 0) {
+        const task = queue.shift()!;
+        try {
+          const existingTable =
+            (await this.findTableNote(task.parentItem)) || "";
+          const appendResult = await this.fillTableForSinglePDF(
+            task.parentItem,
+            task.pdfAttachment,
+            appendTemplate,
+            appendPrompt,
+          );
+          const mergedTable = this.mergeAppendRowsIntoExistingTable(
+            existingTable,
+            appendResult,
+            appendTemplate,
+            appendedEntries,
+          );
+          await this.saveTableNote(task.parentItem, mergedTable, true);
+          results.set(task.parentItem.id, mergedTable);
+        } catch (error) {
+          ztoolkit.log(
+            `[AI-Butler] 追加填表失败: ${task.parentItem.getField("title")}`,
+            error,
+          );
+          const fallback =
+            (await this.findTableNote(task.parentItem)) ||
+            `(追加填表失败: ${error instanceof Error ? error.message : String(error)})`;
+          results.set(task.parentItem.id, fallback);
+        }
+        completed++;
+        progressCallback?.(completed, total);
+      }
+    };
+
+    const effectiveConcurrency = Math.min(concurrency, total);
+    await Promise.all(
+      Array.from({ length: effectiveConcurrency }, () => worker()),
+    );
+
+    return results;
   }
 
   // ==================== 表格填写相关方法 ====================
@@ -277,11 +670,13 @@ export class LiteratureReviewService {
    *
    * @param item 文献条目
    * @param tableContent 填表的 Markdown 内容
+   * @param forceOverwrite 是否强制覆盖（忽略 tableStrategy）
    * @returns 创建的笔记，或已存在的笔记（skip 模式）
    */
   static async saveTableNote(
     item: Zotero.Item,
     tableContent: string,
+    forceOverwrite: boolean = false,
   ): Promise<Zotero.Item> {
     const strategy: TableStrategy = ((getPref(
       "tableStrategy" as any,
@@ -302,7 +697,7 @@ export class LiteratureReviewService {
 
     // 根据策略处理已有笔记
     if (existingNote) {
-      if (strategy === "skip") {
+      if (!forceOverwrite && strategy === "skip") {
         return existingNote;
       }
       // overwrite: 删除旧笔记
@@ -499,6 +894,7 @@ export class LiteratureReviewService {
    * @param tableTemplate 表格模板
    * @param fillPrompt 填表提示词
    * @param concurrency 并发数
+   * @param options 填表执行选项
    * @param progressCallback 进度回调 (done, total)
    * @returns 文献ID → 表格内容的映射
    */
@@ -507,6 +903,10 @@ export class LiteratureReviewService {
     tableTemplate: string,
     fillPrompt: string,
     concurrency: number,
+    options?: {
+      forceFillExisting?: boolean;
+      forceOverwriteSave?: boolean;
+    },
     progressCallback?: (done: number, total: number) => void,
   ): Promise<Map<number, string>> {
     const results = new Map<number, string>();
@@ -517,13 +917,15 @@ export class LiteratureReviewService {
     const strategy: TableStrategy = ((getPref(
       "tableStrategy" as any,
     ) as string) || "skip") as TableStrategy;
+    const forceFillExisting = options?.forceFillExisting || false;
+    const forceOverwriteSave = options?.forceOverwriteSave || false;
 
     const worker = async () => {
       while (queue.length > 0) {
         const task = queue.shift()!;
         try {
           // skip 策略时先查缓存，overwrite 策略时跳过缓存直接重新填表
-          if (strategy === "skip") {
+          if (strategy === "skip" && !forceFillExisting) {
             const existing = await this.findTableNote(task.parentItem);
             if (existing) {
               results.set(task.parentItem.id, existing);
@@ -538,7 +940,7 @@ export class LiteratureReviewService {
             tableTemplate,
             fillPrompt,
           );
-          await this.saveTableNote(task.parentItem, table);
+          await this.saveTableNote(task.parentItem, table, forceOverwriteSave);
           results.set(task.parentItem.id, table);
         } catch (error) {
           ztoolkit.log(

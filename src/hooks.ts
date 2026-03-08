@@ -274,6 +274,17 @@ function initializeDefaultPrefsOnStartup() {
 }
 
 /**
+ * 统一打开 AI 管家仪表盘
+ *
+ * 工具栏 🤖 与右键菜单“AI 管家仪表盘”必须共用同一入口，
+ * 避免不同入口落到不同面板或不同状态上下文。
+ */
+async function openAIButlerDashboardFromUnifiedEntry(): Promise<void> {
+  const mainWin = MainWindow.getInstance();
+  await mainWin.open("dashboard");
+}
+
+/**
  * 注册右键上下文菜单项
  *
  * 在 Zotero 文献列表的右键菜单中添加插件功能入口
@@ -347,8 +358,7 @@ function registerContextMenuItem() {
     icon: menuIcon,
 
     commandListener: async (ev) => {
-      const mainWin = MainWindow.getInstance();
-      await mainWin.open("dashboard");
+      await openAIButlerDashboardFromUnifiedEntry();
     },
 
     getVisibility: () => {
@@ -471,9 +481,10 @@ function registerLibraryToolbarButton(win: Window) {
     const doc = win.document;
     const buttonId = "ai-butler-library-toolbar-btn";
 
-    // 检查是否已存在按钮，避免重复创建
-    if (doc.getElementById(buttonId)) {
-      return;
+    // 若已存在旧按钮，先移除后重建，确保与右键入口绑定到同一逻辑
+    const existing = doc.getElementById(buttonId);
+    if (existing) {
+      existing.remove();
     }
 
     // 获取 Zotero 工具栏区域
@@ -509,8 +520,7 @@ function registerLibraryToolbarButton(win: Window) {
     // 点击事件
     button.addEventListener("click", async () => {
       try {
-        const mainWin = MainWindow.getInstance();
-        await mainWin.open("dashboard");
+        await openAIButlerDashboardFromUnifiedEntry();
       } catch (error: any) {
         ztoolkit.log("[AI-Butler] 打开 AI 管家失败:", error);
         new ztoolkit.ProgressWindow("AI Butler", {

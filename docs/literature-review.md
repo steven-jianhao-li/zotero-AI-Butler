@@ -17,7 +17,7 @@ AI管家支持对多篇论文进行综合分析，自动生成文献综述报告
 
 在 Zotero 中，右键点击任意**分类（Collection）**，选择 **"AI管家文献综述"**。
 
-![右键分类打开文献综述](./images/literature-review-context-menu.png)
+![右键分类打开文献综述](images/右键分类打开文献综述菜单.png)
 
 ### 步骤 2：配置综述参数
 

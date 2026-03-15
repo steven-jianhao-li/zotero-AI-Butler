@@ -832,8 +832,52 @@ export class ImageClient {
       payload.generationConfig.imageConfig = imageConfig;
     }
 
-    ztoolkit.log(`[AI-Butler] 调用 Gemini 生图 API: ${endpoint}`);
-    ztoolkit.log(`[AI-Butler] 生图提示词长度: ${prompt.length} 字符`);
+    ztoolkit.log(
+      `[AI-Butler] 调用 Gemini 生图 API: ${endpoint}, 提示词: ${prompt.length} 字符`,
+    );
+    const requestStartTime = Date.now();
+
+    // Gecko 的 HTTP/2 实现有独立的 stream 空闲超时 (~30-45s)，
+    // 不受 network.http.response.timeout 等偏好控制。
+    // Gemini 生成 4K 图片时服务器在 50-120 秒内不返回任何数据，触发此超时。
+    // 解决方案：临时禁用 HTTP/2 强制 HTTP/1.1（无 stream 层超时），
+    // 并提升网络超时偏好，请求完成后恢复。
+    const savedPrefs: { key: string; type: "int" | "bool"; val: any }[] = [];
+
+    const tuneIntPref = (key: string, newVal: number) => {
+      try {
+        let old: number | null = null;
+        try {
+          old = Services.prefs.getIntPref(key);
+        } catch {
+          /* pref does not exist */
+        }
+        savedPrefs.push({ key, type: "int", val: old });
+        Services.prefs.setIntPref(key, newVal);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const tuneBoolPref = (key: string, newVal: boolean) => {
+      try {
+        let old: boolean | null = null;
+        try {
+          old = Services.prefs.getBoolPref(key);
+        } catch {
+          /* pref does not exist */
+        }
+        savedPrefs.push({ key, type: "bool", val: old });
+        Services.prefs.setBoolPref(key, newVal);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    tuneBoolPref("network.http.http2.enabled", false);
+    tuneBoolPref("network.http.spdy.enabled", false);
+    tuneIntPref("network.http.response.timeout", 600);
+    tuneIntPref("network.http.connection-timeout", 600);
 
     let response: any;
     try {
@@ -844,7 +888,7 @@ export class ImageClient {
         },
         body: JSON.stringify(payload),
         responseType: "text",
-        timeout: 300000, // 5 分钟超时，生图可能较慢
+        timeout: 600000, // 10 分钟超时，生图可能较慢
       });
     } catch (error: any) {
       const statusCode = error?.xmlhttp?.status;
@@ -861,19 +905,15 @@ export class ImageClient {
               ? JSON.parse(responseBody)
               : responseBody;
 
-          // 处理标准 Gemini 错误格式
           let err = parsed?.error || parsed;
 
-          // 处理代理服务器返回的嵌套错误 (如 {"detail": "...JSON..."})
           if (parsed?.detail && typeof parsed.detail === "string") {
-            // detail 字段可能包含嵌套的 JSON 字符串
             const detailMatch = parsed.detail.match(/\{[\s\S]*\}/);
             if (detailMatch) {
               try {
                 const nestedJson = JSON.parse(detailMatch[0]);
                 err = nestedJson?.error || nestedJson;
               } catch {
-                // 如果解析失败，使用原始 detail 作为错误信息
                 errorMessage = parsed.detail;
               }
             } else {
@@ -900,33 +940,90 @@ export class ImageClient {
             ? responseBody
             : JSON.stringify(responseBody),
       });
+    } finally {
+      // 恢复所有 Gecko 偏好
+      for (const { key, type, val } of savedPrefs) {
+        try {
+          if (val !== null) {
+            if (type === "bool") Services.prefs.setBoolPref(key, val);
+            else Services.prefs.setIntPref(key, val);
+          } else {
+            Services.prefs.clearUserPref(key);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
     }
 
-    // 解析响应
+    const elapsedSec = ((Date.now() - requestStartTime) / 1000).toFixed(1);
+
+    // 处理 HTTP 错误
     if (response.status !== 200) {
-      throw new ImageGenerationError(`HTTP ${response.status}`, {
-        errorName: `HTTP_${response.status}`,
-        errorMessage: `HTTP ${response.status}: ${response.statusText || "请求失败"}`,
+      let errorMessage = `HTTP ${response.status}`;
+      let errorName = `HTTP_${response.status}`;
+
+      try {
+        if (response.response) {
+          const parsed = JSON.parse(response.response);
+          let err = parsed?.error || parsed;
+
+          if (parsed?.detail && typeof parsed.detail === "string") {
+            const detailMatch = parsed.detail.match(/\{[\s\S]*\}/);
+            if (detailMatch) {
+              try {
+                const nestedJson = JSON.parse(detailMatch[0]);
+                err = nestedJson?.error || nestedJson;
+              } catch {
+                errorMessage = parsed.detail;
+              }
+            } else {
+              errorMessage = parsed.detail;
+            }
+          }
+
+          errorName = err?.code || err?.status || "APIError";
+          if (err?.message) {
+            errorMessage = err.message;
+          }
+        }
+      } catch {
+        /* ignore parse error */
+      }
+
+      throw new ImageGenerationError(errorMessage, {
+        errorName,
+        errorMessage,
         statusCode: response.status,
         requestUrl: endpoint,
-        responseBody: response.response,
+        responseBody:
+          typeof response.response === "string"
+            ? response.response.substring(0, 1000)
+            : response.response,
       });
     }
 
+    ztoolkit.log(
+      `[AI-Butler] 生图响应完成, 耗时 ${elapsedSec}s, 大小: ${Math.round((response.response?.length || 0) / 1024)} KB`,
+    );
+
+    // 解析响应
     try {
       const json =
         typeof response.response === "string"
           ? JSON.parse(response.response)
           : response.response;
 
-      // 从响应中提取图片数据
       const candidates = json?.candidates || [];
       if (candidates.length === 0) {
         throw new ImageGenerationError("API 未返回任何结果", {
           errorName: "EmptyResponse",
           errorMessage: "Gemini API 返回了空的 candidates 数组",
           requestUrl: endpoint,
-          responseBody: response.response,
+          responseBody:
+            typeof response.response === "string"
+              ? response.response.substring(0, 1000)
+              : response.response,
         });
       }
 
@@ -934,21 +1031,26 @@ export class ImageClient {
       const imagePart = parts.find((p: any) => p.inlineData);
 
       if (!imagePart) {
-        // 检查是否返回了文本而非图片
         const textPart = parts.find((p: any) => p.text);
         if (textPart) {
           throw new ImageGenerationError("API 返回了文本而非图片", {
             errorName: "NoImageGenerated",
             errorMessage: `模型返回了文本内容而非图片。请检查模型是否支持图片生成。\n\n返回内容: ${textPart.text?.substring(0, 200)}...`,
             requestUrl: endpoint,
-            responseBody: response.response,
+            responseBody:
+              typeof response.response === "string"
+                ? response.response.substring(0, 1000)
+                : response.response,
           });
         }
         throw new ImageGenerationError("API 未返回图片数据", {
           errorName: "NoImageData",
           errorMessage: "Gemini API 响应中未包含 inlineData 图片数据",
           requestUrl: endpoint,
-          responseBody: response.response,
+          responseBody:
+            typeof response.response === "string"
+              ? response.response.substring(0, 1000)
+              : response.response,
         });
       }
 
@@ -971,7 +1073,10 @@ export class ImageClient {
         errorName: "ParseError",
         errorMessage: error?.message || "无法解析 Gemini API 响应",
         requestUrl: endpoint,
-        responseBody: response.response,
+        responseBody:
+          typeof response.response === "string"
+            ? response.response.substring(0, 1000)
+            : response.response,
       });
     }
   }

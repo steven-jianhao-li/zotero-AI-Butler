@@ -39,7 +39,7 @@
     "marked": "^16.4.1",
     "markmap-lib": "^0.18.12",
     "markmap-view": "^0.18.12",
-    "mathjax": "^3.2.2",
+    "mathjax": "^4.1.1",
     "simple-mind-map": "^0.14.0-fix.1",
     "zotero-plugin-toolkit": "5.1.0-beta.13"
   },

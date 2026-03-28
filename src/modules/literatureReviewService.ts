@@ -734,7 +734,7 @@ ${entryList}
       (_match, formula) => `<span class="math">$${formula.trim()}$</span>`,
     );
 
-    // 将原始 Markdown 存储在隐藏元素中，供 findTableNote 提取
+    // 将原始 Markdown 存储在预格式区块中，供 findTableNote 提取
     const escapedRaw = tableContent
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
@@ -742,7 +742,9 @@ ${entryList}
     const noteHtml =
       `<h2>📊 文献表格 - ${itemTitle}</h2>` +
       `<div>${renderedHtml}</div>` +
-      `<div style="display:none" data-ai-table-raw>${escapedRaw}</div>`;
+      `<br/>` +
+      `<p style="color: gray; font-size: 12px;"><em>👇 以下为系统缓存的原始 Markdown 数据（用于追加填表，请勿修改）：</em></p>` +
+      `<pre data-ai-table-raw>${escapedRaw}</pre>`;
 
     const note = new Zotero.Item("note");
     note.libraryID = item.libraryID;

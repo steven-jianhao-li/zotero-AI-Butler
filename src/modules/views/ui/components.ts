@@ -85,13 +85,13 @@ export function createStyledButton(
   // 根据按钮宽度自动缩小字体，避免文字溢出/换行
   const fitText = () => {
     if (!button.isConnected) return;
-    
+
     // 如果按钮不可见或宽度为0，跳过计算
     if (button.clientWidth === 0) return;
 
     let font = maxFontSize;
     button.style.fontSize = `${font}px`;
-    
+
     // 核心修复：只有当内容真正溢出容器时才缩小字体
     while (font > minFontSize && button.scrollWidth > button.clientWidth) {
       font -= 1;

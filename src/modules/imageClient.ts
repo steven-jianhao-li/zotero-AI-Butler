@@ -524,6 +524,99 @@ export class ImageClient {
     return null;
   }
 
+  /**
+   * 解析 OpenAI 兼容响应：优先普通 JSON，若上游错误返回 SSE(data: {...}) 则自动聚合为可消费 JSON。
+   */
+  private static parseOpenAICompatibleResponse(rawResponse: unknown): any {
+    if (typeof rawResponse !== "string") {
+      return rawResponse;
+    }
+
+    const trimmed = rawResponse.trim();
+    if (!trimmed) return {};
+
+    // 常规 JSON 响应
+    if (
+      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+      (trimmed.startsWith("[") && trimmed.endsWith("]"))
+    ) {
+      return JSON.parse(trimmed);
+    }
+
+    // 兼容：部分代理会忽略 stream=false，强制返回 SSE
+    const sseNormalized = this.parseOpenAISseResponse(rawResponse);
+    if (sseNormalized) {
+      return sseNormalized;
+    }
+
+    // 让调用侧拿到原始 JSON.parse 错误语义（便于定位）
+    return JSON.parse(trimmed);
+  }
+
+  /**
+   * 将 Chat Completions SSE 文本（data: {...}\n\n）聚合为类 JSON 响应。
+   * 仅用于 stream=false 但服务端错误返回流式时的容错。
+   */
+  private static parseOpenAISseResponse(rawResponse: string): any | null {
+    if (!/^\s*data\s*:/im.test(rawResponse)) return null;
+
+    const lines = rawResponse.split(/\r?\n/);
+    const events: any[] = [];
+    let mergedDeltaText = "";
+    let lastEvent: any = null;
+    let lastFinishReason: string | null = null;
+
+    for (const line of lines) {
+      if (!/^\s*data\s*:/i.test(line)) continue;
+      const payload = line.replace(/^\s*data\s*:\s*/i, "").trim();
+      if (!payload || payload === "[DONE]") continue;
+
+      try {
+        const evt = JSON.parse(payload);
+        events.push(evt);
+        lastEvent = evt;
+
+        const choices = Array.isArray(evt?.choices) ? evt.choices : [];
+        for (const choice of choices) {
+          const deltaContent = choice?.delta?.content;
+          if (typeof deltaContent === "string" && deltaContent.length > 0) {
+            mergedDeltaText += deltaContent;
+          }
+          if (
+            typeof choice?.finish_reason === "string" &&
+            choice.finish_reason.trim()
+          ) {
+            lastFinishReason = choice.finish_reason;
+          }
+        }
+      } catch {
+        // 忽略单条脏 chunk（例如上游返回了截断/非法 JSON）
+      }
+    }
+
+    if (events.length === 0) return null;
+
+    const finalText = mergedDeltaText.trim();
+    return {
+      ...(lastEvent && typeof lastEvent === "object" ? lastEvent : {}),
+      object:
+        typeof lastEvent?.object === "string" &&
+        lastEvent.object.includes("chunk")
+          ? "chat.completion"
+          : (lastEvent?.object ?? "chat.completion"),
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: finalText,
+          },
+          finish_reason: lastFinishReason,
+        },
+      ],
+    };
+  }
+
   private static async generateImageViaOpenAI(
     prompt: string,
     config: {
@@ -684,10 +777,7 @@ export class ImageClient {
     }
 
     try {
-      const json =
-        typeof response.response === "string"
-          ? JSON.parse(response.response)
-          : response.response;
+      const json = this.parseOpenAICompatibleResponse(response.response);
 
       const extracted = this.extractImageFromOpenAIResponseJson(json);
       if (extracted) {

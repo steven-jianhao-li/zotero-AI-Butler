@@ -613,6 +613,9 @@ ${entryList}
       pdfContent,
       isBase64,
       actualPrompt,
+      (progress) => {
+        /* dummy callback to trigger streaming */
+      },
     );
 
     progressCallback?.(`填表完成: ${itemTitle.slice(0, 30)}`, 100);

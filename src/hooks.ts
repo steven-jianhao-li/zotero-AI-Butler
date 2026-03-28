@@ -303,15 +303,18 @@ async function openAIButlerDashboardFromUnifiedEntry(): Promise<void> {
 function registerContextMenuItem() {
   // 获取插件图标路径,用于菜单项显示
   const menuIcon = `chrome://${config.addonRef}/content/icons/favicon.png`;
+  const menu = (ztoolkit as any).Menu as {
+    register: (scope: "item" | "collection", options: any) => void;
+  };
 
   // 注册"生成AI总结"菜单项
-  ztoolkit.Menu.register("item", {
+  menu.register("item", {
     tag: "menuitem", // HTML 元素类型
     label: getString("menuitem-generateSummary"), // 国际化的菜单文本
     icon: menuIcon, // 菜单项图标
 
     // 点击事件监听器
-    commandListener: (ev) => {
+    commandListener: (_ev: Event) => {
       handleGenerateSummary();
     },
 
@@ -325,7 +328,7 @@ function registerContextMenuItem() {
   });
 
   // 注册"AI管家多轮对话重新精读"菜单项 (包含子菜单)
-  ztoolkit.Menu.register("item", {
+  menu.register("item", {
     tag: "menu", // 使用 menu 标签创建子菜单
     label: getString("menuitem-multiRoundReanalyze" as any),
     icon: menuIcon,
@@ -352,12 +355,12 @@ function registerContextMenuItem() {
   });
 
   // 注册"AI 管家仪表盘"菜单项
-  ztoolkit.Menu.register("item", {
+  menu.register("item", {
     tag: "menuitem",
     label: "AI 管家仪表盘",
     icon: menuIcon,
 
-    commandListener: async (ev) => {
+    commandListener: async (_ev: Event) => {
       await openAIButlerDashboardFromUnifiedEntry();
     },
 
@@ -367,12 +370,12 @@ function registerContextMenuItem() {
   });
 
   // 注册"AI 管家-后续追问"菜单项
-  ztoolkit.Menu.register("item", {
+  menu.register("item", {
     tag: "menuitem",
     label: getString("menuitem-chatWithAI"),
     icon: menuIcon,
 
-    commandListener: async (ev) => {
+    commandListener: async (_ev: Event) => {
       await handleChatWithAI();
     },
 
@@ -399,7 +402,7 @@ function registerContextMenuItem() {
   });
 
   // 注册"召唤AI管家一图总结"菜单项
-  ztoolkit.Menu.register("item", {
+  menu.register("item", {
     tag: "menuitem",
     label: getString("menuitem-imageSummary"),
     icon: menuIcon,
@@ -418,7 +421,7 @@ function registerContextMenuItem() {
   });
 
   // 注册"AI管家生成思维导图"菜单项
-  ztoolkit.Menu.register("item", {
+  menu.register("item", {
     tag: "menuitem",
     label: getString("menuitem-mindmap" as any),
     icon: menuIcon,
@@ -437,7 +440,7 @@ function registerContextMenuItem() {
   });
 
   // 注册"AI管家文献综述"菜单项 (分类右键)
-  ztoolkit.Menu.register("collection", {
+  menu.register("collection", {
     tag: "menuitem",
     label: getString("menuitem-literatureReview" as any),
     icon: menuIcon,
@@ -448,7 +451,7 @@ function registerContextMenuItem() {
   });
 
   // 注册"AI管家填表"菜单项 (文献右键)
-  ztoolkit.Menu.register("item", {
+  menu.register("item", {
     tag: "menuitem",
     label: getString("menuitem-fillTable" as any),
     icon: menuIcon,

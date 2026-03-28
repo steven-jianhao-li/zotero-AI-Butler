@@ -85,12 +85,15 @@ export function createStyledButton(
   // 根据按钮宽度自动缩小字体，避免文字溢出/换行
   const fitText = () => {
     if (!button.isConnected) return;
-    const availableWidth = Math.max(button.clientWidth - 8, 0);
-    if (!availableWidth) return;
+
+    // 如果按钮不可见或宽度为0，跳过计算
+    if (button.clientWidth === 0) return;
 
     let font = maxFontSize;
     button.style.fontSize = `${font}px`;
-    while (font > minFontSize && button.scrollWidth > availableWidth) {
+
+    // 核心修复：只有当内容真正溢出容器时才缩小字体
+    while (font > minFontSize && button.scrollWidth > button.clientWidth) {
       font -= 1;
       button.style.fontSize = `${font}px`;
     }
@@ -122,7 +125,7 @@ export function createStyledButton(
   button.addEventListener("mouseenter", () => {
     button.style.backgroundColor = color;
     // 使用 important 避免被宿主样式覆盖导致文字不可见
-    button.style.setProperty("color", "#ffffff", "important");
+    button.style.setProperty("color", "#000000", "important");
     button.style.transform = "translateY(-1px)";
     button.style.boxShadow = `0 2px 8px ${color}40`;
   });

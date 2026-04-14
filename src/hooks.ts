@@ -466,6 +466,24 @@ function registerContextMenuItem() {
       );
     },
   });
+
+  // 注册"AI管家多论文总结"菜单项 (文献右键,需选中多篇)
+  menu.register("item", {
+    tag: "menuitem",
+    label: getString("menuitem-multiPaperSummary" as any),
+    icon: menuIcon,
+    commandListener: async () => {
+      await handleMultiPaperSummary();
+    },
+    getVisibility: () => {
+      const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
+      // 仅当选中至少 2 个常规条目时显示
+      return (
+        selectedItems?.length >= 2 &&
+        selectedItems.every((item: Zotero.Item) => item.isRegularItem())
+      );
+    },
+  });
 }
 
 /**
@@ -1337,6 +1355,81 @@ async function handleFillTable() {
     })
       .createLine({
         text: `❌ 填表失败: ${error.message || error}`,
+        type: "error",
+      })
+      .show();
+  }
+}
+
+/**
+ * 处理多论文综合总结
+ *
+ * 将多篇选中的文献合并分析，生成跨论文的综合对比总结
+ * 需要选中至少 2 篇常规文献条目
+ */
+async function handleMultiPaperSummary() {
+  // 获取选中条目
+  const items = Zotero.getActiveZoteroPane().getSelectedItems();
+  if (!items || items.length < 2) {
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 3000,
+    })
+      .createLine({
+        text: getString("error-multiPaperMinimum" as any),
+        type: "error",
+      })
+      .show();
+    return;
+  }
+
+  // 过滤出常规条目
+  const regularItems = items.filter((item: Zotero.Item) =>
+    item.isRegularItem(),
+  );
+  if (regularItems.length < 2) {
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 3000,
+    })
+      .createLine({
+        text: getString("error-multiPaperMinimum" as any),
+        type: "error",
+      })
+      .show();
+    return;
+  }
+
+  try {
+    const manager = TaskQueueManager.getInstance();
+    await manager.addMultiPaperSummaryTask(regularItems);
+
+    // 打开主窗口并切换到任务队列标签页
+    const mainWin = MainWindow.getInstance();
+    await mainWin.open("tasks");
+    try {
+      mainWin.getTaskQueueView().refresh();
+    } catch (e) {
+      ztoolkit.log("[AI-Butler] 刷新任务队列视图失败:", e);
+    }
+
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 4000,
+    })
+      .createLine({
+        text: `已加入队列: ${regularItems.length} 篇论文综合总结任务`,
+        type: "success",
+      })
+      .show();
+  } catch (error: any) {
+    ztoolkit.log("[AI-Butler] 多论文总结入队失败:", error);
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 5000,
+    })
+      .createLine({
+        text: `入队失败: ${error.message || error}`,
         type: "error",
       })
       .show();

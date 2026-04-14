@@ -693,7 +693,11 @@ export class TaskQueueView extends BaseView {
 
       // 若任务已完成,无法再接收流，回退展示已保存笔记
       if (task.status === TaskStatus.COMPLETED) {
-        await view.showSavedNoteForItem(task.itemId);
+        if (task.taskType === "multiPaperSummary" && task.resultNoteId) {
+          await view.showSavedNoteByNoteId(task.resultNoteId);
+        } else {
+          await view.showSavedNoteForItem(task.itemId);
+        }
         return;
       }
 

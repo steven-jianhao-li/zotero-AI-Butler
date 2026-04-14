@@ -822,7 +822,12 @@ export class DashboardView extends BaseView {
       return ButlerStatus.WORKING;
     }
 
-    if (stats.failed > 0 && stats.pending === 0 && stats.priority === 0) {
+    if (
+      stats.failed > 0 &&
+      stats.completed === 0 &&
+      stats.pending === 0 &&
+      stats.priority === 0
+    ) {
       return ButlerStatus.ERROR;
     }
 

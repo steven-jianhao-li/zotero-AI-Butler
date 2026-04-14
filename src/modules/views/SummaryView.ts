@@ -1360,8 +1360,53 @@ ${jsonMarker}
   }
 
   /**
-   * 从独立笔记读取已保存的追问对，并恢复为卡片与会话历史
+   * 根据笔记条目 ID 直接展示已保存的笔记内容
+   * 用于多论文总结等独立笔记（无父文献）的详情展示
    */
+  public async showSavedNoteByNoteId(noteId: number): Promise<void> {
+    try {
+      this.clear();
+      this.showLoadingState("正在加载已保存的总结...");
+
+      const note = await Zotero.Items.getAsync(noteId);
+      if (!note) {
+        this.hideLoading();
+        this.startItem("加载失败");
+        this.appendContent("未找到对应的 AI 总结笔记。");
+        this.finishItem();
+        return;
+      }
+
+      const html: string = (note as any).getNote?.() || "";
+      this.hideLoading();
+      this.startItem("多论文总结");
+      this.finishItem();
+      this.clearPaperContext();
+
+      const aiSummaryText = html
+        .replace(/<style[^>]*>.*?<\/style>/gis, "")
+        .replace(/<script[^>]*>.*?<\/script>/gis, "")
+        .replace(/<[^>]+>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .trim();
+
+      try {
+        this.appendSummaryCard(aiSummaryText);
+      } catch (e) {
+        ztoolkit.log("[AI-Butler] 渲染多论文总结卡片失败:", e);
+      }
+    } catch (err) {
+      this.hideLoading();
+      this.startItem("加载失败");
+      this.appendContent("无法加载多论文总结笔记。");
+      this.finishItem();
+      this.clearPaperContext();
+    }
+  }
+
   private async loadExistingChatPairs(item: Zotero.Item): Promise<void> {
     try {
       const note = await this.getOrCreateChatNote(item);

@@ -34,6 +34,7 @@ import { marked } from "marked";
 import {
   parseMultiRoundPrompts,
   getDefaultMultiRoundFinalPrompt,
+  getDefaultMultiPaperSummaryPrompt,
   DEFAULT_TABLE_TEMPLATE,
   DEFAULT_TABLE_FILL_PROMPT,
   type MultiRoundPromptItem,
@@ -386,6 +387,236 @@ export class NoteGenerator {
       }
 
       // 不创建包含错误信息的笔记,直接抛出异常由上层处理
+      throw error;
+    }
+  }
+
+  /**
+   * 为多篇文献生成综合总结笔记
+   *
+   * 将多篇论文的 PDF 提取后统一发送给 AI，生成跨论文的综合对比分析
+   * 总结笔记会作为独立笔记保存到第一篇文献所在的分类中
+   *
+   * @param items Zotero 文献条目数组（至少 2 篇）
+   * @param progressCallback 进度回调函数
+   * @param streamCallback 流式输出回调函数
+   * @returns 包含创建的笔记对象和内容的对象
+   */
+  public static async generateMultiPaperSummary(
+    items: Zotero.Item[],
+    progressCallback?: (message: string, progress: number) => void,
+    streamCallback?: (chunk: string) => void,
+  ): Promise<{ note: Zotero.Item; content: string }> {
+    if (items.length < 2) {
+      throw new Error("多论文总结至少需要选择 2 篇文献");
+    }
+
+    const titles = items.map((i) => i.getField("title") as string);
+    let fullContent = "";
+
+    try {
+      progressCallback?.("正在提取多篇论文 PDF...", 10);
+
+      // 检查当前 provider 是否支持多文件上传
+      const provider = LLMClient.getCurrentProvider();
+      const supportsMultiFile =
+        provider && typeof provider.generateMultiFileSummary === "function";
+
+      // 读取 PDF 处理模式
+      const prefMode = (getPref("pdfProcessMode") as string) || "base64";
+
+      // 获取多论文总结的 prompt
+      const saved = (getPref("multiPaperSummaryPrompt" as any) as string) || "";
+      const multiPaperPrompt = saved.trim()
+        ? saved
+        : getDefaultMultiPaperSummaryPrompt();
+
+      if (supportsMultiFile && prefMode === "base64") {
+        // 使用多文件模式：将所有论文的 PDF 作为独立文件发送
+        progressCallback?.(`使用多文件模式处理 ${items.length} 篇论文...`, 20);
+
+        const pdfFiles: Array<{
+          filePath: string;
+          displayName: string;
+          base64Content: string;
+        }> = [];
+
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          const title = titles[i];
+          progressCallback?.(
+            `正在提取第 ${i + 1}/${items.length} 篇: ${title}`,
+            20 + Math.floor((i / items.length) * 20),
+          );
+
+          // 获取 PDF 附件
+          const attachmentIDs = (item as any).getAttachments?.() || [];
+          let pdfFound = false;
+
+          for (const attId of attachmentIDs) {
+            const att = await Zotero.Items.getAsync(attId);
+            if (att && (att as any).isPDFAttachment?.()) {
+              const path = await att.getFilePathAsync();
+              if (!path || typeof path !== "string") continue;
+
+              const pdfData = await Zotero.File.getBinaryContentsAsync(path);
+              const bytes = new Uint8Array(pdfData.length);
+              for (let j = 0; j < pdfData.length; j++) {
+                bytes[j] = pdfData.charCodeAt(j);
+              }
+              let binary = "";
+              const len = bytes.byteLength;
+              for (let j = 0; j < len; j++) {
+                binary += String.fromCharCode(bytes[j]);
+              }
+              const base64Content = btoa(binary);
+
+              pdfFiles.push({
+                filePath: path,
+                displayName: title || `论文-${i + 1}`,
+                base64Content,
+              });
+              pdfFound = true;
+              break; // 每篇文献只取第一个 PDF
+            }
+          }
+
+          if (!pdfFound) {
+            ztoolkit.log(`[AI Butler] 论文"${title}"没有 PDF 附件，跳过`);
+          }
+        }
+
+        if (pdfFiles.length < 2) {
+          throw new Error(
+            `仅找到 ${pdfFiles.length} 个 PDF 附件，多论文总结至少需要 2 个`,
+          );
+        }
+
+        progressCallback?.("正在生成多论文综合总结...", 40);
+
+        const onProgress = async (chunk: string) => {
+          fullContent += chunk;
+          try {
+            streamCallback?.(chunk);
+          } catch (e) {
+            ztoolkit.log("[AI Butler] streamCallback error:", e);
+          }
+        };
+
+        const summary = await LLMClient.generateMultiFileSummary(
+          pdfFiles,
+          multiPaperPrompt,
+          onProgress,
+        );
+        fullContent = summary;
+      } else {
+        // 回退模式：提取所有论文的文本内容，拼接后发送
+        progressCallback?.(
+          `使用文本拼接模式处理 ${items.length} 篇论文...`,
+          20,
+        );
+
+        const allTexts: string[] = [];
+
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          const title = titles[i];
+          progressCallback?.(
+            `正在提取第 ${i + 1}/${items.length} 篇: ${title}`,
+            20 + Math.floor((i / items.length) * 20),
+          );
+
+          try {
+            const fullText = await PDFExtractor.extractTextFromItem(item);
+            const cleanedText = PDFExtractor.cleanText(fullText);
+            const truncatedText = PDFExtractor.truncateText(cleanedText);
+            allTexts.push(
+              `\n--- 论文 ${i + 1}: ${title} ---\n${truncatedText}`,
+            );
+          } catch (e: any) {
+            ztoolkit.log(
+              `[AI Butler] 提取论文"${title}"文本失败: ${e.message}`,
+            );
+          }
+        }
+
+        if (allTexts.length < 2) {
+          throw new Error(
+            `仅成功提取 ${allTexts.length} 篇论文文本，多论文总结至少需要 2 篇`,
+          );
+        }
+
+        const combinedText = allTexts.join("\n\n");
+
+        progressCallback?.("正在生成多论文综合总结...", 40);
+
+        const onProgress = async (chunk: string) => {
+          fullContent += chunk;
+          try {
+            streamCallback?.(chunk);
+          } catch (e) {
+            ztoolkit.log("[AI Butler] streamCallback error:", e);
+          }
+        };
+
+        const summary = await LLMClient.generateSummaryWithRetry(
+          combinedText,
+          false,
+          multiPaperPrompt,
+          onProgress,
+        );
+        fullContent = summary;
+      }
+
+      // 创建笔记
+      progressCallback?.("正在创建综合总结笔记...", 80);
+
+      if (!fullContent || !fullContent.trim()) {
+        throw new Error("AI 返回内容为空，笔记未创建");
+      }
+
+      // 生成标题：列出所有论文标题的简短版
+      const titleList = titles
+        .map((t) => {
+          const maxLen = 30;
+          return t.length > maxLen ? t.substring(0, maxLen) + "..." : t;
+        })
+        .join("、");
+
+      const noteContent = this.formatNoteContent(
+        titleList,
+        fullContent,
+        `AI 多论文总结 (${items.length} 篇)`,
+      );
+
+      // 创建独立笔记（与选中文献并列，不附属于任何文献）
+      const collectionIDs: number[] =
+        (items[0] as any).getCollections?.() || [];
+      const targetCollection =
+        collectionIDs.length > 0
+          ? Zotero.Collections.get(collectionIDs[0])
+          : null;
+
+      const note = new Zotero.Item("note");
+      note.libraryID = items[0].libraryID;
+      note.setNote(noteContent);
+      note.addTag("AI-Generated");
+
+      // 将笔记保存并添加到第一篇文献所在的分类，保持与论文并列显示
+      if (targetCollection) {
+        await Zotero.DB.executeTransaction(async () => {
+          await note.save();
+          await targetCollection.addItem(note.id);
+        });
+      } else {
+        await note.saveTx();
+      }
+
+      progressCallback?.("完成！", 100);
+
+      return { note, content: fullContent };
+    } catch (error: any) {
+      ztoolkit.log(`[AI Butler] 多论文总结生成失败:`, error);
       throw error;
     }
   }

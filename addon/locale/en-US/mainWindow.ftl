@@ -17,3 +17,5 @@ itempane-ai-section-sidenav =
 
 menuitem-literatureReview = AI Butler Literature Review
 menuitem-fillTable = AI Butler Fill Table
+menuitem-multiPaperSummary = AI Butler Multi-Paper Summary
+error-multiPaperMinimum = Please select at least 2 papers for multi-paper summary

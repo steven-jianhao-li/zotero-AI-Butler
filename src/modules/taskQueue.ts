@@ -53,7 +53,8 @@ export type TaskType =
   | "mindmap"
   | "tableFill"
   | "review"
-  | "targetedQuestion";
+  | "targetedQuestion"
+  | "multiPaperSummary";
 
 /**
  * 任务项接口
@@ -89,6 +90,10 @@ export interface TaskItem {
   targetedNoteTitle?: string;
   targetedSelectedTableEntries?: string[];
   targetedAppendedTableEntries?: string[];
+  /** 多论文总结任务参数 */
+  multiPaperItemIds?: number[];
+  /** 多论文总结生成的笔记条目 ID，用于详情跳转 */
+  resultNoteId?: number;
 }
 
 /**
@@ -1008,6 +1013,160 @@ export class TaskQueueManager {
   }
 
   /**
+   * 添加多论文总结任务
+   *
+   * 将多篇选中的文献合并为一个任务，生成综合对比总结
+   *
+   * @param items Zotero 文献条目数组
+   * @returns 任务ID
+   */
+  public async addMultiPaperSummaryTask(items: Zotero.Item[]): Promise<string> {
+    const taskId = `multi-paper-task-${Date.now()}`;
+
+    // 检查是否已有相同 items 的任务正在运行
+    const itemIds = items.map((i) => i.id);
+
+    const task: TaskItem = {
+      id: taskId,
+      itemId: items[0].id, // 用第一个条目作为主条目
+      title: `多论文总结 (${items.length} 篇)`,
+      status: TaskStatus.PRIORITY,
+      progress: 0,
+      createdAt: new Date(),
+      retryCount: 0,
+      maxRetries: 2,
+      taskType: "multiPaperSummary",
+      workflowStage: "等待开始",
+      multiPaperItemIds: itemIds,
+    };
+
+    this.tasks.set(taskId, task);
+    await this.saveToStorage();
+
+    ztoolkit.log(`添加多论文总结任务: ${task.title} (${taskId})`);
+
+    // 立即执行
+    this.executeMultiPaperSummaryTask(taskId).catch((e) => {
+      ztoolkit.log(`多论文总结任务执行失败: ${e}`);
+    });
+
+    return taskId;
+  }
+
+  /**
+   * 执行多论文总结任务
+   *
+   * @param taskId 任务ID
+   */
+  private async executeMultiPaperSummaryTask(taskId: string): Promise<void> {
+    const task = this.tasks.get(taskId);
+    if (!task || task.taskType !== "multiPaperSummary") return;
+
+    if (
+      task.status === TaskStatus.PROCESSING ||
+      task.status === TaskStatus.COMPLETED
+    )
+      return;
+
+    task.status = TaskStatus.PROCESSING;
+    task.startedAt = new Date();
+    task.progress = 0;
+    task.workflowStage = "正在初始化";
+    this.processingTasks.add(taskId);
+    await this.saveToStorage();
+
+    ztoolkit.log(`开始执行多论文总结任务: ${task.title}`);
+
+    try {
+      if (!task.multiPaperItemIds || task.multiPaperItemIds.length < 2) {
+        throw new Error("多论文总结至少需要 2 篇文献");
+      }
+
+      // 加载所有文献条目
+      const items: Zotero.Item[] = [];
+      for (const itemId of task.multiPaperItemIds) {
+        const item = await Zotero.Items.getAsync(itemId);
+        if (item) items.push(item);
+      }
+
+      if (items.length < 2) {
+        throw new Error("有效文献条目不足 2 篇");
+      }
+
+      task.workflowStage = `正在处理 ${items.length} 篇论文`;
+      task.progress = 10;
+      this.notifyProgress(taskId, 10, task.workflowStage);
+
+      // 调用 NoteGenerator 生成多论文总结
+      const multiResult = await NoteGenerator.generateMultiPaperSummary(
+        items,
+        (message: string, progress: number) => {
+          task.progress = progress;
+          task.workflowStage = message;
+          this.notifyProgress(taskId, progress, message);
+          if (progress % 20 === 0 || progress === 100) {
+            this.saveToStorage().catch(() => {});
+          }
+        },
+        (chunk: string) => {
+          try {
+            if (task.progress <= 10) {
+              this.notifyStream(taskId, { type: "start", title: task.title });
+            }
+            this.notifyStream(taskId, { type: "chunk", chunk });
+          } catch (e) {
+            ztoolkit.log(`流式内容广播失败: ${e}`);
+          }
+        },
+      );
+
+      task.resultNoteId = multiResult.note.id;
+      task.status = TaskStatus.COMPLETED;
+      task.progress = 100;
+      task.workflowStage = "完成";
+      task.completedAt = new Date();
+      task.duration = Math.floor(
+        (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
+      );
+
+      ztoolkit.log(
+        `多论文总结任务完成: ${task.title} (耗时${task.duration}秒)`,
+      );
+      this.notifyComplete(taskId, true);
+      this.notifyStream(taskId, { type: "finish" });
+    } catch (error: any) {
+      task.error = error?.message || "未知错误";
+      task.workflowStage = "失败";
+
+      task.retryCount++;
+      if (task.retryCount < task.maxRetries) {
+        task.status = TaskStatus.PENDING;
+        task.progress = 0;
+        ztoolkit.log(
+          `多论文总结任务失败,将重试 (${task.retryCount}/${task.maxRetries}): ${task.title}`,
+        );
+      } else {
+        task.status = TaskStatus.FAILED;
+        task.completedAt = new Date();
+        ztoolkit.log(`多论文总结任务最终失败: ${task.title} - ${task.error}`);
+      }
+
+      this.notifyComplete(taskId, false, task.error);
+      this.notifyStream(taskId, { type: "error" });
+    } finally {
+      this.processingTasks.delete(taskId);
+      await this.saveToStorage();
+    }
+  }
+
+  /**
+   * 获取多论文总结任务
+   */
+  public getMultiPaperSummaryTasks(): TaskItem[] {
+    return this.getAllTasks().filter((t) => t.taskType === "multiPaperSummary");
+  }
+
+  /**
    * 移除任务
    *
    * @param taskId 任务ID
@@ -1384,6 +1543,10 @@ export class TaskQueueManager {
       }
       if (task.taskType === "targetedQuestion") {
         await this.executeTargetedQuestionTask(taskId);
+        return false;
+      }
+      if (task.taskType === "multiPaperSummary") {
+        await this.executeMultiPaperSummaryTask(taskId);
         return false;
       }
     }

@@ -578,3 +578,40 @@ export const DEFAULT_MINDMAP_PROMPT = `# Role
 export function getDefaultMindmapPrompt(): string {
   return DEFAULT_MINDMAP_PROMPT;
 }
+
+/**
+ * 默认的多论文总结提示词
+ *
+ * 用于同时分析多篇论文，生成综合对比总结
+ *
+ * 设计要点：
+ * - 对每篇论文进行独立概述
+ * - 提取共同主题和差异
+ * - 进行跨论文的综合分析
+ */
+export const DEFAULT_MULTI_PAPER_SUMMARY_PROMPT = `你是一位专业的学术研究助手。请对以下多篇论文进行综合分析和总结。
+
+请按照以下结构输出：
+
+## 一、各论文独立概述
+对每篇论文分别用一段话概括其核心内容、方法和主要发现。
+
+## 二、共同主题与研究趋势
+分析这些论文之间的共同研究主题、方法论趋势和共享的理论基础。
+
+## 三、差异与互补
+比较各论文在研究方法、结论、适用范围等方面的差异，以及它们如何互相补充。
+
+## 四、综合评述
+从整体视角评价这组论文的学术贡献、创新点和局限性，并指出可能的未来研究方向。
+
+请用中文回答。如果有公式，应该用$内联公式$和$$行间公式$$格式。`;
+
+/**
+ * 获取默认的多论文总结提示词
+ *
+ * @returns 默认多论文总结提示词
+ */
+export function getDefaultMultiPaperSummaryPrompt(): string {
+  return DEFAULT_MULTI_PAPER_SUMMARY_PROMPT;
+}

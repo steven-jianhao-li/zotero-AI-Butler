@@ -20,3 +20,5 @@ itempane-ai-section-sidenav =
 
 menuitem-literatureReview = AI管家文献综述
 menuitem-fillTable = AI管家填表
+menuitem-multiPaperSummary = AI管家多论文总结
+error-multiPaperMinimum = 请至少选择 2 篇文献进行多论文总结

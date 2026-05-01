@@ -22,8 +22,8 @@
 3. 填写 **API Key**（可与论文总结使用相同的 Key）
 4. 确认 **API 基础地址**
    - Gemini：默认为 `https://generativelanguage.googleapis.com`
-   - OpenAI：填写您的兼容服务地址（可填基础地址或完整端点如 `/v1/chat/completions`）
-5. 选择 **生图模型**（推荐 `gemini-3-pro-image-preview`）
+   - OpenAI：填写您的兼容服务地址（可填基础地址或完整端点如 `/v1/responses`、`/v1/images/generations`；Images API 参考：`https://your.end.point/v1/images/generations`）
+5. 选择 **生图模型**（Gemini 推荐 `gemini-3-pro-image-preview`；OpenAI 兼容生图可使用 `gpt-image-2`）
 6. 点击 **测试 API** 验证配置
 
 ![一图总结设置页面](images/一图总结设置页面.png)

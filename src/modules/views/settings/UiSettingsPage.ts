@@ -5,6 +5,25 @@
 import { getPref, setPref } from "../../../utils/prefs";
 import { AutoScanManager } from "../../autoScanManager";
 import {
+  CONTEXT_MENU_ITEMS,
+  DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY,
+  DEFAULT_SIDEBAR_MODULE_VISIBILITY,
+  SIDEBAR_MODULES,
+  getContextMenuItemOrder,
+  getContextMenuItemVisibility,
+  getSidebarModuleOrder,
+  getSidebarModuleVisibility,
+  resetUICustomizationPrefs,
+  setContextMenuItemOrder,
+  setContextMenuItemVisibility,
+  setSidebarModuleOrder,
+  setSidebarModuleVisibility,
+  type ContextMenuItemId,
+  type ContextMenuVisibility,
+  type SidebarModuleId,
+  type SidebarModuleVisibility,
+} from "../../uiCustomization";
+import {
   createFormGroup,
   createSelect,
   createSlider,
@@ -143,6 +162,30 @@ export class UiSettingsPage {
       ),
     );
 
+    const contextMenuVisibilityDraft = getContextMenuItemVisibility();
+    let contextMenuOrderDraft = getContextMenuItemOrder();
+    form.appendChild(
+      this.createContextMenuSection(
+        contextMenuVisibilityDraft,
+        () => contextMenuOrderDraft,
+        (nextOrder) => {
+          contextMenuOrderDraft = nextOrder;
+        },
+      ),
+    );
+
+    const sidebarVisibilityDraft = getSidebarModuleVisibility();
+    let sidebarOrderDraft = getSidebarModuleOrder();
+    form.appendChild(
+      this.createSidebarModuleSection(
+        sidebarVisibilityDraft,
+        () => sidebarOrderDraft,
+        (nextOrder) => {
+          sidebarOrderDraft = nextOrder;
+        },
+      ),
+    );
+
     // 预览区域（移除字号预览，不再提供字体大小设置）
 
     // 按钮
@@ -180,6 +223,11 @@ export class UiSettingsPage {
       setPref("tableStrategy" as any, tablePolicyVal);
       setPref("markdownTheme" as any, themeVal);
 
+      setContextMenuItemVisibility(contextMenuVisibilityDraft);
+      setContextMenuItemOrder(contextMenuOrderDraft);
+      setSidebarModuleVisibility(sidebarVisibilityDraft);
+      setSidebarModuleOrder(sidebarOrderDraft);
+
       // 清除主题缓存以便下次加载新主题
       const { themeManager } = await import("../../themeManager");
       themeManager.setCurrentTheme(themeVal);
@@ -187,6 +235,7 @@ export class UiSettingsPage {
 
       // 重新加载自动扫描管理器
       AutoScanManager.getInstance().reload();
+      await this.applyLiveUICustomization();
 
       new ztoolkit.ProgressWindow("界面设置")
         .createLine({ text: "✅ 设置已保存", type: "success" })
@@ -194,13 +243,15 @@ export class UiSettingsPage {
     });
 
     const btnReset = createStyledButton("🔄 重置默认", "#9e9e9e");
-    btnReset.addEventListener("click", () => {
+    btnReset.addEventListener("click", async () => {
       setPref("autoScroll", true as any);
       setPref("autoScan", true as any);
       setPref("saveChatHistory", true as any);
       setPref("noteStrategy" as any, "skip");
       setPref("tableStrategy" as any, "skip");
+      resetUICustomizationPrefs();
       AutoScanManager.getInstance().reload();
+      await this.applyLiveUICustomization();
       this.render();
       new ztoolkit.ProgressWindow("界面设置")
         .createLine({ text: "已重置为默认", type: "success" })
@@ -218,5 +269,336 @@ export class UiSettingsPage {
   private applyPreview(fontSize: number): void {
     if (!this.preview) return;
     this.preview.style.fontSize = `${fontSize}px`;
+  }
+
+  private createSettingsPanel(title: string, description: string): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const panel = doc.createElement("div");
+    Object.assign(panel.style, {
+      border: "1px solid var(--ai-border)",
+      borderRadius: "6px",
+      padding: "14px",
+      marginBottom: "24px",
+      background: "var(--ai-surface)",
+    });
+
+    const heading = doc.createElement("div");
+    heading.textContent = title;
+    Object.assign(heading.style, {
+      fontSize: "15px",
+      fontWeight: "600",
+      color: "var(--ai-text)",
+      marginBottom: "6px",
+    });
+
+    const desc = doc.createElement("div");
+    desc.textContent = description;
+    Object.assign(desc.style, {
+      fontSize: "12px",
+      color: "var(--ai-text-muted)",
+      lineHeight: "1.5",
+      marginBottom: "12px",
+    });
+
+    panel.appendChild(heading);
+    panel.appendChild(desc);
+    return panel;
+  }
+
+  private createContextMenuSection(
+    visibilityDraft: ContextMenuVisibility,
+    getOrder: () => ContextMenuItemId[],
+    setOrder: (order: ContextMenuItemId[]) => void,
+  ): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const panel = this.createSettingsPanel(
+      "右键菜单个性化",
+      "关闭不常用入口，并用上下按钮调整它们在 Zotero 右键菜单里的顺序。",
+    );
+
+    const list = doc.createElement("div");
+    Object.assign(list.style, {
+      display: "grid",
+      gap: "8px",
+    });
+
+    const renderRows = () => {
+      list.innerHTML = "";
+      const order = getOrder();
+      order.forEach((itemId, index) => {
+        const item = CONTEXT_MENU_ITEMS.find((entry) => entry.id === itemId);
+        if (!item) return;
+
+        const row = doc.createElement("div");
+        Object.assign(row.style, {
+          display: "grid",
+          gridTemplateColumns: "auto 1fr auto auto",
+          gap: "10px",
+          alignItems: "center",
+          padding: "8px 10px",
+          border: "1px solid rgba(128, 128, 128, 0.2)",
+          borderRadius: "5px",
+        });
+
+        const checkbox = doc.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked =
+          visibilityDraft[item.id] ??
+          DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY[item.id];
+        checkbox.id = `setting-context-menu-${item.id}`;
+        Object.assign(checkbox.style, {
+          width: "18px",
+          height: "18px",
+          cursor: "pointer",
+        });
+        checkbox.addEventListener("change", () => {
+          visibilityDraft[item.id] = checkbox.checked;
+        });
+
+        const textWrap = doc.createElement("div");
+        const label = doc.createElement("div");
+        label.textContent = item.label;
+        Object.assign(label.style, {
+          fontSize: "13px",
+          fontWeight: "600",
+          color: "var(--ai-text)",
+        });
+
+        const desc = doc.createElement("div");
+        desc.textContent = item.description;
+        Object.assign(desc.style, {
+          marginTop: "3px",
+          fontSize: "12px",
+          color: "var(--ai-text-muted)",
+          lineHeight: "1.35",
+        });
+        textWrap.appendChild(label);
+        textWrap.appendChild(desc);
+
+        const scope = doc.createElement("span");
+        scope.textContent = item.scope === "collection" ? "分类" : "文献";
+        Object.assign(scope.style, {
+          padding: "2px 6px",
+          borderRadius: "4px",
+          fontSize: "11px",
+          color: "#59c0bc",
+          background: "rgba(89, 192, 188, 0.12)",
+          whiteSpace: "nowrap",
+        });
+
+        const orderControls = this.createOrderControls(
+          index,
+          order.length,
+          () => {
+            const nextOrder = [...getOrder()];
+            [nextOrder[index - 1], nextOrder[index]] = [
+              nextOrder[index],
+              nextOrder[index - 1],
+            ];
+            setOrder(nextOrder);
+            renderRows();
+          },
+          () => {
+            const nextOrder = [...getOrder()];
+            [nextOrder[index], nextOrder[index + 1]] = [
+              nextOrder[index + 1],
+              nextOrder[index],
+            ];
+            setOrder(nextOrder);
+            renderRows();
+          },
+        );
+
+        row.appendChild(checkbox);
+        row.appendChild(textWrap);
+        row.appendChild(scope);
+        row.appendChild(orderControls);
+        list.appendChild(row);
+      });
+    };
+
+    renderRows();
+    panel.appendChild(list);
+    return panel;
+  }
+
+  private createSidebarModuleSection(
+    visibilityDraft: SidebarModuleVisibility,
+    getOrder: () => SidebarModuleId[],
+    setOrder: (order: SidebarModuleId[]) => void,
+  ): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const panel = this.createSettingsPanel(
+      "侧边栏功能与排序",
+      "勾选要显示的条目侧边栏功能，用上下按钮调整它们在侧边栏里的出现顺序。",
+    );
+
+    const list = doc.createElement("div");
+    Object.assign(list.style, {
+      display: "grid",
+      gap: "8px",
+    });
+
+    const renderRows = () => {
+      list.innerHTML = "";
+      const order = getOrder();
+      order.forEach((moduleId, index) => {
+        const module = SIDEBAR_MODULES.find((item) => item.id === moduleId);
+        if (!module) return;
+
+        const row = doc.createElement("div");
+        Object.assign(row.style, {
+          display: "grid",
+          gridTemplateColumns: "auto 1fr auto",
+          gap: "10px",
+          alignItems: "center",
+          padding: "8px 10px",
+          border: "1px solid rgba(128, 128, 128, 0.2)",
+          borderRadius: "5px",
+        });
+
+        const checkbox = doc.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked =
+          visibilityDraft[moduleId] ??
+          DEFAULT_SIDEBAR_MODULE_VISIBILITY[moduleId];
+        checkbox.id = `setting-sidebar-module-${moduleId}`;
+        Object.assign(checkbox.style, {
+          width: "18px",
+          height: "18px",
+          cursor: "pointer",
+        });
+        checkbox.addEventListener("change", () => {
+          visibilityDraft[moduleId] = checkbox.checked;
+        });
+
+        const textWrap = doc.createElement("div");
+        const label = doc.createElement("div");
+        label.textContent = module.label;
+        Object.assign(label.style, {
+          fontSize: "13px",
+          fontWeight: "600",
+          color: "var(--ai-text)",
+        });
+
+        const desc = doc.createElement("div");
+        desc.textContent = module.description;
+        Object.assign(desc.style, {
+          marginTop: "3px",
+          fontSize: "12px",
+          color: "var(--ai-text-muted)",
+          lineHeight: "1.35",
+        });
+        textWrap.appendChild(label);
+        textWrap.appendChild(desc);
+
+        const orderControls = this.createOrderControls(
+          index,
+          order.length,
+          () => {
+            const nextOrder = [...getOrder()];
+            [nextOrder[index - 1], nextOrder[index]] = [
+              nextOrder[index],
+              nextOrder[index - 1],
+            ];
+            setOrder(nextOrder);
+            renderRows();
+          },
+          () => {
+            const nextOrder = [...getOrder()];
+            [nextOrder[index], nextOrder[index + 1]] = [
+              nextOrder[index + 1],
+              nextOrder[index],
+            ];
+            setOrder(nextOrder);
+            renderRows();
+          },
+        );
+
+        row.appendChild(checkbox);
+        row.appendChild(textWrap);
+        row.appendChild(orderControls);
+        list.appendChild(row);
+      });
+    };
+
+    renderRows();
+    panel.appendChild(list);
+    return panel;
+  }
+
+  private createOrderControls(
+    index: number,
+    length: number,
+    onMoveUp: () => void,
+    onMoveDown: () => void,
+  ): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const orderControls = doc.createElement("div");
+    Object.assign(orderControls.style, {
+      display: "flex",
+      gap: "6px",
+    });
+
+    const upBtn = this.createOrderButton("↑", "上移", index === 0);
+    upBtn.addEventListener("click", () => {
+      if (index === 0) return;
+      onMoveUp();
+    });
+
+    const downBtn = this.createOrderButton("↓", "下移", index === length - 1);
+    downBtn.addEventListener("click", () => {
+      if (index === length - 1) return;
+      onMoveDown();
+    });
+
+    orderControls.appendChild(upBtn);
+    orderControls.appendChild(downBtn);
+    return orderControls;
+  }
+
+  private createOrderButton(
+    text: string,
+    title: string,
+    disabled: boolean,
+  ): HTMLButtonElement {
+    const doc = Zotero.getMainWindow().document;
+    const button = doc.createElement("button");
+    button.type = "button";
+    button.textContent = text;
+    button.title = title;
+    button.disabled = disabled;
+    Object.assign(button.style, {
+      width: "28px",
+      height: "28px",
+      border: "1px solid #59c0bc",
+      borderRadius: "4px",
+      background: disabled ? "rgba(128, 128, 128, 0.08)" : "transparent",
+      color: disabled ? "var(--ai-text-muted)" : "#59c0bc",
+      cursor: disabled ? "default" : "pointer",
+      fontSize: "14px",
+      lineHeight: "1",
+    });
+    return button;
+  }
+
+  private async applyLiveUICustomization(): Promise<void> {
+    try {
+      const { refreshCurrentItemPaneSection } =
+        await import("../../ItemPaneSection");
+      await refreshCurrentItemPaneSection();
+    } catch (error) {
+      ztoolkit.log("[AI-Butler] 刷新侧边栏个性化设置失败:", error);
+    }
+
+    try {
+      const win = Zotero.getMainWindow();
+      const CustomEventCtor = (win as any).CustomEvent || CustomEvent;
+      win.dispatchEvent(
+        new CustomEventCtor("ai-butler-ui-customization-changed"),
+      );
+    } catch (error) {
+      ztoolkit.log("[AI-Butler] 刷新右键菜单个性化设置失败:", error);
+    }
   }
 }

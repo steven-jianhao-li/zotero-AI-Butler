@@ -79,6 +79,64 @@ export class ImageClient {
     return { mimeType: m[1], imageBase64: m[2] };
   }
 
+  private static getMimeTypeFromOpenAIImageObject(
+    source: any,
+    fallback = "image/png",
+  ): string {
+    const explicit =
+      source?.mime_type ||
+      source?.mimeType ||
+      source?.media_type ||
+      source?.mediaType ||
+      source?.data?.mime_type ||
+      source?.data?.mimeType;
+    if (typeof explicit === "string" && /^image\//i.test(explicit.trim())) {
+      return explicit.trim();
+    }
+
+    const outputFormat = String(
+      source?.output_format ||
+        source?.outputFormat ||
+        source?.format ||
+        source?.data?.output_format ||
+        "",
+    )
+      .trim()
+      .toLowerCase();
+    if (outputFormat === "jpg") return "image/jpeg";
+    if (["png", "jpeg", "webp", "gif"].includes(outputFormat)) {
+      return `image/${outputFormat}`;
+    }
+
+    return fallback;
+  }
+
+  private static extractImageFromOpenAIObject(source: any): {
+    imageBase64: string;
+    mimeType: string;
+  } | null {
+    const b64 =
+      source?.result ||
+      source?.imageBase64 ||
+      source?.image_base64 ||
+      source?.b64_json ||
+      source?.b64 ||
+      source?.data?.b64 ||
+      source?.data;
+    if (typeof b64 !== "string" || !b64.trim()) {
+      return null;
+    }
+
+    const trimmed = b64.trim();
+    const dataUrlImage = this.extractImageFromDataUrl(trimmed);
+    if (dataUrlImage) return dataUrlImage;
+
+    return {
+      mimeType: this.getMimeTypeFromOpenAIImageObject(source),
+      imageBase64: trimmed,
+    };
+  }
+
   private static guessMimeTypeFromUrl(url: string): string | null {
     const clean = (url || "").toLowerCase().split(/[?#]/)[0];
     if (clean.endsWith(".png")) return "image/png";
@@ -264,17 +322,8 @@ export class ImageClient {
       ) {
         try {
           const parsed = JSON.parse(trimmed);
-          const b64 =
-            parsed?.imageBase64 ||
-            parsed?.image_base64 ||
-            parsed?.b64_json ||
-            parsed?.b64 ||
-            parsed?.data?.b64 ||
-            parsed?.data;
-          if (typeof b64 === "string" && b64.trim()) {
-            const mime = parsed?.mimeType || parsed?.mime_type;
-            return { mimeType: mime || "image/png", imageBase64: b64.trim() };
-          }
+          const parsedImage = this.extractImageFromOpenAIObject(parsed);
+          if (parsedImage) return parsedImage;
         } catch {
           /* ignore */
         }
@@ -316,18 +365,13 @@ export class ImageClient {
         }
 
         // 兼容: { type: "image", image_base64: "...", mime_type: "image/png" }
-        if (type === "image" || type === "output_image") {
-          const b64 =
-            part?.image_base64 ||
-            part?.b64_json ||
-            part?.b64 ||
-            part?.data?.b64 ||
-            part?.data;
-          if (typeof b64 === "string" && b64.trim()) {
-            const mime =
-              part?.mime_type || part?.mimeType || part?.data?.mime_type;
-            return { mimeType: mime || "image/png", imageBase64: b64.trim() };
-          }
+        if (
+          type === "image" ||
+          type === "output_image" ||
+          type === "image_generation_call"
+        ) {
+          const partImage = this.extractImageFromOpenAIObject(part);
+          if (partImage) return partImage;
         }
 
         // 兜底: 任何字段里出现 data URL
@@ -347,6 +391,8 @@ export class ImageClient {
     if (Array.isArray(images)) {
       for (const part of images) {
         const type = String(part?.type || "").toLowerCase();
+        const partImage = this.extractImageFromOpenAIObject(part);
+        if (partImage) return partImage;
 
         if (type === "image_url") {
           const url = part?.image_url?.url || part?.image_url?.uri;
@@ -433,6 +479,19 @@ export class ImageClient {
     // Responses API: output[].content
     if (Array.isArray(json?.output) && json.output.length > 0) {
       for (const out of json.output) {
+        const directUrl =
+          out?.result ||
+          out?.url ||
+          out?.uri ||
+          out?.image_url?.url ||
+          out?.image_url?.uri;
+        if (
+          typeof directUrl === "string" &&
+          /^https?:\/\//i.test(directUrl.trim())
+        ) {
+          return directUrl.trim();
+        }
+
         const url = this.extractHttpImageUrlFromOpenAIChatMessage(out);
         if (url) return url;
         const content = out?.content;
@@ -462,10 +521,8 @@ export class ImageClient {
     if (Array.isArray(json?.data) && json.data.length > 0) {
       const item =
         json.data.find((d: any) => d?.b64_json || d?.b64) || json.data[0];
-      const b64 = item?.b64_json || item?.b64;
-      if (typeof b64 === "string" && b64.trim()) {
-        return { mimeType: "image/png", imageBase64: b64.trim() };
-      }
+      const itemImage = this.extractImageFromOpenAIObject(item);
+      if (itemImage) return itemImage;
       const url = item?.url;
       if (typeof url === "string") {
         const maybe = this.extractImageFromDataUrl(url.trim());
@@ -485,19 +542,20 @@ export class ImageClient {
     // 3) Responses API: { output: [{ content: [...] }] }
     if (Array.isArray(json?.output) && json.output.length > 0) {
       for (const out of json.output) {
+        const outputImage = this.extractImageFromOpenAIObject(out);
+        if (outputImage) return outputImage;
+
         const content = out?.content;
         if (Array.isArray(content)) {
           for (const part of content) {
             const type = String(part?.type || "").toLowerCase();
-            if (type === "output_image" || type === "image") {
-              const b64 = part?.image_base64 || part?.b64_json || part?.data;
-              if (typeof b64 === "string" && b64.trim()) {
-                const mime = part?.mime_type || part?.mimeType;
-                return {
-                  mimeType: mime || "image/png",
-                  imageBase64: b64.trim(),
-                };
-              }
+            if (
+              type === "output_image" ||
+              type === "image" ||
+              type === "image_generation_call"
+            ) {
+              const partImage = this.extractImageFromOpenAIObject(part);
+              if (partImage) return partImage;
             }
             const url = part?.image_url?.url || part?.url;
             if (typeof url === "string") {
@@ -565,6 +623,8 @@ export class ImageClient {
     let mergedDeltaText = "";
     let lastEvent: any = null;
     let lastFinishReason: string | null = null;
+    let finalResponse: any = null;
+    const responseOutputItems: any[] = [];
 
     for (const line of lines) {
       if (!/^\s*data\s*:/i.test(line)) continue;
@@ -575,6 +635,27 @@ export class ImageClient {
         const evt = JSON.parse(payload);
         events.push(evt);
         lastEvent = evt;
+
+        if (evt?.response && typeof evt.response === "object") {
+          finalResponse = evt.response;
+        }
+        const responseItem = evt?.item || evt?.output_item;
+        if (
+          responseItem &&
+          typeof responseItem === "object" &&
+          typeof responseItem.type === "string"
+        ) {
+          responseOutputItems.push(responseItem);
+        }
+        if (
+          String(evt?.type || "").includes("image_generation_call") &&
+          typeof evt?.result === "string"
+        ) {
+          responseOutputItems.push({
+            ...evt,
+            type: "image_generation_call",
+          });
+        }
 
         const choices = Array.isArray(evt?.choices) ? evt.choices : [];
         for (const choice of choices) {
@@ -596,6 +677,18 @@ export class ImageClient {
 
     if (events.length === 0) return null;
 
+    if (finalResponse || responseOutputItems.length > 0) {
+      return {
+        ...(finalResponse && typeof finalResponse === "object"
+          ? finalResponse
+          : {}),
+        object: finalResponse?.object ?? "response",
+        output: Array.isArray(finalResponse?.output)
+          ? finalResponse.output
+          : responseOutputItems,
+      };
+    }
+
     const finalText = mergedDeltaText.trim();
     return {
       ...(lastEvent && typeof lastEvent === "object" ? lastEvent : {}),
@@ -614,6 +707,50 @@ export class ImageClient {
           finish_reason: lastFinishReason,
         },
       ],
+    };
+  }
+
+  private static buildOpenAIImagePayload(
+    prompt: string,
+    config: {
+      model: string;
+      aspectRatio: string;
+      resolution: string;
+    },
+    endpointType: "images" | "responses" | "chat",
+  ): any {
+    if (endpointType === "images") {
+      return {
+        model: config.model,
+        prompt,
+        response_format: "b64_json",
+      };
+    }
+
+    // 动态构建 system prompt，只包含非空的参数
+    const parts = [
+      "You are an image generation model. Return a single image (no text).",
+    ];
+    if (config.aspectRatio) parts.push(`Aspect ratio: ${config.aspectRatio}.`);
+    if (config.resolution) parts.push(`Resolution: ${config.resolution}.`);
+    const instruction = parts.join(" ");
+
+    if (endpointType === "responses") {
+      return {
+        model: config.model,
+        input: `${instruction}\n\n${prompt}`,
+        tools: [{ type: "image_generation" }],
+      };
+    }
+
+    return {
+      model: config.model,
+      messages: [
+        { role: "system", content: instruction },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.8,
+      stream: false,
     };
   }
 
@@ -652,49 +789,15 @@ export class ImageClient {
       Authorization: `Bearer ${config.apiKey}`,
     } as Record<string, string>;
 
-    const payload: any = isImagesEndpoint
-      ? {
-          model,
-          prompt,
-          response_format: "b64_json",
-        }
-      : isResponsesEndpoint
-        ? (() => {
-            // 动态构建 system prompt，只包含非空的参数
-            const parts = [
-              "You are an image generation model. Return a single image (no text).",
-            ];
-            if (config.aspectRatio)
-              parts.push(`Aspect ratio: ${config.aspectRatio}.`);
-            if (config.resolution)
-              parts.push(`Resolution: ${config.resolution}.`);
-            return {
-              model,
-              input: [
-                { role: "system", content: parts.join(" ") },
-                { role: "user", content: prompt },
-              ],
-            };
-          })()
-        : (() => {
-            // 动态构建 system prompt，只包含非空的参数
-            const parts = [
-              "You are an image generation model. Return a single image (no text).",
-            ];
-            if (config.aspectRatio)
-              parts.push(`Aspect ratio: ${config.aspectRatio}.`);
-            if (config.resolution)
-              parts.push(`Resolution: ${config.resolution}.`);
-            return {
-              model,
-              messages: [
-                { role: "system", content: parts.join(" ") },
-                { role: "user", content: prompt },
-              ],
-              temperature: 0.8,
-              stream: false,
-            };
-          })();
+    const payload = this.buildOpenAIImagePayload(
+      prompt,
+      {
+        model,
+        aspectRatio: config.aspectRatio,
+        resolution: config.resolution,
+      },
+      isImagesEndpoint ? "images" : isResponsesEndpoint ? "responses" : "chat",
+    );
 
     ztoolkit.log(`[AI-Butler] 调用 OpenAI 兼容生图 API: ${endpoint}`);
     ztoolkit.log(`[AI-Butler] 生图提示词长度: ${prompt.length} 字符`);
@@ -805,7 +908,7 @@ export class ImageClient {
         throw new ImageGenerationError("API 未返回图片数据", {
           errorName: "NoImageData",
           errorMessage:
-            "OpenAI 兼容接口响应中未识别到图片数据。请确认接口是否支持图片输出，或尝试将 API 地址设置为完整端点（如 /v1/chat/completions 或 /v1/images/generations）。",
+            "OpenAI 兼容接口响应中未识别到图片数据。请确认接口是否支持图片输出，或尝试将 API 地址设置为完整端点（如 /v1/responses、/v1/chat/completions 或 /v1/images/generations）。",
           requestUrl: endpoint,
           responseBody: preview,
         });

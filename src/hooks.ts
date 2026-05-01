@@ -28,6 +28,16 @@ import { createZToolkit } from "./utils/ztoolkit";
 import { TaskQueueManager } from "./modules/taskQueue";
 import { MainWindow } from "./modules/views/MainWindow";
 import { AutoScanManager } from "./modules/autoScanManager";
+import {
+  CONTEXT_MENU_ITEMS,
+  DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF,
+  DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY_PREF,
+  DEFAULT_SIDEBAR_MODULE_ORDER_PREF,
+  DEFAULT_SIDEBAR_MODULE_VISIBILITY_PREF,
+  getContextMenuItemOrder,
+  isContextMenuItemEnabled,
+  type ContextMenuItemId,
+} from "./modules/uiCustomization";
 import { config } from "../package.json";
 import { getPref, setPref } from "./utils/prefs";
 import {
@@ -130,6 +140,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   // 注册右键上下文菜单
   // 为用户提供快速访问插件功能的入口
   registerContextMenuItem();
+  bindUICustomizationRefreshEvent(win);
 
   // 注册文献库工具栏按钮
   // 用户可以在文献库界面快速访问 AI 管家
@@ -224,6 +235,10 @@ function initializeDefaultPrefsOnStartup() {
     stream: true, // 默认启用流式输出,提供更好的用户体验
     summaryPrompt: getDefaultSummaryPrompt(), // 加载默认提示词模板
     promptVersion: PROMPT_VERSION, // 当前提示词版本号
+    contextMenuItemVisibility: DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY_PREF,
+    contextMenuItemOrder: DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF,
+    sidebarModuleVisibility: DEFAULT_SIDEBAR_MODULE_VISIBILITY_PREF,
+    sidebarModuleOrder: DEFAULT_SIDEBAR_MODULE_ORDER_PREF,
   };
 
   // 遍历所有配置项,确保每项都有有效值
@@ -284,6 +299,42 @@ async function openAIButlerDashboardFromUnifiedEntry(): Promise<void> {
   await mainWin.open("dashboard");
 }
 
+const UI_CUSTOMIZATION_CHANGED_EVENT = "ai-butler-ui-customization-changed";
+
+const CONTEXT_MENU_DOM_IDS: Record<ContextMenuItemId, string> = {
+  generateSummary: "zotero-itemmenu-ai-butler-summary",
+  multiRoundReanalyze: "zotero-itemmenu-ai-butler-multi-round",
+  dashboard: "zotero-itemmenu-ai-butler-dashboard",
+  chatWithAI: "zotero-itemmenu-ai-butler-chat",
+  imageSummary: "zotero-itemmenu-ai-butler-image-summary",
+  mindmap: "zotero-itemmenu-ai-butler-mindmap",
+  fillTable: "zotero-itemmenu-ai-butler-fill-table",
+  literatureReview: "zotero-collectionmenu-ai-butler-literature-review",
+};
+
+function unregisterContextMenuItems(menu: {
+  unregister?: (menuId: string) => void;
+}): void {
+  if (typeof menu.unregister !== "function") return;
+  for (const item of CONTEXT_MENU_ITEMS) {
+    menu.unregister(CONTEXT_MENU_DOM_IDS[item.id]);
+  }
+}
+
+function refreshContextMenuItems(): void {
+  registerContextMenuItem();
+}
+
+function bindUICustomizationRefreshEvent(win: Window): void {
+  const flagKey = "__aiButlerUICustomizationRefreshBound";
+  if ((win as any)[flagKey]) return;
+  (win as any)[flagKey] = true;
+
+  win.addEventListener(UI_CUSTOMIZATION_CHANGED_EVENT, () => {
+    refreshContextMenuItems();
+  });
+}
+
 /**
  * 注册右键上下文菜单项
  *
@@ -305,167 +356,161 @@ function registerContextMenuItem() {
   const menuIcon = `chrome://${config.addonRef}/content/icons/favicon.png`;
   const menu = (ztoolkit as any).Menu as {
     register: (scope: "item" | "collection", options: any) => void;
+    unregister?: (menuId: string) => void;
   };
 
-  // 注册"生成AI总结"菜单项
-  menu.register("item", {
-    tag: "menuitem", // HTML 元素类型
-    label: getString("menuitem-generateSummary"), // 国际化的菜单文本
-    icon: menuIcon, // 菜单项图标
+  unregisterContextMenuItems(menu);
 
-    // 点击事件监听器
-    commandListener: (_ev: Event) => {
-      handleGenerateSummary();
-    },
+  const isRegularItemSelection = () => {
+    const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
+    return (
+      selectedItems?.every((item: Zotero.Item) => item.isRegularItem()) || false
+    );
+  };
 
-    getVisibility: () => {
-      const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
-      return (
-        selectedItems?.every((item: Zotero.Item) => item.isRegularItem()) ||
-        false
-      );
-    },
-  });
-
-  // 注册"AI管家多轮对话重新精读"菜单项 (包含子菜单)
-  menu.register("item", {
-    tag: "menu", // 使用 menu 标签创建子菜单
-    label: getString("menuitem-multiRoundReanalyze" as any),
-    icon: menuIcon,
-    children: [
-      {
+  const menuDefinitions: Record<
+    ContextMenuItemId,
+    { scope: "item" | "collection"; options: any }
+  > = {
+    generateSummary: {
+      scope: "item",
+      options: {
         tag: "menuitem",
-        label: getString("menuitem-multiRoundConcat" as any),
-        commandListener: () => handleMultiRoundSummary("multi_concat"),
+        id: CONTEXT_MENU_DOM_IDS.generateSummary,
+        label: getString("menuitem-generateSummary"),
+        icon: menuIcon,
+        commandListener: (_ev: Event) => {
+          handleGenerateSummary();
+        },
+        getVisibility: () =>
+          isContextMenuItemEnabled("generateSummary") &&
+          isRegularItemSelection(),
       },
-      {
+    },
+    multiRoundReanalyze: {
+      scope: "item",
+      options: {
+        tag: "menu",
+        id: CONTEXT_MENU_DOM_IDS.multiRoundReanalyze,
+        label: getString("menuitem-multiRoundReanalyze" as any),
+        icon: menuIcon,
+        children: [
+          {
+            tag: "menuitem",
+            label: getString("menuitem-multiRoundConcat" as any),
+            commandListener: () => handleMultiRoundSummary("multi_concat"),
+          },
+          {
+            tag: "menuitem",
+            label: getString("menuitem-multiRoundSummary" as any),
+            commandListener: () => handleMultiRoundSummary("multi_summarize"),
+          },
+        ],
+        getVisibility: () =>
+          isContextMenuItemEnabled("multiRoundReanalyze") &&
+          isRegularItemSelection(),
+      },
+    },
+    dashboard: {
+      scope: "item",
+      options: {
         tag: "menuitem",
-        label: getString("menuitem-multiRoundSummary" as any),
-        commandListener: () => handleMultiRoundSummary("multi_summarize"),
+        id: CONTEXT_MENU_DOM_IDS.dashboard,
+        label: "AI 管家仪表盘",
+        icon: menuIcon,
+        commandListener: async (_ev: Event) => {
+          await openAIButlerDashboardFromUnifiedEntry();
+        },
+        getVisibility: () => isContextMenuItemEnabled("dashboard"),
       },
-    ],
-    getVisibility: () => {
-      // 与生成总结的可见性逻辑相同
-      const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
-      return (
-        selectedItems?.every((item: Zotero.Item) => item.isRegularItem()) ||
-        false
-      );
     },
-  });
+    chatWithAI: {
+      scope: "item",
+      options: {
+        tag: "menuitem",
+        id: CONTEXT_MENU_DOM_IDS.chatWithAI,
+        label: getString("menuitem-chatWithAI"),
+        icon: menuIcon,
+        commandListener: async (_ev: Event) => {
+          await handleChatWithAI();
+        },
+        getVisibility: () => {
+          if (!isContextMenuItemEnabled("chatWithAI")) return false;
+          const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
+          if (!selectedItems || selectedItems.length !== 1) return false;
 
-  // 注册"AI 管家仪表盘"菜单项
-  menu.register("item", {
-    tag: "menuitem",
-    label: "AI 管家仪表盘",
-    icon: menuIcon,
+          const item = selectedItems[0];
+          if (!item.isNote()) return false;
 
-    commandListener: async (_ev: Event) => {
-      await openAIButlerDashboardFromUnifiedEntry();
+          const tags: Array<{ tag: string }> = (item as any).getTags?.() || [];
+          const hasTag = tags.some((t: any) => t.tag === "AI-Generated");
+          const noteHtml: string = (item as any).getNote?.() || "";
+          const titleMatch = /<h2>\s*AI 管家\s*-/.test(noteHtml);
+          return hasTag || titleMatch;
+        },
+      },
     },
-
-    getVisibility: () => {
-      return true; // 始终显示
+    imageSummary: {
+      scope: "item",
+      options: {
+        tag: "menuitem",
+        id: CONTEXT_MENU_DOM_IDS.imageSummary,
+        label: getString("menuitem-imageSummary"),
+        icon: menuIcon,
+        commandListener: async () => {
+          await handleImageSummary();
+        },
+        getVisibility: () =>
+          isContextMenuItemEnabled("imageSummary") && isRegularItemSelection(),
+      },
     },
-  });
-
-  // 注册"AI 管家-后续追问"菜单项
-  menu.register("item", {
-    tag: "menuitem",
-    label: getString("menuitem-chatWithAI"),
-    icon: menuIcon,
-
-    commandListener: async (_ev: Event) => {
-      await handleChatWithAI();
+    mindmap: {
+      scope: "item",
+      options: {
+        tag: "menuitem",
+        id: CONTEXT_MENU_DOM_IDS.mindmap,
+        label: getString("menuitem-mindmap" as any),
+        icon: menuIcon,
+        commandListener: async () => {
+          await handleMindmapGeneration();
+        },
+        getVisibility: () =>
+          isContextMenuItemEnabled("mindmap") && isRegularItemSelection(),
+      },
     },
-
-    // 仅当选中单个 AI 笔记时显示
-    getVisibility: () => {
-      const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
-      if (!selectedItems || selectedItems.length !== 1) {
-        return false;
-      }
-
-      const item = selectedItems[0];
-      // 判断是否是 AI 笔记
-      if (!item.isNote()) {
-        return false;
-      }
-
-      const tags: Array<{ tag: string }> = (item as any).getTags?.() || [];
-      const hasTag = tags.some((t: any) => t.tag === "AI-Generated");
-      const noteHtml: string = (item as any).getNote?.() || "";
-      const titleMatch = /<h2>\s*AI 管家\s*-/.test(noteHtml);
-
-      return hasTag || titleMatch;
+    fillTable: {
+      scope: "item",
+      options: {
+        tag: "menuitem",
+        id: CONTEXT_MENU_DOM_IDS.fillTable,
+        label: getString("menuitem-fillTable" as any),
+        icon: menuIcon,
+        commandListener: async () => {
+          await handleFillTable();
+        },
+        getVisibility: () =>
+          isContextMenuItemEnabled("fillTable") && isRegularItemSelection(),
+      },
     },
-  });
-
-  // 注册"召唤AI管家一图总结"菜单项
-  menu.register("item", {
-    tag: "menuitem",
-    label: getString("menuitem-imageSummary"),
-    icon: menuIcon,
-
-    commandListener: async () => {
-      await handleImageSummary();
+    literatureReview: {
+      scope: "collection",
+      options: {
+        tag: "menuitem",
+        id: CONTEXT_MENU_DOM_IDS.literatureReview,
+        label: getString("menuitem-literatureReview" as any),
+        icon: menuIcon,
+        commandListener: async () => {
+          await handleLiteratureReview();
+        },
+        getVisibility: () => isContextMenuItemEnabled("literatureReview"),
+      },
     },
+  };
 
-    getVisibility: () => {
-      const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
-      return (
-        selectedItems?.every((item: Zotero.Item) => item.isRegularItem()) ||
-        false
-      );
-    },
-  });
-
-  // 注册"AI管家生成思维导图"菜单项
-  menu.register("item", {
-    tag: "menuitem",
-    label: getString("menuitem-mindmap" as any),
-    icon: menuIcon,
-
-    commandListener: async () => {
-      await handleMindmapGeneration();
-    },
-
-    getVisibility: () => {
-      const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
-      return (
-        selectedItems?.every((item: Zotero.Item) => item.isRegularItem()) ||
-        false
-      );
-    },
-  });
-
-  // 注册"AI管家文献综述"菜单项 (分类右键)
-  menu.register("collection", {
-    tag: "menuitem",
-    label: getString("menuitem-literatureReview" as any),
-    icon: menuIcon,
-    commandListener: async () => {
-      await handleLiteratureReview();
-    },
-    getVisibility: () => true, // 分类菜单始终显示
-  });
-
-  // 注册"AI管家填表"菜单项 (文献右键)
-  menu.register("item", {
-    tag: "menuitem",
-    label: getString("menuitem-fillTable" as any),
-    icon: menuIcon,
-    commandListener: async () => {
-      await handleFillTable();
-    },
-    getVisibility: () => {
-      const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
-      return (
-        selectedItems?.every((item: Zotero.Item) => item.isRegularItem()) ||
-        false
-      );
-    },
-  });
+  for (const itemId of getContextMenuItemOrder()) {
+    const definition = menuDefinitions[itemId];
+    menu.register(definition.scope, definition.options);
+  }
 }
 
 /**

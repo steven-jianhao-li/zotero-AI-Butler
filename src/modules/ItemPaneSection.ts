@@ -13,6 +13,11 @@
 import { config } from "../../package.json";
 import { getString, getLocaleID } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
+import {
+  getSidebarModuleOrder,
+  isSidebarModuleEnabled,
+  type SidebarModuleId,
+} from "./uiCustomization";
 import katex from "katex";
 // 注意: 不在主进程中直接 import 思维导图库（如 markmap-view、simple-mind-map）
 // 这些库在加载时会访问 document/window，而 Zotero Background 进程没有 DOM 环境
@@ -60,9 +65,17 @@ let sidebarContext: {
   itemId: number;
 } | null = null;
 
+let sidebarRenderContext: {
+  body: HTMLElement;
+  item: Zotero.Item;
+  itemId: number;
+  handleOpenAIChat: (itemId: number) => Promise<void>;
+} | null = null;
+
 let sidebarAutoRefreshBound = false;
 let sidebarRefreshTimer: number | null = null;
 const pendingSidebarRefreshTargets = new Set<SidebarAutoRefreshTarget>();
+const quickChatToggleListeners = new WeakMap<HTMLElement, EventListener>();
 
 function setSidebarContext(doc: Document, item: Zotero.Item | null): void {
   sidebarContext = item
@@ -228,6 +241,31 @@ export function registerItemPaneSection(
 }
 
 /**
+ * 立即重绘当前条目侧边栏区块。
+ *
+ * 设置页保存侧边栏显示/排序后调用，避免用户需要重新选择文献才能看到变化。
+ */
+export async function refreshCurrentItemPaneSection(): Promise<void> {
+  if (!sidebarRenderContext) return;
+
+  const { body, itemId, handleOpenAIChat } = sidebarRenderContext;
+  if (!body.isConnected) {
+    sidebarRenderContext = null;
+    return;
+  }
+
+  let item = sidebarRenderContext.item;
+  try {
+    item = await Zotero.Items.getAsync(itemId);
+  } catch {
+    // 使用缓存的 item 继续刷新
+  }
+
+  if (!item) return;
+  renderItemPaneSection(body, item, handleOpenAIChat);
+}
+
+/**
  * 渲染条目面板侧边栏内容
  */
 function renderItemPaneSection(
@@ -258,6 +296,7 @@ function renderItemPaneSection(
   // 检查是否有有效的文献条目
   if (!item || !item.isRegularItem()) {
     setSidebarContext(doc, null);
+    sidebarRenderContext = null;
     const hint = doc.createElement("div");
     hint.style.cssText = `
       color: #9e9e9e;
@@ -271,6 +310,12 @@ function renderItemPaneSection(
   }
 
   setSidebarContext(doc, item);
+  sidebarRenderContext = {
+    body,
+    item,
+    itemId: item.id,
+    handleOpenAIChat,
+  };
 
   // 重置聊天状态（如果切换了条目）
   if (currentChatState.itemId !== item.id) {
@@ -284,13 +329,22 @@ function renderItemPaneSection(
     };
   }
 
-  // 渲染各个区块
-  renderActionButtons(body, doc, item, handleOpenAIChat);
-  renderNoteSection(body, doc, item);
-  renderTableSection(body, doc, item);
-  renderImageSummarySection(body, doc, item);
-  renderMindmapSection(body, doc, item);
-  renderChatArea(body, doc, item);
+  // 按用户配置的顺序渲染侧边栏功能区块
+  const renderers: Record<SidebarModuleId, () => void> = {
+    actionButtons: () => renderActionButtons(body, doc, item, handleOpenAIChat),
+    note: () => renderNoteSection(body, doc, item),
+    table: () => renderTableSection(body, doc, item),
+    imageSummary: () => renderImageSummarySection(body, doc, item),
+    mindmap: () => renderMindmapSection(body, doc, item),
+    quickChat: () =>
+      renderChatArea(body, doc, item, !isSidebarModuleEnabled("actionButtons")),
+  };
+
+  for (const moduleId of getSidebarModuleOrder()) {
+    if (isSidebarModuleEnabled(moduleId)) {
+      renderers[moduleId]();
+    }
+  }
 }
 
 /**
@@ -368,11 +422,19 @@ function renderActionButtons(
     false,
   );
   quickChatBtn.id = "ai-butler-quick-chat-btn";
+  quickChatBtn.addEventListener("click", () => {
+    const ToggleEvent = doc.defaultView?.CustomEvent || CustomEvent;
+    body.dispatchEvent(
+      new ToggleEvent("ai-butler-toggle-inline-chat", {
+        detail: { button: quickChatBtn },
+      }),
+    );
+  });
 
   // 刷新按钮
   const refreshBtn = doc.createElement("button");
   refreshBtn.id = "ai-butler-refresh-btn";
-  refreshBtn.title = "刷新AI笔记、一图总结和思维导图";
+  refreshBtn.title = "刷新当前显示的 AI 管家侧边栏内容";
   refreshBtn.textContent = "🔄";
   refreshBtn.style.cssText = `
     padding: 8px 12px;
@@ -400,32 +462,48 @@ function renderActionButtons(
     refreshBtn.style.pointerEvents = "none";
     try {
       // 刷新 AI 笔记
-      const noteContent = doc.getElementById(
-        "ai-butler-note-content",
-      ) as HTMLElement | null;
-      if (noteContent) {
-        noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-        await loadNoteContent(doc, item, noteContent);
+      if (isSidebarModuleEnabled("note")) {
+        const noteContent = doc.getElementById(
+          "ai-butler-note-content",
+        ) as HTMLElement | null;
+        if (noteContent) {
+          noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+          await loadNoteContent(doc, item, noteContent);
+        }
+      }
+      // 刷新表格归纳
+      if (isSidebarModuleEnabled("table")) {
+        const tableContent = doc.getElementById(
+          "ai-butler-table-content",
+        ) as HTMLElement | null;
+        if (tableContent) {
+          tableContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+          await loadTableContent(item, tableContent);
+        }
       }
       // 刷新一图总结
-      const imageContainer = doc.getElementById(
-        "ai-butler-image-container",
-      ) as HTMLElement | null;
-      const imageBtnContainer = doc.getElementById(
-        "ai-butler-image-btn-container",
-      ) as HTMLElement | null;
-      if (imageContainer && imageBtnContainer) {
-        imageContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-        imageBtnContainer.innerHTML = "";
-        await loadImageSummary(doc, item, imageContainer, imageBtnContainer);
+      if (isSidebarModuleEnabled("imageSummary")) {
+        const imageContainer = doc.getElementById(
+          "ai-butler-image-container",
+        ) as HTMLElement | null;
+        const imageBtnContainer = doc.getElementById(
+          "ai-butler-image-btn-container",
+        ) as HTMLElement | null;
+        if (imageContainer && imageBtnContainer) {
+          imageContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+          imageBtnContainer.innerHTML = "";
+          await loadImageSummary(doc, item, imageContainer, imageBtnContainer);
+        }
       }
       // 刷新思维导图
-      const mindmapContainer = doc.getElementById(
-        "ai-butler-mindmap-container",
-      ) as HTMLElement | null;
-      if (mindmapContainer) {
-        mindmapContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-        await loadMindmapContent(doc, item, mindmapContainer);
+      if (isSidebarModuleEnabled("mindmap")) {
+        const mindmapContainer = doc.getElementById(
+          "ai-butler-mindmap-container",
+        ) as HTMLElement | null;
+        if (mindmapContainer) {
+          mindmapContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+          await loadMindmapContent(doc, item, mindmapContainer);
+        }
       }
     } catch (err: any) {
       ztoolkit.log("[AI-Butler] 刷新失败:", err);
@@ -437,7 +515,9 @@ function renderActionButtons(
   });
 
   btnContainer.appendChild(fullChatBtn);
-  btnContainer.appendChild(quickChatBtn);
+  if (isSidebarModuleEnabled("quickChat")) {
+    btnContainer.appendChild(quickChatBtn);
+  }
   btnContainer.appendChild(refreshBtn);
   body.appendChild(btnContainer);
 }
@@ -1771,17 +1851,29 @@ function renderChatArea(
   body: HTMLElement,
   doc: Document,
   item: Zotero.Item,
+  initiallyVisible = false,
 ): void {
   const chatArea = doc.createElement("div");
   chatArea.id = "ai-butler-inline-chat";
   chatArea.style.cssText = `
-    display: none;
+    display: ${initiallyVisible ? "flex" : "none"};
     flex-direction: column;
     border: 1px solid rgba(128, 128, 128, 0.3);
     border-radius: 6px;
     overflow: hidden;
     background: transparent;
+    margin-bottom: 12px;
   `;
+
+  const chatHeader = doc.createElement("div");
+  chatHeader.style.cssText = `
+    padding: 8px 10px;
+    background: rgba(89, 192, 188, 0.1);
+    border-bottom: 1px solid rgba(89, 192, 188, 0.2);
+    font-size: 12px;
+    font-weight: 500;
+  `;
+  chatHeader.textContent = "💬 快速提问";
 
   // 消息显示区
   const messagesArea = doc.createElement("div");
@@ -1834,57 +1926,92 @@ function renderChatArea(
 
   inputArea.appendChild(inputBox);
   inputArea.appendChild(sendBtn);
+  chatArea.appendChild(chatHeader);
   chatArea.appendChild(messagesArea);
   chatArea.appendChild(inputArea);
   body.appendChild(chatArea);
 
-  // 快速提问按钮点击事件 - 打开时加载 PDF 内容
-  const quickChatBtn = body.querySelector(
-    "#ai-butler-quick-chat-btn",
-  ) as HTMLButtonElement;
-  if (quickChatBtn) {
-    quickChatBtn.addEventListener("click", async () => {
-      if (chatArea.style.display === "none") {
-        chatArea.style.display = "flex";
-        quickChatBtn.style.background = "rgba(89, 192, 188, 0.15)";
-        quickChatBtn.style.borderColor = "#4db6ac";
-        inputBox.focus();
+  const setQuickChatButtonActive = (
+    quickChatBtn: HTMLButtonElement | undefined,
+    active: boolean,
+  ): void => {
+    if (!quickChatBtn) return;
+    quickChatBtn.style.background = active
+      ? "rgba(89, 192, 188, 0.15)"
+      : "transparent";
+    quickChatBtn.style.borderColor = active ? "#4db6ac" : "#59c0bc";
+  };
 
-        // 如果尚未加载 PDF 内容，则加载
-        if (!currentChatState.pdfContent && item) {
-          try {
-            const { PDFExtractor } = await import("./pdfExtractor");
-            const prefMode =
-              (getPref("pdfProcessMode" as any) as string) || "base64";
-            const isBase64 = prefMode === "base64";
+  const loadPdfContentIfNeeded = async (): Promise<void> => {
+    // 如果尚未加载 PDF 内容，则加载
+    if (!currentChatState.pdfContent && item) {
+      try {
+        const { PDFExtractor } = await import("./pdfExtractor");
+        const prefMode =
+          (getPref("pdfProcessMode" as any) as string) || "base64";
+        const isBase64 = prefMode === "base64";
 
-            messagesArea.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">📄 正在加载论文内容...</div>`;
+        messagesArea.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">📄 正在加载论文内容...</div>`;
 
-            let pdfContent = "";
-            if (isBase64) {
-              pdfContent = await PDFExtractor.extractBase64FromItem(item);
-            } else {
-              pdfContent = await PDFExtractor.extractTextFromItem(item);
-            }
-
-            if (pdfContent) {
-              currentChatState.pdfContent = pdfContent;
-              currentChatState.isBase64 = isBase64;
-              messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">✅ 论文内容已加载，可以开始提问！</div>`;
-            } else {
-              messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 无法加载论文内容，请确保该文献有 PDF 附件</div>`;
-            }
-          } catch (err: any) {
-            ztoolkit.log("[AI-Butler] 快速提问加载 PDF 失败:", err);
-            messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 加载失败: ${err?.message || "未知错误"}</div>`;
-          }
+        let pdfContent = "";
+        if (isBase64) {
+          pdfContent = await PDFExtractor.extractBase64FromItem(item);
+        } else {
+          pdfContent = await PDFExtractor.extractTextFromItem(item);
         }
-      } else {
-        chatArea.style.display = "none";
-        quickChatBtn.style.background = "transparent";
-        quickChatBtn.style.borderColor = "#59c0bc";
+
+        if (pdfContent) {
+          currentChatState.pdfContent = pdfContent;
+          currentChatState.isBase64 = isBase64;
+          messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">✅ 论文内容已加载，可以开始提问！</div>`;
+        } else {
+          messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 无法加载论文内容，请确保该文献有 PDF 附件</div>`;
+        }
+      } catch (err: any) {
+        ztoolkit.log("[AI-Butler] 快速提问加载 PDF 失败:", err);
+        messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 加载失败: ${err?.message || "未知错误"}</div>`;
       }
-    });
+    }
+  };
+
+  const showChatArea = async (
+    quickChatBtn: HTMLButtonElement | undefined,
+  ): Promise<void> => {
+    chatArea.style.display = "flex";
+    setQuickChatButtonActive(quickChatBtn, true);
+    inputBox.focus();
+    await loadPdfContentIfNeeded();
+  };
+
+  const hideChatArea = (quickChatBtn: HTMLButtonElement | undefined): void => {
+    chatArea.style.display = "none";
+    setQuickChatButtonActive(quickChatBtn, false);
+  };
+
+  const previousToggleListener = quickChatToggleListeners.get(body);
+  if (previousToggleListener) {
+    body.removeEventListener(
+      "ai-butler-toggle-inline-chat",
+      previousToggleListener,
+    );
+  }
+
+  const toggleListener: EventListener = (event: Event) => {
+    const detail = (
+      event as CustomEvent<{ button?: HTMLButtonElement | undefined }>
+    ).detail;
+    const quickChatBtn = detail?.button;
+    if (chatArea.style.display === "none") {
+      void showChatArea(quickChatBtn);
+    } else {
+      hideChatArea(quickChatBtn);
+    }
+  };
+  body.addEventListener("ai-butler-toggle-inline-chat", toggleListener);
+  quickChatToggleListeners.set(body, toggleListener);
+
+  if (initiallyVisible) {
+    void loadPdfContentIfNeeded();
   }
 
   // 发送消息处理 - 快速提问（不保存历史，每次只发送论文+当前问题）
@@ -3403,4 +3530,4 @@ async function copyToClipboard(doc: Document, text: string): Promise<void> {
   }
 }
 
-export default { registerItemPaneSection };
+export default { registerItemPaneSection, refreshCurrentItemPaneSection };

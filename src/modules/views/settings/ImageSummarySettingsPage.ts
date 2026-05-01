@@ -90,9 +90,10 @@ export class ImageSummarySettingsPage {
         const isDefaultGemini =
           !cur || cur === "https://generativelanguage.googleapis.com";
         const isDefaultOpenAI =
-          cur === "https://api.openai.com/v1/chat/completions";
+          cur === "https://api.openai.com/v1/chat/completions" ||
+          cur === "https://api.openai.com/v1/responses";
         if (newVal === "openai" && isDefaultGemini) {
-          urlInput.value = "https://api.openai.com/v1/chat/completions";
+          urlInput.value = "https://api.openai.com/v1/responses";
         }
         if (newVal === "gemini" && (isDefaultOpenAI || !cur)) {
           urlInput.value = "https://generativelanguage.googleapis.com";
@@ -129,13 +130,13 @@ export class ImageSummarySettingsPage {
           "text",
           (getPref("imageSummaryApiUrl" as any) as string) ||
             (requestModeValue === "openai"
-              ? "https://api.openai.com/v1/chat/completions"
+              ? "https://api.openai.com/v1/responses"
               : "https://generativelanguage.googleapis.com"),
           requestModeValue === "openai"
-            ? "https://api.openai.com/v1/chat/completions"
+            ? "https://api.openai.com/v1/responses"
             : "https://generativelanguage.googleapis.com",
         ),
-        "Gemini: 填基础地址；OpenAI: 可填基础地址或完整端点（如 /v1/chat/completions）",
+        "Gemini: 填基础地址；OpenAI: 可填基础地址或完整端点（如 /v1/responses、/v1/images/generations，参考 https://your.end.point/v1/images/generations）",
       ),
     );
 
@@ -150,7 +151,7 @@ export class ImageSummarySettingsPage {
             "gemini-3-pro-image-preview",
           "gemini-3-pro-image-preview",
         ),
-        "Gemini 生图模型名称，推荐使用 gemini-3-pro-image-preview (Nano Banana Pro)",
+        "Gemini 推荐 gemini-3-pro-image-preview；OpenAI 兼容生图可填写 gpt-image-2 等模型",
       ),
     );
 

@@ -17,6 +17,7 @@
 
 import { ZoteroToolkit } from "zotero-plugin-toolkit";
 import { config } from "../../package.json";
+import { ModernProgressWindow } from "./modernProgressWindow";
 
 /**
  * 创建并初始化 ZToolkit 实例
@@ -35,6 +36,7 @@ import { config } from "../../package.json";
 export function createZToolkit() {
   // 创建完整的 ZToolkit 实例
   const _ztoolkit = new ZoteroToolkit();
+  _ztoolkit.ProgressWindow = ModernProgressWindow;
 
   /**
    * 体积优化方案(可选):

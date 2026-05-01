@@ -9,6 +9,12 @@ import {
 } from "../utils/prompts";
 import { MainWindow } from "./views/MainWindow";
 import { config } from "../../package.json";
+import {
+  DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF,
+  DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY_PREF,
+  DEFAULT_SIDEBAR_MODULE_ORDER_PREF,
+  DEFAULT_SIDEBAR_MODULE_VISIBILITY_PREF,
+} from "./uiCustomization";
 
 export async function registerPrefsScripts(_window: Window) {
   const slog = (...args: any[]) => {
@@ -226,6 +232,10 @@ function initializeDefaultPrefs() {
     enableTableOnSingleNote: true,
     tableStrategy: "skip",
     tableFillConcurrency: 3,
+    contextMenuItemVisibility: DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY_PREF,
+    contextMenuItemOrder: DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF,
+    sidebarModuleVisibility: DEFAULT_SIDEBAR_MODULE_VISIBILITY_PREF,
+    sidebarModuleOrder: DEFAULT_SIDEBAR_MODULE_ORDER_PREF,
   };
 
   // 遍历所有默认配置

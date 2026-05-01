@@ -88,6 +88,22 @@ pref("__prefsPrefix__.autoScroll", true);
 pref("__prefsPrefix__.windowWidth", "900");
 pref("__prefsPrefix__.windowHeight", "700");
 pref("__prefsPrefix__.saveChatHistory", true);
+pref(
+  "__prefsPrefix__.contextMenuItemVisibility",
+  '{"generateSummary":true,"multiRoundReanalyze":true,"dashboard":true,"chatWithAI":true,"imageSummary":true,"mindmap":true,"fillTable":true,"literatureReview":true}',
+);
+pref(
+  "__prefsPrefix__.contextMenuItemOrder",
+  '["generateSummary","multiRoundReanalyze","dashboard","chatWithAI","imageSummary","mindmap","fillTable","literatureReview"]',
+);
+pref(
+  "__prefsPrefix__.sidebarModuleVisibility",
+  '{"actionButtons":true,"note":true,"table":true,"imageSummary":true,"mindmap":true,"quickChat":true}',
+);
+pref(
+  "__prefsPrefix__.sidebarModuleOrder",
+  '["actionButtons","note","table","imageSummary","mindmap","quickChat"]',
+);
 pref("__prefsPrefix__.sidebarNoteCollapsed", false);
 pref("__prefsPrefix__.sidebarImageCollapsed", false);
 

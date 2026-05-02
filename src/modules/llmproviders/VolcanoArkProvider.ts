@@ -9,6 +9,10 @@ import {
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
 import {
+  getConnectionTestInput,
+  getConnectionTestModeLabel,
+} from "./shared/connectionTest";
+import {
   deriveVersionedModelsUrl,
   parseModelListResponse,
   requestModelListJson,
@@ -437,12 +441,30 @@ export class VolcanoArkProvider implements ILlmProvider {
     const url = baseUrl.endsWith("/responses")
       ? baseUrl
       : `${baseUrl}/responses`;
+    const testInput = getConnectionTestInput(options);
+    const userContent = testInput.isBase64
+      ? [
+          {
+            type: "input_file",
+            file_data: `data:application/pdf;base64,${testInput.pdfBase64 || ""}`,
+            filename: "connection-test.pdf",
+          },
+          {
+            type: "input_text",
+            text: testInput.text,
+          },
+        ]
+      : testInput.text;
     const payload = {
       model,
       input: [
         {
+          role: "system",
+          content: SYSTEM_ROLE_PROMPT,
+        },
+        {
           role: "user",
-          content: "Hello! Please respond with 'OK' to confirm connection.",
+          content: userContent,
         },
       ],
       max_output_tokens: 16,
@@ -534,7 +556,7 @@ export class VolcanoArkProvider implements ILlmProvider {
         typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
       // 从 Response API 格式提取文本
       const text = this.extractVolcanoTextFromFull(json);
-      return `✅ 连接成功!\n模型: ${model}\n响应: ${text}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
+      return `Mode: ${getConnectionTestModeLabel(testInput.mode)}\n✅ 连接成功!\n模型: ${model}\n响应: ${text}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
     }
 
     // 非 200 但未抛出异常的情况

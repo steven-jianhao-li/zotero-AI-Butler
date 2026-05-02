@@ -9,6 +9,10 @@ import {
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
 import {
+  getConnectionTestInput,
+  getConnectionTestModeLabel,
+} from "./shared/connectionTest";
+import {
   deriveAnthropicModelsUrl,
   parseModelListResponse,
   requestModelListJson,
@@ -417,13 +421,28 @@ export class AnthropicProvider implements ILlmProvider {
     if (!apiKey) throw new Error("Anthropic API Key 未配置");
 
     const url = `${baseUrl}/v1/messages`;
+    const testInput = getConnectionTestInput(options);
+    const userContent = testInput.isBase64
+      ? [
+          { type: "text", text: testInput.text },
+          {
+            type: "document",
+            source: {
+              type: "base64",
+              media_type: "application/pdf",
+              data: testInput.pdfBase64 || "",
+            },
+          },
+        ]
+      : testInput.text;
     const payload = {
       model,
       max_tokens: 16,
+      system: SYSTEM_ROLE_PROMPT,
       messages: [
         {
           role: "user",
-          content: "Hello! Please respond with 'OK' to confirm connection.",
+          content: userContent,
         },
       ],
     } as any;
@@ -512,7 +531,7 @@ export class AnthropicProvider implements ILlmProvider {
       const json =
         typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
       const text = json?.content?.[0]?.text || "";
-      return `✅ 连接成功!\n模型: ${model}\n响应: ${text}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
+      return `Mode: ${getConnectionTestModeLabel(testInput.mode)}\n✅ 连接成功!\n模型: ${model}\n响应: ${text}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
     }
 
     const { APITestError } = await import("./types");

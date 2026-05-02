@@ -9,6 +9,10 @@ import {
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
 import {
+  getConnectionTestInput,
+  getConnectionTestModeLabel,
+} from "./shared/connectionTest";
+import {
   deriveGeminiModelsUrl,
   parseModelListResponse,
   requestModelListJson,
@@ -412,13 +416,21 @@ export class GeminiProvider implements ILlmProvider {
     if (!apiKey) throw new Error("Gemini API Key 未配置");
 
     const url = `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const testInput = getConnectionTestInput(options);
+    const parts: any[] = [{ text: testInput.text }];
+    if (testInput.isBase64) {
+      parts.push({
+        inlineData: {
+          mimeType: "application/pdf",
+          data: testInput.pdfBase64 || "",
+        },
+      });
+    }
     const payload = {
       contents: [
         {
           role: "user",
-          parts: [
-            { text: "Hello! Please respond with 'OK' to confirm connection." },
-          ],
+          parts,
         },
       ],
       systemInstruction: { parts: [{ text: SYSTEM_ROLE_PROMPT }] },
@@ -512,7 +524,7 @@ export class GeminiProvider implements ILlmProvider {
         json?.candidates?.[0]?.content?.parts
           ?.map((p: any) => p?.text || "")
           .join("") || "";
-      return `✅ 连接成功!\n模型: ${model}\n响应: ${text}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
+      return `Mode: ${getConnectionTestModeLabel(testInput.mode)}\n✅ 连接成功!\n模型: ${model}\n响应: ${text}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
     }
 
     // 非 200 但未抛出异常的情况

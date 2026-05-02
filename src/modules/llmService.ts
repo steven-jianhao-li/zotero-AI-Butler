@@ -14,6 +14,7 @@ import { PDFExtractor } from "./pdfExtractor";
 import { ProviderRegistry } from "./llmproviders/ProviderRegistry";
 import "./llmproviders";
 import type { ILlmProvider, PdfFileInfo } from "./llmproviders/ILlmProvider";
+import type { ConnectionTestMode } from "./llmproviders/shared/connectionTest";
 import type {
   ConversationMessage,
   LLMOptions,
@@ -359,13 +360,13 @@ export class LLMService {
 
   static async testConnection(): Promise<string> {
     const { id, impl } = this.resolveProvider();
-    const options = this.buildOptions(id, undefined, { stream: false });
+    const options = this.buildConnectionTestOptions(id, impl);
     return impl.testConnection(options);
   }
 
   static async testConnectionWithKey(apiKey: string): Promise<string> {
     const { id, impl } = this.resolveProvider();
-    const options = this.buildOptions(id, undefined, { stream: false });
+    const options = this.buildConnectionTestOptions(id, impl);
     options.apiKey = apiKey;
     return impl.testConnection(options);
   }
@@ -711,6 +712,33 @@ export class LLMService {
 
   private static normalizeText(text: string): string {
     return PDFExtractor.truncateText(PDFExtractor.cleanText(text));
+  }
+
+  private static buildConnectionTestOptions(
+    providerId: string,
+    provider: ILlmProvider,
+  ): LLMOptions {
+    return this.buildOptions(
+      providerId,
+      undefined,
+      { stream: false },
+      {
+        maxTokens: 16,
+        vendorOptions: {
+          connectionTestMode: this.getConnectionTestMode(provider),
+        },
+      },
+    );
+  }
+
+  private static getConnectionTestMode(
+    provider: ILlmProvider,
+  ): ConnectionTestMode {
+    const policy = this.choosePolicy(
+      undefined,
+      this.getProviderCapabilities(provider),
+    );
+    return policy === "pdf-base64" ? "pdf-base64" : "text";
   }
 
   private static getDefaultPrompt(): string {

@@ -9,6 +9,10 @@ import {
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
 import {
+  getConnectionTestInput,
+  getConnectionTestModeLabel,
+} from "./shared/connectionTest";
+import {
   deriveVersionedModelsUrl,
   parseModelListResponse,
   requestModelListJson,
@@ -198,6 +202,19 @@ export class OpenRouterProvider implements ILlmProvider {
   async testConnection(options: LLMOptions): Promise<string> {
     const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
     const model = (options.model || "google/gemma-3-27b-it").trim();
+    const testInput = getConnectionTestInput(options);
+    const userContent = testInput.isBase64
+      ? [
+          { type: "text", text: testInput.text },
+          {
+            type: "file",
+            file: {
+              filename: "connection-test.pdf",
+              file_data: testInput.pdfBase64 || "",
+            },
+          },
+        ]
+      : testInput.text;
 
     const payload = {
       model,
@@ -206,7 +223,7 @@ export class OpenRouterProvider implements ILlmProvider {
         { role: "system", content: SYSTEM_ROLE_PROMPT },
         {
           role: "user",
-          content: "Hello! Please respond with 'OK' to confirm connection.",
+          content: userContent,
         },
       ],
       ...this.buildGenParams(options),
@@ -296,7 +313,7 @@ export class OpenRouterProvider implements ILlmProvider {
       const json =
         typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
       const content = json?.choices?.[0]?.message?.content || "";
-      return `✅ Connection Successful!\nModel: ${model}\nResponse: ${content}\n\n--- Raw Response ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
+      return `Mode: ${getConnectionTestModeLabel(testInput.mode)}\n✅ Connection Successful!\nModel: ${model}\nResponse: ${content}\n\n--- Raw Response ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
     }
 
     const { APITestError } = await import("./types");

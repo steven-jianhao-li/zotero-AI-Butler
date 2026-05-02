@@ -9,6 +9,10 @@ import {
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
 import {
+  getConnectionTestInput,
+  getConnectionTestModeLabel,
+} from "./shared/connectionTest";
+import {
   deriveVersionedModelsUrl,
   parseModelListResponse,
   requestModelListJson,
@@ -462,6 +466,18 @@ export class OpenAICompatProvider implements ILlmProvider {
   async testConnection(options: LLMOptions): Promise<string> {
     const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
     const model = (options.model || "gpt-3.5-turbo").trim();
+    const testInput = getConnectionTestInput(options);
+    const userContent = testInput.isBase64
+      ? [
+          { type: "text", text: testInput.text },
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:application/pdf;base64,${testInput.pdfBase64 || ""}`,
+            },
+          },
+        ]
+      : testInput.text;
 
     const payload = {
       model,
@@ -470,7 +486,7 @@ export class OpenAICompatProvider implements ILlmProvider {
         { role: "system", content: SYSTEM_ROLE_PROMPT },
         {
           role: "user",
-          content: "Hello! Please respond with 'OK' to confirm connection.",
+          content: userContent,
         },
       ],
       ...this.buildGenParams(options),
@@ -556,7 +572,7 @@ export class OpenAICompatProvider implements ILlmProvider {
       const json =
         typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
       const content = json?.choices?.[0]?.message?.content || "";
-      return `✅ 连接成功!\n模型: ${model}\n响应: ${content}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
+      return `Mode: ${getConnectionTestModeLabel(testInput.mode)}\n✅ 连接成功!\n模型: ${model}\n响应: ${content}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
     }
 
     const { APITestError } = await import("./types");

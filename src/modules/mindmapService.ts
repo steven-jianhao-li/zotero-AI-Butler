@@ -259,7 +259,7 @@ ${truncatedRequest}`;
   /**
    * 查找已有的思维导图笔记
    */
-  private static async findExistingMindmapNote(
+  public static async findExistingMindmapNote(
     item: Zotero.Item,
   ): Promise<Zotero.Item | null> {
     const noteIds = item.getNotes();
@@ -276,7 +276,7 @@ ${truncatedRequest}`;
 
       // 也检查笔记标题
       const noteHtml: string = (note as any).getNote?.() || "";
-      if (noteHtml.includes("AI管家思维导图 -")) {
+      if (/<h2>\s*AI\s*管家思维导图\s*-/.test(noteHtml)) {
         return note;
       }
     }

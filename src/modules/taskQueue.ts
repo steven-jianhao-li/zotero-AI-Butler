@@ -25,9 +25,10 @@
  * @author AI-Butler Team
  */
 
-import { getPref, setPref } from "../utils/prefs";
+import { getPref } from "../utils/prefs";
 import { NoteGenerator } from "./noteGenerator";
 import { PDFExtractor } from "./pdfExtractor";
+import { TaskArtifacts, type FixedTaskArtifactType } from "./taskArtifacts";
 
 /** 无 PDF 附件错误标识 */
 const NO_PDF_ERROR_MSG =
@@ -195,6 +196,131 @@ export class TaskQueueManager {
     return TaskQueueManager.instance;
   }
 
+  private async requeueExistingFixedTask(
+    task: TaskItem,
+    item: Zotero.Item,
+    artifactType: FixedTaskArtifactType,
+    priority: boolean,
+    options?: TaskItem["options"],
+    workflowStage?: string,
+  ): Promise<boolean> {
+    if (task.status === TaskStatus.PROCESSING) {
+      ztoolkit.log(`任务正在执行，跳过重复入队: ${task.id}`);
+      return false;
+    }
+
+    if (task.status === TaskStatus.COMPLETED) {
+      const shouldRegenerate = await this.shouldRegenerateCompletedTask(
+        task,
+        item,
+        artifactType,
+        options,
+      );
+      if (!shouldRegenerate) {
+        ztoolkit.log(`任务已完成且真实产物仍可用，跳过入队: ${task.id}`);
+        return false;
+      }
+
+      ztoolkit.log(`任务已完成但需要重新生成，重新入队: ${task.id}`);
+      this.resetTaskForEnqueue(task, priority, options, workflowStage);
+      await this.saveToStorage();
+      return true;
+    }
+
+    if (task.status === TaskStatus.FAILED) {
+      ztoolkit.log(`失败任务重新入队: ${task.id}`);
+      this.resetTaskForEnqueue(task, priority, options, workflowStage);
+      await this.saveToStorage();
+      return true;
+    }
+
+    task.status =
+      priority || task.status === TaskStatus.PRIORITY
+        ? TaskStatus.PRIORITY
+        : TaskStatus.PENDING;
+    task.options = options;
+    task.createdAt = new Date();
+    if (workflowStage !== undefined) {
+      task.workflowStage = workflowStage;
+    }
+    await this.saveToStorage();
+    ztoolkit.log(`更新已排队任务: ${task.id}`);
+    return true;
+  }
+
+  private async shouldRegenerateCompletedTask(
+    task: TaskItem,
+    item: Zotero.Item,
+    artifactType: FixedTaskArtifactType,
+    options?: TaskItem["options"],
+  ): Promise<boolean> {
+    const artifact = await TaskArtifacts.probe(artifactType, item);
+    const policyRequiresRegeneration = this.shouldRegenerateWhenArtifactExists(
+      artifactType,
+      options,
+    );
+
+    if (artifact.probeFailed) {
+      ztoolkit.log(
+        `[AI-Butler] 任务 ${task.id} 产物探测失败，按策略决定是否重新生成: ${artifact.reason || "unknown"}`,
+      );
+      return policyRequiresRegeneration;
+    }
+
+    if (!artifact.exists) {
+      ztoolkit.log(
+        `[AI-Butler] 任务 ${task.id} 的真实产物缺失，重新生成: ${artifact.reason || "missing"}`,
+      );
+      return true;
+    }
+
+    return policyRequiresRegeneration;
+  }
+
+  private shouldRegenerateWhenArtifactExists(
+    artifactType: FixedTaskArtifactType,
+    options?: TaskItem["options"],
+  ): boolean {
+    if (artifactType === "summary") {
+      if (options?.forceOverwrite) {
+        return true;
+      }
+      const policy = (
+        (getPref("noteStrategy" as any) as string) || "skip"
+      ).toLowerCase();
+      return policy === "overwrite" || policy === "append";
+    }
+
+    if (artifactType === "tableFill") {
+      const policy = (
+        (getPref("tableStrategy" as any) as string) || "skip"
+      ).toLowerCase();
+      return policy === "overwrite";
+    }
+
+    return false;
+  }
+
+  private resetTaskForEnqueue(
+    task: TaskItem,
+    priority: boolean,
+    options?: TaskItem["options"],
+    workflowStage?: string,
+  ): void {
+    task.status = priority ? TaskStatus.PRIORITY : TaskStatus.PENDING;
+    task.options = options;
+    task.progress = 0;
+    task.error = undefined;
+    task.retryCount = 0;
+    task.startedAt = undefined;
+    task.completedAt = undefined;
+    task.duration = undefined;
+    task.createdAt = new Date();
+    if (workflowStage !== undefined) {
+      task.workflowStage = workflowStage;
+    }
+  }
+
   // ==================== 任务管理 ====================
 
   /**
@@ -214,31 +340,25 @@ export class TaskQueueManager {
     // 检查是否已存在
     if (this.tasks.has(taskId)) {
       const existingTask = this.tasks.get(taskId)!;
-      // 如果强制覆盖，或者任务已存在且需要强制更新
-      if (options?.forceOverwrite) {
-        ztoolkit.log(`强制更新已存在的任务: ${taskId}`);
-        existingTask.status = priority
-          ? TaskStatus.PRIORITY
-          : TaskStatus.PENDING;
-        existingTask.options = options;
-        existingTask.progress = 0;
-        existingTask.error = undefined;
-        existingTask.retryCount = 0;
-        existingTask.createdAt = new Date(); // 更新创建时间以调整顺序
-        await this.saveToStorage();
-
-        if (!this.isRunning) {
-          this.start();
-        }
-        if (priority) {
-          this.executeTask(taskId).catch((e) => {
-            ztoolkit.log(`优先任务立即执行失败: ${e}`);
-          });
-        }
+      const shouldRun = await this.requeueExistingFixedTask(
+        existingTask,
+        item,
+        "summary",
+        priority,
+        options,
+      );
+      if (!shouldRun) {
         return taskId;
       }
 
-      ztoolkit.log(`任务已存在: ${taskId}`);
+      if (!this.isRunning) {
+        this.start();
+      }
+      if (priority) {
+        this.executeTask(taskId).catch((e) => {
+          ztoolkit.log(`优先任务立即执行失败: ${e}`);
+        });
+      }
       return taskId;
     }
 
@@ -307,7 +427,20 @@ export class TaskQueueManager {
 
     // 检查是否已存在
     if (this.tasks.has(taskId)) {
-      ztoolkit.log(`一图总结任务已存在: ${taskId}`);
+      const existingTask = this.tasks.get(taskId)!;
+      const shouldRun = await this.requeueExistingFixedTask(
+        existingTask,
+        item,
+        "imageSummary",
+        true,
+        undefined,
+        "等待开始",
+      );
+      if (shouldRun) {
+        this.executeImageSummaryTask(taskId).catch((e) => {
+          ztoolkit.log(`一图总结任务执行失败: ${e}`);
+        });
+      }
       return taskId;
     }
 
@@ -446,7 +579,20 @@ export class TaskQueueManager {
 
     // 检查是否已存在
     if (this.tasks.has(taskId)) {
-      ztoolkit.log(`思维导图任务已存在: ${taskId}`);
+      const existingTask = this.tasks.get(taskId)!;
+      const shouldRun = await this.requeueExistingFixedTask(
+        existingTask,
+        item,
+        "mindmap",
+        true,
+        undefined,
+        "等待开始",
+      );
+      if (shouldRun) {
+        this.executeMindmapTask(taskId).catch((e) => {
+          ztoolkit.log(`思维导图任务执行失败: ${e}`);
+        });
+      }
       return taskId;
     }
 
@@ -578,7 +724,20 @@ export class TaskQueueManager {
     const taskId = `table-task-${item.id}`;
 
     if (this.tasks.has(taskId)) {
-      ztoolkit.log(`填表任务已存在: ${taskId}`);
+      const existingTask = this.tasks.get(taskId)!;
+      const shouldRun = await this.requeueExistingFixedTask(
+        existingTask,
+        item,
+        "tableFill",
+        true,
+        undefined,
+        "等待开始",
+      );
+      if (shouldRun) {
+        this.executeTableFillTask(taskId).catch((e) => {
+          ztoolkit.log(`填表任务执行失败: ${e}`);
+        });
+      }
       return taskId;
     }
 
@@ -1102,6 +1261,10 @@ export class TaskQueueManager {
     task.progress = 0;
     task.error = undefined;
     task.retryCount = 0;
+    task.startedAt = undefined;
+    task.completedAt = undefined;
+    task.duration = undefined;
+    task.createdAt = new Date();
 
     await this.saveToStorage();
     ztoolkit.log(`重试任务: ${taskId}`);
@@ -1606,13 +1769,6 @@ export class TaskQueueManager {
       // 获取 Zotero Item
       const item = await Zotero.Items.getAsync(itemId);
       if (!item) {
-        return;
-      }
-
-      // 检查是否已有一图总结任务正在队列中
-      const existingTask = this.tasks.get(`img-task-${itemId}`);
-      if (existingTask) {
-        ztoolkit.log(`[AI-Butler] 一图总结任务已存在，跳过自动触发: ${itemId}`);
         return;
       }
 

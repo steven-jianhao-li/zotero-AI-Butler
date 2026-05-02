@@ -371,7 +371,7 @@ export class NoteGenerator {
   }
 
   /** 查找已有的 AI 笔记(通过标签或标题标识) */
-  private static async findExistingNote(
+  public static async findExistingNote(
     item: Zotero.Item,
   ): Promise<Zotero.Item | null> {
     try {

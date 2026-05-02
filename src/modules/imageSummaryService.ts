@@ -89,7 +89,7 @@ export class ImageSummaryService {
 
       if (useExistingNote) {
         // 尝试获取已有的 AI 笔记内容
-        const existingNote = await NoteGenerator["findExistingNote"](item);
+        const existingNote = await NoteGenerator.findExistingNote(item);
         if (existingNote) {
           const noteHtml = (existingNote as any).getNote?.() || "";
           // 简单地去除 HTML 标签

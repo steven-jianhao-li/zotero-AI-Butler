@@ -106,11 +106,49 @@ TA 是您7x24小时待命、不知疲倦且绝对忠诚的私人管家。
 
 ## 🧠 LLM Provider 架构深入
 
-系统采用“统一门面 + Provider 自注册”模式：
+系统采用“统一中间件 + 兼容门面 + Provider 自注册”模式：
 
-- `LLMClient` (文件 `src/modules/llmClient.ts`)：组装通用 `LLMOptions` 后调用具体 Provider；不包含任意 Vendor 专属流式解析代码。
-- `ProviderRegistry`：集中管理注册的 Provider，通过 id 查找；新增 Provider 不需修改已有文件。
-- Provider 能力标记：在类上定义 `capabilities`，例如 `supportsStreaming`、`supportsPdfBase64`，测试与界面可据此自适应。
+- `LLMService` (文件 `src/modules/llmService.ts`)：上层功能的标准入口。负责读取偏好、选择 Provider、按用户选择准备文本/Base64/多 PDF 输入、组装 `LLMOptions`、执行重试和多密钥轮换，并返回统一 `LLMResponse`。
+- `LLMClient` (文件 `src/modules/llmClient.ts`)：旧接口兼容层。保留 `generateSummaryWithRetry`、`chatWithRetry` 等历史签名，但内部全部委托给 `LLMService`。
+- `ProviderRegistry`：集中管理已注册 Provider，通过 id 查找；Provider 仍采用自注册。
+- Provider 能力标记：在类上定义 `capabilities`，例如 `supportsStreaming`、`supportsPdfBase64`、`maxPdfFiles`、`supportedParams`。这些能力主要用于 `auto` 策略和多 PDF 数量限制；用户明确选择 Base64 时，不应在中间件层预判 Provider 不支持，而应按 Provider 适配器的 Base64 请求结构发送，让真实 API 错误向上呈现。
+- 业务模块（总结、思维导图、填表、文献综述、后续追问、一图总结前置分析）不得直接访问 `ProviderRegistry` 或手动读取 PDF 为 Base64，应调用 `LLMService.generate()` / `LLMService.chatText()`。
+
+### 标准中间件请求
+
+上层功能只描述任务和内容来源：
+
+```typescript
+await LLMService.generate({
+  task: "mindmap",
+  prompt,
+  content: {
+    kind: "zotero-item",
+    item,
+  },
+  output: { format: "markdown" },
+});
+```
+
+支持的 `content.kind`：
+
+| kind             | 用途                         |
+| ---------------- | ---------------------------- |
+| `text`           | 已经准备好的纯文本           |
+| `zotero-item`    | 由中间件按偏好提取论文内容   |
+| `pdf-attachment` | 针对指定 PDF 附件生成内容    |
+| `pdf-files`      | 多 PDF 输入，按 Provider 能力上传或降级 |
+| `legacy`         | 旧 `LLMClient` 兼容入口使用  |
+
+`content.policy` 支持 `auto`、`text`、`pdf-base64`、`mineru`。未指定时读取 `pdfProcessMode`；只有显式使用 `auto` 时，中间件才会按 Provider 能力选择输入形态。若用户配置为 `base64`，中间件必须准备 PDF Base64 并交给 Provider 发送，不得静默改成文本，也不得凭 Provider 名称提前拦截。
+
+### OpenAI Responses 解析约定
+
+OpenAI 官方 Responses API 的 HTTP JSON 响应不一定提供顶层 `output_text` 便利字段。Provider 必须统一使用 `shared/openaiResponses.ts`：
+
+- 非流式：先读取 `output_text`，再遍历 `output[].content[]` 中的 `text` / `output_text.text`。
+- 流式：解析 `response.output_text.delta`。
+- `testConnection` 与正式生成必须使用同一套解析逻辑。
 
 ### 新增 Provider 完整检查清单
 
@@ -129,6 +167,7 @@ node scripts/create-provider.mjs myNewProvider
 - [ ] 实现 `chat(pdfContent, isBase64, conversation, options, onProgress)`
 - [ ] 实现 `testConnection(options)`
 - [ ] 实现 `generateMultiFileSummary(pdfFiles, prompt, options, onProgress)`（如支持多文件）
+- [ ] 定义 `capabilities`，至少包含 `supportsText`、`supportsStreaming`、`supportsPdfBase64`、`maxPdfFiles`、`supportsSystemPrompt`、`supportedParams`
 - [ ] 在文件末尾添加自注册代码：`ProviderRegistry.register(new MyNewProvider())`
 
 #### 2. 导出 Provider
@@ -173,12 +212,13 @@ pref("__prefsPrefix__.myNewProviderModel", "default-model");
 "myNewProviderModel": string;
 ```
 
-#### 6. 更新 LLM 客户端映射
+#### 6. 更新 LLMService 配置映射
 
-**文件**: `src/modules/llmClient.ts`
+**文件**: `src/modules/llmService.ts`
 
 - [ ] 在 `buildOptions` 方法中添加 `else if (id === "mynewprovider")` 分支
 - [ ] 在 `mapToKeyManagerId` 方法中添加映射：`if (id === "mynewprovider") return "mynewprovider";`
+- [ ] 如果 Provider 有官方 Base64/PDF 结构，必须在 `generateSummary` / `chat` / `generateMultiFileSummary` 中按官方结构实现；不要在 `LLMService` 中用 Provider 名称屏蔽 Base64
 
 #### 7. 添加 UI 设置界面 ⚠️ 容易遗漏
 
@@ -254,17 +294,19 @@ pref("__prefsPrefix__.myNewProviderModel", "default-model");
 
 ### 选项传递约定 (LLMOptions)
 
-| 字段           | 说明              | 是否必填         |
-| -------------- | ----------------- | ---------------- |
-| provider       | Provider id       | 是               |
-| temperature    | 采样温度          | 否               |
-| stream         | 请求流式输出      | 否               |
-| maxTokens      | 最大输出长度      | 否               |
-| pdfMode        | `base64` / `text` | 是（由偏好决定） |
-| promptTemplate | 提示词模板名      | 是               |
-| timeoutMs      | 请求超时时间      | 否               |
+| 字段              | 说明                                  | 来源                       |
+| ----------------- | ------------------------------------- | -------------------------- |
+| `apiUrl`          | Provider 端点                         | `LLMService.buildOptions()` |
+| `apiKey`          | 当前可用密钥                          | `ApiKeyManager`            |
+| `model`           | 当前模型                              | Provider 专属偏好          |
+| `stream`          | 是否请求流式输出                      | `stream` 偏好或 request    |
+| `requestTimeoutMs`| 请求超时                              | `requestTimeout` 偏好      |
+| `temperature`     | 采样温度                              | 启用后传递                 |
+| `topP`            | nucleus sampling                      | 启用后传递                 |
+| `maxTokens`       | 最大输出长度                          | 启用后传递                 |
+| `vendorOptions`   | 供应商私有扩展                        | request.generation         |
 
-Provider 若不支持某字段（例如不支持 `temperature`），应忽略而非报错，保证兼容性。
+Provider 若不支持某字段（例如不支持 `temperature`），应忽略而非报错，并在必要时通过 warning 或注释说明。PDF 输入形态不属于业务层私自决定的逻辑；用户明确选择的 PDF/Base64 模式不能被静默改成文本模式，也不能仅凭 Provider 名称提前报“不支持”。真实兼容性问题应由 API 响应暴露。
 
 ## 🔐 环境变量注入与测试机制
 

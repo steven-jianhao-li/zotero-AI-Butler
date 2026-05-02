@@ -1,10 +1,27 @@
 import { ILlmProvider } from "./ILlmProvider";
-import { ConversationMessage, LLMOptions, ProgressCb } from "./types";
+import {
+  ConversationMessage,
+  LLMOptions,
+  LLMProviderCapabilities,
+  ProgressCb,
+} from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
+import {
+  parseOpenAIResponsesDelta,
+  parseOpenAIResponsesText,
+} from "./shared/openaiResponses";
 
 export class OpenAIProvider implements ILlmProvider {
   readonly id = "openai";
+  readonly capabilities: LLMProviderCapabilities = {
+    supportsText: true,
+    supportsStreaming: true,
+    supportsPdfBase64: true,
+    maxPdfFiles: 20,
+    supportsSystemPrompt: true,
+    supportedParams: ["temperature", "topP", "maxTokens", "stream"],
+  };
 
   async generateSummary(
     content: string,
@@ -22,8 +39,11 @@ export class OpenAIProvider implements ILlmProvider {
     if (!apiUrl) throw new Error("API URL 未配置");
     if (!apiKey) throw new Error("API Key 未配置");
 
-    // Base64 使用 Responses API
-    if (isBase64) {
+    const useResponsesApi =
+      isBase64 || /\/v1\/responses\/?$/i.test(apiUrl.trim());
+
+    // OpenAI 官方 Provider 使用 Responses API；OpenAI-compatible 另有独立 Provider。
+    if (useResponsesApi) {
       const responsesUrl = /\/v1\/.+$/i.test(apiUrl)
         ? apiUrl.replace(/\/v1\/.+$/i, "/v1/responses")
         : apiUrl.endsWith("/v1/responses")
@@ -37,18 +57,30 @@ export class OpenAIProvider implements ILlmProvider {
         },
         {
           role: "user",
-          content: [
-            { type: "input_text", text: prompt || "" },
-            {
-              type: "input_file",
-              filename: "paper.pdf",
-              file_data: `data:application/pdf;base64,${content}`,
-            },
-          ],
+          content: isBase64
+            ? [
+                { type: "input_text", text: prompt || "" },
+                {
+                  type: "input_file",
+                  filename: "paper.pdf",
+                  file_data: `data:application/pdf;base64,${content}`,
+                },
+              ]
+            : [
+                {
+                  type: "input_text",
+                  text: buildUserMessage(prompt || "", content),
+                },
+              ],
         },
       ];
 
       const basePayload: any = { model, input };
+      if (options.temperature !== undefined)
+        basePayload.temperature = Number(temperature);
+      if (options.topP !== undefined) basePayload.top_p = Number(options.topP);
+      if (options.maxTokens !== undefined)
+        basePayload.max_output_tokens = Number(options.maxTokens);
 
       if (streamEnabled && onProgress) {
         const payload = { ...basePayload, stream: true } as any;
@@ -107,13 +139,10 @@ export class OpenAIProvider implements ILlmProvider {
                       if (!jsonStr || jsonStr === "[DONE]") continue;
                       try {
                         const evt = JSON.parse(jsonStr);
-                        const t = evt?.type as string;
-                        if (
-                          t === "response.output_text.delta" &&
-                          typeof evt.delta === "string"
-                        ) {
+                        const delta = parseOpenAIResponsesDelta(evt);
+                        if (delta) {
                           gotAnyDelta = true;
-                          chunks.push(evt.delta.replace(/\n+/g, "\n"));
+                          chunks.push(delta.replace(/\n+/g, "\n"));
                           const current = chunks.join("");
                           if (onProgress && current.length > delivered) {
                             const newChunk = current.slice(delivered);
@@ -191,7 +220,7 @@ export class OpenAIProvider implements ILlmProvider {
           timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
         });
         const data = res.response || res;
-        const text = (data?.output_text as string) || "";
+        const text = parseOpenAIResponsesText(data);
         if (onProgress && text) await onProgress(text);
         return text;
       } catch (e: any) {
@@ -396,11 +425,12 @@ export class OpenAIProvider implements ILlmProvider {
     const apiUrl = (options.apiUrl || "").trim();
     const model = (options.model || "gpt-3.5-turbo").trim();
     const temperature = options.temperature ?? 0.7;
+    const streamEnabled = options.stream ?? true;
 
     if (!apiUrl) throw new Error("API URL 未配置");
     if (!apiKey) throw new Error("API Key 未配置");
 
-    if (isBase64) {
+    if (isBase64 || /\/v1\/responses\/?$/i.test(apiUrl.trim())) {
       const responsesUrl = /\/v1\/.+$/i.test(apiUrl)
         ? apiUrl.replace(/\/v1\/.+$/i, "/v1/responses")
         : apiUrl.endsWith("/v1/responses")
@@ -423,13 +453,20 @@ export class OpenAIProvider implements ILlmProvider {
           )
           .join("\n\n");
         const userParts: any[] = [
-          { type: "input_text", text: firstUser.content },
           {
+            type: "input_text",
+            text: isBase64
+              ? firstUser.content
+              : buildUserMessage(firstUser.content, pdfContent || ""),
+          },
+        ];
+        if (isBase64) {
+          userParts.push({
             type: "input_file",
             filename: "paper.pdf",
             file_data: `data:application/pdf;base64,${pdfContent}`,
-          },
-        ];
+          });
+        }
         if (extraHistoryText)
           userParts.push({
             type: "input_text",
@@ -438,7 +475,50 @@ export class OpenAIProvider implements ILlmProvider {
         inputs.push({ role: "user", content: userParts });
       }
 
-      const payload: any = { model, input: inputs, stream: true };
+      const basePayload: any = { model, input: inputs };
+      if (options.temperature !== undefined)
+        basePayload.temperature = Number(temperature);
+      if (options.topP !== undefined) basePayload.top_p = Number(options.topP);
+      if (options.maxTokens !== undefined)
+        basePayload.max_output_tokens = Number(options.maxTokens);
+
+      if (!streamEnabled || !onProgress) {
+        try {
+          const res = await Zotero.HTTP.request("POST", responsesUrl, {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify(basePayload),
+            responseType: "json",
+            timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+          });
+          const text = parseOpenAIResponsesText(res.response || res);
+          if (onProgress && text) await onProgress(text);
+          return text;
+        } catch (error: any) {
+          let errorMessage = error?.message || "OpenAI Responses 请求失败";
+          try {
+            const responseText =
+              error?.xmlhttp?.response || error?.xmlhttp?.responseText;
+            if (responseText) {
+              const parsed =
+                typeof responseText === "string"
+                  ? JSON.parse(responseText)
+                  : responseText;
+              const err = parsed?.error || parsed;
+              const code = err?.code || "Error";
+              const msg = err?.message || error?.message || String(error);
+              errorMessage = `${code}: ${msg}`;
+            }
+          } catch {
+            /* ignore */
+          }
+          throw new Error(errorMessage);
+        }
+      }
+
+      const payload: any = { ...basePayload, stream: true };
 
       const chunks: string[] = [];
       let delivered = 0;
@@ -495,13 +575,10 @@ export class OpenAIProvider implements ILlmProvider {
                     if (!jsonStr || jsonStr === "[DONE]") continue;
                     try {
                       const evt = JSON.parse(jsonStr);
-                      const t = evt?.type as string;
-                      if (
-                        t === "response.output_text.delta" &&
-                        typeof evt.delta === "string"
-                      ) {
+                      const delta = parseOpenAIResponsesDelta(evt);
+                      if (delta) {
                         gotAnyDelta = true;
-                        chunks.push(evt.delta.replace(/\n+/g, "\n"));
+                        chunks.push(delta.replace(/\n+/g, "\n"));
                         const current = chunks.join("");
                         if (onProgress && current.length > delivered) {
                           const newChunk = current.slice(delivered);
@@ -849,7 +926,7 @@ export class OpenAIProvider implements ILlmProvider {
     if (status === 200) {
       const json =
         typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
-      const content = json?.output_text || "";
+      const content = parseOpenAIResponsesText(json);
       return `✅ 连接成功!\n模型: ${model}\n响应: ${content}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
     }
 

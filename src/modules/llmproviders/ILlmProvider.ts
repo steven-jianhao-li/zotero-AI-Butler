@@ -1,4 +1,9 @@
-import { LLMOptions, ProgressCb, ConversationMessage } from "./types";
+import {
+  LLMOptions,
+  ProgressCb,
+  ConversationMessage,
+  LLMProviderCapabilities,
+} from "./types";
 
 /**
  * PDF 文件信息接口
@@ -14,6 +19,7 @@ export interface PdfFileInfo {
 
 export interface ILlmProvider {
   readonly id: string;
+  readonly capabilities?: LLMProviderCapabilities;
 
   generateSummary(
     content: string,

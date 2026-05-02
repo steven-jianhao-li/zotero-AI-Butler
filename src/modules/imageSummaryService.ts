@@ -14,7 +14,7 @@
  */
 
 import { PDFExtractor } from "./pdfExtractor";
-import { LLMClient } from "./llmClient";
+import LLMService from "./llmService";
 import { ImageClient, ImageGenerationError } from "./imageClient";
 import { ImageNoteGenerator } from "./imageNoteGenerator";
 import { NoteGenerator } from "./noteGenerator";
@@ -209,11 +209,16 @@ export class ImageSummaryService {
     prompt = prompt.replace(/\$\{title\}/g, itemTitle);
 
     // 调用 LLM 生成视觉摘要 (使用带重试的方法，支持 API 密钥轮换)
-    const summary = await LLMClient.generateSummaryWithRetry(
-      pdfContent,
-      isBase64,
+    const summary = await LLMService.generateText({
+      task: "image-summary",
       prompt,
-    );
+      content: {
+        kind: "legacy",
+        content: pdfContent,
+        isBase64,
+        policy: isBase64 ? "pdf-base64" : "text",
+      },
+    });
 
     return summary;
   }

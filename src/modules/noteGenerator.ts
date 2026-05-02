@@ -26,7 +26,7 @@
  */
 
 import { PDFExtractor } from "./pdfExtractor";
-import { LLMClient } from "./llmClient";
+import LLMService from "./llmService";
 import { SummaryView } from "./views/SummaryView";
 import { getPref } from "../utils/prefs";
 import { MainWindow } from "./views/MainWindow";
@@ -137,9 +137,10 @@ export class NoteGenerator {
 
         if (allPdfs.length > 1) {
           // 检查当前 provider 是否支持多文件上传
-          const provider = LLMClient.getCurrentProvider();
+          const provider = LLMService.getCurrentProvider();
           const supportsMultiFile =
-            provider && typeof provider.generateMultiFileSummary === "function";
+            provider &&
+            LLMService.getProviderCapabilities(provider).maxPdfFiles > 1;
 
           if (supportsMultiFile) {
             useMultiPdfMode = true;
@@ -226,49 +227,27 @@ export class NoteGenerator {
 
         let summary: string;
         if (useMultiPdfMode) {
-          // 多 PDF 模式：获取所有 PDF 并调用多文件接口
-          const allPdfs = await PDFExtractor.getAllPdfAttachments(item);
-          const pdfFiles = await Promise.all(
-            allPdfs.map(async (pdf) => {
-              const path = await pdf.getFilePathAsync();
-              if (!path || typeof path !== "string") {
-                throw new Error(`无法获取 PDF 文件路径: ${pdf.id}`);
-              }
-              // 获取 Base64 内容
-              const pdfData = await Zotero.File.getBinaryContentsAsync(path);
-              const bytes = new Uint8Array(pdfData.length);
-              for (let i = 0; i < pdfData.length; i++) {
-                bytes[i] = pdfData.charCodeAt(i);
-              }
-              let binary = "";
-              const len = bytes.byteLength;
-              for (let i = 0; i < len; i++) {
-                binary += String.fromCharCode(bytes[i]);
-              }
-              const base64Content = btoa(binary);
-
-              return {
-                filePath: path || "",
-                displayName:
-                  (pdf.getField("title") as string) || `PDF-${pdf.id}`,
-                base64Content,
-              };
-            }),
-          );
-
-          summary = await LLMClient.generateMultiFileSummary(
-            pdfFiles,
-            undefined, // 使用默认 prompt 解析逻辑
+          const response = await LLMService.generate({
+            task: "summary",
+            content: {
+              kind: "zotero-item",
+              item,
+              attachmentMode: "all",
+            },
             onProgress,
-          );
+          });
+          summary = response.text;
         } else {
-          // 单 PDF 模式：使用原有方法
-          summary = await LLMClient.generateSummaryWithRetry(
-            pdfContent,
-            isBase64,
-            undefined,
+          const response = await LLMService.generate({
+            task: "summary",
+            content: {
+              kind: "zotero-item",
+              item,
+              attachmentMode: "default",
+            },
             onProgress,
-          );
+          });
+          summary = response.text;
         }
         fullContent = summary;
       } else {
@@ -748,12 +727,16 @@ export class NoteGenerator {
 
       try {
         // 调用 LLM 进行对话（带自动 API 密钥轮换）
-        const answer = await LLMClient.chatWithRetry(
-          pdfContent,
-          isBase64,
-          conversationHistory,
-          onRoundProgress,
-        );
+        const answer = await LLMService.chatText({
+          content: {
+            kind: "legacy",
+            content: pdfContent,
+            isBase64,
+            policy: isBase64 ? "pdf-base64" : "text",
+          },
+          conversation: conversationHistory,
+          onProgress: onRoundProgress,
+        });
         currentAnswer = answer;
 
         // 将助手回复加入对话历史
@@ -825,12 +808,16 @@ export class NoteGenerator {
 
       try {
         // 调用 LLM 生成最终总结（带自动 API 密钥轮换）
-        const summary = await LLMClient.chatWithRetry(
-          pdfContent,
-          isBase64,
-          conversationHistory,
-          onFinalProgress,
-        );
+        const summary = await LLMService.chatText({
+          content: {
+            kind: "legacy",
+            content: pdfContent,
+            isBase64,
+            policy: isBase64 ? "pdf-base64" : "text",
+          },
+          conversation: conversationHistory,
+          onProgress: onFinalProgress,
+        });
 
         // 检查是否需要保存中间对话内容
         const saveIntermediate =

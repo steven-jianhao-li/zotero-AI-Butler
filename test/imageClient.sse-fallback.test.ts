@@ -31,8 +31,9 @@ type ImageClientInternals = {
     input?: string;
     prompt?: string;
     messages?: Array<{ role?: string; content?: string }>;
-    tools?: Array<{ type?: string }>;
+    tools?: Array<{ type?: string; size?: string }>;
     response_format?: string;
+    size?: string;
   };
 };
 
@@ -133,7 +134,26 @@ describe("ImageClient OpenAI compat response parsing", function () {
     expect(payload.input).to.contain("draw a test image");
     expect(payload.input).to.contain("Aspect ratio: 16:9.");
     expect(payload.input).to.contain("Resolution: 1K.");
-    expect(payload.tools).to.deep.equal([{ type: "image_generation" }]);
+    expect(payload.tools).to.deep.equal([
+      { type: "image_generation", size: "1280x720" },
+    ]);
     expect(payload.messages).to.equal(undefined);
+  });
+
+  it("should build GPT Image 2 Images API payload with generated size", function () {
+    const payload = imageClientInternals.buildOpenAIImagePayload(
+      "draw a test image",
+      {
+        model: "gpt-image-2",
+        aspectRatio: "16:9",
+        resolution: "4K",
+      },
+      "images",
+    );
+
+    expect(payload.model).to.equal("gpt-image-2");
+    expect(payload.prompt).to.equal("draw a test image");
+    expect(payload.size).to.equal("3840x2160");
+    expect(payload.response_format).to.equal(undefined);
   });
 });

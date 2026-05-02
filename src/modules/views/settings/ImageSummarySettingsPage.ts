@@ -181,7 +181,7 @@ export class ImageSummarySettingsPage {
           (getPref("imageSummaryAspectRatioEnabled" as any) as boolean) ??
             false,
         ),
-        "是否在 API 请求中包含宽高比参数（关闭此选项可兼容不支持该参数的 API 代理）",
+        "Gemini 模式发送 aspectRatio；OpenAI/gpt-image-2 模式会和分辨率一起合成为官方 size 参数。",
       ),
     );
 
@@ -195,7 +195,7 @@ export class ImageSummarySettingsPage {
           (getPref("imageSummaryAspectRatio" as any) as string) || "16:9",
           "16:9",
         ),
-        "生成图片的宽高比，如 16:9、1:1、9:16、4:3 等",
+        "生成图片的宽高比，如 16:9、1:1、9:16、4:3 等；gpt-image-2 的最长边/最短边比例需不超过 3:1。",
       ),
     );
 
@@ -207,7 +207,7 @@ export class ImageSummarySettingsPage {
           "imageSummaryResolutionEnabled",
           (getPref("imageSummaryResolutionEnabled" as any) as boolean) ?? false,
         ),
-        "是否在 API 请求中包含分辨率参数（关闭此选项可兼容不支持该参数的 API 代理）",
+        "Gemini 模式发送 imageSize；OpenAI/gpt-image-2 模式会转换为官方 size 参数。",
       ),
     );
 
@@ -224,7 +224,7 @@ export class ImageSummarySettingsPage {
           ],
           (getPref("imageSummaryResolution" as any) as string) || "1K",
         ),
-        "生成图片的分辨率，更高分辨率可能会增加 API 费用",
+        "生成图片的分辨率；OpenAI/gpt-image-2 会映射为合法尺寸，如 16:9 的 1K/2K/4K 对应 1280x720、2048x1152、3840x2160。",
       ),
     );
 

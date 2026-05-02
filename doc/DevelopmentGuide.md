@@ -132,13 +132,13 @@ await LLMService.generate({
 
 支持的 `content.kind`：
 
-| kind             | 用途                         |
-| ---------------- | ---------------------------- |
-| `text`           | 已经准备好的纯文本           |
-| `zotero-item`    | 由中间件按偏好提取论文内容   |
-| `pdf-attachment` | 针对指定 PDF 附件生成内容    |
+| kind             | 用途                                    |
+| ---------------- | --------------------------------------- |
+| `text`           | 已经准备好的纯文本                      |
+| `zotero-item`    | 由中间件按偏好提取论文内容              |
+| `pdf-attachment` | 针对指定 PDF 附件生成内容               |
 | `pdf-files`      | 多 PDF 输入，按 Provider 能力上传或降级 |
-| `legacy`         | 旧 `LLMClient` 兼容入口使用  |
+| `legacy`         | 旧 `LLMClient` 兼容入口使用             |
 
 `content.policy` 支持 `auto`、`text`、`pdf-base64`、`mineru`。未指定时读取 `pdfProcessMode`；只有显式使用 `auto` 时，中间件才会按 Provider 能力选择输入形态。若用户配置为 `base64`，中间件必须准备 PDF Base64 并交给 Provider 发送，不得静默改成文本，也不得凭 Provider 名称提前拦截。
 
@@ -294,17 +294,17 @@ pref("__prefsPrefix__.myNewProviderModel", "default-model");
 
 ### 选项传递约定 (LLMOptions)
 
-| 字段              | 说明                                  | 来源                       |
-| ----------------- | ------------------------------------- | -------------------------- |
-| `apiUrl`          | Provider 端点                         | `LLMService.buildOptions()` |
-| `apiKey`          | 当前可用密钥                          | `ApiKeyManager`            |
-| `model`           | 当前模型                              | Provider 专属偏好          |
-| `stream`          | 是否请求流式输出                      | `stream` 偏好或 request    |
-| `requestTimeoutMs`| 请求超时                              | `requestTimeout` 偏好      |
-| `temperature`     | 采样温度                              | 启用后传递                 |
-| `topP`            | nucleus sampling                      | 启用后传递                 |
-| `maxTokens`       | 最大输出长度                          | 启用后传递                 |
-| `vendorOptions`   | 供应商私有扩展                        | request.generation         |
+| 字段               | 说明             | 来源                        |
+| ------------------ | ---------------- | --------------------------- |
+| `apiUrl`           | Provider 端点    | `LLMService.buildOptions()` |
+| `apiKey`           | 当前可用密钥     | `ApiKeyManager`             |
+| `model`            | 当前模型         | Provider 专属偏好           |
+| `stream`           | 是否请求流式输出 | `stream` 偏好或 request     |
+| `requestTimeoutMs` | 请求超时         | `requestTimeout` 偏好       |
+| `temperature`      | 采样温度         | 启用后传递                  |
+| `topP`             | nucleus sampling | 启用后传递                  |
+| `maxTokens`        | 最大输出长度     | 启用后传递                  |
+| `vendorOptions`    | 供应商私有扩展   | request.generation          |
 
 Provider 若不支持某字段（例如不支持 `temperature`），应忽略而非报错，并在必要时通过 warning 或注释说明。PDF 输入形态不属于业务层私自决定的逻辑；用户明确选择的 PDF/Base64 模式不能被静默改成文本模式，也不能仅凭 Provider 名称提前报“不支持”。真实兼容性问题应由 API 响应暴露。
 

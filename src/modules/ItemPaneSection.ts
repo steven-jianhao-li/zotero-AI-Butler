@@ -2106,25 +2106,30 @@ function renderChatArea(
     messagesArea.scrollTop = messagesArea.scrollHeight;
 
     try {
-      // 导入 LLMClient
-      const { default: LLMClient } = await import("./llmClient");
+      const { default: LLMService } = await import("./llmService");
 
       // 快速提问的关键：每次只发送论文+当前问题，不累积历史
-      const conversationHistory = [{ role: "user", content: question }];
+      const conversationHistory: Array<{ role: "user"; content: string }> = [
+        { role: "user", content: question },
+      ];
 
       let fullResponse = "";
-      await LLMClient.chatWithRetry(
-        currentChatState.pdfContent,
-        currentChatState.isBase64,
-        conversationHistory,
-        (chunk: string) => {
+      await LLMService.chatText({
+        content: {
+          kind: "legacy",
+          content: currentChatState.pdfContent,
+          isBase64: currentChatState.isBase64,
+          policy: currentChatState.isBase64 ? "pdf-base64" : "text",
+        },
+        conversation: conversationHistory,
+        onProgress: (chunk: string) => {
           fullResponse += chunk;
           // 流式更新 AI 回复
           aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${escapeHtmlForChat(fullResponse)}`;
           // 滚动到底部
           messagesArea.scrollTop = messagesArea.scrollHeight;
         },
-      );
+      });
 
       // 完成后最终更新
       aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${escapeHtmlForChat(fullResponse)}`;

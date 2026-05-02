@@ -1,5 +1,10 @@
 import { ILlmProvider } from "./ILlmProvider";
-import { ConversationMessage, LLMOptions, ProgressCb } from "./types";
+import {
+  ConversationMessage,
+  LLMOptions,
+  LLMProviderCapabilities,
+  ProgressCb,
+} from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
 
@@ -15,6 +20,14 @@ import { getRequestTimeoutMs } from "./shared/llmutils";
  */
 export class OpenAICompatProvider implements ILlmProvider {
   readonly id = "openai-compat"; // 供偏好使用的唯一标识
+  readonly capabilities: LLMProviderCapabilities = {
+    supportsText: true,
+    supportsStreaming: true,
+    supportsPdfBase64: true,
+    maxPdfFiles: 20,
+    supportsSystemPrompt: true,
+    supportedParams: ["temperature", "topP", "maxTokens", "stream"],
+  };
 
   private ensureUrlAndKey(options: LLMOptions) {
     const apiUrl = (

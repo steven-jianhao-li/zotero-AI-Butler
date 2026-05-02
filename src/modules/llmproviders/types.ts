@@ -17,6 +17,41 @@ export type LLMOptions = {
   vendorOptions?: Record<string, unknown>;
 };
 
+export type LLMProviderParam =
+  | "temperature"
+  | "topP"
+  | "maxTokens"
+  | "stream"
+  | "reasoningEffort"
+  | "verbosity"
+  | "responseFormat";
+
+export type LLMProviderCapabilities = {
+  supportsText: boolean;
+  supportsStreaming: boolean;
+  supportsPdfBase64: boolean;
+  maxPdfFiles: number;
+  supportsSystemPrompt: boolean;
+  supportedParams: LLMProviderParam[];
+};
+
+export type LLMUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+};
+
+export type LLMResponse = {
+  text: string;
+  providerId: string;
+  model?: string;
+  requestId?: string;
+  usage?: LLMUsage;
+  finishReason?: string;
+  warnings?: string[];
+  rawExcerpt?: string;
+};
+
 export type LLMError = {
   code?: string;
   message: string;

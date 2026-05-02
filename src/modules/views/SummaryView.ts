@@ -554,16 +554,26 @@ export class SummaryView extends BaseView {
     }
 
     try {
-      // 导入 LLMClient
-      const { default: LLMClient } = await import("../llmClient");
+      const { default: LLMService } = await import("../llmService");
 
-      // 调用chat方法 (使用带重试的方法，支持 API 密钥轮换)
       let fullResponse = "";
-      await LLMClient.chatWithRetry(
-        this.currentPdfContent,
-        this.currentIsBase64,
-        this.conversationHistory,
-        (chunk: string) => {
+      await LLMService.chatText({
+        content: {
+          kind: "legacy",
+          content: this.currentPdfContent,
+          isBase64: this.currentIsBase64,
+          policy: this.currentIsBase64 ? "pdf-base64" : "text",
+        },
+        conversation: this.conversationHistory.map((message) => ({
+          role:
+            message.role === "assistant"
+              ? "assistant"
+              : message.role === "system"
+                ? "system"
+                : "user",
+          content: message.content,
+        })),
+        onProgress: (chunk: string) => {
           fullResponse += chunk;
           // 更新助手消息显示
           if (assistantMessageContainer) {
@@ -578,7 +588,7 @@ export class SummaryView extends BaseView {
           // 自动滚动
           this.scrollToBottom();
         },
-      );
+      });
 
       // 添加助手回复到历史
       this.conversationHistory.push({

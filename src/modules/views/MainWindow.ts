@@ -35,6 +35,11 @@ import { SettingsView } from "./SettingsView";
 import { LibraryScannerView } from "./LibraryScannerView";
 import { LiteratureReviewView } from "./LiteratureReviewView";
 import { BaseView } from "./BaseView";
+import {
+  createMainWindowScaffold,
+  type MainTabDescriptor,
+  type MainWindowScaffoldRefs,
+} from "./layout/windowScaffold";
 // 移除对窗口尺寸偏好的依赖,窗口/内容区域使用 100% 填充
 
 /**
@@ -82,6 +87,9 @@ export class MainWindow {
 
   /** 标签页按钮容器 */
   private tabBar: HTMLElement | null = null;
+
+  /** 固定式主窗口脚手架 */
+  private scaffold: MainWindowScaffoldRefs<TabType> | null = null;
 
   /** 所有视图实例 */
   private views: Map<TabType, BaseView> = new Map();
@@ -234,37 +242,12 @@ export class MainWindow {
         styles: {
           width: "100%",
           height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          fontFamily: "system-ui, -apple-system, sans-serif",
+          minHeight: "0",
+          overflow: "hidden",
+          position: "relative",
           backgroundColor: "var(--ai-bg)",
+          boxSizing: "border-box",
         },
-        children: [
-          // 标签页导航栏
-          {
-            tag: "div",
-            id: "tab-bar",
-            styles: {
-              display: "flex",
-              backgroundColor: "var(--ai-surface)",
-              borderBottom: "2px solid var(--ai-border)",
-              flexShrink: "0",
-            },
-          },
-          // 视图容器
-          {
-            tag: "div",
-            id: "view-container",
-            styles: {
-              flex: "1",
-              overflow: "hidden",
-              backgroundColor: "var(--ai-surface)",
-              // 移除 position: relative，让子视图使用正常布局
-              display: "flex",
-              flexDirection: "column",
-            },
-          },
-        ],
       })
       .setDialogData(dialogData)
       .open("AI Butler - 智能文献管家", {
@@ -302,11 +285,9 @@ export class MainWindow {
 
     const doc = this.dialog.window.document;
     const tryInit = () => {
-      // 获取容器引用
-      this.tabBar = doc.getElementById("tab-bar");
-      this.viewContainer = doc.getElementById("view-container");
+      const host = doc.getElementById("ai-butler-main-window") as HTMLElement;
 
-      if (!this.tabBar || !this.viewContainer) {
+      if (!host) {
         // 如果容器还未渲染出来，重试；达到上限后进行兜底创建
         if (this.initAttempts < this.maxInitAttempts) {
           this.initAttempts++;
@@ -314,42 +295,7 @@ export class MainWindow {
           return;
         }
 
-        // 兜底：手动创建缺失的容器，避免出现空白窗口
-        const root = doc.getElementById("ai-butler-main-window");
-        if (root) {
-          if (!this.tabBar) {
-            const tab = doc.createElement("div");
-            tab.id = "tab-bar";
-            Object.assign(tab.style, {
-              display: "flex",
-              backgroundColor: "#fff",
-              borderBottom: "2px solid #e0e0e0",
-              flexShrink: "0",
-            } as Partial<CSSStyleDeclaration>);
-            root.appendChild(tab);
-            this.tabBar = tab;
-          }
-          if (!this.viewContainer) {
-            const container = doc.createElement("div");
-            container.id = "view-container";
-            Object.assign(container.style, {
-              flex: "1",
-              overflow: "hidden",
-              backgroundColor: "#fff",
-              display: "flex",
-              flexDirection: "column",
-            } as Partial<CSSStyleDeclaration>);
-            root.appendChild(container);
-            this.viewContainer = container;
-          }
-          ztoolkit.log("[AI Butler] 容器未按时渲染，已兜底创建");
-        } else {
-          ztoolkit.log("[AI Butler] 无法找到容器元素");
-        }
-      }
-
-      if (!this.tabBar || !this.viewContainer) {
-        // 兜底后仍失败，结束本次初始化尝试
+        ztoolkit.log("[AI Butler] 无法找到主窗口脚手架宿主元素");
         this.uiInitializing = false;
         return;
       }
@@ -357,8 +303,18 @@ export class MainWindow {
       // 注入 CSS（只在首次完成时执行）
       this.injectStyles();
 
-      // 创建标签页按钮（只在首次完成时执行）
-      this.createTabButtons();
+      // 创建冻结式窗口脚手架
+      const tabs: Array<MainTabDescriptor<TabType>> = [
+        { id: "dashboard", label: "仪表盘", icon: "📊" },
+        { id: "summary", label: "AI 总结", icon: "📝" },
+        { id: "tasks", label: "任务队列", icon: "📋" },
+        { id: "settings", label: "快捷设置", icon: "⚙️" },
+      ];
+      this.scaffold = createMainWindowScaffold(host, tabs, (tabId) => {
+        this.switchTab(tabId);
+      });
+      this.tabBar = this.scaffold.topNav;
+      this.viewContainer = this.scaffold.viewPort;
 
       // 渲染所有视图（只在首次完成时执行）
       this.renderViews();
@@ -384,6 +340,14 @@ export class MainWindow {
   private injectStyles(): void {
     if (!this.dialog || !this.dialog.window) return;
     const doc = this.dialog.window.document;
+    if (doc.documentElement) {
+      doc.documentElement.style.height = "100%";
+    }
+    if (doc.body) {
+      doc.body.style.height = "100%";
+      doc.body.style.margin = "0";
+    }
+
     const baseLink = doc.createElement("link");
     baseLink.rel = "stylesheet";
     baseLink.href = `chrome://${config.addonRef}/content/outputWindow.css`;
@@ -398,64 +362,6 @@ export class MainWindow {
   }
 
   /**
-   * 创建标签页按钮
-   *
-   * @private
-   */
-  private createTabButtons(): void {
-    if (!this.tabBar) return;
-
-    const tabs: Array<{ id: TabType; label: string; icon: string }> = [
-      { id: "dashboard", label: "仪表盘", icon: "📊" },
-      { id: "summary", label: "AI 总结", icon: "📝" },
-      { id: "tasks", label: "任务队列", icon: "📋" },
-      { id: "settings", label: "快捷设置", icon: "⚙️" },
-    ];
-
-    tabs.forEach((tab) => {
-      const button = this.dialog.window.document.createElement("button");
-      button.id = `tab-${tab.id}`;
-      button.className = "tab-button";
-      button.innerHTML = `${tab.icon} ${tab.label}`;
-
-      Object.assign(button.style, {
-        flex: "1",
-        padding: "12px 20px", // 恢复均衡的内边距
-        border: "none",
-        backgroundColor: "transparent",
-        color: "var(--ai-text-muted)",
-        fontSize: "14px",
-        fontWeight: "600",
-        cursor: "pointer",
-        transition: "all 0.2s",
-        borderBottom: "3px solid transparent",
-        display: "flex", // 使用 flex 布局
-        alignItems: "center", // 垂直居中
-        justifyContent: "center", // 水平居中
-        boxSizing: "border-box", // 包含边框在内的盒模型
-      });
-
-      button.addEventListener("click", () => {
-        this.switchTab(tab.id);
-      });
-
-      button.addEventListener("mouseenter", () => {
-        if (this.activeTab !== tab.id) {
-          button.style.backgroundColor = "var(--ai-accent-tint)";
-        }
-      });
-
-      button.addEventListener("mouseleave", () => {
-        if (this.activeTab !== tab.id) {
-          button.style.backgroundColor = "transparent";
-        }
-      });
-
-      this.tabBar!.appendChild(button);
-    });
-  }
-
-  /**
    * 渲染所有视图
    *
    * @private
@@ -463,13 +369,14 @@ export class MainWindow {
   private renderViews(): void {
     if (!this.viewContainer) return;
 
-    this.views.forEach((view, key) => {
+    this.views.forEach((view) => {
       const viewElement = view.render();
-      // 使用 flex 布局而非 absolute 定位，让滚动正常工作
+      // 页面层绝对定位，避免内容高度推动顶部导航或窗口外层滚动
+      viewElement.style.position = "absolute";
+      viewElement.style.inset = "0";
       viewElement.style.width = "100%";
       viewElement.style.height = "100%";
-      viewElement.style.flex = "1";
-      viewElement.style.minHeight = "0"; // 关键：允许 flex 子元素正确计算滚动高度
+      viewElement.style.minHeight = "0";
       viewElement.style.display = "none"; // 初始隐藏
       this.viewContainer!.appendChild(viewElement);
     });
@@ -494,10 +401,9 @@ export class MainWindow {
     this.activeTab = tabId;
 
     // 如果是 scanner 或 literature-review 视图,隐藏标签栏
-    if (this.tabBar) {
-      this.tabBar.style.display =
-        tabId === "scanner" || tabId === "literature-review" ? "none" : "flex";
-    }
+    this.scaffold?.setMainNavVisible(
+      tabId !== "scanner" && tabId !== "literature-review",
+    );
 
     // 更新标签按钮样式
     this.updateTabButtons();
@@ -518,25 +424,7 @@ export class MainWindow {
    * @private
    */
   private updateTabButtons(): void {
-    if (!this.tabBar) return;
-
-    const buttons = this.tabBar.querySelectorAll(".tab-button");
-    buttons.forEach((button: Element) => {
-      const btn = button as HTMLElement;
-      const tabId = btn.id.replace("tab-", "") as TabType;
-
-      if (tabId === this.activeTab) {
-        btn.style.color = "var(--ai-accent)";
-        btn.style.backgroundColor = "var(--ai-accent-tint)";
-        btn.style.borderBottomColor = "var(--ai-accent)";
-        btn.classList.add("active");
-      } else {
-        btn.style.color = "var(--ai-text-muted)";
-        btn.style.backgroundColor = "transparent";
-        btn.style.borderBottomColor = "transparent";
-        btn.classList.remove("active");
-      }
-    });
+    this.scaffold?.setActiveTab(this.activeTab);
   }
 
   /**
@@ -611,6 +499,7 @@ export class MainWindow {
     this.initAttempts = 0;
     this.tabBar = null;
     this.viewContainer = null;
+    this.scaffold = null;
 
     // 销毁所有视图
     this.views.forEach((view) => {

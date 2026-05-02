@@ -13,7 +13,7 @@
  */
 
 import { PDFExtractor } from "./pdfExtractor";
-import { LLMClient } from "./llmClient";
+import LLMService from "./llmService";
 import { getPref } from "../utils/prefs";
 import { getDefaultMindmapPrompt } from "../utils/prompts";
 
@@ -72,14 +72,11 @@ export class MindmapService {
         }
       }
 
-      const { pdfContent, isBase64 } = await this.extractPdfContent(item);
-
       // ========== 阶段 2: 生成思维导图 Markdown ==========
       progressCallback?.("generating", "正在生成思维导图...", 40);
 
       const mindmapMarkdown = await this.generateMindmapMarkdown(
-        pdfContent,
-        isBase64,
+        item,
         itemTitle,
       );
 
@@ -105,30 +102,10 @@ export class MindmapService {
   }
 
   /**
-   * 提取 PDF 内容
-   */
-  private static async extractPdfContent(
-    item: Zotero.Item,
-  ): Promise<{ pdfContent: string; isBase64: boolean }> {
-    const prefMode = (getPref("pdfProcessMode") as string) || "base64";
-
-    if (prefMode === "base64") {
-      const pdfContent = await PDFExtractor.extractBase64FromItem(item);
-      return { pdfContent, isBase64: true };
-    } else {
-      const fullText = await PDFExtractor.extractTextFromItem(item);
-      const cleanedText = PDFExtractor.cleanText(fullText);
-      const pdfContent = PDFExtractor.truncateText(cleanedText);
-      return { pdfContent, isBase64: false };
-    }
-  }
-
-  /**
    * 生成思维导图 Markdown
    */
   private static async generateMindmapMarkdown(
-    pdfContent: string,
-    isBase64: boolean,
+    item: Zotero.Item,
     itemTitle: string,
   ): Promise<string> {
     // 获取思维导图提示词
@@ -136,11 +113,16 @@ export class MindmapService {
       (getPref("mindmapPrompt" as any) as string) || getDefaultMindmapPrompt();
 
     // 调用 LLM 生成思维导图 Markdown
-    const mindmapContent = await LLMClient.generateSummaryWithRetry(
-      pdfContent,
-      isBase64,
+    const response = await LLMService.generate({
+      task: "mindmap",
       prompt,
-    );
+      content: {
+        kind: "zotero-item",
+        item,
+      },
+      output: { format: "markdown" },
+    });
+    const mindmapContent = response.text;
 
     // 校验返回内容是否有效
     const trimmedContent = mindmapContent.trim();
@@ -148,8 +130,8 @@ export class MindmapService {
       const errorInfo = this.buildErrorDebugInfo(
         "空内容",
         mindmapContent,
-        pdfContent,
-        isBase64,
+        itemTitle,
+        false,
         prompt,
       );
       throw new Error(`LLM 返回了空内容，无法生成思维导图\n\n${errorInfo}`);
@@ -161,8 +143,8 @@ export class MindmapService {
       const errorInfo = this.buildErrorDebugInfo(
         "格式不符",
         mindmapContent,
-        pdfContent,
-        isBase64,
+        itemTitle,
+        false,
         prompt,
       );
       ztoolkit.log(

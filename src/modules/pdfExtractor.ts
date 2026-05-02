@@ -323,6 +323,26 @@ export class PDFExtractor {
   }
 
   /**
+   * 从指定 PDF 附件提取文本。
+   *
+   * 统一 LLM 中间件在处理“只分析当前附件”的场景时使用此入口，
+   * 避免回落到父条目的最早 PDF。
+   */
+  public static async extractTextFromAttachment(
+    pdfAttachment: Zotero.Item,
+  ): Promise<string> {
+    if (pdfAttachment.attachmentContentType !== "application/pdf") {
+      throw new Error("Attachment is not a PDF");
+    }
+
+    const text = await this.extractTextFromPDF(pdfAttachment);
+    if (!text || text.trim().length === 0) {
+      throw new Error("Failed to extract text from PDF or PDF is empty");
+    }
+    return text;
+  }
+
+  /**
    * 清理和格式化提取的文本
    *
    * PDF 提取的原始文本通常包含大量噪音和格式问题
@@ -510,6 +530,44 @@ export class PDFExtractor {
       return base64String;
     } catch (error: any) {
       throw new Error(`Failed to read or encode PDF: ${error.message}`);
+    }
+  }
+
+  /**
+   * 从指定 PDF 附件读取 Base64。
+   */
+  public static async extractBase64FromAttachment(
+    pdfAttachment: Zotero.Item,
+  ): Promise<string> {
+    if (pdfAttachment.attachmentContentType !== "application/pdf") {
+      throw new Error("Attachment is not a PDF");
+    }
+
+    const pdfPath = await pdfAttachment.getFilePathAsync();
+    if (!pdfPath) {
+      throw new Error("Failed to get PDF file path");
+    }
+
+    try {
+      const pdfData = await Zotero.File.getBinaryContentsAsync(pdfPath);
+      if (!pdfData || pdfData.length === 0) {
+        throw new Error("PDF file is empty or cannot be read");
+      }
+
+      const bytes = new Uint8Array(pdfData.length);
+      for (let i = 0; i < pdfData.length; i++) {
+        bytes[i] = pdfData.charCodeAt(i);
+      }
+
+      let binary = "";
+      const len = bytes.byteLength;
+      for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to read or encode PDF: ${message}`);
     }
   }
 }

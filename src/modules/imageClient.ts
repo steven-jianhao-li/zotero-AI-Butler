@@ -773,8 +773,8 @@ export class ImageClient {
       )
     ) {
       endpoint = /\/v1$/i.test(endpoint)
-        ? `${endpoint}/chat/completions`
-        : `${endpoint}/v1/chat/completions`;
+        ? `${endpoint}/images/generations`
+        : `${endpoint}/v1/images/generations`;
     }
 
     const isImagesEndpoint =
@@ -956,7 +956,7 @@ export class ImageClient {
       options?.apiUrl ||
       apiUrlPref ||
       (requestMode === "openai"
-        ? "https://api.openai.com/v1/chat/completions"
+        ? "https://api.openai.com/v1/images/generations"
         : "https://generativelanguage.googleapis.com");
     const model =
       options?.model ||

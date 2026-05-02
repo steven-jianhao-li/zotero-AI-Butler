@@ -2,11 +2,17 @@ import { ILlmProvider } from "./ILlmProvider";
 import {
   ConversationMessage,
   LLMOptions,
+  LLMModelInfo,
   LLMProviderCapabilities,
   ProgressCb,
 } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
+import {
+  deriveVersionedModelsUrl,
+  parseModelListResponse,
+  requestModelListJson,
+} from "./shared/modelList";
 
 /**
  * OpenRouter Provider
@@ -25,13 +31,25 @@ export class OpenRouterProvider implements ILlmProvider {
   };
 
   private ensureUrlAndKey(options: LLMOptions) {
-    const apiUrl = (
+    const rawApiUrl = (
       options.apiUrl || "https://openrouter.ai/api/v1/chat/completions"
     ).trim();
+    const apiUrl = this.normalizeChatCompletionsUrl(rawApiUrl);
     const apiKey = (options.apiKey || "").trim();
     if (!apiUrl) throw new Error("API URL 未配置");
     if (!apiKey) throw new Error("API Key 未配置");
     return { apiUrl, apiKey };
+  }
+
+  private normalizeChatCompletionsUrl(apiUrl: string): string {
+    const raw = apiUrl.trim().replace(/\/+$/, "");
+    if (!raw) return raw;
+    if (/\/(?:v\d+(?:beta)?\/)?chat\/completions$/i.test(raw)) return raw;
+    if (/\/v\d+(?:beta)?$/i.test(raw)) return `${raw}/chat/completions`;
+    if (/\/v\d+(?:beta)?\/.+$/i.test(raw)) {
+      return raw.replace(/(\/v\d+(?:beta)?)(?:\/.*)?$/i, "$1/chat/completions");
+    }
+    return `${raw}/v1/chat/completions`;
   }
 
   private buildHeaders(apiKey: string) {
@@ -291,6 +309,20 @@ export class OpenRouterProvider implements ILlmProvider {
       responseHeaders,
       responseBody: rawResponse,
     });
+  }
+
+  async listModels(options: LLMOptions): Promise<LLMModelInfo[]> {
+    const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
+    const url = deriveVersionedModelsUrl(
+      apiUrl,
+      "https://openrouter.ai/api/v1/chat/completions",
+    );
+    const data = await requestModelListJson(
+      url,
+      this.buildHeaders(apiKey),
+      options.requestTimeoutMs ?? 30000,
+    );
+    return parseModelListResponse(data);
   }
 
   // --- Helpers ---

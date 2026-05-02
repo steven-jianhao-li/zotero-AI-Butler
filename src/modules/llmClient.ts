@@ -8,6 +8,7 @@ import LLMService from "./llmService";
 import type { ILlmProvider, PdfFileInfo } from "./llmproviders/ILlmProvider";
 import type {
   ConversationMessage,
+  LLMModelInfo,
   LLMOptions,
   ProgressCb,
 } from "./llmproviders/types";
@@ -84,6 +85,13 @@ export class LLMClient {
 
   static async testConnectionWithKey(apiKey: string): Promise<string> {
     return LLMService.testConnectionWithKey(apiKey);
+  }
+
+  static async listModels(
+    providerId?: string,
+    optionsOverride?: Partial<LLMOptions>,
+  ): Promise<LLMModelInfo[]> {
+    return LLMService.listModels(providerId, optionsOverride);
   }
 
   static async generateSummaryWithRetry(

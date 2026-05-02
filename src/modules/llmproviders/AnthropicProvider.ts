@@ -2,11 +2,17 @@ import { ILlmProvider } from "./ILlmProvider";
 import {
   ConversationMessage,
   LLMOptions,
+  LLMModelInfo,
   LLMProviderCapabilities,
   ProgressCb,
 } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
+import {
+  deriveAnthropicModelsUrl,
+  parseModelListResponse,
+  requestModelListJson,
+} from "./shared/modelList";
 
 export class AnthropicProvider implements ILlmProvider {
   readonly id = "anthropic";
@@ -377,6 +383,27 @@ export class AnthropicProvider implements ILlmProvider {
     }
 
     return chunks.join("");
+  }
+
+  async listModels(options: LLMOptions): Promise<LLMModelInfo[]> {
+    const baseUrl = (options.apiUrl || "https://api.anthropic.com").replace(
+      /\/+$/,
+      "",
+    );
+    const apiKey = (options.apiKey || "").trim();
+    if (!baseUrl) throw new Error("Anthropic API URL 未配置");
+    if (!apiKey) throw new Error("Anthropic API Key 未配置");
+
+    const url = deriveAnthropicModelsUrl(baseUrl);
+    const data = await requestModelListJson(
+      url,
+      {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      options.requestTimeoutMs ?? 30000,
+    );
+    return parseModelListResponse(data);
   }
 
   async testConnection(options: LLMOptions): Promise<string> {

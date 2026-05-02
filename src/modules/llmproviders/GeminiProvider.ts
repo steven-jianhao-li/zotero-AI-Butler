@@ -2,11 +2,17 @@ import { ILlmProvider } from "./ILlmProvider";
 import {
   ConversationMessage,
   LLMOptions,
+  LLMModelInfo,
   LLMProviderCapabilities,
   ProgressCb,
 } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
+import {
+  deriveGeminiModelsUrl,
+  parseModelListResponse,
+  requestModelListJson,
+} from "./shared/modelList";
 
 export class GeminiProvider implements ILlmProvider {
   readonly id = "google"; // 同步现有 provider 识别：google/gemini
@@ -377,6 +383,23 @@ export class GeminiProvider implements ILlmProvider {
     }
 
     return chunks.join("");
+  }
+
+  async listModels(options: LLMOptions): Promise<LLMModelInfo[]> {
+    const baseUrl = (
+      options.apiUrl || "https://generativelanguage.googleapis.com"
+    ).replace(/\/+$/, "");
+    const apiKey = (options.apiKey || "").trim();
+    if (!baseUrl) throw new Error("Gemini API URL 未配置");
+    if (!apiKey) throw new Error("Gemini API Key 未配置");
+
+    const url = deriveGeminiModelsUrl(baseUrl);
+    const data = await requestModelListJson(
+      url,
+      { "x-goog-api-key": apiKey },
+      options.requestTimeoutMs ?? 30000,
+    );
+    return parseModelListResponse(data, { stripModelsPrefix: true });
   }
 
   async testConnection(options: LLMOptions): Promise<string> {

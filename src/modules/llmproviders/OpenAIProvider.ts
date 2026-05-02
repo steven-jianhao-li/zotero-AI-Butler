@@ -2,11 +2,17 @@ import { ILlmProvider } from "./ILlmProvider";
 import {
   ConversationMessage,
   LLMOptions,
+  LLMModelInfo,
   LLMProviderCapabilities,
   ProgressCb,
 } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
+import {
+  deriveVersionedModelsUrl,
+  parseModelListResponse,
+  requestModelListJson,
+} from "./shared/modelList";
 import {
   parseOpenAIResponsesDelta,
   parseOpenAIResponsesText,
@@ -813,6 +819,26 @@ export class OpenAIProvider implements ILlmProvider {
     }
 
     return chunks.join("");
+  }
+
+  async listModels(options: LLMOptions): Promise<LLMModelInfo[]> {
+    const apiKey = (options.apiKey || "").trim();
+    const apiUrl = (options.apiUrl || "https://api.openai.com/v1/responses")
+      .trim()
+      .replace(/\/+$/, "");
+    if (!apiUrl) throw new Error("API URL 未配置");
+    if (!apiKey) throw new Error("API Key 未配置");
+
+    const url = deriveVersionedModelsUrl(
+      apiUrl,
+      "https://api.openai.com/v1/responses",
+    );
+    const data = await requestModelListJson(
+      url,
+      { Authorization: `Bearer ${apiKey}` },
+      options.requestTimeoutMs ?? 30000,
+    );
+    return parseModelListResponse(data);
   }
 
   async testConnection(options: LLMOptions): Promise<string> {

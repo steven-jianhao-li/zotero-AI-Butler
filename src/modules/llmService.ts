@@ -17,6 +17,7 @@ import type { ILlmProvider, PdfFileInfo } from "./llmproviders/ILlmProvider";
 import type {
   ConversationMessage,
   LLMOptions,
+  LLMModelInfo,
   LLMProviderCapabilities,
   LLMResponse,
   ProgressCb,
@@ -367,6 +368,32 @@ export class LLMService {
     const options = this.buildOptions(id, undefined, { stream: false });
     options.apiKey = apiKey;
     return impl.testConnection(options);
+  }
+
+  static async listModels(
+    providerId?: string,
+    optionsOverride?: Partial<LLMOptions>,
+  ): Promise<LLMModelInfo[]> {
+    const id = ((providerId || getPref("provider") || "openai") as string)
+      .trim()
+      .toLowerCase();
+    const impl = ProviderRegistry.get(id) || ProviderRegistry.get("openai");
+    if (!impl) {
+      throw new Error(`未知的供应商: ${id}`);
+    }
+    if (typeof impl.listModels !== "function") {
+      throw new Error(`Provider ${id} 暂不支持获取模型列表`);
+    }
+
+    const options = this.buildOptions(
+      id,
+      undefined,
+      { stream: false },
+      {
+        ...(optionsOverride || {}),
+      },
+    );
+    return impl.listModels(options);
   }
 
   private static async runWithRetry(

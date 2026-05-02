@@ -35,6 +35,15 @@ export type LLMProviderCapabilities = {
   supportedParams: LLMProviderParam[];
 };
 
+export type LLMModelInfo = {
+  id: string;
+  name?: string;
+  description?: string;
+  contextLength?: number;
+  ownedBy?: string;
+  created?: number;
+};
+
 export type LLMUsage = {
   inputTokens?: number;
   outputTokens?: number;

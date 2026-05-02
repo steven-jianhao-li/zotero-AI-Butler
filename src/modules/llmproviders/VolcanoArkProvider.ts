@@ -2,11 +2,17 @@ import { ILlmProvider, PdfFileInfo } from "./ILlmProvider";
 import {
   ConversationMessage,
   LLMOptions,
+  LLMModelInfo,
   LLMProviderCapabilities,
   ProgressCb,
 } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
+import {
+  deriveVersionedModelsUrl,
+  parseModelListResponse,
+  requestModelListJson,
+} from "./shared/modelList";
 
 /**
  * 火山引擎 Ark Provider
@@ -542,6 +548,27 @@ export class VolcanoArkProvider implements ILlmProvider {
       responseHeaders,
       responseBody: rawResponse,
     });
+  }
+
+  async listModels(options: LLMOptions): Promise<LLMModelInfo[]> {
+    const baseUrl = (
+      options.apiUrl || "https://ark.cn-beijing.volces.com/api/v3/responses"
+    ).replace(/\/+$/, "");
+    const apiKey = (options.apiKey || "").trim();
+    if (!baseUrl) throw new Error("火山引擎 API URL 未配置");
+    if (!apiKey) throw new Error("火山引擎 API Key 未配置");
+
+    const url = deriveVersionedModelsUrl(
+      baseUrl,
+      "https://ark.cn-beijing.volces.com/api/v3/responses",
+      "/api/v3",
+    );
+    const data = await requestModelListJson(
+      url,
+      { Authorization: `Bearer ${apiKey}` },
+      options.requestTimeoutMs ?? 30000,
+    );
+    return parseModelListResponse(data);
   }
 
   /**

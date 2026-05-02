@@ -140,7 +140,8 @@ export class NoteGenerator {
           const provider = LLMService.getCurrentProvider();
           const supportsMultiFile =
             provider &&
-            LLMService.getProviderCapabilities(provider).maxPdfFiles > 1;
+            LLMService.getProviderCapabilities(provider).maxPdfFiles > 1 &&
+            typeof provider.generateMultiFileSummary === "function";
 
           if (supportsMultiFile) {
             useMultiPdfMode = true;

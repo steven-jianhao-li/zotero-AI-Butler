@@ -965,7 +965,7 @@ export class ApiSettingsPage {
       this.createFormGroup(
         "多 PDF 附件模式",
         pdfAttachmentModeSelect,
-        "当论文有多个 PDF 附件时的处理方式。全部 PDF 模式仅支持 Gemini，其他提供商将自动回退到默认模式",
+        "当论文有多个 PDF 附件时的处理方式。选择“全部 PDF”时会使用当前 Provider 的多 PDF 上传能力；具体可用性取决于所选模型和服务端是否支持 PDF 输入",
       ),
     );
 

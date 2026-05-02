@@ -26,9 +26,7 @@ describe("OpenAI Responses parser", function () {
       ],
     };
 
-    expect(parseOpenAIResponsesText(response)).to.contain(
-      "## 研究背景与目标",
-    );
+    expect(parseOpenAIResponsesText(response)).to.contain("## 研究背景与目标");
   });
 
   it("prefers top-level output_text when present", function () {

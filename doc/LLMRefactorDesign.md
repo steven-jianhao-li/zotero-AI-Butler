@@ -51,22 +51,22 @@ await LLMService.generate({
 
 支持的内容来源：
 
-| kind             | 说明                                     |
-| ---------------- | ---------------------------------------- |
-| `text`           | 调用方已准备好的文本                     |
-| `zotero-item`    | 中间件从 Zotero 条目读取默认或全部 PDF   |
-| `pdf-attachment` | 只分析指定 PDF 附件                      |
-| `pdf-files`      | 多 PDF 输入，适配多文件或文本降级        |
-| `legacy`         | `LLMClient` 兼容层使用                   |
+| kind             | 说明                                   |
+| ---------------- | -------------------------------------- |
+| `text`           | 调用方已准备好的文本                   |
+| `zotero-item`    | 中间件从 Zotero 条目读取默认或全部 PDF |
+| `pdf-attachment` | 只分析指定 PDF 附件                    |
+| `pdf-files`      | 多 PDF 输入，适配多文件或文本降级      |
+| `legacy`         | `LLMClient` 兼容层使用                 |
 
 `content.policy` 支持：
 
-| policy       | 行为                                             |
-| ------------ | ------------------------------------------------ |
-| `auto`       | 根据 Provider 能力选择 Base64 或文本             |
-| `text`       | 强制文本提取                                     |
+| policy       | 行为                                              |
+| ------------ | ------------------------------------------------- |
+| `auto`       | 根据 Provider 能力选择 Base64 或文本              |
+| `text`       | 强制文本提取                                      |
 | `pdf-base64` | 准备 PDF Base64，并交给 Provider 按其适配结构发送 |
-| `mineru`     | 走 MinerU/文本提取链路                           |
+| `mineru`     | 走 MinerU/文本提取链路                            |
 
 ### LLMResponse
 

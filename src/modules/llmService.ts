@@ -187,9 +187,7 @@ export class LLMService {
       supportsStreaming: true,
       supportsPdfBase64: true,
       maxPdfFiles:
-        typeof provider.generateMultiFileSummary === "function"
-          ? 8
-          : 1,
+        typeof provider.generateMultiFileSummary === "function" ? 8 : 1,
       supportsSystemPrompt: true,
       supportedParams: ["temperature", "topP", "maxTokens", "stream"],
     };
@@ -207,7 +205,7 @@ export class LLMService {
     const enableTopP = getPref("enableTopP") ?? true;
 
     const common: LLMOptions = {
-      stream: transport?.stream ?? (getPref("stream") ?? true),
+      stream: transport?.stream ?? getPref("stream") ?? true,
       requestTimeoutMs: transport?.timeoutMs ?? this.getRequestTimeout(),
     };
 
@@ -238,8 +236,9 @@ export class LLMService {
       common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
       common.model = (getPref("geminiModel") || "gemini-2.5-pro").trim();
     } else if (id.includes("anthropic") || id.includes("claude")) {
-      common.apiUrl = (getPref("anthropicApiUrl") || "https://api.anthropic.com")
-        .replace(/\/$/, "");
+      common.apiUrl = (
+        getPref("anthropicApiUrl") || "https://api.anthropic.com"
+      ).replace(/\/$/, "");
       common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
       common.model = (
         getPref("anthropicModel") || "claude-3-5-sonnet-20241022"
@@ -517,14 +516,11 @@ export class LLMService {
   ): Promise<ResolvedContent> {
     const attachmentMode =
       input.attachmentMode ||
-      ((getPref("pdfAttachmentMode") as string) || "default");
+      (getPref("pdfAttachmentMode") as string) ||
+      "default";
     const maxAttachments = Math.max(input.maxAttachments || Infinity, 1);
 
-    if (
-      allowMultiFile &&
-      policy === "pdf-base64" &&
-      attachmentMode === "all"
-    ) {
+    if (allowMultiFile && policy === "pdf-base64" && attachmentMode === "all") {
       const allPdfs = await PDFExtractor.getAllPdfAttachments(input.item);
       if (allPdfs.length > 1) {
         if (
@@ -547,8 +543,7 @@ export class LLMService {
           selected.map(async (pdf, index) => ({
             filePath: (await pdf.getFilePathAsync()) || "",
             displayName:
-              String(pdf.getField("title") || "").trim() ||
-              `PDF-${index + 1}`,
+              String(pdf.getField("title") || "").trim() || `PDF-${index + 1}`,
             base64Content: await PDFExtractor.extractBase64FromAttachment(pdf),
           })),
         );

@@ -20,12 +20,23 @@ import { PDFExtractor } from "./pdfExtractor";
 import JSZip from "jszip";
 
 type MineruModelVersion = "pipeline" | "vlm";
+const MINERU_POLL_INTERVAL_MS = 5000;
+const DEFAULT_MINERU_TIMEOUT_MS = 300000;
 
 function getMineruModelVersion(): MineruModelVersion {
   const raw = String(getPref("mineruModelVersion") || "vlm")
     .trim()
     .toLowerCase();
   return raw === "pipeline" ? "pipeline" : "vlm";
+}
+
+function getMineruTimeoutMs(): number {
+  const raw = String(getPref("requestTimeout") || DEFAULT_MINERU_TIMEOUT_MS);
+  const timeout = parseInt(raw, 10);
+  if (!Number.isFinite(timeout) || timeout <= 0) {
+    return DEFAULT_MINERU_TIMEOUT_MS;
+  }
+  return Math.max(timeout, 30000);
 }
 
 /**
@@ -126,27 +137,42 @@ export class MineruClient {
     }
 
     // Poll for task completion
+    const timeoutMs = getMineruTimeoutMs();
     ztoolkit.log(
-      `[MineruIntegration] Polling for task completion... Batch ID: ${batchId}`,
+      `[MineruIntegration] Polling for task completion... Batch ID: ${batchId}, timeout: ${timeoutMs}ms`,
     );
-    return await this.pollStatusAndDownload(apiKey, batchId);
+    return await this.pollStatusAndDownload(apiKey, batchId, timeoutMs);
   }
 
   private static async pollStatusAndDownload(
     apiKey: string,
     batchId: string,
+    timeoutMs: number,
   ): Promise<string> {
     const url = `https://mineru.net/api/v4/extract-results/batch/${batchId}`;
+    const startedAt = Date.now();
+    let attempt = 0;
 
-    // Poll for up to 5 minutes (60 * 5s)
-    for (let i = 0; i < 60; i++) {
-      await Zotero.Promise.delay(5000);
+    while (Date.now() - startedAt < timeoutMs) {
+      if (attempt > 0) {
+        const remainingMs = timeoutMs - (Date.now() - startedAt);
+        await Zotero.Promise.delay(
+          Math.min(MINERU_POLL_INTERVAL_MS, Math.max(remainingMs, 0)),
+        );
+      }
+      attempt += 1;
 
       const res = await fetch(url, {
         headers: {
           Authorization: `Bearer ${apiKey}`,
         },
       });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(
+          `Failed to poll MinerU task, status: ${res.status}, error: ${errText}`,
+        );
+      }
       const data = (await res.json()) as any;
 
       // Batch result usually returns an array under extract_result
@@ -167,7 +193,7 @@ export class MineruClient {
 
       // continue polling...
     }
-    throw new Error("MinerU Task timed out.");
+    throw new Error(`MinerU Task timed out after ${timeoutMs} ms.`);
   }
 
   private static async downloadAndExtractMarkdown(

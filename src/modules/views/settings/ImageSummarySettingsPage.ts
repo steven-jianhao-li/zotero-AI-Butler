@@ -140,6 +140,20 @@ export class ImageSummarySettingsPage {
       ),
     );
 
+    // 自定义请求 Header
+    form.appendChild(
+      createFormGroup(
+        "额外请求 Headers",
+        createTextarea(
+          "imageSummaryCustomHeaders",
+          (getPref("imageSummaryCustomHeaders" as any) as string) || "",
+          4,
+          '{"X-ModelScope-Async-Mode": "true"}',
+        ),
+        '可选。填写 JSON 或 Python dict 对象，键值会附加到一图总结生图请求；例如 {"X-ModelScope-Async-Mode": "true"}。鉴权和 Content-Type 仍由插件配置管理。',
+      ),
+    );
+
     // 模型名称
     form.appendChild(
       createFormGroup(
@@ -489,6 +503,7 @@ export class ImageSummarySettingsPage {
         "imageSummaryModel",
         "imageSummaryLanguage",
         "imageSummaryAspectRatio",
+        "imageSummaryCustomHeaders",
         "imageSummaryPrompt",
         "imageSummaryImagePrompt",
       ];
@@ -611,6 +626,12 @@ export class ImageSummarySettingsPage {
           "#setting-imageSummaryModel",
         ) as HTMLInputElement
       )?.value?.trim() || "gemini-3-pro-image-preview";
+    const customHeaders =
+      (
+        this.container.querySelector(
+          "#setting-imageSummaryCustomHeaders",
+        ) as HTMLTextAreaElement
+      )?.value?.trim() || "";
 
     // 页面内结果区域
     const resultBox = this.container.querySelector(
@@ -648,6 +669,7 @@ export class ImageSummarySettingsPage {
           apiUrl,
           model,
           requestMode: requestMode as any,
+          customHeaders,
         },
       );
 

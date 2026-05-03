@@ -35,6 +35,7 @@ declare namespace _ZoteroTypes {
       "stream": boolean;
       "requestTimeout": string;
       "mineruApiKey": string;
+      "mineruModelVersion": string;
       "summaryPrompt": string;
       "customPrompts": string;
       "summaryMode": string;

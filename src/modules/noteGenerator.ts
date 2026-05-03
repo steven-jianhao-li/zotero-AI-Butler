@@ -126,13 +126,20 @@ export class NoteGenerator {
       const prefMode = (getPref("pdfProcessMode") as string) || "base64";
       const pdfAttachmentMode =
         (getPref("pdfAttachmentMode" as any) as string) || "default";
+      const summaryMode = (options?.summaryMode ||
+        (getPref("summaryMode" as any) as string) ||
+        "single") as SummaryMode;
 
-      let pdfContent: string;
+      let pdfContent = "";
       let isBase64 = false;
       let useMultiPdfMode = false;
 
       // 检查是否应该使用多 PDF 模式
-      if (pdfAttachmentMode === "all" && prefMode === "base64") {
+      if (
+        summaryMode === "single" &&
+        pdfAttachmentMode === "all" &&
+        prefMode === "base64"
+      ) {
         const allPdfs = await PDFExtractor.getAllPdfAttachments(item);
 
         if (allPdfs.length > 1) {
@@ -168,9 +175,8 @@ export class NoteGenerator {
         }
       }
 
-      // 根据模式处理 PDF
-      if (!useMultiPdfMode) {
-        // 单 PDF 模式 (默认)
+      // 多轮总结会复用同一份 PDF 内容；单次总结交给 LLMService 统一解析，避免 MinerU 重复处理。
+      if (summaryMode !== "single") {
         if (prefMode === "base64") {
           pdfContent = await PDFExtractor.extractBase64FromItem(item);
           isBase64 = true;
@@ -180,19 +186,9 @@ export class NoteGenerator {
           pdfContent = PDFExtractor.truncateText(cleanedText);
           isBase64 = false;
         }
-      } else {
-        // 多 PDF 模式 - 将在后续 AI 调用时直接使用
-        // 这里设置占位符，实际处理在 LLMClient 中
-        pdfContent = "__MULTI_PDF_MODE__";
-        isBase64 = true;
       }
 
       // 步骤 2: AI 模型总结生成
-      // 读取总结模式配置 - 优先使用传入的 options.summaryMode
-      const summaryMode = (options?.summaryMode ||
-        (getPref("summaryMode" as any) as string) ||
-        "single") as SummaryMode;
-
       // 通知进度回调开始 AI 分析 (40% 完成)
       progressCallback?.(
         summaryMode === "single"

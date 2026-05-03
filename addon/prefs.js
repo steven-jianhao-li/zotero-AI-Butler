@@ -47,6 +47,7 @@ pref("__prefsPrefix__.stream", true);
 pref("__prefsPrefix__.requestTimeout", "300000"); // 5分钟超时
 // MINERU API KEY
 pref("__prefsPrefix__.mineruApiKey", "");
+pref("__prefsPrefix__.mineruModelVersion", "vlm");
 
 // ==================== 提示词配置 ====================
 pref(

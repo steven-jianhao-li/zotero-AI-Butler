@@ -1,5 +1,76 @@
 /* AI Butler Output Window Custom Styles */
 
+#ai-butler-summary-view,
+#ai-butler-summary-view *,
+#ai-butler-window-scaffold,
+#view-container {
+  box-sizing: border-box;
+}
+
+#ai-butler-summary-view,
+#ai-butler-summary-view > *,
+#ai-butler-summary-view #ai-butler-chat-container,
+#ai-butler-summary-view #ai-butler-chat-input-area,
+#ai-butler-output-content,
+#ai-butler-output-content .item-output,
+#ai-butler-output-content .item-content,
+#ai-butler-output-content .ai-butler-chat-pair,
+#ai-butler-output-content .ai-butler-card-body,
+#ai-butler-output-content .ai-msg-user,
+#ai-butler-output-content .ai-msg-assistant,
+#ai-butler-output-content .chat-message-content {
+  min-width: 0;
+  max-width: 100%;
+}
+
+#ai-butler-output-content,
+#ai-butler-output-content h1,
+#ai-butler-output-content h2,
+#ai-butler-output-content h3,
+#ai-butler-output-content h4,
+#ai-butler-output-content h5,
+#ai-butler-output-content h6,
+#ai-butler-output-content p,
+#ai-butler-output-content li,
+#ai-butler-output-content blockquote,
+#ai-butler-output-content td,
+#ai-butler-output-content th,
+#ai-butler-output-content .item-content,
+#ai-butler-output-content .chat-message-content {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+#ai-butler-output-content img,
+#ai-butler-output-content video,
+#ai-butler-output-content canvas,
+#ai-butler-output-content svg {
+  max-width: 100%;
+  height: auto;
+}
+
+#ai-butler-output-content pre,
+#ai-butler-output-content code,
+#ai-butler-output-content .math-fallback {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+#ai-butler-output-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+#ai-butler-output-content .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 #ai-butler-stop-button {
   font-size: 16px !important;
   font-weight: 700 !important;

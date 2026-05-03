@@ -134,6 +134,7 @@ export class SummaryView extends BaseView {
         flexDirection: "column",
         height: "100%",
         width: "100%", // 明确宽度
+        minWidth: "0",
         overflow: "hidden", // 防止容器本身滚动
         fontFamily: "system-ui, -apple-system, sans-serif",
       },
@@ -164,6 +165,7 @@ export class SummaryView extends BaseView {
       styles: {
         flex: "1 1 0", // 关键:基准值为0,强制从 flex 分配获取高度
         minHeight: "0", // 允许 flex 项目缩小
+        minWidth: "0", // 允许长标题/Markdown 内容在视口内换行
         overflow: "hidden", // 外层不滚动
       },
     });
@@ -173,6 +175,7 @@ export class SummaryView extends BaseView {
       styles: {
         height: "100%", // 关键:明确设置100%高度
         width: "100%",
+        minWidth: "0",
         overflowY: "auto", // 启用纵向滚动
         overflowX: "hidden", // 禁止横向滚动
         boxSizing: "border-box",
@@ -184,6 +187,8 @@ export class SummaryView extends BaseView {
       styles: {
         padding: "0 20px 20px 20px",
         boxSizing: "border-box",
+        minWidth: "0",
+        maxWidth: "100%",
       },
     });
 
@@ -194,7 +199,10 @@ export class SummaryView extends BaseView {
         fontSize: "14px",
         lineHeight: "1.6",
         wordWrap: "break-word", // 确保长文本换行
-        overflowWrap: "break-word", // 兼容性换行
+        overflowWrap: "anywhere", // 兼容性换行
+        wordBreak: "break-word",
+        minWidth: "0",
+        maxWidth: "100%",
         userSelect: "text", // 确保文本可以被选择
         cursor: "text", // 鼠标样式提示可选择
       },
@@ -330,6 +338,7 @@ export class SummaryView extends BaseView {
         borderTop: "1px solid var(--ai-border)",
         backgroundColor: "var(--ai-surface-2)",
         flexShrink: "0",
+        minWidth: "0",
       },
     });
 
@@ -485,6 +494,8 @@ export class SummaryView extends BaseView {
           border: "1px solid var(--ai-border)",
           borderRadius: "10px",
           backgroundColor: "var(--ai-surface-2)",
+          minWidth: "0",
+          maxWidth: "100%",
         },
       });
       (pairContainer as any).setAttribute("data-pair-id", pairId);
@@ -650,6 +661,8 @@ export class SummaryView extends BaseView {
         padding: "12px",
         borderRadius: "8px",
         borderLeft: `4px solid var(--ai-accent)`,
+        minWidth: "0",
+        maxWidth: "100%",
       },
     });
 
@@ -667,6 +680,10 @@ export class SummaryView extends BaseView {
       styles: {
         fontSize: "14px",
         lineHeight: "1.6",
+        overflowWrap: "anywhere",
+        wordBreak: "break-word",
+        minWidth: "0",
+        maxWidth: "100%",
         userSelect: "text", // 确保文本可以被选择
         cursor: "text", // 鼠标样式提示可选择
       },
@@ -829,6 +846,8 @@ ${jsonMarker}
         border: "1px solid var(--ai-border)",
         borderRadius: "10px",
         backgroundColor: "var(--ai-surface-2)",
+        minWidth: "0",
+        maxWidth: "100%",
       },
     });
 
@@ -839,12 +858,14 @@ ${jsonMarker}
         alignItems: "center",
         gap: "8px",
         padding: "6px 2px 4px 2px",
+        minWidth: "0",
       },
     });
     const titleEl = this.createElement("div", {
       styles: {
         fontWeight: "600",
         color: "var(--ai-accent)",
+        flexShrink: "0",
       },
       textContent: "📘 AI管家笔记",
     });
@@ -858,6 +879,7 @@ ${jsonMarker}
         whiteSpace: "nowrap",
         overflow: "hidden",
         textOverflow: "ellipsis",
+        minWidth: "0",
       },
       textContent: previewText
         ? `摘要：${previewText}${aiSummary.length > 100 ? "…" : ""}`
@@ -1899,6 +1921,8 @@ ${jsonMarker}
         marginBottom: "30px",
         paddingBottom: "20px",
         borderBottom: "1px solid rgba(89, 192, 188, 0.2)",
+        minWidth: "0",
+        maxWidth: "100%",
       },
     });
 
@@ -1908,6 +1932,8 @@ ${jsonMarker}
         color: "var(--ai-accent)",
         marginBottom: "15px",
         fontSize: "16px",
+        overflowWrap: "anywhere",
+        wordBreak: "break-word",
       },
       textContent: itemTitle,
     });
@@ -1918,6 +1944,10 @@ ${jsonMarker}
       styles: {
         whiteSpace: "pre-wrap",
         wordWrap: "break-word",
+        overflowWrap: "anywhere",
+        wordBreak: "break-word",
+        minWidth: "0",
+        maxWidth: "100%",
         userSelect: "text", // 确保文本可以被选择
         cursor: "text", // 鼠标样式提示可选择
       },

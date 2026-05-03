@@ -19,6 +19,15 @@ import { getPref } from "../utils/prefs";
 import { PDFExtractor } from "./pdfExtractor";
 import JSZip from "jszip";
 
+type MineruModelVersion = "pipeline" | "vlm";
+
+function getMineruModelVersion(): MineruModelVersion {
+  const raw = String(getPref("mineruModelVersion") || "vlm")
+    .trim()
+    .toLowerCase();
+  return raw === "pipeline" ? "pipeline" : "vlm";
+}
+
 /**
  * MinerU Wrapper
  *
@@ -61,6 +70,7 @@ export class MineruClient {
 
     // Read PDF binary
     const fileData = await IOUtils.read(filePath);
+    const modelVersion = getMineruModelVersion();
 
     // Get Batch & Upload URLs
     // Assuming simple payload for /api/v4/file-urls/batch based on standard implementations
@@ -73,6 +83,7 @@ export class MineruClient {
       },
       body: JSON.stringify({
         files: [{ name: fileName }],
+        model_version: modelVersion,
       }),
     });
 

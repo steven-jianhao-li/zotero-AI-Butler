@@ -850,6 +850,29 @@ export class ApiSettingsPage {
       (getPref("mineruApiKey") as string) || "",
       "配置以启用高质量公式与表格识别...",
     );
+    const mineruModelVersion = String(getPref("mineruModelVersion") || "vlm");
+    const mineruModelSelect = createSelect(
+      "mineruModelVersion",
+      [
+        { value: "vlm", label: "VLM（推荐，高质量解析）" },
+        { value: "pipeline", label: "Pipeline（轻量模型）" },
+      ],
+      mineruModelVersion === "pipeline" ? "pipeline" : "vlm",
+      (newVal) => {
+        setPref(
+          "mineruModelVersion",
+          newVal === "pipeline" ? "pipeline" : "vlm",
+        );
+      },
+    );
+
+    sectionMineru.appendChild(
+      this.createFormGroup(
+        "MinerU 模型版本",
+        mineruModelSelect,
+        "VLM 解析质量更高；Pipeline 更轻量，适合速度优先或额度敏感的场景。",
+      ),
+    );
 
     // 手动绑定保存事件，因为 createPasswordInput 只有存在 providerId 时才自动保存
     const mineruInputEl = mineruInputWrapper.querySelector(
@@ -2667,6 +2690,16 @@ export class ApiSettingsPage {
         setPref(
           "pdfAttachmentMode" as any,
           (pdfAttachmentModeEl as any).getValue() || "default",
+        );
+      }
+      const mineruModelVersionEl = this.container.querySelector(
+        "#setting-mineruModelVersion",
+      ) as HTMLElement | null;
+      if (mineruModelVersionEl && (mineruModelVersionEl as any).getValue) {
+        const mineruModelVersion = (mineruModelVersionEl as any).getValue();
+        setPref(
+          "mineruModelVersion",
+          mineruModelVersion === "pipeline" ? "pipeline" : "vlm",
         );
       }
 

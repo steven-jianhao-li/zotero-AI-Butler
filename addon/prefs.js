@@ -79,6 +79,7 @@ pref("__prefsPrefix__.pdfProcessMode", "base64"); // "text" 或 "base64"
 pref("__prefsPrefix__.pdfAttachmentMode", "default"); // "default" 或 "all"
 
 // ==================== 一图总结配置 ====================
+pref("__prefsPrefix__.imageSummaryCustomHeaders", ""); // 额外请求 Headers，JSON/Python dict 对象字符串
 pref("__prefsPrefix__.imageSummaryAspectRatioEnabled", false); // 是否发送宽高比/size 参数
 pref("__prefsPrefix__.imageSummaryAspectRatio", "16:9"); // 图片宽高比，如 "1:1", "16:9", "9:16"
 pref("__prefsPrefix__.imageSummaryResolutionEnabled", false); // 是否发送分辨率/size 参数

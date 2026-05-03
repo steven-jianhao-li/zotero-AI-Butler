@@ -21,6 +21,11 @@
 import { getPref } from "../utils/prefs";
 
 export type ImageSummaryRequestMode = "gemini" | "openai";
+export type ImageSummaryCustomHeadersInput =
+  | string
+  | Record<string, unknown>
+  | null
+  | undefined;
 
 /**
  * 图片生成结果接口
@@ -66,6 +71,115 @@ export class ImageClient {
 
   private static normalizeApiUrl(url: string): string {
     return (url || "").trim().replace(/\/$/, "");
+  }
+
+  private static parseCustomHeadersText(text: string): unknown {
+    const input = text.trim();
+    if (!input) return {};
+
+    try {
+      return JSON.parse(input);
+    } catch {
+      /* Try common Python-dict snippets below. */
+    }
+
+    let normalized = input.replace(/^\s*headers\s*=\s*/i, "").trim();
+    normalized = normalized.replace(/\{\s*\*\*[^,}]+,\s*/g, "{");
+    normalized = normalized.replace(/,\s*\*\*[^,}]+(?=,|\})/g, "");
+    normalized = normalized
+      .replace(/\bTrue\b/g, "true")
+      .replace(/\bFalse\b/g, "false")
+      .replace(/\bNone\b/g, "null")
+      .replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_match, value: string) => {
+        return JSON.stringify(value.replace(/\\'/g, "'"));
+      });
+
+    return JSON.parse(normalized);
+  }
+
+  private static parseCustomHeaders(
+    rawHeaders: ImageSummaryCustomHeadersInput,
+  ): Record<string, string> {
+    if (!rawHeaders) return {};
+
+    let parsed: unknown;
+    try {
+      parsed =
+        typeof rawHeaders === "string"
+          ? this.parseCustomHeadersText(rawHeaders)
+          : rawHeaders;
+    } catch (error: any) {
+      throw new ImageGenerationError("自定义 Header 格式错误", {
+        errorName: "InvalidCustomHeaders",
+        errorMessage:
+          error?.message ||
+          '额外 Header 必须是对象格式，例如 {"X-ModelScope-Async-Mode": "true"}',
+      });
+    }
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new ImageGenerationError("自定义 Header 格式错误", {
+        errorName: "InvalidCustomHeaders",
+        errorMessage:
+          '额外 Header 必须是对象格式，例如 {"X-ModelScope-Async-Mode": "true"}',
+      });
+    }
+
+    const headers: Record<string, string> = {};
+    for (const [name, value] of Object.entries(
+      parsed as Record<string, unknown>,
+    )) {
+      const headerName = name.trim();
+      if (!headerName) continue;
+      if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(headerName)) {
+        throw new ImageGenerationError("自定义 Header 名称无效", {
+          errorName: "InvalidCustomHeaderName",
+          errorMessage: `Header 名称 "${headerName}" 不合法`,
+        });
+      }
+      if (
+        value === null ||
+        value === undefined ||
+        (typeof value !== "string" &&
+          typeof value !== "number" &&
+          typeof value !== "boolean")
+      ) {
+        throw new ImageGenerationError("自定义 Header 值无效", {
+          errorName: "InvalidCustomHeaderValue",
+          errorMessage: `Header "${headerName}" 的值必须是字符串、数字或布尔值`,
+        });
+      }
+
+      const headerValue = String(value).trim();
+      if (/[\r\n]/.test(headerValue)) {
+        throw new ImageGenerationError("自定义 Header 值无效", {
+          errorName: "InvalidCustomHeaderValue",
+          errorMessage: `Header "${headerName}" 的值不能包含换行符`,
+        });
+      }
+      headers[headerName] = headerValue;
+    }
+
+    return headers;
+  }
+
+  private static mergeRequestHeaders(
+    baseHeaders: Record<string, string>,
+    customHeaders: ImageSummaryCustomHeadersInput,
+  ): Record<string, string> {
+    const merged = { ...baseHeaders };
+    const protectedHeaderNames = new Set(
+      Object.keys(baseHeaders).map((name) => name.toLowerCase()),
+    );
+
+    for (const [name, value] of Object.entries(
+      this.parseCustomHeaders(customHeaders),
+    )) {
+      if (protectedHeaderNames.has(name.toLowerCase())) continue;
+      merged[name] = value;
+    }
+
+    return merged;
   }
 
   private static extractImageFromDataUrl(dataUrl: string): {
@@ -957,6 +1071,7 @@ export class ImageClient {
       model: string;
       aspectRatio: string;
       resolution: string;
+      customHeaders?: ImageSummaryCustomHeadersInput;
     },
   ): Promise<ImageGenerationResult> {
     const apiUrl = this.normalizeApiUrl(config.apiUrl);
@@ -979,10 +1094,13 @@ export class ImageClient {
       /\/(v1\/)?responses\b/i.test(endpoint) &&
       !/\/chat\/completions\b/i.test(endpoint);
 
-    const headers = {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-    } as Record<string, string>;
+    const headers = this.mergeRequestHeaders(
+      {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      config.customHeaders,
+    );
 
     const payload = this.buildOpenAIImagePayload(
       prompt,
@@ -1135,6 +1253,7 @@ export class ImageClient {
       aspectRatio?: string;
       resolution?: string;
       requestMode?: ImageSummaryRequestMode;
+      customHeaders?: ImageSummaryCustomHeadersInput;
     },
   ): Promise<ImageGenerationResult> {
     const requestMode = this.resolveRequestMode(
@@ -1165,6 +1284,9 @@ export class ImageClient {
       options?.resolution ||
       (getPref("imageSummaryResolution" as any) as string) ||
       "1K";
+    const customHeaders =
+      options?.customHeaders ??
+      ((getPref("imageSummaryCustomHeaders" as any) as string) || "");
     // 读取启用/禁用设置（默认禁用以兼容更多 API 代理）
     const aspectRatioEnabled =
       (getPref("imageSummaryAspectRatioEnabled" as any) as boolean) ?? false;
@@ -1188,6 +1310,7 @@ export class ImageClient {
         model,
         aspectRatio: aspectRatioEnabled ? aspectRatio : "",
         resolution: resolutionEnabled ? resolution : "",
+        customHeaders,
       });
     }
 
@@ -1219,6 +1342,14 @@ export class ImageClient {
     if (Object.keys(imageConfig).length > 0) {
       payload.generationConfig.imageConfig = imageConfig;
     }
+
+    const headers = this.mergeRequestHeaders(
+      {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      customHeaders,
+    );
 
     ztoolkit.log(
       `[AI-Butler] 调用 Gemini 生图 API: ${endpoint}, 提示词: ${prompt.length} 字符`,
@@ -1270,10 +1401,7 @@ export class ImageClient {
     let response: any;
     try {
       response = await Zotero.HTTP.request("POST", endpoint, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
+        headers,
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: 600000, // 10 分钟超时，生图可能较慢
@@ -1479,6 +1607,8 @@ export class ImageClient {
     apiKey?: string;
     apiUrl?: string;
     model?: string;
+    requestMode?: ImageSummaryRequestMode;
+    customHeaders?: ImageSummaryCustomHeadersInput;
   }): Promise<{ success: boolean; message: string }> {
     try {
       const result = await this.generateImage(

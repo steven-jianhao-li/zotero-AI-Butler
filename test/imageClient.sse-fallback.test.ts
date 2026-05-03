@@ -35,6 +35,11 @@ type ImageClientInternals = {
     response_format?: string;
     size?: string;
   };
+  parseCustomHeaders(rawHeaders: unknown): Record<string, string>;
+  mergeRequestHeaders(
+    baseHeaders: Record<string, string>,
+    customHeaders: unknown,
+  ): Record<string, string>;
 };
 
 const imageClientInternals = ImageClient as unknown as ImageClientInternals;
@@ -155,5 +160,44 @@ describe("ImageClient OpenAI compat response parsing", function () {
     expect(payload.prompt).to.equal("draw a test image");
     expect(payload.size).to.equal("3840x2160");
     expect(payload.response_format).to.equal(undefined);
+  });
+
+  it("should parse custom image request headers from JSON", function () {
+    const headers = imageClientInternals.parseCustomHeaders(
+      '{"X-ModelScope-Async-Mode":"true"}',
+    );
+
+    expect(headers).to.deep.equal({
+      "X-ModelScope-Async-Mode": "true",
+    });
+  });
+
+  it("should parse common Python dict custom header snippets", function () {
+    const headers = imageClientInternals.parseCustomHeaders(
+      `headers={**common_headers, 'X-ModelScope-Async-Mode': 'true'}`,
+    );
+
+    expect(headers).to.deep.equal({
+      "X-ModelScope-Async-Mode": "true",
+    });
+  });
+
+  it("should append custom image headers without overriding protected headers", function () {
+    const headers = imageClientInternals.mergeRequestHeaders(
+      {
+        "Content-Type": "application/json",
+        Authorization: "Bearer real-key",
+      },
+      {
+        "X-ModelScope-Async-Mode": true,
+        authorization: "Bearer ignored",
+      },
+    );
+
+    expect(headers).to.deep.equal({
+      "Content-Type": "application/json",
+      Authorization: "Bearer real-key",
+      "X-ModelScope-Async-Mode": "true",
+    });
   });
 });

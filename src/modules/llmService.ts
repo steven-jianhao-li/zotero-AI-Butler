@@ -14,9 +14,11 @@ import { PDFExtractor } from "./pdfExtractor";
 import { ProviderRegistry } from "./llmproviders/ProviderRegistry";
 import "./llmproviders";
 import type { ILlmProvider, PdfFileInfo } from "./llmproviders/ILlmProvider";
+import type { ConnectionTestMode } from "./llmproviders/shared/connectionTest";
 import type {
   ConversationMessage,
   LLMOptions,
+  LLMModelInfo,
   LLMProviderCapabilities,
   LLMResponse,
   ProgressCb,
@@ -358,15 +360,41 @@ export class LLMService {
 
   static async testConnection(): Promise<string> {
     const { id, impl } = this.resolveProvider();
-    const options = this.buildOptions(id, undefined, { stream: false });
+    const options = this.buildConnectionTestOptions(id, impl);
     return impl.testConnection(options);
   }
 
   static async testConnectionWithKey(apiKey: string): Promise<string> {
     const { id, impl } = this.resolveProvider();
-    const options = this.buildOptions(id, undefined, { stream: false });
+    const options = this.buildConnectionTestOptions(id, impl);
     options.apiKey = apiKey;
     return impl.testConnection(options);
+  }
+
+  static async listModels(
+    providerId?: string,
+    optionsOverride?: Partial<LLMOptions>,
+  ): Promise<LLMModelInfo[]> {
+    const id = ((providerId || getPref("provider") || "openai") as string)
+      .trim()
+      .toLowerCase();
+    const impl = ProviderRegistry.get(id) || ProviderRegistry.get("openai");
+    if (!impl) {
+      throw new Error(`未知的供应商: ${id}`);
+    }
+    if (typeof impl.listModels !== "function") {
+      throw new Error(`Provider ${id} 暂不支持获取模型列表`);
+    }
+
+    const options = this.buildOptions(
+      id,
+      undefined,
+      { stream: false },
+      {
+        ...(optionsOverride || {}),
+      },
+    );
+    return impl.listModels(options);
   }
 
   private static async runWithRetry(
@@ -684,6 +712,33 @@ export class LLMService {
 
   private static normalizeText(text: string): string {
     return PDFExtractor.truncateText(PDFExtractor.cleanText(text));
+  }
+
+  private static buildConnectionTestOptions(
+    providerId: string,
+    provider: ILlmProvider,
+  ): LLMOptions {
+    return this.buildOptions(
+      providerId,
+      undefined,
+      { stream: false },
+      {
+        maxTokens: 16,
+        vendorOptions: {
+          connectionTestMode: this.getConnectionTestMode(provider),
+        },
+      },
+    );
+  }
+
+  private static getConnectionTestMode(
+    provider: ILlmProvider,
+  ): ConnectionTestMode {
+    const policy = this.choosePolicy(
+      undefined,
+      this.getProviderCapabilities(provider),
+    );
+    return policy === "pdf-base64" ? "pdf-base64" : "text";
   }
 
   private static getDefaultPrompt(): string {

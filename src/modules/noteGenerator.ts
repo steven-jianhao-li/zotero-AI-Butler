@@ -140,7 +140,8 @@ export class NoteGenerator {
           const provider = LLMService.getCurrentProvider();
           const supportsMultiFile =
             provider &&
-            LLMService.getProviderCapabilities(provider).maxPdfFiles > 1;
+            LLMService.getProviderCapabilities(provider).maxPdfFiles > 1 &&
+            typeof provider.generateMultiFileSummary === "function";
 
           if (supportsMultiFile) {
             useMultiPdfMode = true;
@@ -370,7 +371,7 @@ export class NoteGenerator {
   }
 
   /** 查找已有的 AI 笔记(通过标签或标题标识) */
-  private static async findExistingNote(
+  public static async findExistingNote(
     item: Zotero.Item,
   ): Promise<Zotero.Item | null> {
     try {

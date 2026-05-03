@@ -607,12 +607,14 @@ ${entryList}
   }
 
   /**
-   * 查找文献条目是否已有 AI-Table 填表笔记
+   * 查找文献条目下已有的 AI-Table 填表笔记条目
    *
    * @param item 文献条目
-   * @returns 填表笔记内容，未找到返回 null
+   * @returns 填表笔记条目，未找到返回 null
    */
-  static async findTableNote(item: Zotero.Item): Promise<string | null> {
+  static async findTableNoteItem(
+    item: Zotero.Item,
+  ): Promise<Zotero.Item | null> {
     try {
       const noteIDs = (item as any).getNotes?.() || [];
       for (const nid of noteIDs) {
@@ -621,27 +623,45 @@ ${entryList}
         const tags: Array<{ tag: string }> = (note as any).getTags?.() || [];
         const hasTableTag = tags.some((t) => t.tag === TABLE_NOTE_TAG);
         if (hasTableTag) {
-          const noteContent: string = (note as any).getNote?.() || "";
-          // 提取 data-ai-table-raw 元素中的原始 Markdown（兼容 div 和 pre）
-          const rawMatch = noteContent.match(
-            /<(?:div|pre)[^>]*data-ai-table-raw[^>]*>([\s\S]*?)<\/(?:div|pre)>/,
-          );
-          if (rawMatch && rawMatch[1]) {
-            // 反转义 HTML 实体
-            const raw = rawMatch[1]
-              .replace(/&amp;/g, "&")
-              .replace(/&lt;/g, "<")
-              .replace(/&gt;/g, ">")
-              .replace(/&quot;/g, '"')
-              .trim();
-            return raw || null;
-          }
-          // 兼容旧格式：直接去除 HTML 标签
-          const textContent = noteContent.replace(/<[^>]*>/g, "").trim();
-          return textContent || null;
+          return note as Zotero.Item;
         }
       }
       return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 查找文献条目是否已有 AI-Table 填表笔记
+   *
+   * @param item 文献条目
+   * @returns 填表笔记内容，未找到返回 null
+   */
+  static async findTableNote(item: Zotero.Item): Promise<string | null> {
+    try {
+      const note = await this.findTableNoteItem(item);
+      if (!note) return null;
+
+      const noteContent: string = (note as any).getNote?.() || "";
+      // 提取 data-ai-table-raw 元素中的原始 Markdown（兼容 div 和 pre）
+      const rawMatch = noteContent.match(
+        /<(?:div|pre)[^>]*data-ai-table-raw[^>]*>([\s\S]*?)<\/(?:div|pre)>/,
+      );
+      if (rawMatch && rawMatch[1]) {
+        // 反转义 HTML 实体
+        const raw = rawMatch[1]
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"')
+          .trim();
+        return raw || null;
+      }
+
+      // 兼容旧格式：直接去除 HTML 标签
+      const textContent = noteContent.replace(/<[^>]*>/g, "").trim();
+      return textContent || null;
     } catch {
       return null;
     }
@@ -669,17 +689,7 @@ ${entryList}
     ) as string) || "skip") as TableStrategy;
 
     // 查找已有的 AI-Table 笔记
-    const noteIDs = (item as any).getNotes?.() || [];
-    let existingNote: Zotero.Item | null = null;
-    for (const nid of noteIDs) {
-      const note = await Zotero.Items.getAsync(nid);
-      if (!note) continue;
-      const tags: Array<{ tag: string }> = (note as any).getTags?.() || [];
-      if (tags.some((t) => t.tag === TABLE_NOTE_TAG)) {
-        existingNote = note;
-        break;
-      }
-    }
+    const existingNote = await this.findTableNoteItem(item);
 
     // 根据策略处理已有笔记
     if (existingNote) {

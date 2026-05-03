@@ -25,9 +25,20 @@
  * @author AI-Butler Team
  */
 
-import { getPref, setPref } from "../utils/prefs";
+import { getPref } from "../utils/prefs";
 import { NoteGenerator } from "./noteGenerator";
 import { PDFExtractor } from "./pdfExtractor";
+import { TaskArtifacts, type FixedTaskArtifactType } from "./taskArtifacts";
+
+function logTaskQueue(...args: Parameters<ZToolkit["log"]>): void {
+  try {
+    if (typeof ztoolkit !== "undefined") {
+      ztoolkit.log(...args);
+    }
+  } catch {
+    // Logging is best-effort and must not affect queue state transitions.
+  }
+}
 
 /** 无 PDF 附件错误标识 */
 const NO_PDF_ERROR_MSG =
@@ -195,6 +206,131 @@ export class TaskQueueManager {
     return TaskQueueManager.instance;
   }
 
+  private async requeueExistingFixedTask(
+    task: TaskItem,
+    item: Zotero.Item,
+    artifactType: FixedTaskArtifactType,
+    priority: boolean,
+    options?: TaskItem["options"],
+    workflowStage?: string,
+  ): Promise<boolean> {
+    if (task.status === TaskStatus.PROCESSING) {
+      logTaskQueue(`任务正在执行，跳过重复入队: ${task.id}`);
+      return false;
+    }
+
+    if (task.status === TaskStatus.COMPLETED) {
+      const shouldRegenerate = await this.shouldRegenerateCompletedTask(
+        task,
+        item,
+        artifactType,
+        options,
+      );
+      if (!shouldRegenerate) {
+        logTaskQueue(`任务已完成且真实产物仍可用，跳过入队: ${task.id}`);
+        return false;
+      }
+
+      logTaskQueue(`任务已完成但需要重新生成，重新入队: ${task.id}`);
+      this.resetTaskForEnqueue(task, priority, options, workflowStage);
+      await this.saveToStorage();
+      return true;
+    }
+
+    if (task.status === TaskStatus.FAILED) {
+      logTaskQueue(`失败任务重新入队: ${task.id}`);
+      this.resetTaskForEnqueue(task, priority, options, workflowStage);
+      await this.saveToStorage();
+      return true;
+    }
+
+    task.status =
+      priority || task.status === TaskStatus.PRIORITY
+        ? TaskStatus.PRIORITY
+        : TaskStatus.PENDING;
+    task.options = options;
+    task.createdAt = new Date();
+    if (workflowStage !== undefined) {
+      task.workflowStage = workflowStage;
+    }
+    await this.saveToStorage();
+    logTaskQueue(`更新已排队任务: ${task.id}`);
+    return true;
+  }
+
+  private async shouldRegenerateCompletedTask(
+    task: TaskItem,
+    item: Zotero.Item,
+    artifactType: FixedTaskArtifactType,
+    options?: TaskItem["options"],
+  ): Promise<boolean> {
+    const artifact = await TaskArtifacts.probe(artifactType, item);
+    const policyRequiresRegeneration = this.shouldRegenerateWhenArtifactExists(
+      artifactType,
+      options,
+    );
+
+    if (artifact.probeFailed) {
+      logTaskQueue(
+        `[AI-Butler] 任务 ${task.id} 产物探测失败，按策略决定是否重新生成: ${artifact.reason || "unknown"}`,
+      );
+      return policyRequiresRegeneration;
+    }
+
+    if (!artifact.exists) {
+      logTaskQueue(
+        `[AI-Butler] 任务 ${task.id} 的真实产物缺失，重新生成: ${artifact.reason || "missing"}`,
+      );
+      return true;
+    }
+
+    return policyRequiresRegeneration;
+  }
+
+  private shouldRegenerateWhenArtifactExists(
+    artifactType: FixedTaskArtifactType,
+    options?: TaskItem["options"],
+  ): boolean {
+    if (artifactType === "summary") {
+      if (options?.forceOverwrite) {
+        return true;
+      }
+      const policy = (
+        (getPref("noteStrategy" as any) as string) || "skip"
+      ).toLowerCase();
+      return policy === "overwrite" || policy === "append";
+    }
+
+    if (artifactType === "tableFill") {
+      const policy = (
+        (getPref("tableStrategy" as any) as string) || "skip"
+      ).toLowerCase();
+      return policy === "overwrite";
+    }
+
+    return false;
+  }
+
+  private resetTaskForEnqueue(
+    task: TaskItem,
+    priority: boolean,
+    options?: TaskItem["options"],
+    workflowStage?: string,
+  ): void {
+    task.status = priority ? TaskStatus.PRIORITY : TaskStatus.PENDING;
+    task.options = options;
+    task.progress = 0;
+    task.error = undefined;
+    task.retryCount = 0;
+    task.startedAt = undefined;
+    task.completedAt = undefined;
+    task.duration = undefined;
+    task.createdAt = new Date();
+    if (workflowStage !== undefined) {
+      task.workflowStage = workflowStage;
+    }
+  }
+
   // ==================== 任务管理 ====================
 
   /**
@@ -214,31 +350,25 @@ export class TaskQueueManager {
     // 检查是否已存在
     if (this.tasks.has(taskId)) {
       const existingTask = this.tasks.get(taskId)!;
-      // 如果强制覆盖，或者任务已存在且需要强制更新
-      if (options?.forceOverwrite) {
-        ztoolkit.log(`强制更新已存在的任务: ${taskId}`);
-        existingTask.status = priority
-          ? TaskStatus.PRIORITY
-          : TaskStatus.PENDING;
-        existingTask.options = options;
-        existingTask.progress = 0;
-        existingTask.error = undefined;
-        existingTask.retryCount = 0;
-        existingTask.createdAt = new Date(); // 更新创建时间以调整顺序
-        await this.saveToStorage();
-
-        if (!this.isRunning) {
-          this.start();
-        }
-        if (priority) {
-          this.executeTask(taskId).catch((e) => {
-            ztoolkit.log(`优先任务立即执行失败: ${e}`);
-          });
-        }
+      const shouldRun = await this.requeueExistingFixedTask(
+        existingTask,
+        item,
+        "summary",
+        priority,
+        options,
+      );
+      if (!shouldRun) {
         return taskId;
       }
 
-      ztoolkit.log(`任务已存在: ${taskId}`);
+      if (!this.isRunning) {
+        this.start();
+      }
+      if (priority) {
+        this.executeTask(taskId).catch((e) => {
+          logTaskQueue(`优先任务立即执行失败: ${e}`);
+        });
+      }
       return taskId;
     }
 
@@ -258,7 +388,7 @@ export class TaskQueueManager {
     this.tasks.set(taskId, task);
     await this.saveToStorage();
 
-    ztoolkit.log(`添加任务: ${task.title} (${taskId})`);
+    logTaskQueue(`添加任务: ${task.title} (${taskId})`);
 
     // 如果执行器未运行,启动它
     if (!this.isRunning) {
@@ -268,7 +398,7 @@ export class TaskQueueManager {
     // 如果是优先任务，立即执行（不等待批处理周期）
     if (priority) {
       this.executeTask(taskId).catch((e) => {
-        ztoolkit.log(`优先任务立即执行失败: ${e}`);
+        logTaskQueue(`优先任务立即执行失败: ${e}`);
       });
     }
 
@@ -307,7 +437,20 @@ export class TaskQueueManager {
 
     // 检查是否已存在
     if (this.tasks.has(taskId)) {
-      ztoolkit.log(`一图总结任务已存在: ${taskId}`);
+      const existingTask = this.tasks.get(taskId)!;
+      const shouldRun = await this.requeueExistingFixedTask(
+        existingTask,
+        item,
+        "imageSummary",
+        true,
+        undefined,
+        "等待开始",
+      );
+      if (shouldRun) {
+        this.executeImageSummaryTask(taskId).catch((e) => {
+          logTaskQueue(`一图总结任务执行失败: ${e}`);
+        });
+      }
       return taskId;
     }
 
@@ -328,11 +471,11 @@ export class TaskQueueManager {
     this.tasks.set(taskId, task);
     await this.saveToStorage();
 
-    ztoolkit.log(`添加一图总结任务: ${task.title} (${taskId})`);
+    logTaskQueue(`添加一图总结任务: ${task.title} (${taskId})`);
 
     // 立即执行一图总结任务
     this.executeImageSummaryTask(taskId).catch((e) => {
-      ztoolkit.log(`一图总结任务执行失败: ${e}`);
+      logTaskQueue(`一图总结任务执行失败: ${e}`);
     });
 
     return taskId;
@@ -365,7 +508,7 @@ export class TaskQueueManager {
     this.processingTasks.add(taskId);
     await this.saveToStorage();
 
-    ztoolkit.log(`开始执行一图总结任务: ${task.title}`);
+    logTaskQueue(`开始执行一图总结任务: ${task.title}`);
 
     try {
       // 获取 Zotero Item
@@ -401,7 +544,7 @@ export class TaskQueueManager {
         (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
       );
 
-      ztoolkit.log(`一图总结任务完成: ${task.title} (耗时${task.duration}秒)`);
+      logTaskQueue(`一图总结任务完成: ${task.title} (耗时${task.duration}秒)`);
       this.notifyComplete(taskId, true);
     } catch (error: any) {
       // 任务失败
@@ -412,13 +555,13 @@ export class TaskQueueManager {
       if (task.retryCount < task.maxRetries) {
         task.status = TaskStatus.PENDING;
         task.progress = 0;
-        ztoolkit.log(
+        logTaskQueue(
           `一图总结任务失败,将重试 (${task.retryCount}/${task.maxRetries}): ${task.title}`,
         );
       } else {
         task.status = TaskStatus.FAILED;
         task.completedAt = new Date();
-        ztoolkit.log(`一图总结任务最终失败: ${task.title} - ${task.error}`);
+        logTaskQueue(`一图总结任务最终失败: ${task.title} - ${task.error}`);
       }
 
       this.notifyComplete(taskId, false, task.error);
@@ -446,7 +589,20 @@ export class TaskQueueManager {
 
     // 检查是否已存在
     if (this.tasks.has(taskId)) {
-      ztoolkit.log(`思维导图任务已存在: ${taskId}`);
+      const existingTask = this.tasks.get(taskId)!;
+      const shouldRun = await this.requeueExistingFixedTask(
+        existingTask,
+        item,
+        "mindmap",
+        true,
+        undefined,
+        "等待开始",
+      );
+      if (shouldRun) {
+        this.executeMindmapTask(taskId).catch((e) => {
+          logTaskQueue(`思维导图任务执行失败: ${e}`);
+        });
+      }
       return taskId;
     }
 
@@ -467,11 +623,11 @@ export class TaskQueueManager {
     this.tasks.set(taskId, task);
     await this.saveToStorage();
 
-    ztoolkit.log(`添加思维导图任务: ${task.title} (${taskId})`);
+    logTaskQueue(`添加思维导图任务: ${task.title} (${taskId})`);
 
     // 立即执行思维导图任务
     this.executeMindmapTask(taskId).catch((e) => {
-      ztoolkit.log(`思维导图任务执行失败: ${e}`);
+      logTaskQueue(`思维导图任务执行失败: ${e}`);
     });
 
     return taskId;
@@ -504,7 +660,7 @@ export class TaskQueueManager {
     this.processingTasks.add(taskId);
     await this.saveToStorage();
 
-    ztoolkit.log(`开始执行思维导图任务: ${task.title}`);
+    logTaskQueue(`开始执行思维导图任务: ${task.title}`);
 
     try {
       // 获取 Zotero Item
@@ -537,7 +693,7 @@ export class TaskQueueManager {
         (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
       );
 
-      ztoolkit.log(`思维导图任务完成: ${task.title} (耗时${task.duration}秒)`);
+      logTaskQueue(`思维导图任务完成: ${task.title} (耗时${task.duration}秒)`);
       this.notifyComplete(taskId, true);
     } catch (error: any) {
       // 任务失败
@@ -548,13 +704,13 @@ export class TaskQueueManager {
       if (task.retryCount < task.maxRetries) {
         task.status = TaskStatus.PENDING;
         task.progress = 0;
-        ztoolkit.log(
+        logTaskQueue(
           `思维导图任务失败,将重试 (${task.retryCount}/${task.maxRetries}): ${task.title}`,
         );
       } else {
         task.status = TaskStatus.FAILED;
         task.completedAt = new Date();
-        ztoolkit.log(`思维导图任务最终失败: ${task.title} - ${task.error}`);
+        logTaskQueue(`思维导图任务最终失败: ${task.title} - ${task.error}`);
       }
 
       this.notifyComplete(taskId, false, task.error);
@@ -578,7 +734,20 @@ export class TaskQueueManager {
     const taskId = `table-task-${item.id}`;
 
     if (this.tasks.has(taskId)) {
-      ztoolkit.log(`填表任务已存在: ${taskId}`);
+      const existingTask = this.tasks.get(taskId)!;
+      const shouldRun = await this.requeueExistingFixedTask(
+        existingTask,
+        item,
+        "tableFill",
+        true,
+        undefined,
+        "等待开始",
+      );
+      if (shouldRun) {
+        this.executeTableFillTask(taskId).catch((e) => {
+          logTaskQueue(`填表任务执行失败: ${e}`);
+        });
+      }
       return taskId;
     }
 
@@ -598,11 +767,11 @@ export class TaskQueueManager {
     this.tasks.set(taskId, task);
     await this.saveToStorage();
 
-    ztoolkit.log(`添加填表任务: ${task.title} (${taskId})`);
+    logTaskQueue(`添加填表任务: ${task.title} (${taskId})`);
 
     // 立即执行
     this.executeTableFillTask(taskId).catch((e) => {
-      ztoolkit.log(`填表任务执行失败: ${e}`);
+      logTaskQueue(`填表任务执行失败: ${e}`);
     });
 
     return taskId;
@@ -686,7 +855,7 @@ export class TaskQueueManager {
         (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
       );
 
-      ztoolkit.log(`填表任务完成: ${task.title} (耗时${task.duration}秒)`);
+      logTaskQueue(`填表任务完成: ${task.title} (耗时${task.duration}秒)`);
       this.notifyComplete(taskId, true);
     } catch (error: any) {
       task.error = error?.message || "未知错误";
@@ -722,7 +891,7 @@ export class TaskQueueManager {
     if (this.tasks.has(taskId)) {
       const existing = this.tasks.get(taskId)!;
       if (existing.status === TaskStatus.PROCESSING) {
-        ztoolkit.log(`综述任务正在执行: ${taskId}`);
+        logTaskQueue(`综述任务正在执行: ${taskId}`);
         return taskId;
       }
       this.tasks.delete(taskId);
@@ -748,11 +917,11 @@ export class TaskQueueManager {
     this.tasks.set(taskId, task);
     await this.saveToStorage();
 
-    ztoolkit.log(`添加综述任务: ${task.title} (${taskId})`);
+    logTaskQueue(`添加综述任务: ${task.title} (${taskId})`);
 
     // 立即执行
     this.executeReviewTask(taskId, prompt).catch((e) => {
-      ztoolkit.log(`综述任务执行失败: ${e}`);
+      logTaskQueue(`综述任务执行失败: ${e}`);
     });
 
     return taskId;
@@ -830,7 +999,7 @@ export class TaskQueueManager {
         (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
       );
 
-      ztoolkit.log(`综述任务完成: ${task.title} (耗时${task.duration}秒)`);
+      logTaskQueue(`综述任务完成: ${task.title} (耗时${task.duration}秒)`);
       this.notifyComplete(taskId, true);
     } catch (error: any) {
       task.error = error?.message || "未知错误";
@@ -899,11 +1068,11 @@ export class TaskQueueManager {
     this.tasks.set(taskId, task);
     await this.saveToStorage();
 
-    ztoolkit.log(`添加针对性提问任务: ${task.title} (${taskId})`);
+    logTaskQueue(`添加针对性提问任务: ${task.title} (${taskId})`);
 
     // 立即执行
     this.executeTargetedQuestionTask(taskId).catch((e) => {
-      ztoolkit.log(`针对性提问任务执行失败: ${e}`);
+      logTaskQueue(`针对性提问任务执行失败: ${e}`);
     });
 
     return taskId;
@@ -984,7 +1153,7 @@ export class TaskQueueManager {
         (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
       );
 
-      ztoolkit.log(
+      logTaskQueue(
         `针对性提问任务完成: ${task.title} (耗时${task.duration}秒)`,
       );
       this.notifyComplete(taskId, true);
@@ -1026,7 +1195,7 @@ export class TaskQueueManager {
     this.tasks.delete(taskId);
     await this.saveToStorage();
 
-    ztoolkit.log(`删除任务: ${taskId}`);
+    logTaskQueue(`删除任务: ${taskId}`);
   }
 
   /**
@@ -1042,7 +1211,7 @@ export class TaskQueueManager {
     }
 
     await this.saveToStorage();
-    ztoolkit.log(`清空已完成任务: ${completedTasks.length} 个`);
+    logTaskQueue(`清空已完成任务: ${completedTasks.length} 个`);
   }
 
   /**
@@ -1057,7 +1226,7 @@ export class TaskQueueManager {
     this.processingTasks.clear();
 
     await this.saveToStorage();
-    ztoolkit.log("清空所有任务");
+    logTaskQueue("清空所有任务");
   }
 
   /**
@@ -1082,7 +1251,7 @@ export class TaskQueueManager {
     ) {
       task.status = priority ? TaskStatus.PRIORITY : TaskStatus.PENDING;
       await this.saveToStorage();
-      ztoolkit.log(`任务 ${taskId} 优先级已更新: ${priority}`);
+      logTaskQueue(`任务 ${taskId} 优先级已更新: ${priority}`);
     }
   }
 
@@ -1102,9 +1271,13 @@ export class TaskQueueManager {
     task.progress = 0;
     task.error = undefined;
     task.retryCount = 0;
+    task.startedAt = undefined;
+    task.completedAt = undefined;
+    task.duration = undefined;
+    task.createdAt = new Date();
 
     await this.saveToStorage();
-    ztoolkit.log(`重试任务: ${taskId}`);
+    logTaskQueue(`重试任务: ${taskId}`);
 
     // 确保执行器正在运行
     if (!this.isRunning) {
@@ -1213,12 +1386,12 @@ export class TaskQueueManager {
    */
   public start(): void {
     if (this.isRunning) {
-      ztoolkit.log("队列执行器已在运行");
+      logTaskQueue("队列执行器已在运行");
       return;
     }
 
     this.isRunning = true;
-    ztoolkit.log("启动队列执行器");
+    logTaskQueue("启动队列执行器");
 
     // 立即执行一次
     this.executeNextBatch();
@@ -1245,7 +1418,7 @@ export class TaskQueueManager {
       this.executorTimerId = null;
     }
 
-    ztoolkit.log("停止队列执行器");
+    logTaskQueue("停止队列执行器");
   }
 
   /**
@@ -1265,7 +1438,7 @@ export class TaskQueueManager {
       this.start();
     }
 
-    ztoolkit.log(
+    logTaskQueue(
       `更新执行器设置: 批次大小=${this.batchSize}, 间隔=${intervalSeconds}秒`,
     );
   }
@@ -1309,20 +1482,20 @@ export class TaskQueueManager {
         });
 
       if (pendingTasks.length === 0) {
-        ztoolkit.log("没有待处理的任务");
+        logTaskQueue("没有待处理的任务");
         return;
       }
 
       // 选取本批次要执行的任务（最多 batchSize 个）
       const tasksToExecute = pendingTasks.slice(0, this.batchSize);
 
-      ztoolkit.log(
+      logTaskQueue(
         `开始并行执行批次任务: ${tasksToExecute.length} 个 (批次大小=${this.batchSize})`,
       );
 
       // 并行执行所有任务
       const taskPromises = tasksToExecute.map(async (task) => {
-        ztoolkit.log(`启动任务: ${task.title}`);
+        logTaskQueue(`启动任务: ${task.title}`);
         const wasQuickFail = await this.executeTask(task.id);
         return { taskId: task.id, title: task.title, wasQuickFail };
       });
@@ -1334,7 +1507,7 @@ export class TaskQueueManager {
       const llmTasksProcessed = results.filter((r) => !r.wasQuickFail).length;
       const quickFailCount = results.filter((r) => r.wasQuickFail).length;
 
-      ztoolkit.log(
+      logTaskQueue(
         `批次执行完成，实际处理 ${llmTasksProcessed} 个任务，快速失败 ${quickFailCount} 个`,
       );
     } finally {
@@ -1394,7 +1567,7 @@ export class TaskQueueManager {
       task.status === TaskStatus.PROCESSING ||
       task.status === TaskStatus.COMPLETED
     ) {
-      ztoolkit.log(`任务已在处理中或已完成，跳过重复执行: ${taskId}`);
+      logTaskQueue(`任务已在处理中或已完成，跳过重复执行: ${taskId}`);
       return false;
     }
 
@@ -1405,7 +1578,7 @@ export class TaskQueueManager {
     this.processingTasks.add(taskId);
     await this.saveToStorage();
 
-    ztoolkit.log(`开始执行任务: ${task.title} (${taskId})`);
+    logTaskQueue(`开始执行任务: ${task.title} (${taskId})`);
 
     try {
       // 获取 Zotero Item
@@ -1438,7 +1611,7 @@ export class TaskQueueManager {
             }
             this.notifyStream(taskId, { type: "chunk", chunk });
           } catch (e) {
-            ztoolkit.log(`流式内容广播失败: ${e}`);
+            logTaskQueue(`流式内容广播失败: ${e}`);
           }
         },
         task.options,
@@ -1452,7 +1625,7 @@ export class TaskQueueManager {
         (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
       );
 
-      ztoolkit.log(`任务完成: ${task.title} (耗时${task.duration}秒)`);
+      logTaskQueue(`任务完成: ${task.title} (耗时${task.duration}秒)`);
       this.notifyComplete(taskId, true);
       // 发送结束事件
       this.notifyStream(taskId, { type: "finish" });
@@ -1470,7 +1643,7 @@ export class TaskQueueManager {
       if (isNoPdfError) {
         task.status = TaskStatus.FAILED;
         task.completedAt = new Date();
-        ztoolkit.log(`任务失败（无 PDF 附件）: ${task.title}`);
+        logTaskQueue(`任务失败（无 PDF 附件）: ${task.title}`);
       } else {
         task.retryCount++;
         // 检查是否需要重试
@@ -1478,14 +1651,14 @@ export class TaskQueueManager {
           // 重置为待处理状态,等待重试
           task.status = TaskStatus.PENDING;
           task.progress = 0;
-          ztoolkit.log(
+          logTaskQueue(
             `任务失败,将重试 (${task.retryCount}/${task.maxRetries}): ${task.title}`,
           );
         } else {
           // 超过最大重试次数,标记为失败
           task.status = TaskStatus.FAILED;
           task.completedAt = new Date();
-          ztoolkit.log(`任务最终失败: ${task.title} - ${task.error}`);
+          logTaskQueue(`任务最终失败: ${task.title} - ${task.error}`);
         }
       }
 
@@ -1549,7 +1722,7 @@ export class TaskQueueManager {
       try {
         callback(taskId, progress, message);
       } catch (error) {
-        ztoolkit.log(`进度回调执行失败: ${error}`);
+        logTaskQueue(`进度回调执行失败: ${error}`);
       }
     });
   }
@@ -1566,7 +1739,7 @@ export class TaskQueueManager {
       try {
         callback(taskId, success, error);
       } catch (error) {
-        ztoolkit.log(`完成回调执行失败: ${error}`);
+        logTaskQueue(`完成回调执行失败: ${error}`);
       }
     });
   }
@@ -1584,7 +1757,7 @@ export class TaskQueueManager {
       try {
         cb(taskId, event);
       } catch (e) {
-        ztoolkit.log(`流式回调执行失败: ${e}`);
+        logTaskQueue(`流式回调执行失败: ${e}`);
       }
     });
   }
@@ -1609,17 +1782,10 @@ export class TaskQueueManager {
         return;
       }
 
-      // 检查是否已有一图总结任务正在队列中
-      const existingTask = this.tasks.get(`img-task-${itemId}`);
-      if (existingTask) {
-        ztoolkit.log(`[AI-Butler] 一图总结任务已存在，跳过自动触发: ${itemId}`);
-        return;
-      }
-
-      ztoolkit.log(`[AI-Butler] 自动触发一图总结: ${item.getField("title")}`);
+      logTaskQueue(`[AI-Butler] 自动触发一图总结: ${item.getField("title")}`);
       await this.addImageSummaryTask(item);
     } catch (error) {
-      ztoolkit.log(`[AI-Butler] 自动触发一图总结失败:`, error);
+      logTaskQueue(`[AI-Butler] 自动触发一图总结失败:`, error);
     }
   }
 
@@ -1678,9 +1844,9 @@ export class TaskQueueManager {
 
       this.lastLoadedSnapshotAt = snapshotAt || null;
 
-      ztoolkit.log(`从存储加载 ${this.tasks.size} 个任务`);
+      logTaskQueue(`从存储加载 ${this.tasks.size} 个任务`);
     } catch (error) {
-      ztoolkit.log(`加载任务队列失败: ${error}`);
+      logTaskQueue(`加载任务队列失败: ${error}`);
     }
   }
 
@@ -1714,7 +1880,7 @@ export class TaskQueueManager {
       );
       this.lastLoadedSnapshotAt = savedAt;
     } catch (error) {
-      ztoolkit.log(`保存任务队列失败: ${error}`);
+      logTaskQueue(`保存任务队列失败: ${error}`);
     }
   }
 

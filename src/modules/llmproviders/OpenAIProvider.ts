@@ -2,11 +2,21 @@ import { ILlmProvider } from "./ILlmProvider";
 import {
   ConversationMessage,
   LLMOptions,
+  LLMModelInfo,
   LLMProviderCapabilities,
   ProgressCb,
 } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
+import {
+  getConnectionTestInput,
+  getConnectionTestModeLabel,
+} from "./shared/connectionTest";
+import {
+  deriveVersionedModelsUrl,
+  parseModelListResponse,
+  requestModelListJson,
+} from "./shared/modelList";
 import {
   parseOpenAIResponsesDelta,
   parseOpenAIResponsesText,
@@ -815,6 +825,26 @@ export class OpenAIProvider implements ILlmProvider {
     return chunks.join("");
   }
 
+  async listModels(options: LLMOptions): Promise<LLMModelInfo[]> {
+    const apiKey = (options.apiKey || "").trim();
+    const apiUrl = (options.apiUrl || "https://api.openai.com/v1/responses")
+      .trim()
+      .replace(/\/+$/, "");
+    if (!apiUrl) throw new Error("API URL 未配置");
+    if (!apiKey) throw new Error("API Key 未配置");
+
+    const url = deriveVersionedModelsUrl(
+      apiUrl,
+      "https://api.openai.com/v1/responses",
+    );
+    const data = await requestModelListJson(
+      url,
+      { Authorization: `Bearer ${apiKey}` },
+      options.requestTimeoutMs ?? 30000,
+    );
+    return parseModelListResponse(data);
+  }
+
   async testConnection(options: LLMOptions): Promise<string> {
     const apiKey = (options.apiKey || "").trim();
     const apiUrl = (options.apiUrl || "").trim();
@@ -827,20 +857,35 @@ export class OpenAIProvider implements ILlmProvider {
       : apiUrl.endsWith("/v1/responses")
         ? apiUrl
         : apiUrl.replace(/\/?$/, "/v1/responses");
+    const testInput = getConnectionTestInput(options);
+    const userContent = testInput.isBase64
+      ? [
+          {
+            type: "input_text",
+            text: testInput.text,
+          },
+          {
+            type: "input_file",
+            filename: "connection-test.pdf",
+            file_data: `data:application/pdf;base64,${testInput.pdfBase64 || ""}`,
+          },
+        ]
+      : [
+          {
+            type: "input_text",
+            text: testInput.text,
+          },
+        ];
 
     const payload = {
       model,
       input: [
         {
           role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: "Hello! Please respond with 'OK' to confirm connection.",
-            },
-          ],
+          content: userContent,
         },
       ],
+      max_output_tokens: options.maxTokens ?? 16,
       stream: false,
     } as any;
     const payloadStr = JSON.stringify(payload, null, 2);
@@ -927,7 +972,7 @@ export class OpenAIProvider implements ILlmProvider {
       const json =
         typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
       const content = parseOpenAIResponsesText(json);
-      return `✅ 连接成功!\n模型: ${model}\n响应: ${content}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
+      return `Mode: ${getConnectionTestModeLabel(testInput.mode)}\n✅ 连接成功!\n模型: ${model}\n响应: ${content}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
     }
 
     const { APITestError } = await import("./types");

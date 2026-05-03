@@ -3,6 +3,7 @@ import {
   ProgressCb,
   ConversationMessage,
   LLMProviderCapabilities,
+  LLMModelInfo,
 } from "./types";
 
 /**
@@ -38,6 +39,11 @@ export interface ILlmProvider {
   ): Promise<string>;
 
   testConnection(options: LLMOptions): Promise<string>;
+
+  /**
+   * 获取当前供应商可用的模型列表（可选方法）
+   */
+  listModels?(options: LLMOptions): Promise<LLMModelInfo[]>;
 
   /**
    * 多文件摘要生成（可选方法）

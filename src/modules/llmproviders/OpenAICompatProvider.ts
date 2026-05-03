@@ -2,11 +2,21 @@ import { ILlmProvider } from "./ILlmProvider";
 import {
   ConversationMessage,
   LLMOptions,
+  LLMModelInfo,
   LLMProviderCapabilities,
   ProgressCb,
 } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
+import {
+  getConnectionTestInput,
+  getConnectionTestModeLabel,
+} from "./shared/connectionTest";
+import {
+  deriveVersionedModelsUrl,
+  parseModelListResponse,
+  requestModelListJson,
+} from "./shared/modelList";
 
 /**
  * OpenAI 旧接口兼容 Provider（Chat Completions 格式）
@@ -30,13 +40,25 @@ export class OpenAICompatProvider implements ILlmProvider {
   };
 
   private ensureUrlAndKey(options: LLMOptions) {
-    const apiUrl = (
+    const rawApiUrl = (
       options.apiUrl || "https://api.openai.com/v1/chat/completions"
     ).trim();
+    const apiUrl = this.normalizeChatCompletionsUrl(rawApiUrl);
     const apiKey = (options.apiKey || "").trim();
     if (!apiUrl) throw new Error("API URL 未配置");
     if (!apiKey) throw new Error("API Key 未配置");
     return { apiUrl, apiKey };
+  }
+
+  private normalizeChatCompletionsUrl(apiUrl: string): string {
+    const raw = apiUrl.trim().replace(/\/+$/, "");
+    if (!raw) return raw;
+    if (/\/(?:v\d+(?:beta)?\/)?chat\/completions$/i.test(raw)) return raw;
+    if (/\/v\d+(?:beta)?$/i.test(raw)) return `${raw}/chat/completions`;
+    if (/\/v\d+(?:beta)?\/.+$/i.test(raw)) {
+      return raw.replace(/(\/v\d+(?:beta)?)(?:\/.*)?$/i, "$1/chat/completions");
+    }
+    return `${raw}/v1/chat/completions`;
   }
 
   private buildHeaders(apiKey: string) {
@@ -427,9 +449,35 @@ export class OpenAICompatProvider implements ILlmProvider {
     return chunks.join("");
   }
 
+  async listModels(options: LLMOptions): Promise<LLMModelInfo[]> {
+    const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
+    const url = deriveVersionedModelsUrl(
+      apiUrl,
+      "https://api.openai.com/v1/chat/completions",
+    );
+    const data = await requestModelListJson(
+      url,
+      this.buildHeaders(apiKey),
+      options.requestTimeoutMs ?? 30000,
+    );
+    return parseModelListResponse(data);
+  }
+
   async testConnection(options: LLMOptions): Promise<string> {
     const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
     const model = (options.model || "gpt-3.5-turbo").trim();
+    const testInput = getConnectionTestInput(options);
+    const userContent = testInput.isBase64
+      ? [
+          { type: "text", text: testInput.text },
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:application/pdf;base64,${testInput.pdfBase64 || ""}`,
+            },
+          },
+        ]
+      : testInput.text;
 
     const payload = {
       model,
@@ -438,7 +486,7 @@ export class OpenAICompatProvider implements ILlmProvider {
         { role: "system", content: SYSTEM_ROLE_PROMPT },
         {
           role: "user",
-          content: "Hello! Please respond with 'OK' to confirm connection.",
+          content: userContent,
         },
       ],
       ...this.buildGenParams(options),
@@ -524,7 +572,7 @@ export class OpenAICompatProvider implements ILlmProvider {
       const json =
         typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
       const content = json?.choices?.[0]?.message?.content || "";
-      return `✅ 连接成功!\n模型: ${model}\n响应: ${content}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
+      return `Mode: ${getConnectionTestModeLabel(testInput.mode)}\n✅ 连接成功!\n模型: ${model}\n响应: ${content}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
     }
 
     const { APITestError } = await import("./types");

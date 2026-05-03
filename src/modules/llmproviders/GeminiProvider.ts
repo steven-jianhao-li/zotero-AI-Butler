@@ -2,11 +2,21 @@ import { ILlmProvider } from "./ILlmProvider";
 import {
   ConversationMessage,
   LLMOptions,
+  LLMModelInfo,
   LLMProviderCapabilities,
   ProgressCb,
 } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
+import {
+  getConnectionTestInput,
+  getConnectionTestModeLabel,
+} from "./shared/connectionTest";
+import {
+  deriveGeminiModelsUrl,
+  parseModelListResponse,
+  requestModelListJson,
+} from "./shared/modelList";
 
 export class GeminiProvider implements ILlmProvider {
   readonly id = "google"; // 同步现有 provider 识别：google/gemini
@@ -379,6 +389,23 @@ export class GeminiProvider implements ILlmProvider {
     return chunks.join("");
   }
 
+  async listModels(options: LLMOptions): Promise<LLMModelInfo[]> {
+    const baseUrl = (
+      options.apiUrl || "https://generativelanguage.googleapis.com"
+    ).replace(/\/+$/, "");
+    const apiKey = (options.apiKey || "").trim();
+    if (!baseUrl) throw new Error("Gemini API URL 未配置");
+    if (!apiKey) throw new Error("Gemini API Key 未配置");
+
+    const url = deriveGeminiModelsUrl(baseUrl);
+    const data = await requestModelListJson(
+      url,
+      { "x-goog-api-key": apiKey },
+      options.requestTimeoutMs ?? 30000,
+    );
+    return parseModelListResponse(data, { stripModelsPrefix: true });
+  }
+
   async testConnection(options: LLMOptions): Promise<string> {
     const baseUrl = (
       options.apiUrl || "https://generativelanguage.googleapis.com"
@@ -389,13 +416,21 @@ export class GeminiProvider implements ILlmProvider {
     if (!apiKey) throw new Error("Gemini API Key 未配置");
 
     const url = `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const testInput = getConnectionTestInput(options);
+    const parts: any[] = [{ text: testInput.text }];
+    if (testInput.isBase64) {
+      parts.push({
+        inlineData: {
+          mimeType: "application/pdf",
+          data: testInput.pdfBase64 || "",
+        },
+      });
+    }
     const payload = {
       contents: [
         {
           role: "user",
-          parts: [
-            { text: "Hello! Please respond with 'OK' to confirm connection." },
-          ],
+          parts,
         },
       ],
       systemInstruction: { parts: [{ text: SYSTEM_ROLE_PROMPT }] },
@@ -489,7 +524,7 @@ export class GeminiProvider implements ILlmProvider {
         json?.candidates?.[0]?.content?.parts
           ?.map((p: any) => p?.text || "")
           .join("") || "";
-      return `✅ 连接成功!\n模型: ${model}\n响应: ${text}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
+      return `Mode: ${getConnectionTestModeLabel(testInput.mode)}\n✅ 连接成功!\n模型: ${model}\n响应: ${text}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
     }
 
     // 非 200 但未抛出异常的情况

@@ -710,6 +710,193 @@ export class ImageClient {
     };
   }
 
+  private static isGptImageModel(model: string): boolean {
+    return /^gpt-image(?:$|[-_.:])/i.test((model || "").trim());
+  }
+
+  private static isGptImage2Model(model: string): boolean {
+    return /^gpt-image-2(?:$|[-_.:])/i.test((model || "").trim());
+  }
+
+  private static gcd(a: number, b: number): number {
+    let x = Math.abs(a);
+    let y = Math.abs(b);
+    while (y !== 0) {
+      const t = y;
+      y = x % y;
+      x = t;
+    }
+    return x || 1;
+  }
+
+  private static lcm(a: number, b: number): number {
+    return Math.abs(a * b) / this.gcd(a, b);
+  }
+
+  private static parseOpenAIAspectRatio(
+    value: string,
+  ): { widthUnits: number; heightUnits: number } | null {
+    const raw = (value || "").trim();
+    if (!raw) return null;
+
+    const match = raw.match(/^(\d{1,5})\s*[:/xX]\s*(\d{1,5})$/);
+    if (!match) return null;
+
+    let widthUnits = parseInt(match[1], 10);
+    let heightUnits = parseInt(match[2], 10);
+    if (!widthUnits || !heightUnits) return null;
+
+    const ratio =
+      Math.max(widthUnits, heightUnits) / Math.min(widthUnits, heightUnits);
+    if (ratio > 3) return null;
+
+    const divisor = this.gcd(widthUnits, heightUnits);
+    widthUnits = widthUnits / divisor;
+    heightUnits = heightUnits / divisor;
+
+    return { widthUnits, heightUnits };
+  }
+
+  private static parseOpenAIResolutionTier(
+    value: string,
+  ): "1K" | "2K" | "4K" | null {
+    const raw = (value || "").trim().replace(/\s+/g, "").toUpperCase();
+    if (!raw) return null;
+    if (raw === "1K" || raw === "1024" || raw === "1024PX") return "1K";
+    if (raw === "2K" || raw === "2048" || raw === "2048PX") return "2K";
+    if (
+      raw === "4K" ||
+      raw === "3840" ||
+      raw === "3840PX" ||
+      raw === "4096" ||
+      raw === "4096PX"
+    ) {
+      return "4K";
+    }
+    return null;
+  }
+
+  private static isValidOpenAIImageSize(
+    width: number,
+    height: number,
+  ): boolean {
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return false;
+    if (width <= 0 || height <= 0) return false;
+    if (width % 16 !== 0 || height % 16 !== 0) return false;
+    if (Math.max(width, height) > 3840) return false;
+    if (Math.max(width, height) / Math.min(width, height) > 3) return false;
+
+    const pixels = width * height;
+    return pixels >= 655360 && pixels <= 8294400;
+  }
+
+  private static normalizeOpenAIExplicitSize(value: string): string | null {
+    const raw = (value || "").trim().toLowerCase();
+    if (!raw) return null;
+    if (raw === "auto") return "auto";
+
+    const match = raw.match(/^(\d{2,5})\s*[x×]\s*(\d{2,5})$/i);
+    if (!match) return null;
+
+    const width = parseInt(match[1], 10);
+    const height = parseInt(match[2], 10);
+    if (!this.isValidOpenAIImageSize(width, height)) return null;
+
+    return `${width}x${height}`;
+  }
+
+  private static buildFlexibleOpenAIImageSize(
+    aspectRatio: string,
+    resolution: string,
+  ): string | null {
+    const explicitSize = this.normalizeOpenAIExplicitSize(resolution);
+    if (explicitSize) return explicitSize;
+
+    const hasAspectRatio = !!(aspectRatio || "").trim();
+    const parsedRatio = this.parseOpenAIAspectRatio(aspectRatio);
+    if (hasAspectRatio && !parsedRatio) return null;
+
+    const ratio = parsedRatio || {
+      widthUnits: 1,
+      heightUnits: 1,
+    };
+    const tier = this.parseOpenAIResolutionTier(resolution) || "1K";
+    const targetLongEdge = tier === "4K" ? 3840 : tier === "2K" ? 2048 : 1024;
+
+    const widthStep = 16 / this.gcd(ratio.widthUnits, 16);
+    const heightStep = 16 / this.gcd(ratio.heightUnits, 16);
+    const scaleStep = this.lcm(widthStep, heightStep);
+    const longUnits = Math.max(ratio.widthUnits, ratio.heightUnits);
+    const unitPixels = ratio.widthUnits * ratio.heightUnits;
+
+    let scale = Math.max(
+      scaleStep,
+      Math.round(targetLongEdge / longUnits / scaleStep) * scaleStep,
+    );
+
+    const minScale =
+      Math.ceil(Math.sqrt(655360 / unitPixels) / scaleStep) * scaleStep;
+    scale = Math.max(scale, minScale);
+
+    const maxEdgeScale = Math.floor(3840 / longUnits / scaleStep) * scaleStep;
+    const maxPixelScale =
+      Math.floor(Math.sqrt(8294400 / unitPixels) / scaleStep) * scaleStep;
+    scale = Math.min(scale, maxEdgeScale, maxPixelScale);
+
+    const width = ratio.widthUnits * scale;
+    const height = ratio.heightUnits * scale;
+    if (!this.isValidOpenAIImageSize(width, height)) return null;
+
+    return `${width}x${height}`;
+  }
+
+  private static buildLegacyOpenAIImageSize(
+    aspectRatio: string,
+    resolution: string,
+  ): string | null {
+    const explicitSize = this.normalizeOpenAIExplicitSize(resolution);
+    if (
+      explicitSize === "auto" ||
+      explicitSize === "1024x1024" ||
+      explicitSize === "1536x1024" ||
+      explicitSize === "1024x1536"
+    ) {
+      return explicitSize;
+    }
+
+    const hasAspectRatio = !!(aspectRatio || "").trim();
+    const ratio = this.parseOpenAIAspectRatio(aspectRatio);
+    if (hasAspectRatio && !ratio) return null;
+    if (!ratio && !resolution) return null;
+    if (!ratio) return "1024x1024";
+
+    if (ratio.widthUnits === ratio.heightUnits) return "1024x1024";
+    return ratio.widthUnits > ratio.heightUnits ? "1536x1024" : "1024x1536";
+  }
+
+  private static resolveOpenAIImageSize(
+    config: {
+      model: string;
+      aspectRatio: string;
+      resolution: string;
+    },
+    endpointType: "images" | "responses" | "chat",
+  ): string | null {
+    if (!config.aspectRatio && !config.resolution) return null;
+
+    if (endpointType === "responses" || this.isGptImage2Model(config.model)) {
+      return this.buildFlexibleOpenAIImageSize(
+        config.aspectRatio,
+        config.resolution,
+      );
+    }
+
+    return this.buildLegacyOpenAIImageSize(
+      config.aspectRatio,
+      config.resolution,
+    );
+  }
+
   private static buildOpenAIImagePayload(
     prompt: string,
     config: {
@@ -719,12 +906,18 @@ export class ImageClient {
     },
     endpointType: "images" | "responses" | "chat",
   ): any {
+    const imageSize = this.resolveOpenAIImageSize(config, endpointType);
+
     if (endpointType === "images") {
-      return {
+      const payload: any = {
         model: config.model,
         prompt,
-        response_format: "b64_json",
       };
+      if (imageSize) payload.size = imageSize;
+      if (!this.isGptImageModel(config.model)) {
+        payload.response_format = "b64_json";
+      }
+      return payload;
     }
 
     // 动态构建 system prompt，只包含非空的参数
@@ -736,10 +929,12 @@ export class ImageClient {
     const instruction = parts.join(" ");
 
     if (endpointType === "responses") {
+      const imageTool: Record<string, string> = { type: "image_generation" };
+      if (imageSize) imageTool.size = imageSize;
       return {
         model: config.model,
         input: `${instruction}\n\n${prompt}`,
-        tools: [{ type: "image_generation" }],
+        tools: [imageTool],
       };
     }
 
@@ -773,8 +968,8 @@ export class ImageClient {
       )
     ) {
       endpoint = /\/v1$/i.test(endpoint)
-        ? `${endpoint}/chat/completions`
-        : `${endpoint}/v1/chat/completions`;
+        ? `${endpoint}/images/generations`
+        : `${endpoint}/v1/images/generations`;
     }
 
     const isImagesEndpoint =
@@ -956,7 +1151,7 @@ export class ImageClient {
       options?.apiUrl ||
       apiUrlPref ||
       (requestMode === "openai"
-        ? "https://api.openai.com/v1/chat/completions"
+        ? "https://api.openai.com/v1/images/generations"
         : "https://generativelanguage.googleapis.com");
     const model =
       options?.model ||

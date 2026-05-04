@@ -35,6 +35,9 @@ describe("LLMNoteMetadataService", function () {
     });
     const stripped = LLMNoteMetadataService.stripMetadataComments(wrapped);
     expect(stripped).to.contain('data-ai-butler-llm-source="v1"');
+    expect(stripped).to.contain("AI 来源：");
+    expect(stripped).to.contain("供应商：OpenAI Primary");
+    expect(stripped).to.contain("· 模型：gpt-5");
     expect(stripped).to.contain("OpenAI Primary");
     expect(stripped).to.contain("gpt-5");
     expect(stripped).to.contain(html);
@@ -42,6 +45,7 @@ describe("LLMNoteMetadataService", function () {
     expect(stripped.indexOf("<h2>AI 总结</h2>")).to.be.lessThan(
       stripped.indexOf('data-ai-butler-llm-source="v1"'),
     );
+    expect(LLMNoteMetadataService.stripSidebarMetadata(wrapped)).to.equal(html);
   });
 
   it("ignores similar visible text that is not a real metadata block", function () {

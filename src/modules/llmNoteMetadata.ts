@@ -55,12 +55,12 @@ function renderVisibleMetadata(metadata: LLMNoteMetadata): string {
   const generatedAt = escapeHtml(formatGeneratedAt(metadata.generatedAt));
   const generatedAtRaw = escapeHtml(metadata.generatedAt);
   return [
-    `<div data-ai-butler-llm-source="v1" style="margin: 0 0 12px 0; padding: 8px 10px; border: 1px solid #d7e8e7; border-radius: 6px; background: #f4fbfb; color: #3d5f5d; font-size: 12px; line-height: 1.45;">`,
-    `<strong style="font-weight: 600;">AI 来源</strong>`,
-    `<span style="margin-left: 10px;">供应商：${providerName}</span>`,
-    `<span style="margin-left: 10px;">模型：${modelId}</span>`,
-    `<span style="margin-left: 10px;" title="${generatedAtRaw}">生成时间：${generatedAt}</span>`,
-    `</div>`,
+    `<p data-ai-butler-llm-source="v1" style="margin: 0 0 12px 0; padding: 6px 8px; border-left: 3px solid #59c0bc; background: #f4fbfb; color: #3d5f5d; font-size: 12px; line-height: 1.45;">`,
+    `<strong>AI 来源：</strong>`,
+    `供应商：${providerName}`,
+    ` · 模型：${modelId}`,
+    ` · 生成时间：<span title="${generatedAtRaw}">${generatedAt}</span>`,
+    `</p>`,
   ].join("");
 }
 
@@ -202,6 +202,17 @@ export class LLMNoteMetadataService {
       .replace(/\s*<!--\s*AI_BUTLER_LLM_BLOCK_END::v1::[^>]*?-->/g, "");
   }
 
+  static stripVisibleMetadata(html: string): string {
+    return html.replace(
+      /<([a-z][\w:-]*)\b(?=[^>]*\bdata-ai-butler-llm-source=(["'])v1\2)[^>]*>[\s\S]*?<\/\1>\s*/gi,
+      "",
+    );
+  }
+
+  static stripSidebarMetadata(html: string): string {
+    return this.stripVisibleMetadata(this.stripMetadataComments(html));
+  }
+
   static formatTooltip(metadata: LLMNoteMetadata | null): string {
     if (!metadata) return "No LLM metadata found.";
     const generatedText = formatGeneratedAt(metadata.generatedAt);
@@ -210,6 +221,12 @@ export class LLMNoteMetadataService {
       `Model: ${metadata.modelId || "(unknown)"}`,
       `Generated: ${generatedText}`,
     ].join("\n");
+  }
+
+  static formatSelectorLabel(metadata: LLMNoteMetadata): string {
+    return metadata.modelId
+      ? `${metadata.providerName} · ${metadata.modelId}`
+      : metadata.providerName;
   }
 }
 

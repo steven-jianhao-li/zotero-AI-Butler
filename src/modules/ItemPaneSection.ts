@@ -595,6 +595,24 @@ function renderNoteSection(
   metadataInfo.addEventListener("click", (e: Event) => e.stopPropagation());
   noteTitle.appendChild(metadataInfo);
 
+  const metadataSelector = doc.createElement("select");
+  metadataSelector.id = "ai-butler-note-metadata-selector";
+  metadataSelector.style.cssText = `
+    display: none;
+    max-width: 190px;
+    min-width: 96px;
+    padding: 2px 18px 2px 6px;
+    border: 1px solid rgba(128, 128, 128, 0.45);
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font-size: 11px;
+    line-height: 1.2;
+    cursor: pointer;
+  `;
+  metadataSelector.addEventListener("click", (e: Event) => e.stopPropagation());
+  noteTitle.appendChild(metadataSelector);
+
   // 字体大小控制
   const fontSizeControl = doc.createElement("div");
   fontSizeControl.style.cssText = `
@@ -2481,6 +2499,14 @@ async function loadNoteContent(
         metadataInfo.title = LLMNoteMetadataService.formatTooltip(null);
         metadataInfo.style.display = "none";
       }
+      const metadataSelector = doc.getElementById(
+        "ai-butler-note-metadata-selector",
+      ) as HTMLSelectElement | null;
+      if (metadataSelector) {
+        metadataSelector.innerHTML = "";
+        metadataSelector.style.display = "none";
+        metadataSelector.onchange = null;
+      }
       noteContent.innerHTML = `
         <div style="text-align: center; color: #9e9e9e; padding: 16px;">
           <div style="font-size: 24px; margin-bottom: 8px;">📝</div>
@@ -2490,16 +2516,71 @@ async function loadNoteContent(
       return;
     }
 
-    aiNoteContent = (targetNote as any).getNote?.() || "";
-    const metadata = LLMNoteMetadataService.getLatest(aiNoteContent);
+    const rawNoteHtml: string = (targetNote as any).getNote?.() || "";
+    const metadataBlocks = LLMNoteMetadataService.parseAll(rawNoteHtml);
+    let selectedBlockIndex = metadataBlocks.length - 1;
+    const metadataSelector = doc.getElementById(
+      "ai-butler-note-metadata-selector",
+    ) as HTMLSelectElement | null;
+    if (metadataSelector && metadataBlocks.length > 0) {
+      const requested = Number(metadataSelector.dataset.selectedIndex || "");
+      if (
+        Number.isInteger(requested) &&
+        requested >= 0 &&
+        requested < metadataBlocks.length
+      ) {
+        selectedBlockIndex = requested;
+      }
+      metadataSelector.innerHTML = "";
+      metadataBlocks.forEach((block, index) => {
+        const option = doc.createElement("option");
+        option.value = String(index);
+        option.textContent = LLMNoteMetadataService.formatSelectorLabel(
+          block.metadata,
+        );
+        option.title = LLMNoteMetadataService.formatTooltip(block.metadata);
+        metadataSelector.appendChild(option);
+      });
+      metadataSelector.value = String(selectedBlockIndex);
+      metadataSelector.dataset.selectedIndex = String(selectedBlockIndex);
+      metadataSelector.title = LLMNoteMetadataService.formatTooltip(
+        metadataBlocks[selectedBlockIndex].metadata,
+      );
+      metadataSelector.style.display = "inline-block";
+      metadataSelector.onchange = () => {
+        metadataSelector.dataset.selectedIndex = metadataSelector.value;
+        const contentEl = doc.getElementById(
+          "ai-butler-note-content",
+        ) as HTMLElement | null;
+        if (contentEl) {
+          contentEl.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在切换模型...</div>`;
+          void loadNoteContent(doc, item, contentEl);
+        }
+      };
+    } else if (metadataSelector) {
+      metadataSelector.innerHTML = "";
+      metadataSelector.style.display = "none";
+      metadataSelector.onchange = null;
+      delete metadataSelector.dataset.selectedIndex;
+      metadataSelector.title = "";
+    }
+
+    aiNoteContent =
+      metadataBlocks.length > 0
+        ? metadataBlocks[selectedBlockIndex].content
+        : rawNoteHtml;
+    const metadata =
+      metadataBlocks.length > 0
+        ? metadataBlocks[selectedBlockIndex].metadata
+        : LLMNoteMetadataService.getLatest(rawNoteHtml);
     const metadataInfo = doc.getElementById(
       "ai-butler-note-metadata-info",
     ) as HTMLElement | null;
     if (metadataInfo) {
       metadataInfo.title = LLMNoteMetadataService.formatTooltip(metadata);
-      metadataInfo.style.display = metadata ? "flex" : "none";
+      metadataInfo.style.display = "none";
     }
-    aiNoteContent = LLMNoteMetadataService.stripMetadataComments(aiNoteContent);
+    aiNoteContent = LLMNoteMetadataService.stripSidebarMetadata(aiNoteContent);
 
     // 加载主题 CSS
     const { themeManager } = await import("./themeManager");
@@ -3379,7 +3460,7 @@ async function getNoteMarkdownContent(
       return null;
     }
 
-    const noteHtml: string = LLMNoteMetadataService.stripMetadataComments(
+    const noteHtml: string = LLMNoteMetadataService.stripSidebarMetadata(
       (targetNote as any).getNote?.() || "",
     );
     // 将 HTML 转换为 Markdown 文本

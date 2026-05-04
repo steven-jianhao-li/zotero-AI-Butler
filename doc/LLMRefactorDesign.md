@@ -210,4 +210,4 @@ type LLMEndpoint = {
 <!-- AI_BUTLER_LLM_BLOCK_END::v1::<blockId>::<checksum> -->
 ```
 
-侧边栏渲染正文前必须调用 `LLMNoteMetadataService.stripMetadataComments()`，不要把机器用注释显示给用户；`data-ai-butler-llm-source="v1"` 来源栏是面向用户的可见内容，应保留。需要读取结构化来源时，用 `getLatest()` 或后续多模型场景中的 `parseAll()` 读取 metadata。
+侧边栏渲染正文前必须调用 `LLMNoteMetadataService.stripSidebarMetadata()`，不要把机器用注释或正文来源栏重复显示到侧边栏正文里；`data-ai-butler-llm-source="v1"` 来源栏是面向 Zotero 笔记正文的可见内容。侧边栏需要读取结构化来源时，用 `getLatest()` 或多模型场景中的 `parseAll()`，并通过标题旁的供应商选择框切换 block。

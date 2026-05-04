@@ -76,7 +76,7 @@ JSON 至少包含：
 - 思维导图笔记：`src/modules/mindmapService.ts`
 - 保存的追问笔记：`src/modules/views/SummaryView.ts`、`src/modules/ItemPaneSection.ts`
 
-侧边栏摘要渲染在 `src/modules/ItemPaneSection.ts` 中调用 `stripMetadataComments()`，隐藏机器用 HTML comment，但保留可见的 `data-ai-butler-llm-source="v1"` 来源栏。标题旁的 `i` 仍展示最新 block 的 tooltip。下一轮如果一个笔记内有多个 summary block，应改为解析 `parseAll()` 并按 block/endpoint 切换。
+侧边栏摘要渲染在 `src/modules/ItemPaneSection.ts` 中调用 `stripSidebarMetadata()`，隐藏机器用 HTML comment 和正文内可见的 `data-ai-butler-llm-source="v1"` 来源栏。侧边栏标题旁的供应商选择框读取 `parseAll()`，可按 block/endpoint 切换展示内容，选项 tooltip 展示 provider/model/generatedAt。
 
 ## Reserved Prefs
 
@@ -92,5 +92,5 @@ JSON 至少包含：
 1. 在 `NoteGenerator.generateNoteForItem()` 中，当 `multiModelSummaryEnabled=true` 时读取 `multiModelSummaryEndpointIds`，并行调用指定 endpoint。
 2. 给 `LLMService.generate()` 增加“指定 endpoint id”入口，或新增 `generateWithEndpoint()`，避免多模型总结绕过统一内容策略。
 3. 一个 Zotero AI 总结笔记内保存多个 metadata block，每个 block 包含对应模型的可见内容。
-4. 修改 `ItemPaneSection`：摘要区域解析 `LLMNoteMetadataService.parseAll()`，提供模型/endpoint 切换控件，切换时只渲染当前 block 的 `content`。
+4. 继续完善 `ItemPaneSection` 的多模型切换体验：当前已解析 `parseAll()` 并用供应商选择框切换 block；下一轮需要和真正的并行总结输出打通。
 5. 保持其他功能仍走 `llmRoutingStrategy`，不要让多模型并行影响表格、思维导图、综述和追问。

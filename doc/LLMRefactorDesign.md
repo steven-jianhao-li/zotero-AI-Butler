@@ -211,3 +211,5 @@ type LLMEndpoint = {
 ```
 
 侧边栏渲染正文前必须调用 `LLMNoteMetadataService.stripSidebarMetadata()`，不要把机器用注释或正文来源栏重复显示到侧边栏正文里；`data-ai-butler-llm-source="v1"` 来源栏是面向 Zotero 笔记正文的可见内容。侧边栏需要读取结构化来源时，用 `getLatest()` 或多模型场景中的 `parseAll()`，并通过标题旁的供应商选择框切换 block。
+
+多模型同时总结通过 `multiModelSummaryEnabled` 和 `multiModelSummaryEndpointIds` 控制，只在 `NoteGenerator.generateNoteForItem()` 中生效。开启后，总结工作流会按用户选择并行调用 `LLMService.generateWithEndpoint()` / `chatWithEndpoint()`，每个成功模型写入一个独立 metadata block；其他 LLM 功能仍使用主路由策略。部分供应商失败时保存成功结果，全部失败时抛错且不创建错误笔记。

@@ -249,6 +249,52 @@ export class LLMEndpointManager {
     return this.getEndpoints().find((endpoint) => endpoint.id === endpointId);
   }
 
+  static isMultiModelSummaryEnabled(): boolean {
+    return (getPref("multiModelSummaryEnabled") as boolean) === true;
+  }
+
+  static setMultiModelSummaryEnabled(enabled: boolean): void {
+    setPref("multiModelSummaryEnabled", enabled);
+  }
+
+  static getMultiModelSummaryEndpointIds(): string[] {
+    const seen = new Set<string>();
+    const ids: string[] = [];
+    for (const value of parseJsonArray(
+      getPref("multiModelSummaryEndpointIds"),
+    )) {
+      const id = String(value || "").trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
+    }
+    return ids;
+  }
+
+  static setMultiModelSummaryEndpointIds(ids: string[]): void {
+    const seen = new Set<string>();
+    const normalized = ids
+      .map((id) => String(id || "").trim())
+      .filter((id) => {
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+    setPref("multiModelSummaryEndpointIds", JSON.stringify(normalized));
+  }
+
+  static getMultiModelSummaryEndpoints(): LLMEndpoint[] {
+    const selectedIds = this.getMultiModelSummaryEndpointIds();
+    if (selectedIds.length === 0) return [];
+
+    const enabledById = new Map(
+      this.getEnabledEndpoints().map((endpoint) => [endpoint.id, endpoint]),
+    );
+    return selectedIds
+      .map((id) => enabledById.get(id))
+      .filter((endpoint): endpoint is LLMEndpoint => Boolean(endpoint));
+  }
+
   static validateEndpoint(endpoint: LLMEndpoint): string[] {
     const missing: string[] = [];
     if (!endpoint.name.trim()) missing.push("name");

@@ -308,6 +308,15 @@ export class LLMService {
     return this.runGenerateWithEndpointRouting(request, prompt);
   }
 
+  static async generateWithEndpoint(
+    endpointId: string,
+    request: LLMGenerateRequest,
+  ): Promise<LLMResponse> {
+    const endpoint = this.getRunnableEndpoint(endpointId);
+    const prompt = request.prompt ?? this.getDefaultPrompt();
+    return this.generateOnceWithEndpoint(endpoint, request, prompt);
+  }
+
   static async generateText(request: LLMGenerateRequest): Promise<string> {
     return (await this.generate(request)).text;
   }
@@ -315,6 +324,14 @@ export class LLMService {
   static async chat(request: LLMChatRequest): Promise<LLMResponse> {
     const route = LLMEndpointManager.prepareRoute();
     return this.chatWithEndpointRouting(request, route);
+  }
+
+  static async chatWithEndpoint(
+    endpointId: string,
+    request: LLMChatRequest,
+  ): Promise<LLMResponse> {
+    const endpoint = this.getRunnableEndpoint(endpointId);
+    return this.chatOnceWithEndpoint(endpoint, request);
   }
 
   static async chatText(request: LLMChatRequest): Promise<string> {
@@ -370,6 +387,25 @@ export class LLMService {
     return provider.testConnection(options);
   }
 
+  static endpointSupportsMultiFile(endpoint: LLMEndpoint): boolean {
+    const provider = this.getProviderForEndpoint(endpoint);
+    return (
+      this.getProviderCapabilities(provider).maxPdfFiles > 1 &&
+      typeof provider.generateMultiFileSummary === "function"
+    );
+  }
+
+  private static getRunnableEndpoint(endpointId: string): LLMEndpoint {
+    const endpoint = LLMEndpointManager.getEndpoint(endpointId);
+    if (!endpoint) {
+      throw new Error(`LLM endpoint not found: ${endpointId}`);
+    }
+    if (!endpoint.enabled) {
+      throw new Error(`LLM endpoint is disabled: ${endpoint.name}`);
+    }
+    return endpoint;
+  }
+
   private static getProviderForEndpoint(endpoint: LLMEndpoint): ILlmProvider {
     const provider = ProviderRegistry.get(endpoint.providerType);
     if (!provider) {
@@ -393,49 +429,13 @@ export class LLMService {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       const endpoint = route.endpoints[attempt % route.endpoints.length];
       try {
-        const provider = this.getProviderForEndpoint(endpoint);
-        const warnings: string[] = [];
-        const resolved = await this.resolveContent(
-          provider,
-          request.content,
-          warnings,
-          true,
-        );
-        const options = this.buildOptions(
+        const response = await this.generateOnceWithEndpoint(
           endpoint,
-          request.generation,
-          request.transport,
+          request,
+          prompt,
         );
-        let text: string;
-        if (resolved.mode === "multi-file") {
-          if (typeof provider.generateMultiFileSummary !== "function") {
-            throw new Error(
-              `Provider ${endpoint.providerType} does not support multi-file generation`,
-            );
-          }
-          text = await provider.generateMultiFileSummary(
-            resolved.files,
-            prompt,
-            options,
-            request.onProgress,
-          );
-        } else {
-          text = await provider.generateSummary(
-            resolved.content,
-            resolved.isBase64,
-            prompt,
-            options,
-            request.onProgress,
-          );
-        }
         LLMEndpointManager.markEndpointAttempted(endpoint.id);
-        return this.toResponse(
-          text,
-          endpoint.providerType,
-          endpoint,
-          options,
-          warnings,
-        );
+        return response;
       } catch (error: unknown) {
         LLMEndpointManager.markEndpointAttempted(endpoint.id);
         lastError = error instanceof Error ? error : new Error(String(error));
@@ -446,6 +446,55 @@ export class LLMService {
     }
 
     throw lastError || new Error("All configured LLM endpoints failed.");
+  }
+
+  private static async generateOnceWithEndpoint(
+    endpoint: LLMEndpoint,
+    request: LLMGenerateRequest,
+    prompt: string,
+  ): Promise<LLMResponse> {
+    const provider = this.getProviderForEndpoint(endpoint);
+    const warnings: string[] = [];
+    const resolved = await this.resolveContent(
+      provider,
+      request.content,
+      warnings,
+      true,
+    );
+    const options = this.buildOptions(
+      endpoint,
+      request.generation,
+      request.transport,
+    );
+    let text: string;
+    if (resolved.mode === "multi-file") {
+      if (typeof provider.generateMultiFileSummary !== "function") {
+        throw new Error(
+          `Provider ${endpoint.providerType} does not support multi-file generation`,
+        );
+      }
+      text = await provider.generateMultiFileSummary(
+        resolved.files,
+        prompt,
+        options,
+        request.onProgress,
+      );
+    } else {
+      text = await provider.generateSummary(
+        resolved.content,
+        resolved.isBase64,
+        prompt,
+        options,
+        request.onProgress,
+      );
+    }
+    return this.toResponse(
+      text,
+      endpoint.providerType,
+      endpoint,
+      options,
+      warnings,
+    );
   }
 
   private static async chatWithEndpointRouting(
@@ -459,37 +508,9 @@ export class LLMService {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       const endpoint = route.endpoints[attempt % route.endpoints.length];
       try {
-        const provider = this.getProviderForEndpoint(endpoint);
-        const warnings: string[] = [];
-        const resolved = await this.resolveContent(
-          provider,
-          request.content,
-          warnings,
-          false,
-        );
-        if (resolved.mode !== "single") {
-          throw new Error("Chat requests do not support multi-file input.");
-        }
-        const options = this.buildOptions(
-          endpoint,
-          request.generation,
-          request.transport,
-        );
-        const text = await provider.chat(
-          resolved.content,
-          resolved.isBase64,
-          request.conversation,
-          options,
-          request.onProgress,
-        );
+        const response = await this.chatOnceWithEndpoint(endpoint, request);
         LLMEndpointManager.markEndpointAttempted(endpoint.id);
-        return this.toResponse(
-          text,
-          endpoint.providerType,
-          endpoint,
-          options,
-          warnings,
-        );
+        return response;
       } catch (error: unknown) {
         LLMEndpointManager.markEndpointAttempted(endpoint.id);
         lastError = error instanceof Error ? error : new Error(String(error));
@@ -500,6 +521,42 @@ export class LLMService {
     }
 
     throw lastError || new Error("All configured LLM endpoints failed.");
+  }
+
+  private static async chatOnceWithEndpoint(
+    endpoint: LLMEndpoint,
+    request: LLMChatRequest,
+  ): Promise<LLMResponse> {
+    const provider = this.getProviderForEndpoint(endpoint);
+    const warnings: string[] = [];
+    const resolved = await this.resolveContent(
+      provider,
+      request.content,
+      warnings,
+      false,
+    );
+    if (resolved.mode !== "single") {
+      throw new Error("Chat requests do not support multi-file input.");
+    }
+    const options = this.buildOptions(
+      endpoint,
+      request.generation,
+      request.transport,
+    );
+    const text = await provider.chat(
+      resolved.content,
+      resolved.isBase64,
+      request.conversation,
+      options,
+      request.onProgress,
+    );
+    return this.toResponse(
+      text,
+      endpoint.providerType,
+      endpoint,
+      options,
+      warnings,
+    );
   }
 
   private static async runWithRetry(

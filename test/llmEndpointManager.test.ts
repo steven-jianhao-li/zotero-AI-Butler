@@ -9,6 +9,8 @@ const prefKeys = [
   "llmEndpoints",
   "llmRoutingStrategy",
   "llmRoundRobinCursor",
+  "multiModelSummaryEnabled",
+  "multiModelSummaryEndpointIds",
   "maxApiSwitchCount",
   "provider",
   "openaiCompatApiUrl",
@@ -132,5 +134,34 @@ describe("LLMEndpointManager", function () {
     expect(() => LLMEndpointManager.prepareRoute()).to.throw(
       "No enabled LLM endpoints are configured.",
     );
+  });
+
+  it("returns selected enabled endpoints for multi-model summaries", function () {
+    LLMEndpointManager.saveEndpoints([
+      makeEndpoint("a"),
+      makeEndpoint("b", false),
+      makeEndpoint("c"),
+    ]);
+    LLMEndpointManager.setMultiModelSummaryEnabled(true);
+    LLMEndpointManager.setMultiModelSummaryEndpointIds([
+      "c",
+      "missing",
+      "b",
+      "c",
+      "a",
+    ]);
+
+    expect(LLMEndpointManager.isMultiModelSummaryEnabled()).to.equal(true);
+    expect(LLMEndpointManager.getMultiModelSummaryEndpointIds()).to.deep.equal([
+      "c",
+      "missing",
+      "b",
+      "a",
+    ]);
+    expect(
+      LLMEndpointManager.getMultiModelSummaryEndpoints().map(
+        (endpoint) => endpoint.id,
+      ),
+    ).to.deep.equal(["c", "a"]);
   });
 });

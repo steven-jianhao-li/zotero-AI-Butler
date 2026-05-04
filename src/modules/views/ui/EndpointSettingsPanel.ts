@@ -35,20 +35,6 @@ function endpointProviderOptions(): Array<{ value: string; label: string }> {
   }));
 }
 
-function readMultiModelIds(): string[] {
-  try {
-    const raw = (getPref("multiModelSummaryEndpointIds") as string) || "[]";
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeMultiModelIds(ids: string[]): void {
-  setPref("multiModelSummaryEndpointIds", JSON.stringify(ids));
-}
-
 function smallMuted(text: string): HTMLElement {
   const el = doc().createElement("div");
   el.textContent = text;
@@ -163,7 +149,7 @@ export class EndpointSettingsPanel {
 
     this.root.appendChild(list);
     this.root.appendChild(this.renderRoutingControls());
-    this.root.appendChild(this.renderReservedMultiModelControls());
+    this.root.appendChild(this.renderMultiModelControls());
   }
 
   private renderRoutingControls(): HTMLElement {
@@ -223,77 +209,288 @@ export class EndpointSettingsPanel {
     return panel;
   }
 
-  private renderReservedMultiModelControls(): HTMLElement {
+  private renderMultiModelControls(): HTMLElement {
     const document = doc();
     const box = document.createElement("div");
+    const enabled = LLMEndpointManager.isMultiModelSummaryEnabled();
+    const selectedIds = new Set(
+      LLMEndpointManager.getMultiModelSummaryEndpointIds(),
+    );
+    const enabledEndpoints = this.endpoints.filter(
+      (endpoint) => endpoint.enabled,
+    );
+    const selectedCount = this.endpoints.filter(
+      (endpoint) => endpoint.enabled && selectedIds.has(endpoint.id),
+    ).length;
+
     Object.assign(box.style, {
-      marginTop: "12px",
+      marginTop: "18px",
       marginBottom: "12px",
-      padding: "12px",
-      border: "1px dashed var(--ai-border)",
-      borderRadius: "6px",
-      background: "var(--ai-surface-2)",
+      padding: "14px",
+      border: enabled
+        ? "1px solid rgba(89, 192, 188, 0.55)"
+        : "1px solid var(--ai-border)",
+      borderRadius: "8px",
+      background: enabled ? "rgba(89, 192, 188, 0.08)" : "var(--ai-surface)",
+      boxSizing: "border-box",
     });
 
-    const row = document.createElement("label");
-    Object.assign(row.style, {
+    const header = document.createElement("div");
+    Object.assign(header.style, {
       display: "flex",
       alignItems: "center",
-      gap: "10px",
+      justifyContent: "space-between",
+      gap: "12px",
+      marginBottom: "10px",
+      flexWrap: "wrap",
+    });
+
+    const titleWrap = document.createElement("div");
+    const titleRow = document.createElement("div");
+    Object.assign(titleRow.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      flexWrap: "wrap",
+    });
+    const title = document.createElement("div");
+    title.textContent = "多模型同时总结";
+    Object.assign(title.style, {
       color: "var(--ai-text)",
-      fontSize: "14px",
-      fontWeight: "600",
-      marginBottom: "8px",
+      fontSize: "15px",
+      fontWeight: "700",
     });
-
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked =
-      (getPref("multiModelSummaryEnabled") as boolean) === true;
-    checkbox.addEventListener("change", () => {
-      setPref("multiModelSummaryEnabled", checkbox.checked);
+    const badge = document.createElement("span");
+    badge.textContent = enabled ? `已选择 ${selectedCount} 个` : "未启用";
+    Object.assign(badge.style, {
+      padding: "2px 8px",
+      borderRadius: "999px",
+      background: enabled
+        ? "rgba(89, 192, 188, 0.14)"
+        : "rgba(128, 128, 128, 0.12)",
+      color: enabled ? "#2f8f8b" : "var(--ai-text-muted)",
+      fontSize: "12px",
+      lineHeight: "1.4",
     });
-
-    row.appendChild(checkbox);
-    row.appendChild(document.createTextNode("多模型同时总结（预留）"));
-    box.appendChild(row);
-    box.appendChild(
+    titleRow.appendChild(title);
+    titleRow.appendChild(badge);
+    titleWrap.appendChild(titleRow);
+    titleWrap.appendChild(
       smallMuted(
-        "本轮只保存配置，不改变运行行为；下一轮会用选定供应商并行生成多个总结。",
+        "开启后，AI 总结会并行调用选中的供应商，并写入同一篇 AI 管家笔记；侧边栏可按供应商切换。其他功能仍使用上方路由策略。",
       ),
     );
+    header.appendChild(titleWrap);
+    header.appendChild(
+      this.renderSettingSwitch(enabled, (nextEnabled) => {
+        LLMEndpointManager.setMultiModelSummaryEnabled(nextEnabled);
+        if (
+          nextEnabled &&
+          LLMEndpointManager.getMultiModelSummaryEndpoints().length === 0
+        ) {
+          LLMEndpointManager.setMultiModelSummaryEndpointIds(
+            enabledEndpoints.map((endpoint) => endpoint.id),
+          );
+        }
+        this.options.onChange?.();
+        this.rerender();
+      }),
+    );
+    box.appendChild(header);
 
-    const ids = new Set(readMultiModelIds());
+    const toolbar = document.createElement("div");
+    Object.assign(toolbar.style, {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "8px",
+      marginTop: "12px",
+      marginBottom: "10px",
+      flexWrap: "wrap",
+    });
+    const selectionLabel = document.createElement("div");
+    selectionLabel.textContent = "选择参与总结的大模型供应商";
+    Object.assign(selectionLabel.style, {
+      color: "var(--ai-text)",
+      fontSize: "13px",
+      fontWeight: "600",
+    });
+    const quickActions = document.createElement("div");
+    Object.assign(quickActions.style, {
+      display: "flex",
+      gap: "6px",
+      flexWrap: "wrap",
+    });
+    const selectAllButton = createStyledButton("全选启用", "#59c0bc", "small");
+    const clearButton = createStyledButton("清空", "#777", "small");
+    selectAllButton.addEventListener("click", () => {
+      LLMEndpointManager.setMultiModelSummaryEndpointIds(
+        enabledEndpoints.map((endpoint) => endpoint.id),
+      );
+      this.options.onChange?.();
+      this.rerender();
+    });
+    clearButton.addEventListener("click", () => {
+      LLMEndpointManager.setMultiModelSummaryEndpointIds([]);
+      this.options.onChange?.();
+      this.rerender();
+    });
+    quickActions.appendChild(selectAllButton);
+    quickActions.appendChild(clearButton);
+    toolbar.appendChild(selectionLabel);
+    toolbar.appendChild(quickActions);
+    box.appendChild(toolbar);
+
     const endpointList = document.createElement("div");
     Object.assign(endpointList.style, {
-      display: "flex",
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
       gap: "10px",
-      flexWrap: "wrap",
-      marginTop: "10px",
     });
+    if (this.endpoints.length === 0) {
+      const empty = document.createElement("div");
+      empty.textContent = "暂无可选供应商，请先添加大模型供应商。";
+      Object.assign(empty.style, {
+        color: "var(--ai-text-muted)",
+        fontSize: "12px",
+        padding: "10px",
+        border: "1px dashed var(--ai-border)",
+        borderRadius: "6px",
+      });
+      endpointList.appendChild(empty);
+    }
     this.endpoints.forEach((endpoint) => {
       const item = document.createElement("label");
+      const checked = endpoint.enabled && selectedIds.has(endpoint.id);
       Object.assign(item.style, {
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "6px",
-        fontSize: "12px",
-        color: "var(--ai-text-muted)",
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "8px",
+        padding: "10px",
+        border: checked
+          ? "1px solid rgba(89, 192, 188, 0.75)"
+          : "1px solid var(--ai-border)",
+        borderRadius: "6px",
+        background: checked
+          ? "rgba(89, 192, 188, 0.08)"
+          : "var(--ai-surface-2)",
+        color: endpoint.enabled ? "var(--ai-text)" : "var(--ai-text-muted)",
+        opacity: endpoint.enabled ? "1" : "0.62",
+        cursor: endpoint.enabled ? "pointer" : "not-allowed",
+        boxSizing: "border-box",
       });
       const input = document.createElement("input");
       input.type = "checkbox";
-      input.checked = ids.has(endpoint.id);
-      input.addEventListener("change", () => {
-        if (input.checked) ids.add(endpoint.id);
-        else ids.delete(endpoint.id);
-        writeMultiModelIds([...ids]);
+      input.checked = checked;
+      input.disabled = !endpoint.enabled;
+      Object.assign(input.style, {
+        marginTop: "3px",
+        flex: "0 0 auto",
       });
+      input.addEventListener("change", () => {
+        const nextIds = new Set(
+          LLMEndpointManager.getMultiModelSummaryEndpointIds(),
+        );
+        if (input.checked) nextIds.add(endpoint.id);
+        else nextIds.delete(endpoint.id);
+        LLMEndpointManager.setMultiModelSummaryEndpointIds([...nextIds]);
+        this.options.onChange?.();
+        this.rerender();
+      });
+      const content = document.createElement("div");
+      Object.assign(content.style, {
+        minWidth: "0",
+        flex: "1",
+      });
+      const name = document.createElement("div");
+      name.textContent = endpoint.name;
+      Object.assign(name.style, {
+        fontSize: "13px",
+        fontWeight: "600",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      });
+      const detail = document.createElement("div");
+      detail.textContent = `${LLMEndpointManager.providerLabel(endpoint.providerType)} · ${endpoint.model || "未填写模型"}`;
+      Object.assign(detail.style, {
+        marginTop: "3px",
+        color: "var(--ai-text-muted)",
+        fontSize: "12px",
+        lineHeight: "1.35",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      });
+      const state = document.createElement("div");
+      state.textContent = endpoint.enabled ? "可参与总结" : "已禁用";
+      Object.assign(state.style, {
+        marginTop: "6px",
+        color: endpoint.enabled ? "#4caf50" : "var(--ai-text-muted)",
+        fontSize: "11px",
+      });
+      content.appendChild(name);
+      content.appendChild(detail);
+      content.appendChild(state);
       item.appendChild(input);
-      item.appendChild(document.createTextNode(endpoint.name));
+      item.appendChild(content);
       endpointList.appendChild(item);
     });
     box.appendChild(endpointList);
+
+    if (enabled && selectedCount === 0) {
+      const warning = document.createElement("div");
+      warning.textContent =
+        "已启用多模型同时总结，但尚未选择可用供应商；生成总结前请至少选择一个已启用供应商。";
+      Object.assign(warning.style, {
+        marginTop: "10px",
+        color: "#f57c00",
+        fontSize: "12px",
+        lineHeight: "1.45",
+      });
+      box.appendChild(warning);
+    }
     return box;
+  }
+
+  private renderSettingSwitch(
+    checked: boolean,
+    onChange: (checked: boolean) => void,
+  ): HTMLElement {
+    const document = doc();
+    const button = document.createElement("button");
+    button.type = "button";
+    button.title = checked ? "已启用" : "已关闭";
+    Object.assign(button.style, {
+      width: "50px",
+      height: "26px",
+      border: "none",
+      borderRadius: "999px",
+      padding: "3px",
+      cursor: "pointer",
+      background: checked ? "#4caf50" : "#bdbdbd",
+      transition: "background 0.2s ease",
+      flex: "0 0 auto",
+    });
+
+    const knob = document.createElement("span");
+    Object.assign(knob.style, {
+      display: "block",
+      width: "20px",
+      height: "20px",
+      borderRadius: "50%",
+      background: "#fff",
+      transform: checked ? "translateX(24px)" : "translateX(0)",
+      transition: "transform 0.2s ease",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+    });
+    button.appendChild(knob);
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onChange(!checked);
+    });
+    return button;
   }
 
   private renderEndpointCard(

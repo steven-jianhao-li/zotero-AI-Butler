@@ -1,6 +1,6 @@
 # Multi-Model Summary Handoff
 
-本文件给下一轮开发“多模型同时总结”和“侧边栏按模型切换”使用。当前轮已经完成 endpoint 路由、LLM 响应元数据、笔记 metadata block 基础格式和设置页预留项。
+本文件记录 2026-05 多供应商 endpoint、LLM 笔记元数据、多模型同时总结和侧边栏按来源切换的接入点。
 
 ## Endpoint Schema
 
@@ -78,19 +78,32 @@ JSON 至少包含：
 
 侧边栏摘要渲染在 `src/modules/ItemPaneSection.ts` 中调用 `stripSidebarMetadata()`，隐藏机器用 HTML comment 和正文内可见的 `data-ai-butler-llm-source="v1"` 来源栏。侧边栏标题旁的供应商选择框读取 `parseAll()`，可按 block/endpoint 切换展示内容，选项 tooltip 展示 provider/model/generatedAt。
 
-## Reserved Prefs
+## Multi-Model Summary
 
-当前轮只保存配置，不改变运行行为：
+多模型总结只影响 `NoteGenerator.generateNoteForItem()` 这一条 AI 总结工作流；思维导图、填表、文献综述、追问和一图总结前置分析仍走 `llmRoutingStrategy`。
 
 - `multiModelSummaryEnabled`: boolean
 - `multiModelSummaryEndpointIds`: JSON string array
 
-设置页预留 UI 在 `src/modules/views/ui/EndpointSettingsPanel.ts`。
+设置页 UI 在 `src/modules/views/ui/EndpointSettingsPanel.ts` 的“多模型同时总结”面板。开启时如果尚未选择供应商，UI 会默认选中所有已启用 endpoint。运行时会通过 `LLMEndpointManager.getMultiModelSummaryEndpoints()` 按用户选择顺序取出仍然启用的 endpoint；如果没有可用 endpoint，会给出明确错误。
 
-## Next Round Tasks
+`LLMService.generateWithEndpoint(endpointId, request)` 和 `LLMService.chatWithEndpoint(endpointId, request)` 是指定 endpoint 的调用入口，不推进轮询游标，也不使用主路由 fallback。多模型总结会并行调用这些入口，并把成功结果写入同一个 Zotero 笔记：
 
-1. 在 `NoteGenerator.generateNoteForItem()` 中，当 `multiModelSummaryEnabled=true` 时读取 `multiModelSummaryEndpointIds`，并行调用指定 endpoint。
-2. 给 `LLMService.generate()` 增加“指定 endpoint id”入口，或新增 `generateWithEndpoint()`，避免多模型总结绕过统一内容策略。
-3. 一个 Zotero AI 总结笔记内保存多个 metadata block，每个 block 包含对应模型的可见内容。
-4. 继续完善 `ItemPaneSection` 的多模型切换体验：当前已解析 `parseAll()` 并用供应商选择框切换 block；下一轮需要和真正的并行总结输出打通。
-5. 保持其他功能仍走 `llmRoutingStrategy`，不要让多模型并行影响表格、思维导图、综述和追问。
+```html
+<!-- endpoint A metadata block -->
+<h2>AI 管家 - paper title</h2>
+<p data-ai-butler-llm-source="v1">AI 来源：供应商 A、模型、生成时间</p>
+...
+<hr />
+<!-- endpoint B metadata block -->
+<h2>AI 管家 - paper title</h2>
+<p data-ai-butler-llm-source="v1">AI 来源：供应商 B、模型、生成时间</p>
+...
+```
+
+如果部分供应商失败，成功结果仍会保存；如果全部失败，则不创建错误笔记并向上抛出错误。
+
+## Future Tasks
+
+1. 可继续优化生成窗口的并行流式展示，目前为各模型完成后汇总显示，避免多模型流式输出互相穿插。
+2. 如果后续需要“一图总结”的图片模型来源元数据，应单独设计图片生成 metadata，不复用本轮 LLM 文本 block。

@@ -575,27 +575,6 @@ function renderNoteSection(
   `;
   noteTitle.innerHTML = `📄 <span>AI 笔记</span>`;
 
-  const metadataInfo = doc.createElement("span");
-  metadataInfo.id = "ai-butler-note-metadata-info";
-  metadataInfo.textContent = "i";
-  metadataInfo.title = LLMNoteMetadataService.formatTooltip(null);
-  metadataInfo.style.cssText = `
-    width: 14px;
-    height: 14px;
-    border: 1px solid currentColor;
-    border-radius: 50%;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    font-size: 10px;
-    font-weight: 400;
-    line-height: 1;
-    opacity: 0.7;
-    cursor: help;
-    flex: 0 0 auto;
-  `;
-  metadataInfo.addEventListener("click", (e: Event) => e.stopPropagation());
-
   const metadataSelector = doc.createElement("select");
   metadataSelector.id = "ai-butler-note-metadata-selector";
   metadataSelector.style.cssText = `
@@ -607,14 +586,13 @@ function renderNoteSection(
     border-radius: 4px;
     background: transparent;
     color: inherit;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 400;
     line-height: 1.2;
     cursor: pointer;
   `;
   metadataSelector.addEventListener("click", (e: Event) => e.stopPropagation());
   noteTitle.appendChild(metadataSelector);
-  noteTitle.appendChild(metadataInfo);
 
   // 字体大小控制
   const fontSizeControl = doc.createElement("div");
@@ -2495,13 +2473,6 @@ async function loadNoteContent(
     }
 
     if (!targetNote) {
-      const metadataInfo = doc.getElementById(
-        "ai-butler-note-metadata-info",
-      ) as HTMLElement | null;
-      if (metadataInfo) {
-        metadataInfo.title = LLMNoteMetadataService.formatTooltip(null);
-        metadataInfo.style.display = "none";
-      }
       const metadataSelector = doc.getElementById(
         "ai-butler-note-metadata-selector",
       ) as HTMLSelectElement | null;
@@ -2572,18 +2543,6 @@ async function loadNoteContent(
       metadataBlocks.length > 0
         ? metadataBlocks[selectedBlockIndex].content
         : rawNoteHtml;
-    const metadata =
-      metadataBlocks.length > 0
-        ? metadataBlocks[selectedBlockIndex].metadata
-        : LLMNoteMetadataService.getLatest(rawNoteHtml);
-    const metadataInfo = doc.getElementById(
-      "ai-butler-note-metadata-info",
-    ) as HTMLElement | null;
-    if (metadataInfo) {
-      metadataInfo.title = LLMNoteMetadataService.formatTooltip(metadata);
-      metadataInfo.style.display =
-        metadataBlocks.length > 0 ? "inline-flex" : "none";
-    }
     aiNoteContent = LLMNoteMetadataService.stripSidebarMetadata(aiNoteContent);
 
     // 加载主题 CSS

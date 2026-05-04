@@ -47,7 +47,7 @@ describe("LLMNoteMetadataService", function () {
     );
     expect(
       LLMNoteMetadataService.formatSelectorLabel(metadata("block-a")),
-    ).to.equal("供应商: OpenAI Primary 模型: gpt-5");
+    ).to.equal("供应商: OpenAI Primary 模型: gpt-5 ⓘ");
     expect(LLMNoteMetadataService.stripSidebarMetadata(wrapped)).to.equal(html);
   });
 

@@ -29,6 +29,10 @@ import { marked } from "marked";
 import { getPref } from "../../utils/prefs";
 import { createStyledButton } from "./ui/components";
 import katex from "katex";
+import {
+  LLMNoteMetadataService,
+  type LLMNoteMetadata,
+} from "../llmNoteMetadata";
 
 /**
  * AI 总结视图类
@@ -568,7 +572,8 @@ export class SummaryView extends BaseView {
       const { default: LLMService } = await import("../llmService");
 
       let fullResponse = "";
-      await LLMService.chatText({
+      let responseMetadata: LLMNoteMetadata | null = null;
+      const response = await LLMService.chat({
         content: {
           kind: "legacy",
           content: this.currentPdfContent,
@@ -600,6 +605,17 @@ export class SummaryView extends BaseView {
           this.scrollToBottom();
         },
       });
+      fullResponse = response.text;
+      responseMetadata = LLMNoteMetadataService.fromResponse("chat", response);
+      if (assistantMessageContainer) {
+        const contentDiv = assistantMessageContainer.querySelector(
+          ".chat-message-content",
+        ) as HTMLElement;
+        if (contentDiv) {
+          contentDiv.innerHTML =
+            SummaryView.convertMarkdownToHTMLCore(fullResponse);
+        }
+      }
 
       // 添加助手回复到历史
       this.conversationHistory.push({
@@ -620,6 +636,7 @@ export class SummaryView extends BaseView {
           pairId,
           userMessage,
           fullResponse,
+          responseMetadata,
         );
       }
     } catch (error: any) {
@@ -775,6 +792,7 @@ export class SummaryView extends BaseView {
     pairId: string,
     userMessage: string,
     assistantMessage: string,
+    metadata?: LLMNoteMetadata | null,
   ): Promise<void> {
     if (!this.currentItemId) return;
     try {
@@ -784,7 +802,7 @@ export class SummaryView extends BaseView {
       let noteHtml = (note as any).getNote?.() || "";
 
       const jsonMarker = `<!-- AI_BUTLER_CHAT_JSON: ${JSON.stringify({ id: pairId, user: userMessage, assistant: assistantMessage })} -->`;
-      const block = `
+      const blockContent = `
 <!-- AI_BUTLER_CHAT_PAIR_START id=${this.escapeHtml(pairId)} -->
 ${jsonMarker}
 <div id="ai-butler-pair-${this.escapeHtml(pairId)}" style="margin-top:14px; padding-top:8px; border-top:1px dashed #ccc;">
@@ -794,6 +812,9 @@ ${jsonMarker}
 </div>
 <!-- AI_BUTLER_CHAT_PAIR_END id=${this.escapeHtml(pairId)} -->
 `;
+      const block = metadata
+        ? LLMNoteMetadataService.wrapHtml(blockContent, metadata)
+        : blockContent;
 
       noteHtml += block;
       (note as any).setNote(noteHtml);

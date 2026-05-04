@@ -18,6 +18,10 @@ import {
   isSidebarModuleEnabled,
   type SidebarModuleId,
 } from "./uiCustomization";
+import {
+  LLMNoteMetadataService,
+  type LLMNoteMetadata,
+} from "./llmNoteMetadata";
 import katex from "katex";
 // 注意: 不在主进程中直接 import 思维导图库（如 markmap-view、simple-mind-map）
 // 这些库在加载时会访问 document/window，而 Zotero Background 进程没有 DOM 环境
@@ -570,6 +574,26 @@ function renderNoteSection(
     gap: 6px;
   `;
   noteTitle.innerHTML = `📄 <span>AI 笔记</span>`;
+
+  const metadataInfo = doc.createElement("span");
+  metadataInfo.id = "ai-butler-note-metadata-info";
+  metadataInfo.textContent = "i";
+  metadataInfo.title = LLMNoteMetadataService.formatTooltip(null);
+  metadataInfo.style.cssText = `
+    width: 14px;
+    height: 14px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    line-height: 1;
+    opacity: 0.7;
+    cursor: help;
+  `;
+  metadataInfo.addEventListener("click", (e: Event) => e.stopPropagation());
+  noteTitle.appendChild(metadataInfo);
 
   // 字体大小控制
   const fontSizeControl = doc.createElement("div");
@@ -2114,7 +2138,8 @@ function renderChatArea(
       ];
 
       let fullResponse = "";
-      await LLMService.chatText({
+      let responseMetadata: LLMNoteMetadata | null = null;
+      const response = await LLMService.chat({
         content: {
           kind: "legacy",
           content: currentChatState.pdfContent,
@@ -2130,6 +2155,8 @@ function renderChatArea(
           messagesArea.scrollTop = messagesArea.scrollHeight;
         },
       });
+      fullResponse = response.text;
+      responseMetadata = LLMNoteMetadataService.fromResponse("chat", response);
 
       // 完成后最终更新
       aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${escapeHtmlForChat(fullResponse)}`;
@@ -2151,7 +2178,13 @@ function renderChatArea(
         (saveBtn as HTMLButtonElement).disabled = true;
 
         try {
-          await saveChatPairToNote(item, pairId, question, fullResponse);
+          await saveChatPairToNote(
+            item,
+            pairId,
+            question,
+            fullResponse,
+            responseMetadata,
+          );
           currentChatState.savedPairIds.add(pairId);
           saveBtn.textContent = "✅ 已保存";
           saveBtn.style.background = "#4caf50";
@@ -2253,6 +2286,7 @@ async function saveChatPairToNote(
   pairId: string,
   userMessage: string,
   assistantMessage: string,
+  metadata?: LLMNoteMetadata | null,
 ): Promise<void> {
   const note = await getOrCreateChatNote(item);
   let noteHtml = (note as any).getNote?.() || "";
@@ -2264,7 +2298,7 @@ async function saveChatPairToNote(
   }
 
   const jsonMarker = `<!-- AI_BUTLER_CHAT_JSON: ${JSON.stringify({ id: pairId, user: userMessage, assistant: assistantMessage })} -->`;
-  const block = `
+  const blockContent = `
 <!-- AI_BUTLER_CHAT_PAIR_START id=${escapeHtmlForNote(pairId)} -->
 ${jsonMarker}
 <div id="ai-butler-pair-${escapeHtmlForNote(pairId)}" style="margin-top:14px; padding-top:8px; border-top:1px dashed #ccc;">
@@ -2274,6 +2308,9 @@ ${jsonMarker}
 </div>
 <!-- AI_BUTLER_CHAT_PAIR_END id=${escapeHtmlForNote(pairId)} -->
 `;
+  const block = metadata
+    ? LLMNoteMetadataService.wrapHtml(blockContent, metadata)
+    : blockContent;
 
   noteHtml += block;
   (note as any).setNote(noteHtml);
@@ -2437,6 +2474,13 @@ async function loadNoteContent(
     }
 
     if (!targetNote) {
+      const metadataInfo = doc.getElementById(
+        "ai-butler-note-metadata-info",
+      ) as HTMLElement | null;
+      if (metadataInfo) {
+        metadataInfo.title = LLMNoteMetadataService.formatTooltip(null);
+        metadataInfo.style.display = "none";
+      }
       noteContent.innerHTML = `
         <div style="text-align: center; color: #9e9e9e; padding: 16px;">
           <div style="font-size: 24px; margin-bottom: 8px;">📝</div>
@@ -2447,6 +2491,15 @@ async function loadNoteContent(
     }
 
     aiNoteContent = (targetNote as any).getNote?.() || "";
+    const metadata = LLMNoteMetadataService.getLatest(aiNoteContent);
+    const metadataInfo = doc.getElementById(
+      "ai-butler-note-metadata-info",
+    ) as HTMLElement | null;
+    if (metadataInfo) {
+      metadataInfo.title = LLMNoteMetadataService.formatTooltip(metadata);
+      metadataInfo.style.display = metadata ? "flex" : "none";
+    }
+    aiNoteContent = LLMNoteMetadataService.stripMetadataComments(aiNoteContent);
 
     // 加载主题 CSS
     const { themeManager } = await import("./themeManager");
@@ -3326,7 +3379,9 @@ async function getNoteMarkdownContent(
       return null;
     }
 
-    const noteHtml: string = (targetNote as any).getNote?.() || "";
+    const noteHtml: string = LLMNoteMetadataService.stripMetadataComments(
+      (targetNote as any).getNote?.() || "",
+    );
     // 将 HTML 转换为 Markdown 文本
     return htmlToMarkdown(noteHtml);
   } catch (err) {

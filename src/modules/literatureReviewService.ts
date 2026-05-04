@@ -19,6 +19,10 @@
 import { PDFExtractor } from "./pdfExtractor";
 import { NoteGenerator } from "./noteGenerator";
 import LLMService from "./llmService";
+import {
+  LLMNoteMetadataService,
+  type LLMNoteMetadata,
+} from "./llmNoteMetadata";
 import { getPref } from "../utils/prefs";
 import { marked } from "marked";
 import {
@@ -52,6 +56,8 @@ interface TargetedAnswerOptions {
  * 文献综述服务类
  */
 export class LiteratureReviewService {
+  private static lastTableMetadataByItemId = new Map<number, LLMNoteMetadata>();
+
   /**
    * 生成文献综述（表格驱动的两阶段流程）
    *
@@ -129,11 +135,12 @@ export class LiteratureReviewService {
       DEFAULT_TABLE_REVIEW_PROMPT;
     const fullPrompt = `${reviewPrompt}\n\n以下是各文献的结构化信息表格：\n\n${aggregated}`;
 
-    let summaryContent = await LLMService.generateText({
+    const reviewResponse = await LLMService.generate({
       task: "literature-review",
       prompt: fullPrompt,
       content: { kind: "text", text: aggregated, policy: "text" },
     });
+    let summaryContent = reviewResponse.text;
 
     // 3. 后处理引用链接
     summaryContent = await this.postProcessCitations(
@@ -148,6 +155,7 @@ export class LiteratureReviewService {
       collection,
       reviewName,
       summaryContent,
+      LLMNoteMetadataService.fromResponse("literature-review", reviewResponse),
     );
 
     // 5. 为所有已纳入综述的文献添加 AI-Reviewed 标签
@@ -269,11 +277,12 @@ export class LiteratureReviewService {
     const fullPrompt = `${questionPrompt}${selectedEntriesInstruction}\n\n以下是各文献的结构化信息表格：\n\n${aggregated}`;
 
     progressCallback?.("正在回答问题...", 75);
-    let answerContent = await LLMService.generateText({
+    const answerResponse = await LLMService.generate({
       task: "literature-review",
       prompt: fullPrompt,
       content: { kind: "text", text: aggregated, policy: "text" },
     });
+    let answerContent = answerResponse.text;
     answerContent = await this.postProcessCitations(
       answerContent,
       itemPdfPairs,
@@ -284,6 +293,7 @@ export class LiteratureReviewService {
       collection,
       noteTitle,
       answerContent,
+      LLMNoteMetadataService.fromResponse("literature-review", answerResponse),
     );
     progressCallback?.("完成!", 100);
     return note;
@@ -588,7 +598,7 @@ ${entryList}
     progressCallback?.(`正在填表: ${itemTitle.slice(0, 30)}...`, 50);
 
     // 调用统一 LLM 中间件填表。输入策略由中间件统一读取并按 Provider 能力降级。
-    const result = await LLMService.generateText({
+    const response = await LLMService.generate({
       task: "table",
       prompt: actualPrompt,
       content: {
@@ -600,6 +610,11 @@ ${entryList}
         /* dummy callback to trigger streaming */
       },
     });
+    const result = response.text;
+    this.lastTableMetadataByItemId.set(
+      item.id,
+      LLMNoteMetadataService.fromResponse("table", response),
+    );
 
     progressCallback?.(`填表完成: ${itemTitle.slice(0, 30)}`, 100);
 
@@ -683,6 +698,7 @@ ${entryList}
     item: Zotero.Item,
     tableContent: string,
     forceOverwrite: boolean = false,
+    metadata?: LLMNoteMetadata | null,
   ): Promise<Zotero.Item> {
     const strategy: TableStrategy = ((getPref(
       "tableStrategy" as any,
@@ -732,12 +748,17 @@ ${entryList}
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
-    const noteHtml =
+    const metadataBlock =
+      metadata || this.lastTableMetadataByItemId.get(item.id) || null;
+    const noteHtmlRaw =
       `<h2>📊 文献表格 - ${itemTitle}</h2>` +
       `<div>${renderedHtml}</div>` +
       `<br/>` +
       `<p style="color: gray; font-size: 12px;"><em>👇 以下为系统缓存的原始 Markdown 数据（用于追加填表，请勿修改）：</em></p>` +
       `<pre data-ai-table-raw>${escapedRaw}</pre>`;
+    const noteHtml = metadataBlock
+      ? LLMNoteMetadataService.wrapHtml(noteHtmlRaw, metadataBlock)
+      : noteHtmlRaw;
 
     const note = new Zotero.Item("note");
     note.libraryID = item.libraryID;
@@ -1274,10 +1295,13 @@ ${entryList}
     reportItem: Zotero.Item,
     reviewName: string,
     content: string,
+    metadata?: LLMNoteMetadata | null,
   ): Promise<Zotero.Item> {
     const formattedContent = NoteGenerator.formatNoteContent(
       reviewName,
       content,
+      "",
+      metadata,
     );
     const note = await NoteGenerator.createNote(reportItem, formattedContent);
     return note;
@@ -1295,11 +1319,14 @@ ${entryList}
     collection: Zotero.Collection,
     reviewName: string,
     content: string,
+    metadata?: LLMNoteMetadata | null,
   ): Promise<Zotero.Item> {
     // 格式化内容
     const formattedContent = NoteGenerator.formatNoteContent(
       reviewName,
       content,
+      "",
+      metadata,
     );
 
     // 创建独立笔记（无父条目）

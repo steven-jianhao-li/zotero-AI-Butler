@@ -27,6 +27,11 @@
 
 import { PDFExtractor } from "./pdfExtractor";
 import LLMService from "./llmService";
+import {
+  LLMNoteMetadataService,
+  type LLMNoteMetadata,
+} from "./llmNoteMetadata";
+import type { LLMResponse } from "./llmproviders/types";
 import { SummaryView } from "./views/SummaryView";
 import { getPref } from "../utils/prefs";
 import { MainWindow } from "./views/MainWindow";
@@ -86,6 +91,7 @@ export class NoteGenerator {
     const itemTitle = item.getField("title") as string;
     let note: Zotero.Item | null = null;
     let fullContent = "";
+    let llmMetadata: LLMNoteMetadata | null = null;
 
     try {
       // 笔记管理策略: skip/overwrite/append
@@ -222,9 +228,9 @@ export class NoteGenerator {
           }
         };
 
-        let summary: string;
+        let response: LLMResponse;
         if (useMultiPdfMode) {
-          const response = await LLMService.generate({
+          response = await LLMService.generate({
             task: "summary",
             content: {
               kind: "zotero-item",
@@ -233,9 +239,8 @@ export class NoteGenerator {
             },
             onProgress,
           });
-          summary = response.text;
         } else {
-          const response = await LLMService.generate({
+          response = await LLMService.generate({
             task: "summary",
             content: {
               kind: "zotero-item",
@@ -244,12 +249,12 @@ export class NoteGenerator {
             },
             onProgress,
           });
-          summary = response.text;
         }
-        fullContent = summary;
+        fullContent = response.text;
+        llmMetadata = LLMNoteMetadataService.fromResponse("summary", response);
       } else {
         // 多轮对话模式
-        fullContent = await this.generateMultiRoundContent(
+        const multiRoundResult = await this.generateMultiRoundContent(
           pdfContent,
           isBase64,
           itemTitle,
@@ -257,6 +262,11 @@ export class NoteGenerator {
           outputWindow,
           progressCallback,
           streamCallback,
+        );
+        fullContent = multiRoundResult.content;
+        llmMetadata = LLMNoteMetadataService.fromResponse(
+          "summary",
+          multiRoundResult.response,
         );
       }
 
@@ -270,11 +280,14 @@ export class NoteGenerator {
       }
 
       // 格式化笔记内容,添加标题和样式
-      const noteContent = this.formatNoteContent(
+      let noteContent = this.formatNoteContent(
         itemTitle,
         fullContent,
         "AI 总结",
       );
+      if (llmMetadata) {
+        noteContent = LLMNoteMetadataService.wrapHtml(noteContent, llmMetadata);
+      }
 
       if (existing) {
         // 覆盖或追加到已有笔记
@@ -423,6 +436,7 @@ export class NoteGenerator {
     itemTitle: string,
     summary: string,
     prefix: string = "",
+    metadata?: LLMNoteMetadata | null,
   ): string {
     // 将 Markdown 转换为笔记格式的 HTML
     const htmlContent = this.convertMarkdownToNoteHTML(summary);
@@ -442,8 +456,11 @@ export class NoteGenerator {
       : this.escapeHtml(truncatedTitle);
 
     // 添加标题头部和内容包装
-    return `<h2>${heading}</h2>
+    const noteHtml = `<h2>${heading}</h2>
 <div>${htmlContent}</div>`;
+    return metadata
+      ? LLMNoteMetadataService.wrapHtml(noteHtml, metadata)
+      : noteHtml;
   }
 
   /**
@@ -659,7 +676,7 @@ export class NoteGenerator {
     outputWindow?: SummaryView,
     progressCallback?: (message: string, progress: number) => void,
     streamCallback?: (chunk: string) => void,
-  ): Promise<string> {
+  ): Promise<{ content: string; response?: LLMResponse }> {
     // 读取多轮提示词配置
     const multiRoundPromptsJson = getPref("multiRoundPrompts" as any) as string;
     const prompts = parseMultiRoundPrompts(multiRoundPromptsJson);
@@ -677,6 +694,7 @@ export class NoteGenerator {
       role: "user" | "assistant";
       content: string;
     }> = [];
+    let lastResponse: LLMResponse | undefined;
 
     // 显示标题
     if (outputWindow) {
@@ -724,7 +742,7 @@ export class NoteGenerator {
 
       try {
         // 调用 LLM 进行对话（带自动 API 密钥轮换）
-        const answer = await LLMService.chatText({
+        const response = await LLMService.chat({
           content: {
             kind: "legacy",
             content: pdfContent,
@@ -734,6 +752,8 @@ export class NoteGenerator {
           conversation: conversationHistory,
           onProgress: onRoundProgress,
         });
+        const answer = response.text;
+        lastResponse = response;
         currentAnswer = answer;
 
         // 将助手回复加入对话历史
@@ -772,7 +792,10 @@ export class NoteGenerator {
     // 根据模式生成最终内容
     if (mode === "multi_concat") {
       // 拼接模式：直接拼接所有问答
-      return this.formatMultiRoundConcat(roundResults);
+      return {
+        content: this.formatMultiRoundConcat(roundResults),
+        response: lastResponse,
+      };
     } else {
       // 总结模式：基于所有对话进行最终总结
       progressCallback?.("正在生成最终总结...", 85);
@@ -805,7 +828,7 @@ export class NoteGenerator {
 
       try {
         // 调用 LLM 生成最终总结（带自动 API 密钥轮换）
-        const summary = await LLMService.chatText({
+        const response = await LLMService.chat({
           content: {
             kind: "legacy",
             content: pdfContent,
@@ -815,6 +838,8 @@ export class NoteGenerator {
           conversation: conversationHistory,
           onProgress: onFinalProgress,
         });
+        const summary = response.text;
+        lastResponse = response;
 
         // 检查是否需要保存中间对话内容
         const saveIntermediate =
@@ -822,14 +847,20 @@ export class NoteGenerator {
         if (saveIntermediate) {
           // 拼接中间内容和最终总结
           const intermediateContent = this.formatMultiRoundConcat(roundResults);
-          return `${intermediateContent}\n---\n\n# 📝 最终总结\n\n${summary}`;
+          return {
+            content: `${intermediateContent}\n---\n\n# 📝 最终总结\n\n${summary}`,
+            response,
+          };
         }
 
-        return summary;
+        return { content: summary, response };
       } catch (error: any) {
         ztoolkit.log("[AI Butler] 最终总结生成失败:", error);
         // 如果最终总结失败，回退到拼接模式
-        return this.formatMultiRoundConcat(roundResults);
+        return {
+          content: this.formatMultiRoundConcat(roundResults),
+          response: lastResponse,
+        };
       }
     }
   }

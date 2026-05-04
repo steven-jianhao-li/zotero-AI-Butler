@@ -225,7 +225,7 @@ export class LLMNoteMetadataService {
 
   static formatSelectorLabel(metadata: LLMNoteMetadata): string {
     return metadata.modelId
-      ? `${metadata.providerName} · ${metadata.modelId}`
+      ? `供应商: ${metadata.providerName} 模型: ${metadata.modelId}`
       : metadata.providerName;
   }
 }

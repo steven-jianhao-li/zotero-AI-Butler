@@ -177,8 +177,11 @@ export class EndpointSettingsPanel {
     const strategySelect = createSelect(
       "llmRoutingStrategy",
       [
-        { value: "priority", label: "优先级：失败后按顺序切换" },
-        { value: "roundRobin", label: "轮询：每次从游标开始" },
+        {
+          value: "priority",
+          label: "优先级：优先使用最高优先级供应商，仅失败后按顺序切换",
+        },
+        { value: "roundRobin", label: "轮询：轮询启用的供应商" },
       ],
       strategy,
       (value) => {
@@ -189,7 +192,7 @@ export class EndpointSettingsPanel {
       createFormGroup(
         "路由策略",
         strategySelect,
-        "默认优先级；最大重试次数按真实 API 请求次数计算。",
+        "供应商优先级从上到下依次降低，可通过调整位置指定优先级",
       ),
     );
 
@@ -213,7 +216,7 @@ export class EndpointSettingsPanel {
       createFormGroup(
         "最大重试次数",
         retryInput,
-        "一次真实 API 请求算一次；所有供应商都失败后会继续循环尝试，直到达到上限。",
+        "供应商失败后，会循环尝试，直到达到最大重试次数上限。",
       ),
     );
 

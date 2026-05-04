@@ -45,6 +45,9 @@ describe("LLMNoteMetadataService", function () {
     expect(stripped.indexOf("<h2>AI 总结</h2>")).to.be.lessThan(
       stripped.indexOf('data-ai-butler-llm-source="v1"'),
     );
+    expect(
+      LLMNoteMetadataService.formatSelectorLabel(metadata("block-a")),
+    ).to.equal("供应商: OpenAI Primary 模型: gpt-5");
     expect(LLMNoteMetadataService.stripSidebarMetadata(wrapped)).to.equal(html);
   });
 

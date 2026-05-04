@@ -588,30 +588,33 @@ function renderNoteSection(
     align-items: center;
     justify-content: center;
     font-size: 10px;
+    font-weight: 400;
     line-height: 1;
     opacity: 0.7;
     cursor: help;
+    flex: 0 0 auto;
   `;
   metadataInfo.addEventListener("click", (e: Event) => e.stopPropagation());
-  noteTitle.appendChild(metadataInfo);
 
   const metadataSelector = doc.createElement("select");
   metadataSelector.id = "ai-butler-note-metadata-selector";
   metadataSelector.style.cssText = `
     display: none;
-    max-width: 190px;
+    max-width: 240px;
     min-width: 96px;
-    padding: 2px 18px 2px 6px;
+    padding: 1px 12px 1px 4px;
     border: 1px solid rgba(128, 128, 128, 0.45);
     border-radius: 4px;
     background: transparent;
     color: inherit;
     font-size: 11px;
+    font-weight: 400;
     line-height: 1.2;
     cursor: pointer;
   `;
   metadataSelector.addEventListener("click", (e: Event) => e.stopPropagation());
   noteTitle.appendChild(metadataSelector);
+  noteTitle.appendChild(metadataInfo);
 
   // 字体大小控制
   const fontSizeControl = doc.createElement("div");
@@ -2578,7 +2581,8 @@ async function loadNoteContent(
     ) as HTMLElement | null;
     if (metadataInfo) {
       metadataInfo.title = LLMNoteMetadataService.formatTooltip(metadata);
-      metadataInfo.style.display = "none";
+      metadataInfo.style.display =
+        metadataBlocks.length > 0 ? "inline-flex" : "none";
     }
     aiNoteContent = LLMNoteMetadataService.stripSidebarMetadata(aiNoteContent);
 

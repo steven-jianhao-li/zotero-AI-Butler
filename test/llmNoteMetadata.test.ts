@@ -38,6 +38,10 @@ describe("LLMNoteMetadataService", function () {
     expect(stripped).to.contain("OpenAI Primary");
     expect(stripped).to.contain("gpt-5");
     expect(stripped).to.contain(html);
+    expect(stripped.trim().startsWith("<h2>AI 总结</h2>")).to.equal(true);
+    expect(stripped.indexOf("<h2>AI 总结</h2>")).to.be.lessThan(
+      stripped.indexOf('data-ai-butler-llm-source="v1"'),
+    );
   });
 
   it("ignores similar visible text that is not a real metadata block", function () {

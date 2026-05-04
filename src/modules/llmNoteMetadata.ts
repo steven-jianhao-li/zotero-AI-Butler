@@ -64,6 +64,19 @@ function renderVisibleMetadata(metadata: LLMNoteMetadata): string {
   ].join("");
 }
 
+function insertVisibleMetadataAfterTitle(
+  html: string,
+  visibleMetadata: string,
+): string {
+  const headingMatch = html.match(/^(\s*<(h[1-6])\b[^>]*>[\s\S]*?<\/\2>\s*)/i);
+  if (!headingMatch) {
+    return `${visibleMetadata}\n${html}`;
+  }
+  return `${headingMatch[1]}\n${visibleMetadata}\n${html.slice(
+    headingMatch[1].length,
+  )}`;
+}
+
 function utf8ToBase64Url(input: string): string {
   const bytes = new TextEncoder().encode(input);
   let binary = "";
@@ -140,7 +153,10 @@ export class LLMNoteMetadataService {
     };
     const encoded = utf8ToBase64Url(JSON.stringify(normalized));
     const nonce = randomToken();
-    const visibleHtml = `${renderVisibleMetadata(normalized)}\n${html}`;
+    const visibleHtml = insertVisibleMetadataAfterTitle(
+      html,
+      renderVisibleMetadata(normalized),
+    );
     const checksum = hashString(`${blockId}\n${encoded}\n${visibleHtml}`);
     return [
       htmlComment(`${BEGIN_PREFIX}${blockId}::${nonce}`),

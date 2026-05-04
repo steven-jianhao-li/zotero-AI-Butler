@@ -204,6 +204,7 @@ type LLMEndpoint = {
 ```html
 <!-- AI_BUTLER_LLM_BLOCK_BEGIN::v1::<blockId>::<nonce> -->
 <!-- AI_BUTLER_LLM_META_B64URL::v1::<base64url-json> -->
+<h2>AI 管家 - paper title</h2>
 <div data-ai-butler-llm-source="v1">AI 来源：供应商、模型、生成时间</div>
 ...visible generated content...
 <!-- AI_BUTLER_LLM_BLOCK_END::v1::<blockId>::<checksum> -->

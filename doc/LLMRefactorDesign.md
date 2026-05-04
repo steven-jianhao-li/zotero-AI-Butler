@@ -204,8 +204,9 @@ type LLMEndpoint = {
 ```html
 <!-- AI_BUTLER_LLM_BLOCK_BEGIN::v1::<blockId>::<nonce> -->
 <!-- AI_BUTLER_LLM_META_B64URL::v1::<base64url-json> -->
+<div data-ai-butler-llm-source="v1">AI 来源：供应商、模型、生成时间</div>
 ...visible generated content...
 <!-- AI_BUTLER_LLM_BLOCK_END::v1::<blockId>::<checksum> -->
 ```
 
-侧边栏渲染正文前必须调用 `LLMNoteMetadataService.stripMetadataComments()`，不要把注释显示给用户。需要展示来源时，用 `getLatest()` 或后续多模型场景中的 `parseAll()` 读取 metadata。
+侧边栏渲染正文前必须调用 `LLMNoteMetadataService.stripMetadataComments()`，不要把机器用注释显示给用户；`data-ai-butler-llm-source="v1"` 来源栏是面向用户的可见内容，应保留。需要读取结构化来源时，用 `getLatest()` 或后续多模型场景中的 `parseAll()` 读取 metadata。

@@ -35,6 +35,35 @@ function htmlComment(value: string): string {
   return `<!-- ${value} -->`;
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatGeneratedAt(value: string): string {
+  const generated = new Date(value);
+  return Number.isNaN(generated.getTime()) ? value : generated.toLocaleString();
+}
+
+function renderVisibleMetadata(metadata: LLMNoteMetadata): string {
+  const providerName = escapeHtml(metadata.providerName || "Unknown provider");
+  const modelId = escapeHtml(metadata.modelId || "(unknown)");
+  const generatedAt = escapeHtml(formatGeneratedAt(metadata.generatedAt));
+  const generatedAtRaw = escapeHtml(metadata.generatedAt);
+  return [
+    `<div data-ai-butler-llm-source="v1" style="margin: 0 0 12px 0; padding: 8px 10px; border: 1px solid #d7e8e7; border-radius: 6px; background: #f4fbfb; color: #3d5f5d; font-size: 12px; line-height: 1.45;">`,
+    `<strong style="font-weight: 600;">AI 来源</strong>`,
+    `<span style="margin-left: 10px;">供应商：${providerName}</span>`,
+    `<span style="margin-left: 10px;">模型：${modelId}</span>`,
+    `<span style="margin-left: 10px;" title="${generatedAtRaw}">生成时间：${generatedAt}</span>`,
+    `</div>`,
+  ].join("");
+}
+
 function utf8ToBase64Url(input: string): string {
   const bytes = new TextEncoder().encode(input);
   let binary = "";
@@ -111,11 +140,12 @@ export class LLMNoteMetadataService {
     };
     const encoded = utf8ToBase64Url(JSON.stringify(normalized));
     const nonce = randomToken();
-    const checksum = hashString(`${blockId}\n${encoded}\n${html}`);
+    const visibleHtml = `${renderVisibleMetadata(normalized)}\n${html}`;
+    const checksum = hashString(`${blockId}\n${encoded}\n${visibleHtml}`);
     return [
       htmlComment(`${BEGIN_PREFIX}${blockId}::${nonce}`),
       htmlComment(`${META_PREFIX}${encoded}`),
-      html,
+      visibleHtml,
       htmlComment(`${END_PREFIX}${blockId}::${checksum}`),
     ].join("\n");
   }
@@ -158,10 +188,7 @@ export class LLMNoteMetadataService {
 
   static formatTooltip(metadata: LLMNoteMetadata | null): string {
     if (!metadata) return "No LLM metadata found.";
-    const generated = new Date(metadata.generatedAt);
-    const generatedText = Number.isNaN(generated.getTime())
-      ? metadata.generatedAt
-      : generated.toLocaleString();
+    const generatedText = formatGeneratedAt(metadata.generatedAt);
     return [
       `Provider: ${metadata.providerName}`,
       `Model: ${metadata.modelId || "(unknown)"}`,

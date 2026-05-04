@@ -45,6 +45,7 @@ type LLMEndpoint = {
 ```html
 <!-- AI_BUTLER_LLM_BLOCK_BEGIN::v1::<blockId>::<nonce> -->
 <!-- AI_BUTLER_LLM_META_B64URL::v1::<base64url-json> -->
+<div data-ai-butler-llm-source="v1">AI 来源：供应商、模型、生成时间</div>
 ...visible generated content...
 <!-- AI_BUTLER_LLM_BLOCK_END::v1::<blockId>::<checksum> -->
 ```
@@ -74,7 +75,7 @@ JSON 至少包含：
 - 思维导图笔记：`src/modules/mindmapService.ts`
 - 保存的追问笔记：`src/modules/views/SummaryView.ts`、`src/modules/ItemPaneSection.ts`
 
-侧边栏摘要渲染在 `src/modules/ItemPaneSection.ts` 中调用 `stripMetadataComments()`，标题旁的 `i` 只展示最新 block 的 tooltip。下一轮如果一个笔记内有多个 summary block，应改为解析 `parseAll()` 并按 block/endpoint 切换。
+侧边栏摘要渲染在 `src/modules/ItemPaneSection.ts` 中调用 `stripMetadataComments()`，隐藏机器用 HTML comment，但保留可见的 `data-ai-butler-llm-source="v1"` 来源栏。标题旁的 `i` 仍展示最新 block 的 tooltip。下一轮如果一个笔记内有多个 summary block，应改为解析 `parseAll()` 并按 block/endpoint 切换。
 
 ## Reserved Prefs
 

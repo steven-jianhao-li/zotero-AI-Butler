@@ -33,9 +33,11 @@ describe("LLMNoteMetadataService", function () {
       providerName: "OpenAI Primary",
       modelId: "gpt-5",
     });
-    expect(LLMNoteMetadataService.stripMetadataComments(wrapped)).to.equal(
-      html,
-    );
+    const stripped = LLMNoteMetadataService.stripMetadataComments(wrapped);
+    expect(stripped).to.contain('data-ai-butler-llm-source="v1"');
+    expect(stripped).to.contain("OpenAI Primary");
+    expect(stripped).to.contain("gpt-5");
+    expect(stripped).to.contain(html);
   });
 
   it("ignores similar visible text that is not a real metadata block", function () {

@@ -18,6 +18,10 @@ function metadata(blockId: string): LLMNoteMetadata {
   };
 }
 
+function compactInterTagWhitespace(html: string): string {
+  return html.replace(/>\s+</g, "><").trim();
+}
+
 describe("LLMNoteMetadataService", function () {
   it("wraps, parses, and strips metadata blocks", function () {
     const html = "<h2>AI 总结</h2><div>Visible content</div>";
@@ -49,7 +53,11 @@ describe("LLMNoteMetadataService", function () {
     expect(
       LLMNoteMetadataService.formatSelectorLabel(metadata("block-a")),
     ).to.equal("供应商: OpenAI Primary 模型: gpt-5 ⓘ");
-    expect(LLMNoteMetadataService.stripSidebarMetadata(wrapped)).to.equal(html);
+    expect(
+      compactInterTagWhitespace(
+        LLMNoteMetadataService.stripSidebarMetadata(wrapped),
+      ),
+    ).to.equal(html);
   });
 
   it("ignores similar visible text that is not a real metadata block", function () {

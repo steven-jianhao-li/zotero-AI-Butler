@@ -283,7 +283,7 @@ export class NoteGenerator {
       let noteContent = this.formatNoteContent(
         itemTitle,
         fullContent,
-        "AI 总结",
+        "AI 管家",
       );
       if (llmMetadata) {
         noteContent = LLMNoteMetadataService.wrapHtml(noteContent, llmMetadata);

@@ -26,6 +26,11 @@ declare namespace _ZoteroTypes {
       "volcanoArkApiUrl": string;
       "volcanoArkApiKey": string;
       "volcanoArkModel": string;
+      "llmEndpoints": string;
+      "llmRoutingStrategy": string;
+      "llmRoundRobinCursor": string;
+      "multiModelSummaryEnabled": boolean;
+      "multiModelSummaryEndpointIds": string;
       "temperature": string;
       "enableTemperature": boolean;
       "maxTokens": string;

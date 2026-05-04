@@ -37,6 +37,11 @@ pref(
 );
 pref("__prefsPrefix__.volcanoArkApiKey", "");
 pref("__prefsPrefix__.volcanoArkModel", "doubao-seed-1-8-251228");
+pref("__prefsPrefix__.llmEndpoints", "[]");
+pref("__prefsPrefix__.llmRoutingStrategy", "priority");
+pref("__prefsPrefix__.llmRoundRobinCursor", "");
+pref("__prefsPrefix__.multiModelSummaryEnabled", false);
+pref("__prefsPrefix__.multiModelSummaryEndpointIds", "[]");
 pref("__prefsPrefix__.temperature", "0.7");
 pref("__prefsPrefix__.enableTemperature", true);
 pref("__prefsPrefix__.maxTokens", "8192");

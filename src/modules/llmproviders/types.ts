@@ -53,7 +53,10 @@ export type LLMUsage = {
 export type LLMResponse = {
   text: string;
   providerId: string;
+  endpointId?: string;
+  providerName?: string;
   model?: string;
+  generatedAt?: string;
   requestId?: string;
   usage?: LLMUsage;
   finishReason?: string;

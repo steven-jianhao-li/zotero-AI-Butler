@@ -14,9 +14,11 @@ import {
   createInput,
   createSelect,
 } from "../ui/components";
+import { EndpointSettingsPanel } from "../ui/EndpointSettingsPanel";
 import LLMClient from "../../llmClient";
 import type { LLMModelInfo, LLMOptions } from "../../llmproviders/types";
 import { ApiKeyManager, type ProviderId } from "../../apiKeyManager";
+import { LLMEndpointManager } from "../../llmEndpointManager";
 
 /**
  * API 设置页面类
@@ -38,7 +40,7 @@ export class ApiSettingsPage {
 
     // 标题
     const title = this.createElement("h2", {
-      textContent: "🔌 API 配置",
+      textContent: "🔌 模型平台配置",
       styles: {
         color: "#59c0bc",
         marginBottom: "20px",
@@ -61,15 +63,25 @@ export class ApiSettingsPage {
         color: "#1565c0",
       },
     });
-    const doc = Zotero.getMainWindow().document;
     notice.innerHTML =
       "📝 <strong>说明</strong>: 标有 <strong style='color: #d32f2f;'>*</strong> 的字段为必填项";
     this.container.appendChild(notice);
+
+    const endpointPanel = new EndpointSettingsPanel({
+      modalHost: this.container,
+      onChange: () => this.refreshEndpointPreviews(),
+    });
+    this.container.appendChild(endpointPanel.getElement());
 
     // 表单容器
     const form = this.createElement("div", {
       styles: {
         maxWidth: "800px",
+      },
+    });
+    const legacyProviderForm = this.createElement("div", {
+      styles: {
+        display: "none",
       },
     });
 
@@ -173,7 +185,7 @@ export class ApiSettingsPage {
         this.refreshEndpointPreviews();
       },
     );
-    form.appendChild(
+    legacyProviderForm.appendChild(
       this.createFormGroup(
         "API 提供商",
         providerSelect,
@@ -470,12 +482,12 @@ export class ApiSettingsPage {
     });
     sectionVolcanoArk.appendChild(volcanoArkNote);
 
-    form.appendChild(sectionOpenAI);
-    form.appendChild(sectionOpenAICompat);
-    form.appendChild(sectionGemini);
-    form.appendChild(sectionAnthropic);
-    form.appendChild(sectionOpenRouter);
-    form.appendChild(sectionVolcanoArk);
+    legacyProviderForm.appendChild(sectionOpenAI);
+    legacyProviderForm.appendChild(sectionOpenAICompat);
+    legacyProviderForm.appendChild(sectionGemini);
+    legacyProviderForm.appendChild(sectionAnthropic);
+    legacyProviderForm.appendChild(sectionOpenRouter);
+    legacyProviderForm.appendChild(sectionVolcanoArk);
 
     const renderProviderSections = (prov: string) => {
       const isGemini = prov === "google";
@@ -508,6 +520,7 @@ export class ApiSettingsPage {
         : "none";
     };
     renderProviderSections(providerValue);
+    form.appendChild(legacyProviderForm);
 
     // Temperature 参数（可选启用）
     const tempContainer = this.createElement("div", {
@@ -707,70 +720,6 @@ export class ApiSettingsPage {
           "300",
         ),
         "后台自动扫描新文献的时间间隔,默认 5 分钟",
-      ),
-    );
-
-    // === API 轮换配置分隔线 ===
-    const rotationTitle = this.createElement("h3", {
-      textContent: "🔄 API 轮换配置",
-      styles: {
-        color: "#9c27b0",
-        marginTop: "40px",
-        marginBottom: "20px",
-        fontSize: "18px",
-        borderBottom: "2px solid #9c27b0",
-        paddingBottom: "8px",
-      },
-    });
-    form.appendChild(rotationTitle);
-
-    // API 轮换说明
-    const rotationNote = this.createElement("div", {
-      innerHTML:
-        "ℹ️ <strong>说明</strong>：配置备用 API 密钥后，当主密钥调用失败时会自动切换到备用密钥继续执行，提高任务成功率。",
-      styles: {
-        padding: "10px 12px",
-        backgroundColor: "#f3e5f5",
-        border: "1px solid #ce93d8",
-        borderRadius: "6px",
-        color: "#6a1b9a",
-        fontSize: "13px",
-        marginBottom: "16px",
-      },
-    });
-    form.appendChild(rotationNote);
-
-    // 最大切换次数
-    form.appendChild(
-      this.createFormGroup(
-        "最大切换次数",
-        this.createInput(
-          "maxApiSwitchCount",
-          "number",
-          (getPref("maxApiSwitchCount" as any) as string) || "3",
-          "3",
-        ),
-        "API 调用失败时最多切换密钥的次数，默认 3 次",
-      ),
-    );
-
-    // 失败冷却时间
-    form.appendChild(
-      this.createFormGroup(
-        "失败冷却时间(秒)",
-        this.createInput(
-          "failedKeyCooldownSeconds",
-          "number",
-          String(
-            Math.floor(
-              (parseInt(
-                (getPref("failedKeyCooldown" as any) as string) || "300000",
-              ) || 300000) / 1000,
-            ),
-          ),
-          "300",
-        ),
-        "失败的密钥需要冷却多久才能再次使用，默认 300 秒 (5分钟)",
       ),
     );
 
@@ -1002,11 +951,6 @@ export class ApiSettingsPage {
       },
     });
 
-    // 测试连接按钮
-    const testButton = this.createButton("🔍 测试连接", "#2196f3");
-    testButton.addEventListener("click", () => this.testApiConnection());
-    buttonGroup.appendChild(testButton);
-
     // 保存按钮
     const saveButton = this.createButton("💾 保存设置", "#4caf50");
     saveButton.addEventListener("click", () => this.saveSettings());
@@ -1019,107 +963,6 @@ export class ApiSettingsPage {
 
     form.appendChild(buttonGroup);
 
-    // 测试结果展示区域（防止进度窗文本过长被截断）
-    const resultBox = this.createElement("div", {
-      id: "api-test-result",
-      styles: {
-        display: "none",
-        marginTop: "12px",
-        padding: "12px 14px",
-        borderRadius: "6px",
-        backgroundColor: "#fff8e1",
-        border: "1px solid #ffe082",
-      },
-    });
-    // 标题 + 复制按钮
-    const resultTitle = this.createElement("div", {
-      styles: {
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: "8px",
-        marginBottom: "6px",
-      },
-    });
-    const resultTitleText = this.createElement("span", {
-      textContent: "API 连接测试结果",
-      styles: { fontSize: "13px", fontWeight: "600" },
-    });
-    // 按钮容器
-    const buttonContainer = this.createElement("div", {
-      styles: { display: "flex", gap: "8px" },
-    });
-    const copyBtn = this.createElement("button", {
-      textContent: "复制详情",
-      styles: {
-        border: "1px solid #ddd",
-        background: "#fff",
-        color: "#333",
-        borderRadius: "4px",
-        padding: "4px 8px",
-        cursor: "pointer",
-        fontSize: "12px",
-      },
-    });
-    copyBtn.addEventListener("click", async () => {
-      const text = (resultPre.textContent || "").toString();
-      const win = Zotero.getMainWindow() as any;
-      const doc = win?.document as Document | undefined;
-      const nav = (win as any)?.navigator as any;
-      try {
-        if (nav?.clipboard?.writeText) {
-          await nav.clipboard.writeText(text);
-        } else {
-          throw new Error("clipboard api unavailable");
-        }
-        new ztoolkit.ProgressWindow("API 连接测试", { closeTime: 1500 })
-          .createLine({ text: "已复制错误详情", type: "success" })
-          .show();
-      } catch {
-        try {
-          if (!doc) throw new Error("no document");
-          const tmp = doc.createElement("textarea");
-          tmp.value = text;
-          (tmp.style as any).position = "fixed";
-          (tmp.style as any).left = "-9999px";
-          (doc.documentElement || doc.body || doc).appendChild(tmp);
-          (tmp as any).select?.();
-          (doc as any).execCommand?.("copy");
-          (tmp as any).remove?.();
-          new ztoolkit.ProgressWindow("API 连接测试", { closeTime: 1500 })
-            .createLine({ text: "已复制错误详情", type: "success" })
-            .show();
-        } catch {
-          new ztoolkit.ProgressWindow("API 连接测试", { closeTime: 2500 })
-            .createLine({
-              text: "复制失败，可手动选择文本复制",
-              type: "default",
-            })
-            .show();
-        }
-      }
-    });
-    buttonContainer.appendChild(copyBtn);
-    resultTitle.appendChild(resultTitleText);
-    resultTitle.appendChild(buttonContainer);
-    const resultPre = this.createElement("pre", {
-      id: "api-test-result-text",
-      styles: {
-        margin: "0",
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-all",
-        maxHeight: "240px",
-        overflow: "auto",
-        fontFamily:
-          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-        fontSize: "12px",
-        lineHeight: "1.5",
-        color: "#5d4037",
-      },
-    });
-    resultBox.appendChild(resultTitle);
-    resultBox.appendChild(resultPre);
-    form.appendChild(resultBox);
     this.container.appendChild(form);
   }
 
@@ -2572,36 +2415,48 @@ export class ApiSettingsPage {
 
       // 验证必填项 - 详细提示哪些字段缺失
       const missingFields: string[] = [];
-      if (provider === "google") {
-        if (!values.geminiApiUrl) missingFields.push("API 基础地址(Gemini)");
-        if (!values.geminiApiKey) missingFields.push("API 密钥(Gemini)");
-        if (!values.geminiModel) missingFields.push("模型名称(Gemini)");
-      } else if (provider === "anthropic") {
-        if (!values.anthropicApiUrl)
-          missingFields.push("API 基础地址(Anthropic)");
-        if (!values.anthropicApiKey) missingFields.push("API 密钥(Anthropic)");
-        if (!values.anthropicModel) missingFields.push("模型名称(Anthropic)");
-      } else if (provider === "openrouter") {
-        if (!values.openRouterApiUrl)
-          missingFields.push("API 基础地址(OpenRouter)");
-        if (!values.openRouterApiKey)
-          missingFields.push("API 密钥(OpenRouter)");
-        if (!values.openRouterModel) missingFields.push("模型名称(OpenRouter)");
-      } else if (provider === "volcanoark") {
-        if (!values.volcanoArkApiUrl) missingFields.push("API 地址(火山方舟)");
-        if (!values.volcanoArkApiKey) missingFields.push("API 密钥(火山方舟)");
-        if (!values.volcanoArkModel) missingFields.push("模型名称(火山方舟)");
-      } else if (provider === "openai-compat") {
-        if (!values.openaiCompatApiUrl)
-          missingFields.push("兼容 API 地址(OpenAI兼容)");
-        if (!values.openaiCompatApiKey)
-          missingFields.push("兼容 API 密钥(OpenAI兼容)");
-        if (!values.openaiCompatModel)
-          missingFields.push("兼容 模型名称(OpenAI兼容)");
-      } else {
-        if (!values.openaiApiUrl) missingFields.push("API 地址");
-        if (!values.openaiApiKey) missingFields.push("API 密钥");
-        if (!values.openaiApiModel) missingFields.push("模型名称");
+      const hasUsableEndpoint = LLMEndpointManager.getEnabledEndpoints().some(
+        (endpoint) =>
+          endpoint.apiUrl.trim() &&
+          endpoint.apiKey.trim() &&
+          endpoint.model.trim(),
+      );
+      if (!hasUsableEndpoint) {
+        if (provider === "google") {
+          if (!values.geminiApiUrl) missingFields.push("API 基础地址(Gemini)");
+          if (!values.geminiApiKey) missingFields.push("API 密钥(Gemini)");
+          if (!values.geminiModel) missingFields.push("模型名称(Gemini)");
+        } else if (provider === "anthropic") {
+          if (!values.anthropicApiUrl)
+            missingFields.push("API 基础地址(Anthropic)");
+          if (!values.anthropicApiKey)
+            missingFields.push("API 密钥(Anthropic)");
+          if (!values.anthropicModel) missingFields.push("模型名称(Anthropic)");
+        } else if (provider === "openrouter") {
+          if (!values.openRouterApiUrl)
+            missingFields.push("API 基础地址(OpenRouter)");
+          if (!values.openRouterApiKey)
+            missingFields.push("API 密钥(OpenRouter)");
+          if (!values.openRouterModel)
+            missingFields.push("模型名称(OpenRouter)");
+        } else if (provider === "volcanoark") {
+          if (!values.volcanoArkApiUrl)
+            missingFields.push("API 地址(火山方舟)");
+          if (!values.volcanoArkApiKey)
+            missingFields.push("API 密钥(火山方舟)");
+          if (!values.volcanoArkModel) missingFields.push("模型名称(火山方舟)");
+        } else if (provider === "openai-compat") {
+          if (!values.openaiCompatApiUrl)
+            missingFields.push("兼容 API 地址(OpenAI兼容)");
+          if (!values.openaiCompatApiKey)
+            missingFields.push("兼容 API 密钥(OpenAI兼容)");
+          if (!values.openaiCompatModel)
+            missingFields.push("兼容 模型名称(OpenAI兼容)");
+        } else {
+          if (!values.openaiApiUrl) missingFields.push("API 地址");
+          if (!values.openaiApiKey) missingFields.push("API 密钥");
+          if (!values.openaiApiModel) missingFields.push("模型名称");
+        }
       }
 
       if (missingFields.length > 0) {
@@ -3094,6 +2949,11 @@ export class ApiSettingsPage {
     );
     setPref("volcanoArkApiKey", "");
     setPref("volcanoArkModel", "doubao-seed-1-8-251228");
+    setPref("llmEndpoints", "[]");
+    setPref("llmRoutingStrategy", "priority");
+    setPref("llmRoundRobinCursor", "");
+    setPref("multiModelSummaryEnabled", false);
+    setPref("multiModelSummaryEndpointIds", "[]");
     setPref("temperature", "0.7");
     setPref("maxTokens", "8192");
     setPref("topP", "1.0");

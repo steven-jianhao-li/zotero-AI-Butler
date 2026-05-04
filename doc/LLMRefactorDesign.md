@@ -166,3 +166,46 @@ OpenAI 官方 Provider 使用 Responses API：
 - `base64` 偏好下不得提前拦截 OpenAI-compatible、OpenRouter 等 Provider；应走对应 Provider 的 Base64 请求路径，并验证错误能原样向用户呈现。
 - `pdfAttachmentMode=all` 时，只有支持多 PDF 的 Provider 上传多个附件。
 - `npm run build` 必须通过。
+
+## Endpoint Routing And Metadata
+
+2026-05 新增的主路由来源是 `llmEndpoints`，旧的 `provider` 和各 provider 的 URL/key/model prefs 只用于兼容迁移和旧 UI。`src/modules/llmEndpointManager.ts` 负责读写 endpoint JSON、迁移旧配置、按启用状态过滤、排序、轮询 cursor 和最大请求次数。
+
+Endpoint JSON:
+
+```ts
+type LLMEndpoint = {
+  id: string;
+  name: string;
+  providerType:
+    | "openai"
+    | "openai-compat"
+    | "google"
+    | "anthropic"
+    | "openrouter"
+    | "volcanoark";
+  apiUrl: string;
+  apiKey: string;
+  model: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+路由策略：
+
+- `llmRoutingStrategy="priority"`：按设置页排序尝试；失败后尝试下一个，到尾后回到第一个。
+- `llmRoutingStrategy="roundRobin"`：每次请求从 `llmRoundRobinCursor` 指向的 endpoint 开始；每一次真实 API 请求后 cursor 都推进到下一个 endpoint。
+- `maxApiSwitchCount` 表示最大真实 API 请求次数，不再表示 provider key 轮换次数。
+
+`LLMResponse` 现在包含 `endpointId`、`providerName`、`providerId`、`model`、`generatedAt`。保存到 Zotero 的 LLM 笔记应通过 `src/modules/llmNoteMetadata.ts` 写入 HTML comment metadata block：
+
+```html
+<!-- AI_BUTLER_LLM_BLOCK_BEGIN::v1::<blockId>::<nonce> -->
+<!-- AI_BUTLER_LLM_META_B64URL::v1::<base64url-json> -->
+...visible generated content...
+<!-- AI_BUTLER_LLM_BLOCK_END::v1::<blockId>::<checksum> -->
+```
+
+侧边栏渲染正文前必须调用 `LLMNoteMetadataService.stripMetadataComments()`，不要把注释显示给用户。需要展示来源时，用 `getLatest()` 或后续多模型场景中的 `parseAll()` 读取 metadata。

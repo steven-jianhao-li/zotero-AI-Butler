@@ -40,6 +40,7 @@ import {
 } from "./modules/uiCustomization";
 import { config } from "../package.json";
 import { getPref, setPref } from "./utils/prefs";
+import { LLMEndpointManager } from "./modules/llmEndpointManager";
 import {
   getDefaultSummaryPrompt,
   PROMPT_VERSION,
@@ -222,6 +223,11 @@ function initializeDefaultPrefsOnStartup() {
     openRouterApiUrl: "https://openrouter.ai/api/v1/chat/completions",
     openRouterApiKey: "",
     openRouterModel: "google/gemma-3-27b-it",
+    llmEndpoints: "[]",
+    llmRoutingStrategy: "priority",
+    llmRoundRobinCursor: "",
+    multiModelSummaryEnabled: false,
+    multiModelSummaryEndpointIds: "[]",
     // 备用 API 密钥列表（JSON 数组格式）
     openaiApiKeysFallback: "[]",
     openaiCompatApiKeysFallback: "[]",
@@ -286,6 +292,8 @@ function initializeDefaultPrefsOnStartup() {
       }
     }
   }
+
+  LLMEndpointManager.getEndpoints();
 }
 
 /**
@@ -915,63 +923,21 @@ async function handleChatWithAI() {
  */
 async function handleGenerateSummary() {
   // 第一步:验证 API 配置
-  // 根据当前选择的 provider 检查相应的 API 密钥
-  const provider =
-    (Zotero.Prefs.get(`${config.prefsPrefix}.provider`, true) as string) ||
-    "openai";
-  let selectedApiKey: string | undefined;
-  let providerName: string;
+  // 新版本以用户配置的 endpoint 列表作为主路由来源。
+  const enabledEndpoints = LLMEndpointManager.getEnabledEndpoints();
+  const hasUsableEndpoint = enabledEndpoints.some(
+    (endpoint) =>
+      endpoint.apiKey.trim() && endpoint.apiUrl.trim() && endpoint.model.trim(),
+  );
 
-  const pLower = (provider || "").toLowerCase();
-  if (provider === "google" || pLower.includes("gemini")) {
-    selectedApiKey = Zotero.Prefs.get(
-      `${config.prefsPrefix}.geminiApiKey`,
-      true,
-    ) as string;
-    providerName = "Gemini";
-  } else if (provider === "anthropic" || pLower.includes("claude")) {
-    selectedApiKey = Zotero.Prefs.get(
-      `${config.prefsPrefix}.anthropicApiKey`,
-      true,
-    ) as string;
-    providerName = "Anthropic";
-  } else if (pLower === "openai-compat") {
-    // 支持 OpenAI 兼容接口 (旧 /v1/chat/completions)，优先读取专用密钥，回退到 OpenAI 密钥
-    selectedApiKey =
-      (Zotero.Prefs.get(
-        `${config.prefsPrefix}.openaiCompatApiKey`,
-        true,
-      ) as string) ||
-      (Zotero.Prefs.get(`${config.prefsPrefix}.openaiApiKey`, true) as string);
-    providerName = "OpenAI 兼容"; // 提示更明确
-  } else if (pLower === "openrouter") {
-    selectedApiKey = Zotero.Prefs.get(
-      `${config.prefsPrefix}.openRouterApiKey`,
-      true,
-    ) as string;
-    providerName = "OpenRouter";
-  } else if (pLower === "volcanoark") {
-    selectedApiKey = Zotero.Prefs.get(
-      `${config.prefsPrefix}.volcanoArkApiKey`,
-      true,
-    ) as string;
-    providerName = "火山方舟";
-  } else {
-    selectedApiKey = Zotero.Prefs.get(
-      `${config.prefsPrefix}.openaiApiKey`,
-      true,
-    ) as string;
-    providerName = "OpenAI";
-  }
-
-  if (!selectedApiKey) {
+  if (!hasUsableEndpoint) {
     // API 未配置,显示友好的错误提示
     new ztoolkit.ProgressWindow("AI Butler", {
       closeOnClick: true,
       closeTime: 5000, // 5秒后自动关闭
     })
       .createLine({
-        text: `请先在设置中配置 ${providerName} API Key`,
+        text: "请先在设置中配置至少一个启用的 LLM Endpoint",
         type: "error",
       })
       .show();

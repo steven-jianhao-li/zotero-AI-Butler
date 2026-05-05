@@ -14,6 +14,11 @@
 
 import { PDFExtractor } from "./pdfExtractor";
 import LLMService from "./llmService";
+import {
+  LLMNoteMetadataService,
+  type LLMNoteMetadata,
+} from "./llmNoteMetadata";
+import type { LLMResponse } from "./llmproviders/types";
 import { getPref } from "../utils/prefs";
 import { getDefaultMindmapPrompt } from "../utils/prompts";
 
@@ -75,10 +80,8 @@ export class MindmapService {
       // ========== 阶段 2: 生成思维导图 Markdown ==========
       progressCallback?.("generating", "正在生成思维导图...", 40);
 
-      const mindmapMarkdown = await this.generateMindmapMarkdown(
-        item,
-        itemTitle,
-      );
+      const mindmapResult = await this.generateMindmapMarkdown(item, itemTitle);
+      const mindmapMarkdown = mindmapResult.markdown;
 
       ztoolkit.log(
         `[AI-Butler] 思维导图生成完成，长度: ${mindmapMarkdown.length}`,
@@ -87,7 +90,11 @@ export class MindmapService {
       // ========== 阶段 3: 保存笔记 ==========
       progressCallback?.("saving", "正在保存思维导图笔记...", 80);
 
-      const note = await this.createMindmapNote(item, mindmapMarkdown);
+      const note = await this.createMindmapNote(
+        item,
+        mindmapMarkdown,
+        LLMNoteMetadataService.fromResponse("mindmap", mindmapResult.response),
+      );
 
       progressCallback?.("completed", "思维导图生成完成！", 100);
 
@@ -107,7 +114,7 @@ export class MindmapService {
   private static async generateMindmapMarkdown(
     item: Zotero.Item,
     itemTitle: string,
-  ): Promise<string> {
+  ): Promise<{ markdown: string; response: LLMResponse }> {
     // 获取思维导图提示词
     const prompt =
       (getPref("mindmapPrompt" as any) as string) || getDefaultMindmapPrompt();
@@ -156,7 +163,7 @@ export class MindmapService {
       );
     }
 
-    return mindmapContent;
+    return { markdown: mindmapContent, response };
   }
 
   /**
@@ -213,6 +220,7 @@ ${truncatedRequest}`;
   private static async createMindmapNote(
     item: Zotero.Item,
     mindmapMarkdown: string,
+    metadata?: LLMNoteMetadata | null,
   ): Promise<Zotero.Item> {
     // 查找并删除已有的思维导图笔记
     const existingNote = await this.findExistingMindmapNote(item);
@@ -235,10 +243,13 @@ ${truncatedRequest}`;
 
     // 构建笔记 HTML
     // 使用 <pre> 标签保留格式，但不转义内部内容以便侧边栏解析
-    const noteHtml = `<h2>${this.escapeHtml(noteTitle)}</h2>
+    const noteHtmlRaw = `<h2>${this.escapeHtml(noteTitle)}</h2>
 <div data-schema-version="8">
 <pre>${wrappedContent}</pre>
 </div>`;
+    const noteHtml = metadata
+      ? LLMNoteMetadataService.wrapHtml(noteHtmlRaw, metadata)
+      : noteHtmlRaw;
 
     // 创建新笔记
     const note = new Zotero.Item("note");

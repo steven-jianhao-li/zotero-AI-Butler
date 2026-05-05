@@ -166,3 +166,50 @@ OpenAI 官方 Provider 使用 Responses API：
 - `base64` 偏好下不得提前拦截 OpenAI-compatible、OpenRouter 等 Provider；应走对应 Provider 的 Base64 请求路径，并验证错误能原样向用户呈现。
 - `pdfAttachmentMode=all` 时，只有支持多 PDF 的 Provider 上传多个附件。
 - `npm run build` 必须通过。
+
+## Endpoint Routing And Metadata
+
+2026-05 新增的主路由来源是 `llmEndpoints`，旧的 `provider` 和各 provider 的 URL/key/model prefs 只用于兼容迁移和旧 UI。`src/modules/llmEndpointManager.ts` 负责读写 endpoint JSON、迁移旧配置、按启用状态过滤、排序、轮询 cursor 和最大请求次数。
+
+Endpoint JSON:
+
+```ts
+type LLMEndpoint = {
+  id: string;
+  name: string;
+  providerType:
+    | "openai"
+    | "openai-compat"
+    | "google"
+    | "anthropic"
+    | "openrouter"
+    | "volcanoark";
+  apiUrl: string;
+  apiKey: string;
+  model: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+路由策略：
+
+- `llmRoutingStrategy="priority"`：按设置页排序尝试；失败后尝试下一个，到尾后回到第一个。
+- `llmRoutingStrategy="roundRobin"`：每次请求从 `llmRoundRobinCursor` 指向的 endpoint 开始；每一次真实 API 请求后 cursor 都推进到下一个 endpoint。
+- `maxApiSwitchCount` 表示最大真实 API 请求次数，不再表示 provider key 轮换次数。
+
+`LLMResponse` 现在包含 `endpointId`、`providerName`、`providerId`、`model`、`generatedAt`。保存到 Zotero 的 LLM 笔记应通过 `src/modules/llmNoteMetadata.ts` 写入 HTML comment metadata block：
+
+```html
+<!-- AI_BUTLER_LLM_BLOCK_BEGIN::v1::<blockId>::<nonce> -->
+<!-- AI_BUTLER_LLM_META_B64URL::v1::<base64url-json> -->
+<h2>AI 管家 - paper title</h2>
+<div data-ai-butler-llm-source="v1">AI 来源：供应商、模型、生成时间</div>
+...visible generated content...
+<!-- AI_BUTLER_LLM_BLOCK_END::v1::<blockId>::<checksum> -->
+```
+
+侧边栏渲染正文前必须调用 `LLMNoteMetadataService.stripSidebarMetadata()`，不要把机器用注释或正文来源栏重复显示到侧边栏正文里；`data-ai-butler-llm-source="v1"` 来源栏是面向 Zotero 笔记正文的可见内容。侧边栏需要读取结构化来源时，用 `getLatest()` 或多模型场景中的 `parseAll()`，并通过标题旁的供应商选择框切换 block。
+
+多模型同时总结通过 `multiModelSummaryEnabled` 和 `multiModelSummaryEndpointIds` 控制，只在 `NoteGenerator.generateNoteForItem()` 中生效。开启后，总结工作流会按用户选择并行调用 `LLMService.generateWithEndpoint()` / `chatWithEndpoint()`，每个成功模型写入一个独立 metadata block；其他 LLM 功能仍使用主路由策略。部分供应商失败时保存成功结果，全部失败时抛错且不创建错误笔记。

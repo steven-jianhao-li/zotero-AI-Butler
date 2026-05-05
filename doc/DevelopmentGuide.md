@@ -113,6 +113,7 @@ TA 是您7x24小时待命、不知疲倦且绝对忠诚的私人管家。
 - `ProviderRegistry`：集中管理已注册 Provider，通过 id 查找；Provider 仍采用自注册。
 - Provider 能力标记：在类上定义 `capabilities`，例如 `supportsStreaming`、`supportsPdfBase64`、`maxPdfFiles`、`supportedParams`。这些能力主要用于 `auto` 策略和多 PDF 数量限制；用户明确选择 Base64 时，不应在中间件层预判 Provider 不支持，而应按 Provider 适配器的 Base64 请求结构发送，让真实 API 错误向上呈现。
 - 业务模块（总结、思维导图、填表、文献综述、后续追问、一图总结前置分析）不得直接访问 `ProviderRegistry` 或手动读取 PDF 为 Base64，应调用 `LLMService.generate()` / `LLMService.chatText()`。
+- 多模型同时总结是总结工作流的特例：只在 `NoteGenerator.generateNoteForItem()` 中读取 `multiModelSummaryEnabled` / `multiModelSummaryEndpointIds`，并通过 `LLMService.generateWithEndpoint()` / `chatWithEndpoint()` 指定 endpoint 并行生成；其他功能仍走主路由策略。
 
 ### 标准中间件请求
 

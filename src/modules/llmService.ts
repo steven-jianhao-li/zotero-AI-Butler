@@ -10,6 +10,7 @@
 import { getPref } from "../utils/prefs";
 import { getDefaultSummaryPrompt } from "../utils/prompts";
 import { ApiKeyManager, type ProviderId } from "./apiKeyManager";
+import { LLMEndpointManager, type LLMEndpoint } from "./llmEndpointManager";
 import { PDFExtractor } from "./pdfExtractor";
 import { ProviderRegistry } from "./llmproviders/ProviderRegistry";
 import "./llmproviders";
@@ -139,6 +140,7 @@ type ResolvedContent = ResolvedSingleContent | ResolvedMultiFileContent;
 type ResolvedProvider = {
   id: string;
   impl: ILlmProvider;
+  endpoint?: LLMEndpoint;
 };
 
 export class LLMService {
@@ -159,7 +161,8 @@ export class LLMService {
   }
 
   static resolveProvider(): ResolvedProvider {
-    const providerId = ((getPref("provider") as string) || "openai").trim();
+    const endpoint = LLMEndpointManager.prepareRoute().endpoints[0];
+    const providerId = endpoint.providerType;
     const impl =
       ProviderRegistry.get(providerId) || ProviderRegistry.get("openai");
     if (!impl) {
@@ -168,7 +171,7 @@ export class LLMService {
       this.notifyError(msg);
       throw new Error(msg);
     }
-    return { id: providerId, impl };
+    return { id: providerId, impl, endpoint };
   }
 
   static getCurrentProvider(): ILlmProvider | null {
@@ -196,12 +199,15 @@ export class LLMService {
   }
 
   static buildOptions(
-    providerId: string,
+    providerId: string | LLMEndpoint,
     generation?: LLMGenerationOptions,
     transport?: LLMTransportOptions,
     extra?: Partial<LLMOptions>,
   ): LLMOptions {
-    const id = providerId.toLowerCase();
+    const endpoint = typeof providerId === "string" ? undefined : providerId;
+    const id = (
+      typeof providerId === "string" ? providerId : providerId.providerType
+    ).toLowerCase();
     const enableTemperature = getPref("enableTemperature") ?? true;
     const enableMaxTokens = getPref("enableMaxTokens") ?? true;
     const enableTopP = getPref("enableTopP") ?? true;
@@ -230,14 +236,19 @@ export class LLMService {
       common.vendorOptions = generation.vendorOptions;
     }
 
-    const keyManagerId = this.mapToKeyManagerId(id);
-    if (id.includes("gemini") || id === "google") {
+    if (endpoint) {
+      common.apiUrl = endpoint.apiUrl.trim();
+      common.apiKey = endpoint.apiKey.trim();
+      common.model = endpoint.model.trim();
+    } else if (id.includes("gemini") || id === "google") {
+      const keyManagerId = this.mapToKeyManagerId(id);
       common.apiUrl = (
         getPref("geminiApiUrl") || "https://generativelanguage.googleapis.com"
       ).replace(/\/$/, "");
       common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
       common.model = (getPref("geminiModel") || "gemini-2.5-pro").trim();
     } else if (id.includes("anthropic") || id.includes("claude")) {
+      const keyManagerId = this.mapToKeyManagerId(id);
       common.apiUrl = (
         getPref("anthropicApiUrl") || "https://api.anthropic.com"
       ).replace(/\/$/, "");
@@ -246,6 +257,7 @@ export class LLMService {
         getPref("anthropicModel") || "claude-3-5-sonnet-20241022"
       ).trim();
     } else if (id === "openai-compat") {
+      const keyManagerId = this.mapToKeyManagerId(id);
       common.apiUrl = (
         getPref("openaiCompatApiUrl") ||
         "https://api.openai.com/v1/chat/completions"
@@ -257,6 +269,7 @@ export class LLMService {
         "gpt-3.5-turbo"
       ).trim();
     } else if (id === "openrouter") {
+      const keyManagerId = this.mapToKeyManagerId(id);
       common.apiUrl = (
         getPref("openRouterApiUrl") ||
         "https://openrouter.ai/api/v1/chat/completions"
@@ -266,6 +279,7 @@ export class LLMService {
         getPref("openRouterModel") || "google/gemma-3-27b-it"
       ).trim();
     } else if (id === "volcanoark") {
+      const keyManagerId = this.mapToKeyManagerId(id);
       common.apiUrl = (
         getPref("volcanoArkApiUrl") ||
         "https://ark.cn-beijing.volces.com/api/v3/responses"
@@ -275,6 +289,7 @@ export class LLMService {
         getPref("volcanoArkModel") || "doubao-seed-1-8-251228"
       ).trim();
     } else {
+      const keyManagerId = this.mapToKeyManagerId(id);
       common.apiUrl = (getPref("openaiApiUrl") || "").trim();
       common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
       common.model = (getPref("openaiApiModel") || "gpt-3.5-turbo").trim();
@@ -284,21 +299,22 @@ export class LLMService {
   }
 
   static getLLMOptions(): LLMOptions {
-    const { id } = this.resolveProvider();
-    return this.buildOptions(id);
+    const { id, endpoint } = this.resolveProvider();
+    return this.buildOptions(endpoint || id);
   }
 
   static async generate(request: LLMGenerateRequest): Promise<LLMResponse> {
-    const { id, impl } = this.resolveProvider();
-    const warnings: string[] = [];
-    const resolved = await this.resolveContent(
-      impl,
-      request.content,
-      warnings,
-      true,
-    );
     const prompt = request.prompt ?? this.getDefaultPrompt();
-    return this.runWithRetry(id, impl, request, resolved, prompt, warnings);
+    return this.runGenerateWithEndpointRouting(request, prompt);
+  }
+
+  static async generateWithEndpoint(
+    endpointId: string,
+    request: LLMGenerateRequest,
+  ): Promise<LLMResponse> {
+    const endpoint = this.getRunnableEndpoint(endpointId);
+    const prompt = request.prompt ?? this.getDefaultPrompt();
+    return this.generateOnceWithEndpoint(endpoint, request, prompt);
   }
 
   static async generateText(request: LLMGenerateRequest): Promise<string> {
@@ -306,52 +322,16 @@ export class LLMService {
   }
 
   static async chat(request: LLMChatRequest): Promise<LLMResponse> {
-    const { id, impl } = this.resolveProvider();
-    const warnings: string[] = [];
-    const resolved = await this.resolveContent(
-      impl,
-      request.content,
-      warnings,
-      false,
-    );
-    if (resolved.mode !== "single") {
-      throw new Error("聊天接口暂不支持多 PDF 直接输入");
-    }
+    const route = LLMEndpointManager.prepareRoute();
+    return this.chatWithEndpointRouting(request, route);
+  }
 
-    const keyManagerId = this.mapToKeyManagerId(id);
-    const useRetry = request.transport?.retry ?? true;
-    const useKeyRotation = request.transport?.keyRotation ?? true;
-    const maxRetries = useRetry ? ApiKeyManager.getMaxSwitchCount() : 1;
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        const options = this.buildOptions(
-          id,
-          request.generation,
-          request.transport,
-        );
-        const text = await impl.chat(
-          resolved.content,
-          resolved.isBase64,
-          request.conversation,
-          options,
-          request.onProgress,
-        );
-        if (useKeyRotation) ApiKeyManager.advanceToNextKey(keyManagerId);
-        return this.toResponse(text, id, options, warnings);
-      } catch (error: unknown) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        ztoolkit.log(
-          `[LLMService] Chat API 调用失败 (尝试 ${attempt + 1}/${maxRetries}): ${lastError.message}`,
-        );
-        if (!useKeyRotation) break;
-        const rotated = ApiKeyManager.rotateToNextKey(keyManagerId);
-        if (!rotated) break;
-      }
-    }
-
-    throw lastError || new Error("所有 API 密钥均已耗尽");
+  static async chatWithEndpoint(
+    endpointId: string,
+    request: LLMChatRequest,
+  ): Promise<LLMResponse> {
+    const endpoint = this.getRunnableEndpoint(endpointId);
+    return this.chatOnceWithEndpoint(endpoint, request);
   }
 
   static async chatText(request: LLMChatRequest): Promise<string> {
@@ -359,14 +339,14 @@ export class LLMService {
   }
 
   static async testConnection(): Promise<string> {
-    const { id, impl } = this.resolveProvider();
-    const options = this.buildConnectionTestOptions(id, impl);
+    const { id, impl, endpoint } = this.resolveProvider();
+    const options = this.buildConnectionTestOptions(id, impl, endpoint);
     return impl.testConnection(options);
   }
 
   static async testConnectionWithKey(apiKey: string): Promise<string> {
-    const { id, impl } = this.resolveProvider();
-    const options = this.buildConnectionTestOptions(id, impl);
+    const { id, impl, endpoint } = this.resolveProvider();
+    const options = this.buildConnectionTestOptions(id, impl, endpoint);
     options.apiKey = apiKey;
     return impl.testConnection(options);
   }
@@ -395,6 +375,188 @@ export class LLMService {
       },
     );
     return impl.listModels(options);
+  }
+
+  static async testEndpointConnection(endpoint: LLMEndpoint): Promise<string> {
+    const provider = this.getProviderForEndpoint(endpoint);
+    const options = this.buildConnectionTestOptions(
+      endpoint.providerType,
+      provider,
+      endpoint,
+    );
+    return provider.testConnection(options);
+  }
+
+  static endpointSupportsMultiFile(endpoint: LLMEndpoint): boolean {
+    const provider = this.getProviderForEndpoint(endpoint);
+    return (
+      this.getProviderCapabilities(provider).maxPdfFiles > 1 &&
+      typeof provider.generateMultiFileSummary === "function"
+    );
+  }
+
+  private static getRunnableEndpoint(endpointId: string): LLMEndpoint {
+    const endpoint = LLMEndpointManager.getEndpoint(endpointId);
+    if (!endpoint) {
+      throw new Error(`LLM endpoint not found: ${endpointId}`);
+    }
+    if (!endpoint.enabled) {
+      throw new Error(`LLM endpoint is disabled: ${endpoint.name}`);
+    }
+    return endpoint;
+  }
+
+  private static getProviderForEndpoint(endpoint: LLMEndpoint): ILlmProvider {
+    const provider = ProviderRegistry.get(endpoint.providerType);
+    if (!provider) {
+      const list = ProviderRegistry.list().join(", ");
+      throw new Error(
+        `Unknown provider type for endpoint "${endpoint.name}": ${endpoint.providerType}. Available: ${list}`,
+      );
+    }
+    return provider;
+  }
+
+  private static async runGenerateWithEndpointRouting(
+    request: LLMGenerateRequest,
+    prompt: string,
+  ): Promise<LLMResponse> {
+    const route = LLMEndpointManager.prepareRoute();
+    const useRetry = request.transport?.retry ?? true;
+    const maxRetries = useRetry ? route.maxAttempts : 1;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const endpoint = route.endpoints[attempt % route.endpoints.length];
+      try {
+        const response = await this.generateOnceWithEndpoint(
+          endpoint,
+          request,
+          prompt,
+        );
+        LLMEndpointManager.markEndpointAttempted(endpoint.id);
+        return response;
+      } catch (error: unknown) {
+        LLMEndpointManager.markEndpointAttempted(endpoint.id);
+        lastError = error instanceof Error ? error : new Error(String(error));
+        ztoolkit.log(
+          `[LLMService] API failed via ${endpoint.name} (${attempt + 1}/${maxRetries}): ${lastError.message}`,
+        );
+      }
+    }
+
+    throw lastError || new Error("All configured LLM endpoints failed.");
+  }
+
+  private static async generateOnceWithEndpoint(
+    endpoint: LLMEndpoint,
+    request: LLMGenerateRequest,
+    prompt: string,
+  ): Promise<LLMResponse> {
+    const provider = this.getProviderForEndpoint(endpoint);
+    const warnings: string[] = [];
+    const resolved = await this.resolveContent(
+      provider,
+      request.content,
+      warnings,
+      true,
+    );
+    const options = this.buildOptions(
+      endpoint,
+      request.generation,
+      request.transport,
+    );
+    let text: string;
+    if (resolved.mode === "multi-file") {
+      if (typeof provider.generateMultiFileSummary !== "function") {
+        throw new Error(
+          `Provider ${endpoint.providerType} does not support multi-file generation`,
+        );
+      }
+      text = await provider.generateMultiFileSummary(
+        resolved.files,
+        prompt,
+        options,
+        request.onProgress,
+      );
+    } else {
+      text = await provider.generateSummary(
+        resolved.content,
+        resolved.isBase64,
+        prompt,
+        options,
+        request.onProgress,
+      );
+    }
+    return this.toResponse(
+      text,
+      endpoint.providerType,
+      endpoint,
+      options,
+      warnings,
+    );
+  }
+
+  private static async chatWithEndpointRouting(
+    request: LLMChatRequest,
+    route: ReturnType<typeof LLMEndpointManager.prepareRoute>,
+  ): Promise<LLMResponse> {
+    const useRetry = request.transport?.retry ?? true;
+    const maxRetries = useRetry ? route.maxAttempts : 1;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const endpoint = route.endpoints[attempt % route.endpoints.length];
+      try {
+        const response = await this.chatOnceWithEndpoint(endpoint, request);
+        LLMEndpointManager.markEndpointAttempted(endpoint.id);
+        return response;
+      } catch (error: unknown) {
+        LLMEndpointManager.markEndpointAttempted(endpoint.id);
+        lastError = error instanceof Error ? error : new Error(String(error));
+        ztoolkit.log(
+          `[LLMService] Chat API failed via ${endpoint.name} (${attempt + 1}/${maxRetries}): ${lastError.message}`,
+        );
+      }
+    }
+
+    throw lastError || new Error("All configured LLM endpoints failed.");
+  }
+
+  private static async chatOnceWithEndpoint(
+    endpoint: LLMEndpoint,
+    request: LLMChatRequest,
+  ): Promise<LLMResponse> {
+    const provider = this.getProviderForEndpoint(endpoint);
+    const warnings: string[] = [];
+    const resolved = await this.resolveContent(
+      provider,
+      request.content,
+      warnings,
+      false,
+    );
+    if (resolved.mode !== "single") {
+      throw new Error("Chat requests do not support multi-file input.");
+    }
+    const options = this.buildOptions(
+      endpoint,
+      request.generation,
+      request.transport,
+    );
+    const text = await provider.chat(
+      resolved.content,
+      resolved.isBase64,
+      request.conversation,
+      options,
+      request.onProgress,
+    );
+    return this.toResponse(
+      text,
+      endpoint.providerType,
+      endpoint,
+      options,
+      warnings,
+    );
   }
 
   private static async runWithRetry(
@@ -457,13 +619,26 @@ export class LLMService {
   private static toResponse(
     text: string,
     providerId: string,
-    options: LLMOptions,
-    warnings: string[],
+    endpointOrOptions: LLMEndpoint | LLMOptions,
+    optionsOrWarnings: LLMOptions | string[],
+    maybeWarnings?: string[],
   ): LLMResponse {
+    const endpoint =
+      "providerType" in endpointOrOptions ? endpointOrOptions : undefined;
+    const options = endpoint
+      ? (optionsOrWarnings as LLMOptions)
+      : (endpointOrOptions as LLMOptions);
+    const warnings = endpoint
+      ? maybeWarnings || []
+      : (optionsOrWarnings as string[]);
     return {
       text,
       providerId,
+      endpointId: endpoint?.id,
+      providerName:
+        endpoint?.name || LLMEndpointManager.providerLabel(providerId),
       model: options.model,
+      generatedAt: new Date().toISOString(),
       warnings: warnings.length > 0 ? warnings : undefined,
     };
   }
@@ -717,9 +892,10 @@ export class LLMService {
   private static buildConnectionTestOptions(
     providerId: string,
     provider: ILlmProvider,
+    endpoint?: LLMEndpoint,
   ): LLMOptions {
     return this.buildOptions(
-      providerId,
+      endpoint || providerId,
       undefined,
       { stream: false },
       {

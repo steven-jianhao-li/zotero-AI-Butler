@@ -133,6 +133,7 @@ export class OpenAICompatProvider implements ILlmProvider {
           body: JSON.stringify(payload),
           responseType: "text",
           timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+          errorDelayMax: 0,
           requestObserver: (xmlhttp: XMLHttpRequest) => {
             xmlhttp.onprogress = (e: any) => {
               const status = e.target.status;
@@ -245,6 +246,7 @@ export class OpenAICompatProvider implements ILlmProvider {
         body: JSON.stringify(basePayload),
         responseType: "json",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        errorDelayMax: 0,
       });
       const data = res.response || res;
       const text = data?.choices?.[0]?.message?.content || "";
@@ -343,6 +345,7 @@ export class OpenAICompatProvider implements ILlmProvider {
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;
@@ -499,6 +502,7 @@ export class OpenAICompatProvider implements ILlmProvider {
       response = await Zotero.HTTP.request("POST", apiUrl, {
         headers: this.buildHeaders(apiKey),
         body: JSON.stringify(payload),
+        errorDelayMax: 0,
         responseType: "text", // 使用 text 以获取原始响应
         timeout: options.requestTimeoutMs ?? 30000,
       });
@@ -665,6 +669,7 @@ export class OpenAICompatProvider implements ILlmProvider {
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;

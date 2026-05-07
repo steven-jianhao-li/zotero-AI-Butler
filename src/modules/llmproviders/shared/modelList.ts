@@ -44,6 +44,7 @@ export async function requestModelListJson(
       },
       responseType: "text",
       timeout,
+      errorDelayMax: 0,
     });
     const status = response.status ?? 200;
     const rawResponse = response.response || "";

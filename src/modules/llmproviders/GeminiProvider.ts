@@ -101,6 +101,7 @@ export class GeminiProvider implements ILlmProvider {
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;
@@ -269,6 +270,7 @@ export class GeminiProvider implements ILlmProvider {
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;
@@ -447,6 +449,7 @@ export class GeminiProvider implements ILlmProvider {
           "x-goog-api-key": apiKey,
         },
         body: JSON.stringify(payload),
+        errorDelayMax: 0,
         responseType: "text", // 使用 text 以获取原始响应
         timeout: 30000,
       });
@@ -609,6 +612,7 @@ export class GeminiProvider implements ILlmProvider {
         }),
         responseType: "text",
         timeout: 60000,
+        errorDelayMax: 0,
       });
 
       // 从响应头获取上传 URL
@@ -634,6 +638,7 @@ export class GeminiProvider implements ILlmProvider {
         body: new Uint8Array(fileData),
         responseType: "json",
         timeout: 120000, // 文件上传可能需要更长时间
+        errorDelayMax: 0,
       });
 
       const fileInfo = uploadResponse.response;
@@ -747,6 +752,7 @@ export class GeminiProvider implements ILlmProvider {
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;

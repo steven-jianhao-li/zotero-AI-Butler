@@ -143,6 +143,51 @@ type ResolvedProvider = {
   endpoint?: LLMEndpoint;
 };
 
+export class LLMApiCallError extends Error {
+  public readonly suppressTaskRetry = true;
+  public readonly endpointId: string;
+  public readonly endpointName: string;
+  public readonly providerId: string;
+  public readonly originalError?: Error;
+
+  constructor(endpoint: LLMEndpoint, error: Error) {
+    super(error.message);
+    this.name = "LLMApiCallError";
+    this.endpointId = endpoint.id;
+    this.endpointName = endpoint.name;
+    this.providerId = endpoint.providerType;
+    this.originalError = error;
+    this.stack = error.stack || this.stack;
+  }
+}
+
+export class LLMApiExhaustedError extends Error {
+  public readonly suppressTaskRetry = true;
+  public readonly attempts: number;
+  public readonly lastError?: Error;
+  public readonly endpointId?: string;
+  public readonly endpointName?: string;
+  public readonly providerId?: string;
+
+  constructor(attempts: number, lastError?: Error) {
+    super(lastError?.message || "All configured LLM endpoints failed.");
+    this.name = "LLMApiExhaustedError";
+    this.attempts = attempts;
+    this.lastError = lastError;
+    const apiError = lastError as
+      | {
+          endpointId?: string;
+          endpointName?: string;
+          providerId?: string;
+        }
+      | undefined;
+    this.endpointId = apiError?.endpointId;
+    this.endpointName = apiError?.endpointName;
+    this.providerId = apiError?.providerId;
+    this.stack = lastError?.stack || this.stack;
+  }
+}
+
 export class LLMService {
   static getRequestTimeout(): number {
     const raw = (getPref("requestTimeout") as string) || "300000";
@@ -314,7 +359,7 @@ export class LLMService {
   ): Promise<LLMResponse> {
     const endpoint = this.getRunnableEndpoint(endpointId);
     const prompt = request.prompt ?? this.getDefaultPrompt();
-    return this.generateOnceWithEndpoint(endpoint, request, prompt);
+    return this.runGenerateWithFixedEndpoint(endpoint, request, prompt);
   }
 
   static async generateText(request: LLMGenerateRequest): Promise<string> {
@@ -331,7 +376,7 @@ export class LLMService {
     request: LLMChatRequest,
   ): Promise<LLMResponse> {
     const endpoint = this.getRunnableEndpoint(endpointId);
-    return this.chatOnceWithEndpoint(endpoint, request);
+    return this.runChatWithFixedEndpoint(endpoint, request);
   }
 
   static async chatText(request: LLMChatRequest): Promise<string> {
@@ -445,7 +490,7 @@ export class LLMService {
       }
     }
 
-    throw lastError || new Error("All configured LLM endpoints failed.");
+    throw new LLMApiExhaustedError(maxRetries, lastError || undefined);
   }
 
   private static async generateOnceWithEndpoint(
@@ -473,20 +518,28 @@ export class LLMService {
           `Provider ${endpoint.providerType} does not support multi-file generation`,
         );
       }
-      text = await provider.generateMultiFileSummary(
-        resolved.files,
-        prompt,
-        options,
-        request.onProgress,
-      );
+      try {
+        text = await provider.generateMultiFileSummary(
+          resolved.files,
+          prompt,
+          options,
+          request.onProgress,
+        );
+      } catch (error: unknown) {
+        throw this.toApiCallError(endpoint, error);
+      }
     } else {
-      text = await provider.generateSummary(
-        resolved.content,
-        resolved.isBase64,
-        prompt,
-        options,
-        request.onProgress,
-      );
+      try {
+        text = await provider.generateSummary(
+          resolved.content,
+          resolved.isBase64,
+          prompt,
+          options,
+          request.onProgress,
+        );
+      } catch (error: unknown) {
+        throw this.toApiCallError(endpoint, error);
+      }
     }
     return this.toResponse(
       text,
@@ -495,6 +548,29 @@ export class LLMService {
       options,
       warnings,
     );
+  }
+
+  private static async runGenerateWithFixedEndpoint(
+    endpoint: LLMEndpoint,
+    request: LLMGenerateRequest,
+    prompt: string,
+  ): Promise<LLMResponse> {
+    const useRetry = request.transport?.retry ?? true;
+    const maxAttempts = useRetry ? LLMEndpointManager.getMaxAttemptCount() : 1;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        return await this.generateOnceWithEndpoint(endpoint, request, prompt);
+      } catch (error: unknown) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        ztoolkit.log(
+          `[LLMService] API failed via ${endpoint.name} (${attempt + 1}/${maxAttempts}): ${lastError.message}`,
+        );
+      }
+    }
+
+    throw new LLMApiExhaustedError(maxAttempts, lastError || undefined);
   }
 
   private static async chatWithEndpointRouting(
@@ -520,7 +596,7 @@ export class LLMService {
       }
     }
 
-    throw lastError || new Error("All configured LLM endpoints failed.");
+    throw new LLMApiExhaustedError(maxRetries, lastError || undefined);
   }
 
   private static async chatOnceWithEndpoint(
@@ -543,19 +619,56 @@ export class LLMService {
       request.generation,
       request.transport,
     );
-    const text = await provider.chat(
-      resolved.content,
-      resolved.isBase64,
-      request.conversation,
-      options,
-      request.onProgress,
-    );
+    let text: string;
+    try {
+      text = await provider.chat(
+        resolved.content,
+        resolved.isBase64,
+        request.conversation,
+        options,
+        request.onProgress,
+      );
+    } catch (error: unknown) {
+      throw this.toApiCallError(endpoint, error);
+    }
     return this.toResponse(
       text,
       endpoint.providerType,
       endpoint,
       options,
       warnings,
+    );
+  }
+
+  private static async runChatWithFixedEndpoint(
+    endpoint: LLMEndpoint,
+    request: LLMChatRequest,
+  ): Promise<LLMResponse> {
+    const useRetry = request.transport?.retry ?? true;
+    const maxAttempts = useRetry ? LLMEndpointManager.getMaxAttemptCount() : 1;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        return await this.chatOnceWithEndpoint(endpoint, request);
+      } catch (error: unknown) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        ztoolkit.log(
+          `[LLMService] Chat API failed via ${endpoint.name} (${attempt + 1}/${maxAttempts}): ${lastError.message}`,
+        );
+      }
+    }
+
+    throw new LLMApiExhaustedError(maxAttempts, lastError || undefined);
+  }
+
+  private static toApiCallError(
+    endpoint: LLMEndpoint,
+    error: unknown,
+  ): LLMApiCallError {
+    return new LLMApiCallError(
+      endpoint,
+      error instanceof Error ? error : new Error(String(error)),
     );
   }
 

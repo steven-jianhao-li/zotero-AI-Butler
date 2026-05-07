@@ -239,6 +239,7 @@ export class OpenRouterProvider implements ILlmProvider {
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? 30000,
+        errorDelayMax: 0,
       });
 
       // Extract headers
@@ -365,6 +366,7 @@ export class OpenRouterProvider implements ILlmProvider {
         body: JSON.stringify(payloadWithStream),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;
@@ -468,6 +470,7 @@ export class OpenRouterProvider implements ILlmProvider {
         body: JSON.stringify(payload),
         responseType: "json",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        errorDelayMax: 0,
       });
       const data = res.response || res;
       const text = data?.choices?.[0]?.message?.content || "";

@@ -22,6 +22,46 @@
 
 import { getPref } from "../utils/prefs";
 
+type PDFTextExtractionStep = {
+  step: string;
+  ok?: boolean;
+  message?: string;
+  indexedState?: string;
+  textLength?: number;
+  cachePath?: string;
+  cacheExists?: boolean;
+  cacheSize?: number;
+  elapsedMs?: number;
+};
+
+export type PDFTextExtractionDiagnostics = {
+  itemId: number;
+  itemKey?: string;
+  title?: string;
+  contentType?: string;
+  filePath?: string;
+  fileExists?: boolean;
+  fileSize?: number;
+  zoteroVersion?: string;
+  platform?: string;
+  userAgent?: string;
+  startedAt: string;
+  durationMs?: number;
+  steps: PDFTextExtractionStep[];
+};
+
+export class PDFTextExtractionError extends Error {
+  public readonly diagnostics: PDFTextExtractionDiagnostics;
+  public readonly diagnosticText: string;
+
+  constructor(message: string, diagnostics: PDFTextExtractionDiagnostics) {
+    super(`PDF text extraction failed: ${message}`);
+    this.name = "PDFTextExtractionError";
+    this.diagnostics = diagnostics;
+    this.diagnosticText = PDFExtractor.formatDiagnostics(diagnostics);
+  }
+}
+
 /**
  * PDF文本提取器类
  *
@@ -29,6 +69,9 @@ import { getPref } from "../utils/prefs";
  * 采用静态方法设计,简化调用方式,无需实例化
  */
 export class PDFExtractor {
+  private static readonly TEXT_EXTRACTION_TIMEOUT_MS = 30000;
+  private static readonly TEXT_EXTRACTION_POLL_INTERVAL_MS = 1000;
+
   /**
    * 检查条目是否有可用的 PDF 附件
    *
@@ -272,54 +315,372 @@ export class PDFExtractor {
   private static async extractTextFromPDF(
     pdfAttachment: Zotero.Item,
   ): Promise<string> {
+    const startedAtMs = Date.now();
+    const diagnostics = this.createTextExtractionDiagnostics(pdfAttachment);
+
     try {
       // 获取 PDF 文件的本地路径
       const path = await pdfAttachment.getFilePathAsync();
+      diagnostics.filePath = path || undefined;
       if (!path) {
         throw new Error("PDF file path not found");
       }
 
+      await this.recordPdfFileInfo(path, diagnostics, startedAtMs);
+
+      const attachmentText = await this.tryReadAttachmentText(
+        pdfAttachment,
+        diagnostics,
+        startedAtMs,
+        "attachmentText:initial",
+      );
+      if (attachmentText) {
+        return attachmentText;
+      }
+
+      const cachedText = await this.tryReadFulltextCache(
+        pdfAttachment,
+        diagnostics,
+        startedAtMs,
+        "fulltext-cache:initial",
+      );
+      if (cachedText) {
+        return cachedText;
+      }
+
       // 检查全文索引状态
-      const indexedState = await Zotero.Fulltext.getIndexedState(pdfAttachment);
+      const indexedState = await this.tryGetIndexedState(
+        pdfAttachment,
+        diagnostics,
+        startedAtMs,
+        "indexed-state:before-index",
+      );
 
       // 如果未索引,触发索引操作
       if (indexedState !== Zotero.Fulltext.INDEX_STATE_INDEXED) {
-        await Zotero.Fulltext.indexItems([pdfAttachment.id]);
-
-        // 等待索引完成
-        // 索引是异步操作,需要给系统一些时间处理
-        await Zotero.Promise.delay(1000);
+        await this.tryIndexPdf(pdfAttachment, diagnostics, startedAtMs);
       }
 
-      // 读取全文缓存文件
-      const cacheFile = Zotero.Fulltext.getItemCacheFile(pdfAttachment);
+      const deadline = Date.now() + this.TEXT_EXTRACTION_TIMEOUT_MS;
+      let pollCount = 0;
+      while (Date.now() < deadline) {
+        pollCount++;
+        await Zotero.Promise.delay(this.TEXT_EXTRACTION_POLL_INTERVAL_MS);
 
-      // 检查缓存文件是否存在
-      if (await IOUtils.exists(cacheFile.path)) {
-        // 读取缓存文件内容
-        const content = await Zotero.File.getContentsAsync(cacheFile.path);
-
-        if (!content) {
-          throw new Error("Empty cache file");
+        const polledAttachmentText = await this.tryReadAttachmentText(
+          pdfAttachment,
+          diagnostics,
+          startedAtMs,
+          `attachmentText:poll-${pollCount}`,
+        );
+        if (polledAttachmentText) {
+          return polledAttachmentText;
         }
 
-        // 处理不同的内容类型(字符串或二进制)
-        const text =
-          typeof content === "string"
-            ? content
-            : new TextDecoder().decode(content as BufferSource);
-
-        // 验证提取的文本
-        if (text && text.trim().length > 0) {
-          return text;
+        const polledCacheText = await this.tryReadFulltextCache(
+          pdfAttachment,
+          diagnostics,
+          startedAtMs,
+          `fulltext-cache:poll-${pollCount}`,
+        );
+        if (polledCacheText) {
+          return polledCacheText;
         }
+
+        await this.tryGetIndexedState(
+          pdfAttachment,
+          diagnostics,
+          startedAtMs,
+          `indexed-state:poll-${pollCount}`,
+        );
       }
 
       // 所有尝试都失败
-      throw new Error("Unable to extract text from PDF");
+      throw this.createTextExtractionError(
+        "Unable to extract text from PDF",
+        diagnostics,
+        startedAtMs,
+      );
     } catch (error: any) {
-      throw new Error(`PDF text extraction failed: ${error.message}`);
+      if (error instanceof PDFTextExtractionError) {
+        throw error;
+      }
+      diagnostics.steps.push({
+        step: "fatal",
+        ok: false,
+        message: error?.message || String(error),
+        elapsedMs: Date.now() - startedAtMs,
+      });
+      throw this.createTextExtractionError(
+        error?.message || String(error),
+        diagnostics,
+        startedAtMs,
+      );
     }
+  }
+
+  private static createTextExtractionDiagnostics(
+    pdfAttachment: Zotero.Item,
+  ): PDFTextExtractionDiagnostics {
+    const runtime = this.getRuntimeInfo();
+    return {
+      itemId: pdfAttachment.id,
+      itemKey: pdfAttachment.key,
+      title: String(pdfAttachment.getField("title") || ""),
+      contentType: pdfAttachment.attachmentContentType,
+      startedAt: new Date().toISOString(),
+      zoteroVersion: runtime.zoteroVersion,
+      platform: runtime.platform,
+      userAgent: runtime.userAgent,
+      steps: [],
+    };
+  }
+
+  private static getRuntimeInfo(): {
+    zoteroVersion?: string;
+    platform?: string;
+    userAgent?: string;
+  } {
+    try {
+      const win = Zotero.getMainWindow?.();
+      return {
+        zoteroVersion: (Zotero as unknown as { version?: string }).version,
+        platform: win?.navigator?.platform,
+        userAgent: win?.navigator?.userAgent,
+      };
+    } catch {
+      return {
+        zoteroVersion: (Zotero as unknown as { version?: string }).version,
+      };
+    }
+  }
+
+  private static async recordPdfFileInfo(
+    path: string,
+    diagnostics: PDFTextExtractionDiagnostics,
+    startedAtMs: number,
+  ): Promise<void> {
+    try {
+      diagnostics.fileExists = await IOUtils.exists(path);
+      if (diagnostics.fileExists) {
+        const fileInfo = await IOUtils.stat(path);
+        diagnostics.fileSize = fileInfo.size ?? undefined;
+      }
+      diagnostics.steps.push({
+        step: "pdf-file",
+        ok: diagnostics.fileExists,
+        message: diagnostics.fileExists ? "PDF file found" : "PDF file missing",
+        elapsedMs: Date.now() - startedAtMs,
+      });
+    } catch (error: unknown) {
+      diagnostics.steps.push({
+        step: "pdf-file",
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        elapsedMs: Date.now() - startedAtMs,
+      });
+    }
+  }
+
+  private static async tryReadAttachmentText(
+    pdfAttachment: Zotero.Item,
+    diagnostics: PDFTextExtractionDiagnostics,
+    startedAtMs: number,
+    step: string,
+  ): Promise<string> {
+    try {
+      const text = await pdfAttachment.attachmentText;
+      const textLength = text?.trim().length || 0;
+      diagnostics.steps.push({
+        step,
+        ok: textLength > 0,
+        textLength,
+        message: textLength > 0 ? "attachmentText returned text" : "empty text",
+        elapsedMs: Date.now() - startedAtMs,
+      });
+      return textLength > 0 ? text : "";
+    } catch (error: unknown) {
+      diagnostics.steps.push({
+        step,
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        elapsedMs: Date.now() - startedAtMs,
+      });
+      return "";
+    }
+  }
+
+  private static async tryReadFulltextCache(
+    pdfAttachment: Zotero.Item,
+    diagnostics: PDFTextExtractionDiagnostics,
+    startedAtMs: number,
+    step: string,
+  ): Promise<string> {
+    try {
+      const cacheFile = Zotero.Fulltext.getItemCacheFile(pdfAttachment);
+      const cachePath = cacheFile.path;
+      const cacheExists = await IOUtils.exists(cachePath);
+      let cacheSize: number | undefined;
+      let textLength = 0;
+      let text = "";
+
+      if (cacheExists) {
+        try {
+          const fileInfo = await IOUtils.stat(cachePath);
+          cacheSize = fileInfo.size ?? undefined;
+        } catch {
+          cacheSize = undefined;
+        }
+
+        const content = await Zotero.File.getContentsAsync(cachePath);
+        if (content) {
+          text =
+            typeof content === "string"
+              ? content
+              : new TextDecoder().decode(content as BufferSource);
+          textLength = text.trim().length;
+        }
+      }
+
+      diagnostics.steps.push({
+        step,
+        ok: textLength > 0,
+        cachePath,
+        cacheExists,
+        cacheSize,
+        textLength,
+        message: cacheExists ? "cache checked" : "cache missing",
+        elapsedMs: Date.now() - startedAtMs,
+      });
+
+      return textLength > 0 ? text : "";
+    } catch (error: unknown) {
+      diagnostics.steps.push({
+        step,
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        elapsedMs: Date.now() - startedAtMs,
+      });
+      return "";
+    }
+  }
+
+  private static async tryGetIndexedState(
+    pdfAttachment: Zotero.Item,
+    diagnostics: PDFTextExtractionDiagnostics,
+    startedAtMs: number,
+    step: string,
+  ): Promise<number | undefined> {
+    try {
+      const indexedState = await Zotero.Fulltext.getIndexedState(pdfAttachment);
+      diagnostics.steps.push({
+        step,
+        ok: true,
+        indexedState: this.formatIndexedState(indexedState),
+        elapsedMs: Date.now() - startedAtMs,
+      });
+      return indexedState;
+    } catch (error: unknown) {
+      diagnostics.steps.push({
+        step,
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        elapsedMs: Date.now() - startedAtMs,
+      });
+      return undefined;
+    }
+  }
+
+  private static async tryIndexPdf(
+    pdfAttachment: Zotero.Item,
+    diagnostics: PDFTextExtractionDiagnostics,
+    startedAtMs: number,
+  ): Promise<void> {
+    try {
+      await Zotero.Fulltext.indexItems([pdfAttachment.id], { complete: true });
+      diagnostics.steps.push({
+        step: "indexItems",
+        ok: true,
+        message: "index requested",
+        elapsedMs: Date.now() - startedAtMs,
+      });
+    } catch (error: unknown) {
+      diagnostics.steps.push({
+        step: "indexItems",
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        elapsedMs: Date.now() - startedAtMs,
+      });
+    }
+  }
+
+  private static createTextExtractionError(
+    message: string,
+    diagnostics: PDFTextExtractionDiagnostics,
+    startedAtMs: number,
+  ): PDFTextExtractionError {
+    diagnostics.durationMs = Date.now() - startedAtMs;
+    return new PDFTextExtractionError(message, diagnostics);
+  }
+
+  private static formatIndexedState(state: number): string {
+    switch (state) {
+      case Zotero.Fulltext.INDEX_STATE_UNAVAILABLE:
+        return "unavailable";
+      case Zotero.Fulltext.INDEX_STATE_UNINDEXED:
+        return "unindexed";
+      case Zotero.Fulltext.INDEX_STATE_PARTIAL:
+        return "partial";
+      case Zotero.Fulltext.INDEX_STATE_INDEXED:
+        return "indexed";
+      case Zotero.Fulltext.INDEX_STATE_QUEUED:
+        return "queued";
+      default:
+        return `unknown(${state})`;
+    }
+  }
+
+  public static formatDiagnostics(
+    diagnostics: PDFTextExtractionDiagnostics,
+  ): string {
+    const lines = [
+      "PDF text extraction diagnostics",
+      `startedAt: ${diagnostics.startedAt}`,
+      `durationMs: ${diagnostics.durationMs ?? "unknown"}`,
+      `zoteroVersion: ${diagnostics.zoteroVersion || "unknown"}`,
+      `platform: ${diagnostics.platform || "unknown"}`,
+      `userAgent: ${diagnostics.userAgent || "unknown"}`,
+      `itemId: ${diagnostics.itemId}`,
+      `itemKey: ${diagnostics.itemKey || "unknown"}`,
+      `title: ${diagnostics.title || "unknown"}`,
+      `contentType: ${diagnostics.contentType || "unknown"}`,
+      `filePath: ${diagnostics.filePath || "unknown"}`,
+      `fileExists: ${diagnostics.fileExists ?? "unknown"}`,
+      `fileSize: ${diagnostics.fileSize ?? "unknown"}`,
+      "steps:",
+    ];
+
+    diagnostics.steps.forEach((step, index) => {
+      lines.push(
+        [
+          `  ${index + 1}. ${step.step}`,
+          `ok=${step.ok ?? "unknown"}`,
+          `elapsedMs=${step.elapsedMs ?? "unknown"}`,
+          step.indexedState ? `indexedState=${step.indexedState}` : "",
+          step.textLength !== undefined ? `textLength=${step.textLength}` : "",
+          step.cachePath ? `cachePath=${step.cachePath}` : "",
+          step.cacheExists !== undefined
+            ? `cacheExists=${step.cacheExists}`
+            : "",
+          step.cacheSize !== undefined ? `cacheSize=${step.cacheSize}` : "",
+          step.message ? `message=${step.message}` : "",
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      );
+    });
+
+    return lines.join("\n");
   }
 
   /**

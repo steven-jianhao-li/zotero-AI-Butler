@@ -122,6 +122,7 @@ export class VolcanoArkProvider implements ILlmProvider {
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;
@@ -308,6 +309,7 @@ export class VolcanoArkProvider implements ILlmProvider {
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;
@@ -483,6 +485,7 @@ export class VolcanoArkProvider implements ILlmProvider {
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: 30000,
+        errorDelayMax: 0,
       });
       // 提取响应首部
       try {
@@ -788,6 +791,7 @@ export class VolcanoArkProvider implements ILlmProvider {
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;

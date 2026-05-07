@@ -200,9 +200,9 @@ export class EndpointSettingsPanel {
     });
     panel.appendChild(
       createFormGroup(
-        "最大重试次数",
+        "最大 API 请求次数",
         retryInput,
-        "供应商失败后，会循环尝试，直到达到最大重试次数上限。",
+        "一次 AI 调用内最多发起的真实 API 请求数。达到上限后任务会直接失败，不再由任务队列继续重试同一个坏端点。",
       ),
     );
 

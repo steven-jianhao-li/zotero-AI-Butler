@@ -59,6 +59,11 @@ const PROVIDER_DEFAULTS: Record<LLMEndpointProviderType, ProviderDefaults> = {
     apiUrl: "https://ark.cn-beijing.volces.com/api/v3/responses",
     model: "doubao-seed-1-8-251228",
   },
+  ollama: {
+    label: "Ollama",
+    apiUrl: "http://localhost:11434",
+    model: "llama3.2",
+  },
 };
 
 const PROVIDER_TYPES = Object.keys(
@@ -78,6 +83,7 @@ function safeProviderType(raw: unknown): LLMEndpointProviderType {
   const value = String(raw || "").toLowerCase();
   if (value.includes("gemini")) return "google";
   if (value.includes("claude")) return "anthropic";
+  if (value.includes("ollama")) return "ollama";
   if (PROVIDER_TYPES.includes(value as LLMEndpointProviderType)) {
     return value as LLMEndpointProviderType;
   }
@@ -128,6 +134,10 @@ export class LLMEndpointManager {
 
   static providerLabel(providerType: string): string {
     return this.providerDefaults(safeProviderType(providerType)).label;
+  }
+
+  static providerAllowsEmptyApiKey(providerType: string): boolean {
+    return safeProviderType(providerType) === "ollama";
   }
 
   static createEndpoint(
@@ -299,7 +309,12 @@ export class LLMEndpointManager {
     const missing: string[] = [];
     if (!endpoint.name.trim()) missing.push("name");
     if (!endpoint.apiUrl.trim()) missing.push("apiUrl");
-    if (!endpoint.apiKey.trim()) missing.push("apiKey");
+    if (
+      !this.providerAllowsEmptyApiKey(endpoint.providerType) &&
+      !endpoint.apiKey.trim()
+    ) {
+      missing.push("apiKey");
+    }
     if (!endpoint.model.trim()) missing.push("model");
     return missing;
   }
@@ -341,6 +356,7 @@ export class LLMEndpointManager {
       anthropic: "anthropicApiUrl",
       openrouter: "openRouterApiUrl",
       volcanoark: "volcanoArkApiUrl",
+      ollama: "ollamaApiUrl",
     };
     return String(getPref(keyByProvider[providerType] as any) || "").trim();
   }
@@ -355,6 +371,7 @@ export class LLMEndpointManager {
       anthropic: "anthropicApiKey",
       openrouter: "openRouterApiKey",
       volcanoark: "volcanoArkApiKey",
+      ollama: "ollamaApiKey",
     };
     const value = String(getPref(keyByProvider[providerType] as any) || "");
     if (providerType === "openai-compat" && !value.trim()) {
@@ -371,6 +388,7 @@ export class LLMEndpointManager {
       anthropic: "anthropicModel",
       openrouter: "openRouterModel",
       volcanoark: "volcanoArkModel",
+      ollama: "ollamaModel",
     };
     const value = String(getPref(keyByProvider[providerType] as any) || "");
     if (providerType === "openai-compat" && !value.trim()) {

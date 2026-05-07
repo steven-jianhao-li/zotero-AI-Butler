@@ -9,3 +9,4 @@ export { default as GeminiProvider } from "./GeminiProvider";
 export { default as AnthropicProvider } from "./AnthropicProvider";
 export { default as OpenRouterProvider } from "./OpenRouterProvider";
 export { default as VolcanoArkProvider } from "./VolcanoArkProvider";
+export { default as OllamaProvider } from "./OllamaProvider";

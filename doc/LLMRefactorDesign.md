@@ -183,7 +183,8 @@ type LLMEndpoint = {
     | "google"
     | "anthropic"
     | "openrouter"
-    | "volcanoark";
+    | "volcanoark"
+    | "ollama";
   apiUrl: string;
   apiKey: string;
   model: string;

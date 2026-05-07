@@ -99,6 +99,7 @@ export class ApiSettingsPage {
         { value: "anthropic", label: "Anthropic Claude" },
         { value: "openrouter", label: "OpenRouter" },
         { value: "volcanoark", label: "火山方舟 (Volcano Ark)" },
+        { value: "ollama", label: "Ollama" },
       ],
       providerValue,
       (newVal) => {
@@ -182,6 +183,25 @@ export class ApiSettingsPage {
             modelInput.value = "doubao-seed-1-8-251228";
           }
         }
+        // 若切换到 Ollama 且未填写，填充本地默认
+        if (newVal === "ollama") {
+          const curUrl = (getPref("ollamaApiUrl") as string) || "";
+          const urlInput = this.container.querySelector(
+            "#setting-ollamaApiUrl",
+          ) as HTMLInputElement;
+          const modelInput = this.container.querySelector(
+            "#setting-ollamaModel",
+          ) as HTMLInputElement;
+          if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
+            urlInput.value = "http://localhost:11434";
+          }
+          if (
+            modelInput &&
+            (!modelInput.value || modelInput.value.trim() === "")
+          ) {
+            modelInput.value = "llama3.2";
+          }
+        }
         this.refreshEndpointPreviews();
       },
     );
@@ -207,6 +227,9 @@ export class ApiSettingsPage {
     });
     const sectionVolcanoArk = this.createElement("div", {
       id: "provider-volcanoark",
+    });
+    const sectionOllama = this.createElement("div", {
+      id: "provider-ollama",
     });
 
     // OpenAI 字段（Responses 新接口）
@@ -482,12 +505,64 @@ export class ApiSettingsPage {
     });
     sectionVolcanoArk.appendChild(volcanoArkNote);
 
+    // Ollama 字段
+    sectionOllama.appendChild(
+      this.createEndpointFormGroup(
+        "API 基础地址 *",
+        "ollamaApiUrl",
+        getPref("ollamaApiUrl") as string,
+        "http://localhost:11434",
+        {
+          officialEndpoint: "http://localhost:11434/api/chat",
+          previewKind: "ollamaChat",
+        },
+      ),
+    );
+    sectionOllama.appendChild(
+      this.createFormGroup(
+        "API 密钥",
+        this.createPasswordInput(
+          "ollamaApiKey",
+          getPref("ollamaApiKey") as string,
+          "可留空",
+          "ollama",
+        ),
+        "Ollama 本地服务通常无需 API 密钥；如果你的服务设置了鉴权，可填写 Bearer token。",
+        "ollama",
+      ),
+    );
+    sectionOllama.appendChild(
+      this.createModelFormGroup(
+        "模型 *",
+        "ollama",
+        "ollamaModel",
+        getPref("ollamaModel") as string,
+        "llama3.2",
+        "【必填】本地 Ollama 模型名称, 如 llama3.2、qwen2.5:7b、deepseek-r1:8b",
+      ),
+    );
+    const ollamaNote = this.createElement("div", {
+      innerHTML:
+        "<strong>说明</strong>：Ollama 使用原生 <code>/api/chat</code> 接口，默认地址为 <code>http://localhost:11434</code>。Ollama 不支持直接上传 PDF Base64；请在 PDF 处理配置中选择“文本提取”或“MinerU”。",
+      styles: {
+        padding: "10px 12px",
+        backgroundColor: "#e8f5e9",
+        border: "1px solid #a5d6a7",
+        borderRadius: "6px",
+        color: "#2e7d32",
+        fontSize: "13px",
+        marginBottom: "16px",
+      },
+    });
+    sectionOllama.appendChild(ollamaNote);
+
     legacyProviderForm.appendChild(sectionOpenAI);
     legacyProviderForm.appendChild(sectionOpenAICompat);
     legacyProviderForm.appendChild(sectionGemini);
     legacyProviderForm.appendChild(sectionAnthropic);
     legacyProviderForm.appendChild(sectionOpenRouter);
     legacyProviderForm.appendChild(sectionVolcanoArk);
+    legacyProviderForm.appendChild(sectionOllama);
 
     const renderProviderSections = (prov: string) => {
       const isGemini = prov === "google";
@@ -495,12 +570,14 @@ export class ApiSettingsPage {
       const isOpenRouter = prov === "openrouter";
       const isOpenAICompat = prov === "openai-compat";
       const isVolcanoArk = prov === "volcanoark";
+      const isOllama = prov === "ollama";
       (sectionOpenAI as HTMLElement).style.display =
         isGemini ||
         isAnthropic ||
         isOpenAICompat ||
         isOpenRouter ||
-        isVolcanoArk
+        isVolcanoArk ||
+        isOllama
           ? "none"
           : "block";
       (sectionOpenAICompat as HTMLElement).style.display = isOpenAICompat
@@ -516,6 +593,9 @@ export class ApiSettingsPage {
         ? "block"
         : "none";
       (sectionVolcanoArk as HTMLElement).style.display = isVolcanoArk
+        ? "block"
+        : "none";
+      (sectionOllama as HTMLElement).style.display = isOllama
         ? "block"
         : "none";
     };
@@ -1135,7 +1215,8 @@ export class ApiSettingsPage {
         | "chatCompletions"
         | "geminiStream"
         | "anthropicMessages"
-        | "volcanoResponses";
+        | "volcanoResponses"
+        | "ollamaChat";
       modelInputId?: string;
     },
   ): HTMLElement {
@@ -1225,7 +1306,8 @@ export class ApiSettingsPage {
       | "chatCompletions"
       | "geminiStream"
       | "anthropicMessages"
-      | "volcanoResponses",
+      | "volcanoResponses"
+      | "ollamaChat",
     urlInputId: string,
     fallbackUrl: string,
     modelInputId?: string,
@@ -1259,6 +1341,9 @@ export class ApiSettingsPage {
       const base = rawUrl.replace(/\/+$/, "").replace(/\/v1(?:\/.*)?$/i, "");
       return `${base}/v1/messages`;
     }
+    if (kind === "ollamaChat") {
+      return this.toOllamaChatEndpoint(rawUrl);
+    }
     return this.toResponsesEndpoint(rawUrl, "");
   }
 
@@ -1282,6 +1367,17 @@ export class ApiSettingsPage {
       return raw.replace(/(\/v\d+(?:beta)?)(?:\/.*)?$/i, "$1/chat/completions");
     }
     return `${raw}/v1/chat/completions`;
+  }
+
+  private toOllamaChatEndpoint(url: string): string {
+    const raw = url.trim().replace(/\/+$/, "");
+    if (!raw) return "";
+    const base = raw
+      .replace(/\/v1(?:\/chat\/completions)?$/i, "")
+      .replace(/\/api(?:\/chat|\/generate|\/tags)?$/i, "")
+      .replace(/\/chat$/i, "")
+      .replace(/\/generate$/i, "");
+    return `${base}/api/chat`;
   }
 
   private createModelFormGroup(
@@ -1508,7 +1604,12 @@ export class ApiSettingsPage {
     try {
       const options = this.getModelListOptions(providerId);
       if (!options.apiUrl?.trim()) throw new Error("请先填写 API 地址");
-      if (!options.apiKey?.trim()) throw new Error("请先填写 API 密钥");
+      if (
+        !LLMEndpointManager.providerAllowsEmptyApiKey(providerId) &&
+        !options.apiKey?.trim()
+      ) {
+        throw new Error("请先填写 API 密钥");
+      }
 
       const models = await LLMClient.listModels(providerId, options);
       if (models.length === 0) {
@@ -1684,6 +1785,11 @@ export class ApiSettingsPage {
         apiKeyId: "volcanoArkApiKey",
         modelId: "volcanoArkModel",
       },
+      ollama: {
+        apiUrlId: "ollamaApiUrl",
+        apiKeyId: "ollamaApiKey",
+        modelId: "ollamaModel",
+      },
     };
     const config = configs[keyManagerId];
 
@@ -1793,6 +1899,7 @@ export class ApiSettingsPage {
         anthropic: "anthropicApiKey",
         openrouter: "openRouterApiKey",
         volcanoark: "volcanoArkApiKey",
+        ollama: "ollamaApiKey",
       };
       const prefKey = mapping[providerId];
       if (prefKey) {
@@ -2317,6 +2424,16 @@ export class ApiSettingsPage {
       const vaModelEl = this.container.querySelector(
         "#setting-volcanoArkModel",
       ) as HTMLInputElement;
+      // Ollama
+      const ollamaUrlEl = this.container.querySelector(
+        "#setting-ollamaApiUrl",
+      ) as HTMLInputElement;
+      const ollamaKeyEl = this.container.querySelector(
+        "#setting-ollamaApiKey",
+      ) as HTMLInputElement;
+      const ollamaModelEl = this.container.querySelector(
+        "#setting-ollamaModel",
+      ) as HTMLInputElement;
       const temperatureEl = this.container.querySelector(
         "#setting-temperature",
       ) as HTMLInputElement;
@@ -2387,6 +2504,9 @@ export class ApiSettingsPage {
         volcanoArkApiUrl: vaUrlEl?.value?.trim() || "",
         volcanoArkApiKey: vaKeyEl?.value?.trim() || "",
         volcanoArkModel: vaModelEl?.value?.trim() || "",
+        ollamaApiUrl: ollamaUrlEl?.value?.trim() || "",
+        ollamaApiKey: ollamaKeyEl?.value?.trim() || "",
+        ollamaModel: ollamaModelEl?.value?.trim() || "",
         temperature: temperatureEl?.value || "0.7",
         maxTokens: maxTokensEl?.value?.trim() || "4096",
         topP: topPEl?.value || "1.0",
@@ -2418,8 +2538,11 @@ export class ApiSettingsPage {
       const hasUsableEndpoint = LLMEndpointManager.getEnabledEndpoints().some(
         (endpoint) =>
           endpoint.apiUrl.trim() &&
-          endpoint.apiKey.trim() &&
-          endpoint.model.trim(),
+          endpoint.model.trim() &&
+          (endpoint.apiKey.trim() ||
+            LLMEndpointManager.providerAllowsEmptyApiKey(
+              endpoint.providerType,
+            )),
       );
       if (!hasUsableEndpoint) {
         if (provider === "google") {
@@ -2445,6 +2568,9 @@ export class ApiSettingsPage {
           if (!values.volcanoArkApiKey)
             missingFields.push("API 密钥(火山方舟)");
           if (!values.volcanoArkModel) missingFields.push("模型名称(火山方舟)");
+        } else if (provider === "ollama") {
+          if (!values.ollamaApiUrl) missingFields.push("API 地址(Ollama)");
+          if (!values.ollamaModel) missingFields.push("模型名称(Ollama)");
         } else if (provider === "openai-compat") {
           if (!values.openaiCompatApiUrl)
             missingFields.push("兼容 API 地址(OpenAI兼容)");
@@ -2493,6 +2619,9 @@ export class ApiSettingsPage {
       setPref("volcanoArkApiUrl", values.volcanoArkApiUrl);
       setPref("volcanoArkApiKey", values.volcanoArkApiKey);
       setPref("volcanoArkModel", values.volcanoArkModel);
+      setPref("ollamaApiUrl", values.ollamaApiUrl);
+      setPref("ollamaApiKey", values.ollamaApiKey);
+      setPref("ollamaModel", values.ollamaModel);
       setPref("temperature", values.temperature);
       setPref("maxTokens", values.maxTokens);
       setPref("topP", values.topP);
@@ -2603,6 +2732,7 @@ export class ApiSettingsPage {
     if (provider === "openrouter") return "openrouter";
     if (provider === "openai-compat") return "openai-compat";
     if (provider === "volcanoark") return "volcanoark";
+    if (provider === "ollama") return "ollama";
     return "openai";
   }
 
@@ -2949,6 +3079,9 @@ export class ApiSettingsPage {
     );
     setPref("volcanoArkApiKey", "");
     setPref("volcanoArkModel", "doubao-seed-1-8-251228");
+    setPref("ollamaApiUrl", "http://localhost:11434");
+    setPref("ollamaApiKey", "");
+    setPref("ollamaModel", "llama3.2");
     setPref("llmEndpoints", "[]");
     setPref("llmRoutingStrategy", "priority");
     setPref("llmRoundRobinCursor", "");

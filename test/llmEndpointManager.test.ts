@@ -16,6 +16,9 @@ const prefKeys = [
   "openaiCompatApiUrl",
   "openaiCompatApiKey",
   "openaiCompatModel",
+  "ollamaApiUrl",
+  "ollamaApiKey",
+  "ollamaModel",
 ];
 
 function prefName(key: string): string {
@@ -134,6 +137,26 @@ describe("LLMEndpointManager", function () {
     expect(() => LLMEndpointManager.prepareRoute()).to.throw(
       "No enabled LLM endpoints are configured.",
     );
+  });
+
+  it("allows Ollama endpoints without API keys", function () {
+    const endpoint: LLMEndpoint = {
+      ...makeEndpoint("ollama"),
+      providerType: "ollama",
+      apiUrl: "http://localhost:11434",
+      apiKey: "",
+      model: "llama3.2",
+    };
+
+    expect(LLMEndpointManager.validateEndpoint(endpoint)).to.deep.equal([]);
+    LLMEndpointManager.saveEndpoints([endpoint]);
+
+    const route = LLMEndpointManager.prepareRoute();
+    expect(route.endpoints[0]).to.include({
+      providerType: "ollama",
+      apiKey: "",
+      model: "llama3.2",
+    });
   });
 
   it("returns selected enabled endpoints for multi-model summaries", function () {

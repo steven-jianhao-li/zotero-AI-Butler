@@ -736,6 +736,9 @@ export class EndpointSettingsPanel {
 
   private renderApiKeyField(endpoint: LLMEndpoint): HTMLElement {
     const document = doc();
+    const allowsEmptyKey = LLMEndpointManager.providerAllowsEmptyApiKey(
+      endpoint.providerType,
+    );
     const wrapper = document.createElement("div");
     Object.assign(wrapper.style, {
       display: "flex",
@@ -748,7 +751,7 @@ export class EndpointSettingsPanel {
       `endpoint-${endpoint.id}-key`,
       "password",
       endpoint.apiKey,
-      "sk-...",
+      allowsEmptyKey ? "可留空" : "sk-...",
     );
     Object.assign(apiKeyInput.style, {
       flex: "1 1 auto",
@@ -786,9 +789,13 @@ export class EndpointSettingsPanel {
     wrapper.appendChild(apiKeyInput);
     wrapper.appendChild(toggleButton);
     return createFormGroup(
-      "API 密钥 *",
+      allowsEmptyKey ? "API 密钥" : "API 密钥 *",
       wrapper,
-      fieldDescription("【必填】该供应商的单个 API 密钥，将安全存储在本地。"),
+      fieldDescription(
+        allowsEmptyKey
+          ? "Ollama 本地服务通常无需 API 密钥；如服务设置了鉴权，可填写 Bearer token。"
+          : "【必填】该供应商的单个 API 密钥，将安全存储在本地。",
+      ),
     );
   }
 
@@ -1201,6 +1208,9 @@ export class EndpointSettingsPanel {
       const base = rawUrl.replace(/\/+$/, "").replace(/\/v1(?:\/.*)?$/i, "");
       return `${base}/v1/messages`;
     }
+    if (endpoint.providerType === "ollama") {
+      return this.toOllamaChatEndpoint(rawUrl);
+    }
     return this.toResponsesEndpoint(rawUrl, "");
   }
 
@@ -1224,6 +1234,17 @@ export class EndpointSettingsPanel {
       return raw.replace(/(\/v\d+(?:beta)?)(?:\/.*)?$/i, "$1/chat/completions");
     }
     return `${raw}/v1/chat/completions`;
+  }
+
+  private toOllamaChatEndpoint(url: string): string {
+    const raw = url.trim().replace(/\/+$/, "");
+    if (!raw) return "";
+    const base = raw
+      .replace(/\/v1(?:\/chat\/completions)?$/i, "")
+      .replace(/\/api(?:\/chat|\/generate|\/tags)?$/i, "")
+      .replace(/\/chat$/i, "")
+      .replace(/\/generate$/i, "");
+    return `${base}/api/chat`;
   }
 
   private async copyConnectionDetails(status: HTMLElement): Promise<void> {

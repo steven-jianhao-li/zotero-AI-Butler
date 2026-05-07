@@ -365,7 +365,7 @@ async function isContextMenuOptionVisible(
   }
 }
 
-function refreshContextMenuItems(): void {
+export function refreshAIButlerContextMenuItems(): void {
   registerContextMenuItem();
 }
 
@@ -375,7 +375,7 @@ function bindUICustomizationRefreshEvent(win: Window): void {
   (win as any)[flagKey] = true;
 
   win.addEventListener(UI_CUSTOMIZATION_CHANGED_EVENT, () => {
-    refreshContextMenuItems();
+    refreshAIButlerContextMenuItems();
   });
 }
 

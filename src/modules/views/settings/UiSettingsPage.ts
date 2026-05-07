@@ -653,6 +653,14 @@ export class UiSettingsPage {
     }
 
     try {
+      const { refreshAIButlerContextMenuItems } =
+        await import("../../../hooks");
+      refreshAIButlerContextMenuItems();
+    } catch (error) {
+      ztoolkit.log("[AI-Butler] 立即刷新右键菜单失败:", error);
+    }
+
+    try {
       const win = Zotero.getMainWindow();
       const CustomEventCtor = (win as any).CustomEvent || CustomEvent;
       win.dispatchEvent(

@@ -611,6 +611,8 @@ export class TaskQueueView extends BaseView {
       taskHeader.appendChild(typeBadge);
     }
 
+    const safeError = task.error ? this.escapeHtml(task.error) : "";
+
     // 任务信息
     const taskInfo = this.createElement("div", {
       styles: {
@@ -621,7 +623,7 @@ export class TaskQueueView extends BaseView {
       innerHTML: `
         创建时间: ${task.createdAt.toLocaleString("zh-CN")}
         ${task.completedAt ? `<br/>完成时间: ${task.completedAt.toLocaleString("zh-CN")}` : ""}
-        ${task.error ? `<br/><span style="color: #f44336;">错误: ${task.error}</span>` : ""}
+        ${safeError ? `<br/><span style="color: #f44336;">错误: ${safeError}</span>` : ""}
         ${task.retryCount > 0 ? `<br/>重试次数: ${task.retryCount}` : ""}
         ${isImageSummary && task.workflowStage ? `<br/><strong style="color: #9c27b0;">阶段: ${task.workflowStage}</strong>` : ""}
         ${isMindmap && task.workflowStage ? `<br/><strong style="color: #4caf50;">阶段: ${task.workflowStage}</strong>` : ""}
@@ -659,6 +661,7 @@ export class TaskQueueView extends BaseView {
     const actions = this.createElement("div", {
       styles: {
         display: "flex",
+        flexWrap: "wrap",
         gap: "10px",
       },
     });
@@ -697,6 +700,11 @@ export class TaskQueueView extends BaseView {
         return;
       }
 
+      if (task.status === TaskStatus.FAILED) {
+        view.showError(task.title, task.error || "", task.errorDetails);
+        return;
+      }
+
       // 注册一次性流式订阅，仅监听该 taskId
       if (!this.manager) this.manager = TaskQueueManager.getInstance();
       // 确保执行器已启动，尽快进入处理
@@ -726,7 +734,7 @@ export class TaskQueueView extends BaseView {
             this.detailStreamUnsubscribe = undefined;
           }
         } else if (event.type === "error") {
-          view.showError(task.title, task.error || "");
+          view.showError(task.title, task.error || "", task.errorDetails);
           if (this.detailStreamUnsubscribe) {
             this.detailStreamUnsubscribe();
             this.detailStreamUnsubscribe = undefined;
@@ -755,6 +763,27 @@ export class TaskQueueView extends BaseView {
       });
 
       actions.appendChild(retryBtn);
+
+      const copyErrorBtn = this.createElement("button", {
+        styles: {
+          padding: "6px 12px",
+          border: "1px solid #777",
+          borderRadius: "4px",
+          backgroundColor: "transparent",
+          color: "#777",
+          cursor: "pointer",
+          fontSize: "12px",
+        },
+        textContent: "复制错误",
+      });
+
+      copyErrorBtn.addEventListener("click", () => {
+        void this.copyTextToClipboard(
+          task.errorDetails || this.buildTaskErrorCopyText(task),
+        );
+      });
+
+      actions.appendChild(copyErrorBtn);
     }
 
     if (
@@ -811,6 +840,78 @@ export class TaskQueueView extends BaseView {
     target.appendChild(actions);
 
     return taskItem;
+  }
+
+  private buildTaskErrorCopyText(task: TaskItem): string {
+    return [
+      "AI-Butler task error details",
+      `generatedAt: ${new Date().toISOString()}`,
+      `taskId: ${task.id}`,
+      `taskType: ${task.taskType || "summary"}`,
+      `itemId: ${task.itemId}`,
+      `title: ${task.title}`,
+      `status: ${task.status}`,
+      `createdAt: ${task.createdAt?.toISOString?.() || "unknown"}`,
+      `startedAt: ${task.startedAt?.toISOString?.() || "unknown"}`,
+      `completedAt: ${task.completedAt?.toISOString?.() || "unknown"}`,
+      `retryCount: ${task.retryCount}`,
+      `maxRetries: ${task.maxRetries}`,
+      `workflowStage: ${task.workflowStage || "none"}`,
+      `errorMessage: ${task.error || "unknown"}`,
+    ].join("\n");
+  }
+
+  private async copyTextToClipboard(text: string): Promise<void> {
+    const win = Zotero.getMainWindow();
+    const document = win.document;
+    const clipboard = win.navigator?.clipboard;
+
+    try {
+      if (clipboard?.writeText) {
+        await clipboard.writeText(text);
+      } else {
+        throw new Error("clipboard api unavailable");
+      }
+    } catch {
+      try {
+        const host = document.body || document.documentElement;
+        if (!host) {
+          throw new Error("document host unavailable");
+        }
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        Object.assign(textarea.style, {
+          position: "fixed",
+          left: "-9999px",
+          top: "0",
+        });
+        host.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      } catch {
+        new ztoolkit.ProgressWindow("AI Butler", { closeTime: 2200 })
+          .createLine({
+            text: "复制失败，可手动选择错误文本",
+            type: "fail",
+          })
+          .show();
+        return;
+      }
+    }
+
+    new ztoolkit.ProgressWindow("AI Butler", { closeTime: 1500 })
+      .createLine({ text: "已复制错误详情", type: "success" })
+      .show();
+  }
+
+  private escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   /**

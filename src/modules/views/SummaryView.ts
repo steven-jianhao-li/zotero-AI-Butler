@@ -2049,11 +2049,41 @@ ${jsonMarker}
    * @param itemTitle 条目标题
    * @param errorMessage 错误消息
    */
-  public showError(itemTitle: string, errorMessage: string): void {
+  public showError(
+    itemTitle: string,
+    errorMessage: string,
+    errorDetails?: string,
+  ): void {
     if (!this.outputContainer) return;
 
     // 隐藏加载状态(如果存在)
     this.hideLoading();
+
+    const copyText =
+      errorDetails ||
+      [
+        "AI-Butler summary error",
+        `generatedAt: ${new Date().toISOString()}`,
+        `title: ${itemTitle}`,
+        `errorMessage: ${errorMessage}`,
+      ].join("\n");
+
+    const copyButton = this.createElement("button", {
+      styles: {
+        padding: "6px 12px",
+        border: "1px solid #777",
+        borderRadius: "4px",
+        backgroundColor: "transparent",
+        color: "#777",
+        cursor: "pointer",
+        fontSize: "12px",
+        marginTop: "10px",
+      },
+      textContent: "复制错误",
+    });
+    copyButton.addEventListener("click", () => {
+      void this.copyErrorToClipboard(copyText);
+    });
 
     const errorContainer = this.createElement("div", {
       className: "item-output error",
@@ -2081,6 +2111,7 @@ ${jsonMarker}
           },
           textContent: `错误: ${errorMessage}`,
         }),
+        copyButton,
       ],
     });
 
@@ -2090,6 +2121,50 @@ ${jsonMarker}
     this.applyTheme();
 
     this.scrollToBottom();
+  }
+
+  private async copyErrorToClipboard(text: string): Promise<void> {
+    const win = Zotero.getMainWindow();
+    const document = win.document;
+    const clipboard = win.navigator?.clipboard;
+
+    try {
+      if (clipboard?.writeText) {
+        await clipboard.writeText(text);
+      } else {
+        throw new Error("clipboard api unavailable");
+      }
+    } catch {
+      try {
+        const host = document.body || document.documentElement;
+        if (!host) {
+          throw new Error("document host unavailable");
+        }
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        Object.assign(textarea.style, {
+          position: "fixed",
+          left: "-9999px",
+          top: "0",
+        });
+        host.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      } catch {
+        new ztoolkit.ProgressWindow("AI Butler", { closeTime: 2200 })
+          .createLine({
+            text: "复制失败，可手动选择错误文本",
+            type: "fail",
+          })
+          .show();
+        return;
+      }
+    }
+
+    new ztoolkit.ProgressWindow("AI Butler", { closeTime: 1500 })
+      .createLine({ text: "已复制错误详情", type: "success" })
+      .show();
   }
 
   /**

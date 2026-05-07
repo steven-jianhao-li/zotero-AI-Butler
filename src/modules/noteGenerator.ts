@@ -535,7 +535,19 @@ export class NoteGenerator {
       const details = failures
         .map((failure) => `${failure.endpoint.name}: ${failure.error.message}`)
         .join("\n");
-      throw new Error(`多模型同时总结全部失败。\n${details}`);
+      const error = new Error(`多模型同时总结全部失败。\n${details}`);
+      const suppressAll =
+        failures.length > 0 &&
+        failures.every(
+          (failure) =>
+            (failure.error as Error & { suppressTaskRetry?: boolean })
+              .suppressTaskRetry === true,
+        );
+      if (suppressAll) {
+        (error as Error & { suppressTaskRetry?: boolean }).suppressTaskRetry =
+          true;
+      }
+      throw error;
     }
 
     const content = successes
@@ -623,7 +635,6 @@ export class NoteGenerator {
           item,
           attachmentMode,
         },
-        transport: { retry: false },
       });
       content = response.text;
     } else {
@@ -1033,7 +1044,6 @@ export class NoteGenerator {
           },
           conversation: conversationHistory,
           onProgress: onRoundProgress,
-          transport: endpointId ? { retry: false } : undefined,
         };
         const response = endpointId
           ? await LLMService.chatWithEndpoint(endpointId, chatRequest)
@@ -1060,6 +1070,9 @@ export class NoteGenerator {
         }
       } catch (error: any) {
         ztoolkit.log(`[AI Butler] 第 ${roundNum} 轮对话失败:`, error);
+        if (this.shouldStopMultiRoundOnError(error)) {
+          throw error;
+        }
         // 如果某轮对话失败，记录错误但继续
         roundResults.push({
           title: currentPrompt.title,
@@ -1123,7 +1136,6 @@ export class NoteGenerator {
           },
           conversation: conversationHistory,
           onProgress: onFinalProgress,
-          transport: endpointId ? { retry: false } : undefined,
         };
         const response = endpointId
           ? await LLMService.chatWithEndpoint(endpointId, chatRequest)
@@ -1146,6 +1158,9 @@ export class NoteGenerator {
         return { content: summary, response };
       } catch (error: any) {
         ztoolkit.log("[AI Butler] 最终总结生成失败:", error);
+        if (this.shouldStopMultiRoundOnError(error)) {
+          throw error;
+        }
         // 如果最终总结失败，回退到拼接模式
         return {
           content: this.formatMultiRoundConcat(roundResults),
@@ -1153,6 +1168,20 @@ export class NoteGenerator {
         };
       }
     }
+  }
+
+  private static shouldStopMultiRoundOnError(error: unknown): boolean {
+    const value = error as
+      | {
+          name?: string;
+          suppressTaskRetry?: boolean;
+        }
+      | undefined;
+    return (
+      value?.suppressTaskRetry === true ||
+      value?.name === "LLMApiCallError" ||
+      value?.name === "LLMApiExhaustedError"
+    );
   }
 
   /**

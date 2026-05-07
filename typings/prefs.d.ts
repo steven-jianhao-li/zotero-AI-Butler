@@ -55,6 +55,7 @@ declare namespace _ZoteroTypes {
       "pdfProcessMode": string;
       "pdfAttachmentMode": string;
       "imageSummaryCustomHeaders": string;
+      "imageSummaryRequestTimeoutSeconds": string;
       "imageSummaryAspectRatioEnabled": boolean;
       "imageSummaryAspectRatio": string;
       "imageSummaryResolutionEnabled": boolean;
@@ -65,6 +66,7 @@ declare namespace _ZoteroTypes {
       "windowWidth": string;
       "windowHeight": string;
       "saveChatHistory": boolean;
+      "contextMenuCollapsed": boolean;
       "contextMenuItemVisibility": string;
       "contextMenuItemOrder": string;
       "sidebarModuleVisibility": string;

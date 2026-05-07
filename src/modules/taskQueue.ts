@@ -79,6 +79,7 @@ export interface TaskItem {
   startedAt?: Date; // 开始处理时间
   completedAt?: Date; // 完成时间
   error?: string; // 错误信息
+  errorDetails?: string; // 可复制的完整错误诊断信息
   retryCount: number; // 已重试次数
   maxRetries: number; // 最大重试次数
   duration?: number; // 处理耗时(秒)
@@ -321,6 +322,7 @@ export class TaskQueueManager {
     task.options = options;
     task.progress = 0;
     task.error = undefined;
+    task.errorDetails = undefined;
     task.retryCount = 0;
     task.startedAt = undefined;
     task.completedAt = undefined;
@@ -504,6 +506,8 @@ export class TaskQueueManager {
     task.status = TaskStatus.PROCESSING;
     task.startedAt = new Date();
     task.progress = 0;
+    task.error = undefined;
+    task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
     await this.saveToStorage();
@@ -548,11 +552,13 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, true);
     } catch (error: any) {
       // 任务失败
-      task.error = error?.details?.errorMessage || error?.message || "未知错误";
+      task.error = this.getTaskErrorMessage(error);
+      task.errorDetails = this.buildTaskErrorDetails(task, error);
       task.workflowStage = "失败";
+      const suppressTaskRetry = this.shouldSuppressTaskRetry(error, task);
 
       task.retryCount++;
-      if (task.retryCount < task.maxRetries) {
+      if (!suppressTaskRetry && task.retryCount < task.maxRetries) {
         task.status = TaskStatus.PENDING;
         task.progress = 0;
         logTaskQueue(
@@ -656,6 +662,8 @@ export class TaskQueueManager {
     task.status = TaskStatus.PROCESSING;
     task.startedAt = new Date();
     task.progress = 0;
+    task.error = undefined;
+    task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
     await this.saveToStorage();
@@ -697,11 +705,13 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, true);
     } catch (error: any) {
       // 任务失败
-      task.error = error?.details?.errorMessage || error?.message || "未知错误";
+      task.error = this.getTaskErrorMessage(error);
+      task.errorDetails = this.buildTaskErrorDetails(task, error);
       task.workflowStage = "失败";
+      const suppressTaskRetry = this.shouldSuppressTaskRetry(error, task);
 
       task.retryCount++;
-      if (task.retryCount < task.maxRetries) {
+      if (!suppressTaskRetry && task.retryCount < task.maxRetries) {
         task.status = TaskStatus.PENDING;
         task.progress = 0;
         logTaskQueue(
@@ -793,6 +803,8 @@ export class TaskQueueManager {
     task.status = TaskStatus.PROCESSING;
     task.startedAt = new Date();
     task.progress = 0;
+    task.error = undefined;
+    task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
     await this.saveToStorage();
@@ -858,10 +870,12 @@ export class TaskQueueManager {
       logTaskQueue(`填表任务完成: ${task.title} (耗时${task.duration}秒)`);
       this.notifyComplete(taskId, true);
     } catch (error: any) {
-      task.error = error?.message || "未知错误";
+      task.error = this.getTaskErrorMessage(error);
+      task.errorDetails = this.buildTaskErrorDetails(task, error);
       task.workflowStage = "失败";
+      const suppressTaskRetry = this.shouldSuppressTaskRetry(error, task);
       task.retryCount++;
-      if (task.retryCount < task.maxRetries) {
+      if (!suppressTaskRetry && task.retryCount < task.maxRetries) {
         task.status = TaskStatus.PENDING;
         task.progress = 0;
       } else {
@@ -946,6 +960,8 @@ export class TaskQueueManager {
     task.status = TaskStatus.PROCESSING;
     task.startedAt = new Date();
     task.progress = 0;
+    task.error = undefined;
+    task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
     await this.saveToStorage();
@@ -1002,7 +1018,8 @@ export class TaskQueueManager {
       logTaskQueue(`综述任务完成: ${task.title} (耗时${task.duration}秒)`);
       this.notifyComplete(taskId, true);
     } catch (error: any) {
-      task.error = error?.message || "未知错误";
+      task.error = this.getTaskErrorMessage(error);
+      task.errorDetails = this.buildTaskErrorDetails(task, error);
       task.workflowStage = "失败";
       task.status = TaskStatus.FAILED;
       task.completedAt = new Date();
@@ -1094,6 +1111,8 @@ export class TaskQueueManager {
     task.status = TaskStatus.PROCESSING;
     task.startedAt = new Date();
     task.progress = 0;
+    task.error = undefined;
+    task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
     await this.saveToStorage();
@@ -1158,7 +1177,8 @@ export class TaskQueueManager {
       );
       this.notifyComplete(taskId, true);
     } catch (error: any) {
-      task.error = error?.message || "未知错误";
+      task.error = this.getTaskErrorMessage(error);
+      task.errorDetails = this.buildTaskErrorDetails(task, error);
       task.workflowStage = "失败";
       task.status = TaskStatus.FAILED;
       task.completedAt = new Date();
@@ -1270,6 +1290,7 @@ export class TaskQueueManager {
     task.status = TaskStatus.PRIORITY; // 优先重试
     task.progress = 0;
     task.error = undefined;
+    task.errorDetails = undefined;
     task.retryCount = 0;
     task.startedAt = undefined;
     task.completedAt = undefined;
@@ -1575,6 +1596,8 @@ export class TaskQueueManager {
     task.status = TaskStatus.PROCESSING;
     task.startedAt = new Date();
     task.progress = 0;
+    task.error = undefined;
+    task.errorDetails = undefined;
     this.processingTasks.add(taskId);
     await this.saveToStorage();
 
@@ -1636,14 +1659,20 @@ export class TaskQueueManager {
       return false; // 非快速失败，计入批次
     } catch (error: any) {
       // 任务失败
-      task.error = error.message || "未知错误";
+      task.error = this.getTaskErrorMessage(error);
+      task.errorDetails = this.buildTaskErrorDetails(task, error);
+      const suppressTaskRetry = this.shouldSuppressTaskRetry(error, task);
 
       // 无 PDF 附件错误直接标记失败，不重试（用户需要手动添加 PDF）
       const isNoPdfError = task.error === NO_PDF_ERROR_MSG;
-      if (isNoPdfError) {
+      if (isNoPdfError || suppressTaskRetry) {
         task.status = TaskStatus.FAILED;
         task.completedAt = new Date();
-        logTaskQueue(`任务失败（无 PDF 附件）: ${task.title}`);
+        logTaskQueue(
+          isNoPdfError
+            ? `任务失败（无 PDF 附件）: ${task.title}`
+            : `任务失败（API 尝试已用尽，不再进行队列重试）: ${task.title}`,
+        );
       } else {
         task.retryCount++;
         // 检查是否需要重试
@@ -1669,6 +1698,169 @@ export class TaskQueueManager {
       // 移除处理中标记
       this.processingTasks.delete(taskId);
       await this.saveToStorage();
+    }
+  }
+
+  private getTaskErrorMessage(error: unknown): string {
+    const withDetails = error as
+      | {
+          details?: { errorMessage?: string };
+          message?: string;
+        }
+      | undefined;
+    return (
+      withDetails?.details?.errorMessage ||
+      withDetails?.message ||
+      String(error || "未知错误")
+    );
+  }
+
+  private shouldSuppressTaskRetry(error: unknown, task?: TaskItem): boolean {
+    const value = error as
+      | {
+          name?: string;
+          suppressTaskRetry?: boolean;
+        }
+      | undefined;
+    return (
+      value?.suppressTaskRetry === true ||
+      value?.name === "LLMApiCallError" ||
+      value?.name === "LLMApiExhaustedError" ||
+      this.isLikelyApiFailure(error, task)
+    );
+  }
+
+  private isLikelyApiFailure(error: unknown, task?: TaskItem): boolean {
+    const message = this.getTaskErrorMessage(error);
+    const stack =
+      typeof (error as { stack?: unknown })?.stack === "string"
+        ? String((error as { stack?: string }).stack)
+        : "";
+    const text = `${message}\n${stack}`.toLowerCase();
+
+    if (
+      /\bhttp\s*(4\d\d|5\d\d)\b/.test(text) ||
+      /\b(400|401|403|404|408|409|429|500|502|503|504)\b/.test(text)
+    ) {
+      return true;
+    }
+
+    if (
+      text.includes("api") ||
+      text.includes("responses") ||
+      text.includes("chat/completions") ||
+      text.includes("openai") ||
+      text.includes("gemini") ||
+      text.includes("anthropic") ||
+      text.includes("openrouter") ||
+      text.includes("volcano") ||
+      text.includes("networkerror") ||
+      text.includes("timeout") ||
+      text.includes("xhr") ||
+      text.includes("fetch") ||
+      text.includes("request failed") ||
+      text.includes("请求失败") ||
+      text.includes("连接失败") ||
+      text.includes("请求超过")
+    ) {
+      return true;
+    }
+
+    // Summary tasks report 40% right before entering the model call. If an
+    // error happens after that point, a queue-level retry would just multiply
+    // real API requests beyond the model-platform attempt cap.
+    return (
+      (!task?.taskType || task.taskType === "summary") &&
+      (task?.progress || 0) >= 40
+    );
+  }
+
+  private buildTaskErrorDetails(task: TaskItem, error: unknown): string {
+    const errorInfo = error as
+      | {
+          name?: string;
+          message?: string;
+          stack?: string;
+          diagnosticText?: string;
+          details?: unknown;
+          attempts?: number;
+          endpointId?: string;
+          endpointName?: string;
+          providerId?: string;
+          suppressTaskRetry?: boolean;
+        }
+      | undefined;
+    const runtime = this.getRuntimeDebugInfo();
+    const lines = [
+      "AI-Butler task error details",
+      `generatedAt: ${new Date().toISOString()}`,
+      `taskId: ${task.id}`,
+      `taskType: ${task.taskType || "summary"}`,
+      `itemId: ${task.itemId}`,
+      `title: ${task.title}`,
+      `status: ${task.status}`,
+      `retryCount: ${task.retryCount}`,
+      `maxRetries: ${task.maxRetries}`,
+      `workflowStage: ${task.workflowStage || "none"}`,
+      `zoteroVersion: ${runtime.zoteroVersion || "unknown"}`,
+      `platform: ${runtime.platform || "unknown"}`,
+      `userAgent: ${runtime.userAgent || "unknown"}`,
+      `errorName: ${errorInfo?.name || "unknown"}`,
+      `errorMessage: ${this.getTaskErrorMessage(error)}`,
+      `suppressTaskRetry: ${this.shouldSuppressTaskRetry(error, task)}`,
+      `likelyApiFailure: ${this.isLikelyApiFailure(error, task)}`,
+    ];
+
+    if (errorInfo?.attempts !== undefined) {
+      lines.push(`apiAttempts: ${errorInfo.attempts}`);
+    }
+    if (errorInfo?.endpointName || errorInfo?.endpointId) {
+      lines.push(`endpointName: ${errorInfo.endpointName || "unknown"}`);
+      lines.push(`endpointId: ${errorInfo.endpointId || "unknown"}`);
+      lines.push(`providerId: ${errorInfo.providerId || "unknown"}`);
+    }
+
+    if (errorInfo?.diagnosticText) {
+      lines.push("", "--- diagnosticText ---", errorInfo.diagnosticText);
+    }
+    if (errorInfo?.details) {
+      lines.push(
+        "",
+        "--- error.details ---",
+        this.stringifyDebugValue(errorInfo.details),
+      );
+    }
+    if (errorInfo?.stack) {
+      lines.push("", "--- stack ---", errorInfo.stack);
+    }
+
+    return lines.join("\n");
+  }
+
+  private getRuntimeDebugInfo(): {
+    zoteroVersion?: string;
+    platform?: string;
+    userAgent?: string;
+  } {
+    try {
+      const win = Zotero.getMainWindow?.();
+      return {
+        zoteroVersion: (Zotero as unknown as { version?: string }).version,
+        platform: win?.navigator?.platform,
+        userAgent: win?.navigator?.userAgent,
+      };
+    } catch {
+      return {
+        zoteroVersion: (Zotero as unknown as { version?: string }).version,
+      };
+    }
+  }
+
+  private stringifyDebugValue(value: unknown): string {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
     }
   }
 

@@ -86,6 +86,7 @@ pref("__prefsPrefix__.pdfAttachmentMode", "default"); // "default" 或 "all"
 
 // ==================== 一图总结配置 ====================
 pref("__prefsPrefix__.imageSummaryCustomHeaders", ""); // 额外请求 Headers，JSON/Python dict 对象字符串
+pref("__prefsPrefix__.imageSummaryRequestTimeoutSeconds", "600"); // 生图请求超时，默认10分钟
 pref("__prefsPrefix__.imageSummaryAspectRatioEnabled", false); // 是否发送宽高比/size 参数
 pref("__prefsPrefix__.imageSummaryAspectRatio", "16:9"); // 图片宽高比，如 "1:1", "16:9", "9:16"
 pref("__prefsPrefix__.imageSummaryResolutionEnabled", false); // 是否发送分辨率/size 参数
@@ -98,6 +99,7 @@ pref("__prefsPrefix__.autoScroll", true);
 pref("__prefsPrefix__.windowWidth", "900");
 pref("__prefsPrefix__.windowHeight", "700");
 pref("__prefsPrefix__.saveChatHistory", true);
+pref("__prefsPrefix__.contextMenuCollapsed", false);
 pref(
   "__prefsPrefix__.contextMenuItemVisibility",
   '{"generateSummary":true,"multiRoundReanalyze":true,"dashboard":true,"chatWithAI":true,"imageSummary":true,"mindmap":true,"fillTable":true,"literatureReview":true}',

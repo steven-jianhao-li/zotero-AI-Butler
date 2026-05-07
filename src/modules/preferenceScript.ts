@@ -10,6 +10,7 @@ import {
 import { MainWindow } from "./views/MainWindow";
 import { config } from "../../package.json";
 import {
+  DEFAULT_CONTEXT_MENU_COLLAPSED,
   DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF,
   DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY_PREF,
   DEFAULT_SIDEBAR_MODULE_ORDER_PREF,
@@ -232,6 +233,7 @@ function initializeDefaultPrefs() {
     enableTableOnSingleNote: true,
     tableStrategy: "skip",
     tableFillConcurrency: 3,
+    contextMenuCollapsed: DEFAULT_CONTEXT_MENU_COLLAPSED,
     contextMenuItemVisibility: DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY_PREF,
     contextMenuItemOrder: DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF,
     sidebarModuleVisibility: DEFAULT_SIDEBAR_MODULE_VISIBILITY_PREF,

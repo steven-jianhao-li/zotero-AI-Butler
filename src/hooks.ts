@@ -30,11 +30,13 @@ import { MainWindow } from "./modules/views/MainWindow";
 import { AutoScanManager } from "./modules/autoScanManager";
 import {
   CONTEXT_MENU_ITEMS,
+  DEFAULT_CONTEXT_MENU_COLLAPSED,
   DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF,
   DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY_PREF,
   DEFAULT_SIDEBAR_MODULE_ORDER_PREF,
   DEFAULT_SIDEBAR_MODULE_VISIBILITY_PREF,
   getContextMenuItemOrder,
+  isContextMenuCollapsed,
   isContextMenuItemEnabled,
   type ContextMenuItemId,
 } from "./modules/uiCustomization";
@@ -241,6 +243,7 @@ function initializeDefaultPrefsOnStartup() {
     stream: true, // 默认启用流式输出,提供更好的用户体验
     summaryPrompt: getDefaultSummaryPrompt(), // 加载默认提示词模板
     promptVersion: PROMPT_VERSION, // 当前提示词版本号
+    contextMenuCollapsed: DEFAULT_CONTEXT_MENU_COLLAPSED,
     contextMenuItemVisibility: DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY_PREF,
     contextMenuItemOrder: DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF,
     sidebarModuleVisibility: DEFAULT_SIDEBAR_MODULE_VISIBILITY_PREF,
@@ -320,16 +323,49 @@ const CONTEXT_MENU_DOM_IDS: Record<ContextMenuItemId, string> = {
   literatureReview: "zotero-collectionmenu-ai-butler-literature-review",
 };
 
+type ContextMenuScope = "item" | "collection";
+type ContextMenuDefinition = {
+  scope: ContextMenuScope;
+  options: any;
+};
+
+const CONTEXT_MENU_ROOT_DOM_IDS: Record<ContextMenuScope, string> = {
+  item: "zotero-itemmenu-ai-butler-root",
+  collection: "zotero-collectionmenu-ai-butler-root",
+};
+
 function unregisterContextMenuItems(menu: {
   unregister?: (menuId: string) => void;
 }): void {
   if (typeof menu.unregister !== "function") return;
+  for (const menuId of Object.values(CONTEXT_MENU_ROOT_DOM_IDS)) {
+    menu.unregister(menuId);
+  }
   for (const item of CONTEXT_MENU_ITEMS) {
     menu.unregister(CONTEXT_MENU_DOM_IDS[item.id]);
   }
 }
 
-function refreshContextMenuItems(): void {
+async function isContextMenuOptionVisible(
+  option: any,
+  ev: Event,
+): Promise<boolean> {
+  try {
+    if (option.hidden) return false;
+    if (typeof option.isHidden === "function") {
+      return (await option.isHidden(undefined, ev)) !== true;
+    }
+    if (typeof option.getVisibility === "function") {
+      return (await option.getVisibility(undefined, ev)) !== false;
+    }
+    return true;
+  } catch (error) {
+    ztoolkit.log("[AI-Butler] 判断右键菜单项可见性失败:", error);
+    return false;
+  }
+}
+
+export function refreshAIButlerContextMenuItems(): void {
   registerContextMenuItem();
 }
 
@@ -339,7 +375,7 @@ function bindUICustomizationRefreshEvent(win: Window): void {
   (win as any)[flagKey] = true;
 
   win.addEventListener(UI_CUSTOMIZATION_CHANGED_EVENT, () => {
-    refreshContextMenuItems();
+    refreshAIButlerContextMenuItems();
   });
 }
 
@@ -363,7 +399,7 @@ function registerContextMenuItem() {
   // 获取插件图标路径,用于菜单项显示
   const menuIcon = `chrome://${config.addonRef}/content/icons/favicon.png`;
   const menu = (ztoolkit as any).Menu as {
-    register: (scope: "item" | "collection", options: any) => void;
+    register: (scope: ContextMenuScope, options: any) => void;
     unregister?: (menuId: string) => void;
   };
 
@@ -376,10 +412,7 @@ function registerContextMenuItem() {
     );
   };
 
-  const menuDefinitions: Record<
-    ContextMenuItemId,
-    { scope: "item" | "collection"; options: any }
-  > = {
+  const menuDefinitions: Record<ContextMenuItemId, ContextMenuDefinition> = {
     generateSummary: {
       scope: "item",
       options: {
@@ -515,8 +548,37 @@ function registerContextMenuItem() {
     },
   };
 
-  for (const itemId of getContextMenuItemOrder()) {
-    const definition = menuDefinitions[itemId];
+  const orderedDefinitions = getContextMenuItemOrder()
+    .map((itemId) => menuDefinitions[itemId])
+    .filter((definition): definition is ContextMenuDefinition =>
+      Boolean(definition),
+    );
+
+  if (isContextMenuCollapsed()) {
+    for (const scope of ["item", "collection"] as const) {
+      const children = orderedDefinitions
+        .filter((definition) => definition.scope === scope)
+        .map((definition) => definition.options);
+      if (!children.length) continue;
+
+      menu.register(scope, {
+        tag: "menu",
+        id: CONTEXT_MENU_ROOT_DOM_IDS[scope],
+        label: "AI 管家",
+        icon: menuIcon,
+        children,
+        getVisibility: async (_elem: XUL.Menu, ev: Event) => {
+          for (const child of children) {
+            if (await isContextMenuOptionVisible(child, ev)) return true;
+          }
+          return false;
+        },
+      });
+    }
+    return;
+  }
+
+  for (const definition of orderedDefinitions) {
     menu.register(definition.scope, definition.options);
   }
 }

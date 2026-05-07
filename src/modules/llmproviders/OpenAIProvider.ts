@@ -110,6 +110,7 @@ export class OpenAIProvider implements ILlmProvider {
             body: JSON.stringify(payload),
             responseType: "text",
             timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+            errorDelayMax: 0,
             requestObserver: (xmlhttp: XMLHttpRequest) => {
               xmlhttp.onprogress = (e: any) => {
                 const status = e.target.status;
@@ -190,9 +191,10 @@ export class OpenAIProvider implements ILlmProvider {
             },
           });
         } catch (error: any) {
-          if (abortError) {
+          const currentAbortError = abortError as Error | null;
+          if (currentAbortError) {
             if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-            throw abortError;
+            throw currentAbortError;
           }
           let errorMessage = error?.message || "OpenAI Responses 请求失败";
           try {
@@ -228,6 +230,7 @@ export class OpenAIProvider implements ILlmProvider {
           body: JSON.stringify(basePayload),
           responseType: "json",
           timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+          errorDelayMax: 0,
         });
         const data = res.response || res;
         const text = parseOpenAIResponsesText(data);
@@ -287,6 +290,7 @@ export class OpenAIProvider implements ILlmProvider {
           body,
           responseType: "text",
           timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+          errorDelayMax: 0,
           requestObserver: (xmlhttp: XMLHttpRequest) => {
             xmlhttp.onprogress = (e: any) => {
               const status = e.target.status;
@@ -502,6 +506,7 @@ export class OpenAIProvider implements ILlmProvider {
             body: JSON.stringify(basePayload),
             responseType: "json",
             timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+            errorDelayMax: 0,
           });
           const text = parseOpenAIResponsesText(res.response || res);
           if (onProgress && text) await onProgress(text);
@@ -546,6 +551,7 @@ export class OpenAIProvider implements ILlmProvider {
           body: JSON.stringify(payload),
           responseType: "text",
           timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+          errorDelayMax: 0,
           requestObserver: (xmlhttp: XMLHttpRequest) => {
             xmlhttp.onprogress = (e: any) => {
               const status = e.target.status;
@@ -705,6 +711,7 @@ export class OpenAIProvider implements ILlmProvider {
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;
@@ -899,6 +906,7 @@ export class OpenAIProvider implements ILlmProvider {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(payload),
+        errorDelayMax: 0,
         responseType: "text", // 使用 text 以获取原始响应
         timeout: 30000,
       });
@@ -1073,6 +1081,7 @@ export class OpenAIProvider implements ILlmProvider {
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
+        errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;
@@ -1197,6 +1206,7 @@ export class OpenAIProvider implements ILlmProvider {
       },
       body: JSON.stringify(payload),
       responseType: "json",
+      errorDelayMax: 0,
     });
     const data = res.response || res;
     const text = data?.choices?.[0]?.message?.content || "";

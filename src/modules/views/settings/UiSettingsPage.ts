@@ -13,7 +13,9 @@ import {
   getContextMenuItemVisibility,
   getSidebarModuleOrder,
   getSidebarModuleVisibility,
+  isContextMenuCollapsed,
   resetUICustomizationPrefs,
+  setContextMenuCollapsed,
   setContextMenuItemOrder,
   setContextMenuItemVisibility,
   setSidebarModuleOrder,
@@ -164,9 +166,14 @@ export class UiSettingsPage {
 
     const contextMenuVisibilityDraft = getContextMenuItemVisibility();
     let contextMenuOrderDraft = getContextMenuItemOrder();
+    let contextMenuCollapsedDraft = isContextMenuCollapsed();
     form.appendChild(
       this.createContextMenuSection(
         contextMenuVisibilityDraft,
+        () => contextMenuCollapsedDraft,
+        (collapsed) => {
+          contextMenuCollapsedDraft = collapsed;
+        },
         () => contextMenuOrderDraft,
         (nextOrder) => {
           contextMenuOrderDraft = nextOrder;
@@ -225,6 +232,7 @@ export class UiSettingsPage {
 
       setContextMenuItemVisibility(contextMenuVisibilityDraft);
       setContextMenuItemOrder(contextMenuOrderDraft);
+      setContextMenuCollapsed(contextMenuCollapsedDraft);
       setSidebarModuleVisibility(sidebarVisibilityDraft);
       setSidebarModuleOrder(sidebarOrderDraft);
 
@@ -307,14 +315,67 @@ export class UiSettingsPage {
 
   private createContextMenuSection(
     visibilityDraft: ContextMenuVisibility,
+    getCollapsed: () => boolean,
+    setCollapsed: (collapsed: boolean) => void,
     getOrder: () => ContextMenuItemId[],
     setOrder: (order: ContextMenuItemId[]) => void,
   ): HTMLElement {
     const doc = Zotero.getMainWindow().document;
     const panel = this.createSettingsPanel(
       "右键菜单个性化",
-      "关闭不常用入口，并用上下按钮调整它们在 Zotero 右键菜单里的顺序。",
+      "关闭不常用入口，并用上下按钮调整它们在 Zotero 右键菜单或 AI 管家子菜单里的顺序。",
     );
+
+    const collapseRow = doc.createElement("label");
+    Object.assign(collapseRow.style, {
+      display: "grid",
+      gridTemplateColumns: "auto 1fr",
+      gap: "10px",
+      alignItems: "center",
+      padding: "10px",
+      marginBottom: "12px",
+      border: "1px solid rgba(89, 192, 188, 0.28)",
+      borderRadius: "5px",
+      background: "rgba(89, 192, 188, 0.08)",
+      cursor: "pointer",
+    });
+
+    const collapseCheckbox = doc.createElement("input");
+    collapseCheckbox.type = "checkbox";
+    collapseCheckbox.checked = getCollapsed();
+    collapseCheckbox.id = "setting-context-menu-collapsed";
+    Object.assign(collapseCheckbox.style, {
+      width: "18px",
+      height: "18px",
+      cursor: "pointer",
+    });
+    collapseCheckbox.addEventListener("change", () => {
+      setCollapsed(collapseCheckbox.checked);
+    });
+
+    const collapseText = doc.createElement("div");
+    const collapseTitle = doc.createElement("div");
+    collapseTitle.textContent = "折叠到「AI 管家」子菜单";
+    Object.assign(collapseTitle.style, {
+      fontSize: "13px",
+      fontWeight: "600",
+      color: "var(--ai-text)",
+    });
+
+    const collapseDesc = doc.createElement("div");
+    collapseDesc.textContent =
+      "开启后，Zotero 右键菜单只显示一个「AI 管家」入口，悬停后展开已启用的具体功能。";
+    Object.assign(collapseDesc.style, {
+      marginTop: "3px",
+      fontSize: "12px",
+      color: "var(--ai-text-muted)",
+      lineHeight: "1.35",
+    });
+    collapseText.appendChild(collapseTitle);
+    collapseText.appendChild(collapseDesc);
+    collapseRow.appendChild(collapseCheckbox);
+    collapseRow.appendChild(collapseText);
+    panel.appendChild(collapseRow);
 
     const list = doc.createElement("div");
     Object.assign(list.style, {
@@ -589,6 +650,14 @@ export class UiSettingsPage {
       await refreshCurrentItemPaneSection();
     } catch (error) {
       ztoolkit.log("[AI-Butler] 刷新侧边栏个性化设置失败:", error);
+    }
+
+    try {
+      const { refreshAIButlerContextMenuItems } =
+        await import("../../../hooks");
+      refreshAIButlerContextMenuItems();
+    } catch (error) {
+      ztoolkit.log("[AI-Butler] 立即刷新右键菜单失败:", error);
     }
 
     try {

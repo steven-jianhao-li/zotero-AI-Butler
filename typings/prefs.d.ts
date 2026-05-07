@@ -65,6 +65,7 @@ declare namespace _ZoteroTypes {
       "windowWidth": string;
       "windowHeight": string;
       "saveChatHistory": boolean;
+      "contextMenuCollapsed": boolean;
       "contextMenuItemVisibility": string;
       "contextMenuItemOrder": string;
       "sidebarModuleVisibility": string;

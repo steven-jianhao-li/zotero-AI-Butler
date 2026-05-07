@@ -59,6 +59,7 @@ export const CONTEXT_MENU_ITEMS = [
 
 export type ContextMenuItemId = (typeof CONTEXT_MENU_ITEMS)[number]["id"];
 export type ContextMenuVisibility = Record<ContextMenuItemId, boolean>;
+export const DEFAULT_CONTEXT_MENU_COLLAPSED = false;
 
 export const SIDEBAR_MODULES = [
   {
@@ -274,6 +275,14 @@ export function setContextMenuItemOrder(
   setPref("contextMenuItemOrder", JSON.stringify(normalized));
 }
 
+export function isContextMenuCollapsed(): boolean {
+  return getPref("contextMenuCollapsed") === true;
+}
+
+export function setContextMenuCollapsed(collapsed: boolean): void {
+  setPref("contextMenuCollapsed", collapsed);
+}
+
 export function getSidebarModuleVisibility(): SidebarModuleVisibility {
   return parseVisibilityMap(
     getPref("sidebarModuleVisibility"),
@@ -318,6 +327,7 @@ export function resetUICustomizationPrefs(): void {
     DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY_PREF,
   );
   setPref("contextMenuItemOrder", DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF);
+  setPref("contextMenuCollapsed", DEFAULT_CONTEXT_MENU_COLLAPSED);
   setPref("sidebarModuleVisibility", DEFAULT_SIDEBAR_MODULE_VISIBILITY_PREF);
   setPref("sidebarModuleOrder", DEFAULT_SIDEBAR_MODULE_ORDER_PREF);
 }

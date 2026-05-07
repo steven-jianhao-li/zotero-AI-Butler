@@ -736,6 +736,9 @@ export class EndpointSettingsPanel {
 
   private renderApiKeyField(endpoint: LLMEndpoint): HTMLElement {
     const document = doc();
+    const allowsEmptyKey = LLMEndpointManager.providerAllowsEmptyApiKey(
+      endpoint.providerType,
+    );
     const wrapper = document.createElement("div");
     Object.assign(wrapper.style, {
       display: "flex",
@@ -748,7 +751,7 @@ export class EndpointSettingsPanel {
       `endpoint-${endpoint.id}-key`,
       "password",
       endpoint.apiKey,
-      "sk-...",
+      allowsEmptyKey ? "可留空" : "sk-...",
     );
     Object.assign(apiKeyInput.style, {
       flex: "1 1 auto",
@@ -786,9 +789,13 @@ export class EndpointSettingsPanel {
     wrapper.appendChild(apiKeyInput);
     wrapper.appendChild(toggleButton);
     return createFormGroup(
-      "API 密钥 *",
+      allowsEmptyKey ? "API 密钥" : "API 密钥 *",
       wrapper,
-      fieldDescription("【必填】该供应商的单个 API 密钥，将安全存储在本地。"),
+      fieldDescription(
+        allowsEmptyKey
+          ? "Ollama 本地服务通常无需 API 密钥；如服务设置了鉴权，可填写 Bearer token。"
+          : "【必填】该供应商的单个 API 密钥，将安全存储在本地。",
+      ),
     );
   }
 
@@ -981,23 +988,23 @@ export class EndpointSettingsPanel {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      padding: "24px",
+      padding: "16px 24px",
       boxSizing: "border-box",
       zIndex: "9999",
     });
 
     const dialog = document.createElement("div");
     Object.assign(dialog.style, {
-      width: "360px",
+      width: "400px",
       maxWidth: "calc(100% - 32px)",
       maxHeight: "calc(100% - 32px)",
-      overflowY: "auto",
+      overflow: "visible",
       background: "var(--ai-surface)",
       color: "var(--ai-text)",
       border: "1px solid var(--ai-border)",
       borderRadius: "8px",
       boxShadow: "0 12px 32px rgba(0,0,0,0.25)",
-      padding: "16px",
+      padding: "18px",
       boxSizing: "border-box",
     });
 
@@ -1011,24 +1018,6 @@ export class EndpointSettingsPanel {
       borderBottom: "1px solid var(--ai-border)",
     });
     dialog.appendChild(title);
-
-    const icon = document.createElement("div");
-    icon.textContent = "P";
-    Object.assign(icon.style, {
-      width: "58px",
-      height: "58px",
-      borderRadius: "50%",
-      margin: "0 auto 20px",
-      border: "1px solid var(--ai-border)",
-      background: "var(--ai-surface-2)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontWeight: "700",
-      fontSize: "28px",
-      color: "var(--ai-text)",
-    });
-    dialog.appendChild(icon);
 
     const draft: DraftEndpoint = {
       name: "",
@@ -1052,7 +1041,26 @@ export class EndpointSettingsPanel {
         draft.providerType = value as LLMEndpointProviderType;
       },
     );
-    dialog.appendChild(createFormGroup("供应商类型", providerSelect));
+    const providerDropdown = providerSelect.querySelector(
+      ".custom-select-dropdown",
+    ) as HTMLElement | null;
+    if (providerDropdown) {
+      Object.assign(providerDropdown.style, {
+        top: "calc(100% - 1px)",
+        marginTop: "0",
+        maxHeight: "none",
+        overflowY: "visible",
+        borderRadius: "0 0 6px 6px",
+        boxShadow: "0 14px 28px rgba(0,0,0,0.2)",
+        zIndex: "10000",
+      });
+    }
+    const providerGroup = createFormGroup("供应商类型", providerSelect);
+    Object.assign(providerGroup.style, {
+      position: "relative",
+      zIndex: "2",
+    });
+    dialog.appendChild(providerGroup);
 
     const error = document.createElement("div");
     Object.assign(error.style, {
@@ -1069,7 +1077,7 @@ export class EndpointSettingsPanel {
       display: "flex",
       justifyContent: "flex-end",
       gap: "8px",
-      marginTop: "12px",
+      marginTop: "16px",
     });
     const cancelButton = createStyledButton("取消", "#777", "small");
     const confirmButton = createStyledButton("确定", "#4caf50", "small");
@@ -1201,6 +1209,9 @@ export class EndpointSettingsPanel {
       const base = rawUrl.replace(/\/+$/, "").replace(/\/v1(?:\/.*)?$/i, "");
       return `${base}/v1/messages`;
     }
+    if (endpoint.providerType === "ollama") {
+      return this.toOllamaChatEndpoint(rawUrl);
+    }
     return this.toResponsesEndpoint(rawUrl, "");
   }
 
@@ -1224,6 +1235,17 @@ export class EndpointSettingsPanel {
       return raw.replace(/(\/v\d+(?:beta)?)(?:\/.*)?$/i, "$1/chat/completions");
     }
     return `${raw}/v1/chat/completions`;
+  }
+
+  private toOllamaChatEndpoint(url: string): string {
+    const raw = url.trim().replace(/\/+$/, "");
+    if (!raw) return "";
+    const base = raw
+      .replace(/\/v1(?:\/chat\/completions)?$/i, "")
+      .replace(/\/api(?:\/chat|\/generate|\/tags)?$/i, "")
+      .replace(/\/chat$/i, "")
+      .replace(/\/generate$/i, "");
+    return `${base}/api/chat`;
   }
 
   private async copyConnectionDetails(status: HTMLElement): Promise<void> {

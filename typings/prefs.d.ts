@@ -26,6 +26,9 @@ declare namespace _ZoteroTypes {
       "volcanoArkApiUrl": string;
       "volcanoArkApiKey": string;
       "volcanoArkModel": string;
+      "ollamaApiUrl": string;
+      "ollamaApiKey": string;
+      "ollamaModel": string;
       "llmEndpoints": string;
       "llmRoutingStrategy": string;
       "llmRoundRobinCursor": string;

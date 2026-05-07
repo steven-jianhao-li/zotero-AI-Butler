@@ -202,6 +202,7 @@ export class LLMService {
     if (id === "openai-compat") return "openai-compat";
     if (id === "openrouter") return "openrouter";
     if (id === "volcanoark") return "volcanoark";
+    if (id === "ollama") return "ollama";
     return "openai";
   }
 
@@ -333,6 +334,13 @@ export class LLMService {
       common.model = (
         getPref("volcanoArkModel") || "doubao-seed-1-8-251228"
       ).trim();
+    } else if (id === "ollama") {
+      const keyManagerId = this.mapToKeyManagerId(id);
+      common.apiUrl = (
+        getPref("ollamaApiUrl") || "http://localhost:11434"
+      ).trim();
+      common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
+      common.model = (getPref("ollamaModel") || "llama3.2").trim();
     } else {
       const keyManagerId = this.mapToKeyManagerId(id);
       common.apiUrl = (getPref("openaiApiUrl") || "").trim();
@@ -805,7 +813,7 @@ export class LLMService {
 
   private static choosePolicy(
     requestedPolicy: LLMContentPolicy | undefined,
-    capabilities: LLMProviderCapabilities,
+    _capabilities: LLMProviderCapabilities,
   ): LLMContentPolicy {
     const rawMode = (requestedPolicy || getPref("pdfProcessMode") || "base64")
       .trim()
@@ -813,9 +821,8 @@ export class LLMService {
     let policy: LLMContentPolicy;
     if (rawMode === "text") policy = "text";
     else if (rawMode === "mineru") policy = "mineru";
-    else if (rawMode === "auto") {
-      policy = capabilities.supportsPdfBase64 ? "pdf-base64" : "text";
-    } else {
+    else if (rawMode === "auto") policy = "pdf-base64";
+    else {
       policy = "pdf-base64";
     }
 

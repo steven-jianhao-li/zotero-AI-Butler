@@ -19,7 +19,8 @@ export type ProviderId =
   | "google"
   | "anthropic"
   | "openrouter"
-  | "volcanoark";
+  | "volcanoark"
+  | "ollama";
 
 /**
  * 提供商密钥配置映射
@@ -58,6 +59,10 @@ const PROVIDER_KEY_MAPPINGS: Record<ProviderId, ProviderKeyMapping> = {
   volcanoark: {
     primaryPrefKey: "volcanoArkApiKey",
     extraKeysPrefKey: "volcanoArkApiKeysFallback",
+  },
+  ollama: {
+    primaryPrefKey: "ollamaApiKey",
+    extraKeysPrefKey: "ollamaApiKeysFallback",
   },
 };
 

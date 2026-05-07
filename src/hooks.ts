@@ -225,6 +225,9 @@ function initializeDefaultPrefsOnStartup() {
     openRouterApiUrl: "https://openrouter.ai/api/v1/chat/completions",
     openRouterApiKey: "",
     openRouterModel: "google/gemma-3-27b-it",
+    ollamaApiUrl: "http://localhost:11434",
+    ollamaApiKey: "",
+    ollamaModel: "llama3.2",
     llmEndpoints: "[]",
     llmRoutingStrategy: "priority",
     llmRoundRobinCursor: "",
@@ -236,6 +239,8 @@ function initializeDefaultPrefsOnStartup() {
     geminiApiKeysFallback: "[]",
     anthropicApiKeysFallback: "[]",
     openRouterApiKeysFallback: "[]",
+    volcanoArkApiKeysFallback: "[]",
+    ollamaApiKeysFallback: "[]",
     // API 轮换配置
     maxApiSwitchCount: "3", // 最大切换次数
     failedKeyCooldown: "300000", // 失败密钥冷却时间(毫秒)，默认5分钟
@@ -989,7 +994,10 @@ async function handleGenerateSummary() {
   const enabledEndpoints = LLMEndpointManager.getEnabledEndpoints();
   const hasUsableEndpoint = enabledEndpoints.some(
     (endpoint) =>
-      endpoint.apiKey.trim() && endpoint.apiUrl.trim() && endpoint.model.trim(),
+      endpoint.apiUrl.trim() &&
+      endpoint.model.trim() &&
+      (endpoint.apiKey.trim() ||
+        LLMEndpointManager.providerAllowsEmptyApiKey(endpoint.providerType)),
   );
 
   if (!hasUsableEndpoint) {

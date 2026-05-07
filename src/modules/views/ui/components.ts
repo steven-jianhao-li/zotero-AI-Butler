@@ -236,6 +236,7 @@ export function createInput(
     color: currentIsDark ? "#e0e0e0" : "#333",
     boxSizing: "border-box",
     transition: "border-color 0.2s",
+    textAlign: "left",
   });
 
   input.addEventListener("focus", () => {

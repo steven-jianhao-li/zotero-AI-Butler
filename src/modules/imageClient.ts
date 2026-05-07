@@ -27,6 +27,9 @@ export type ImageSummaryCustomHeadersInput =
   | null
   | undefined;
 
+const DEFAULT_IMAGE_SUMMARY_REQUEST_TIMEOUT_SECONDS = 600;
+const MIN_IMAGE_SUMMARY_REQUEST_TIMEOUT_SECONDS = 30;
+
 /**
  * 图片生成结果接口
  */
@@ -61,6 +64,40 @@ export class ImageGenerationError extends Error {
  * 图片生成客户端类
  */
 export class ImageClient {
+  /**
+   * 获取一图总结生图请求超时时间，单位秒，最小 30 秒。
+   */
+  public static getImageSummaryRequestTimeoutSeconds(value?: unknown): number {
+    const raw =
+      value !== undefined
+        ? value
+        : (getPref("imageSummaryRequestTimeoutSeconds" as any) as string) ||
+          String(DEFAULT_IMAGE_SUMMARY_REQUEST_TIMEOUT_SECONDS);
+    const timeout =
+      typeof raw === "number" ? raw : parseInt(String(raw).trim(), 10);
+
+    if (!Number.isFinite(timeout) || timeout <= 0) {
+      return DEFAULT_IMAGE_SUMMARY_REQUEST_TIMEOUT_SECONDS;
+    }
+    return Math.max(timeout, MIN_IMAGE_SUMMARY_REQUEST_TIMEOUT_SECONDS);
+  }
+
+  public static getImageSummaryRequestTimeoutMs(seconds?: unknown): number {
+    return this.getImageSummaryRequestTimeoutSeconds(seconds) * 1000;
+  }
+
+  private static normalizeRequestTimeoutMs(value?: unknown): number {
+    if (value === undefined) return this.getImageSummaryRequestTimeoutMs();
+
+    const timeout =
+      typeof value === "number" ? value : parseInt(String(value).trim(), 10);
+    if (!Number.isFinite(timeout) || timeout <= 0) {
+      return this.getImageSummaryRequestTimeoutMs();
+    }
+
+    return Math.max(timeout, MIN_IMAGE_SUMMARY_REQUEST_TIMEOUT_SECONDS * 1000);
+  }
+
   private static resolveRequestMode(value: unknown): ImageSummaryRequestMode {
     const raw = String(value || "")
       .trim()
@@ -298,9 +335,11 @@ export class ImageClient {
 
   private static async downloadImageUrlAsBase64(
     url: string,
+    timeoutMs?: number,
   ): Promise<{ imageBase64: string; mimeType: string }> {
     const endpoint = url.trim();
     if (!endpoint) throw new Error("Empty image URL");
+    const requestTimeoutMs = this.normalizeRequestTimeoutMs(timeoutMs);
 
     let res: any;
     try {
@@ -309,7 +348,7 @@ export class ImageClient {
           Accept: "image/*,*/*;q=0.8",
         },
         responseType: "arraybuffer",
-        timeout: 180000,
+        timeout: requestTimeoutMs,
       });
     } catch (error: any) {
       const statusCode = error?.xmlhttp?.status;
@@ -1072,6 +1111,7 @@ export class ImageClient {
       aspectRatio: string;
       resolution: string;
       customHeaders?: ImageSummaryCustomHeadersInput;
+      requestTimeoutMs: number;
     },
   ): Promise<ImageGenerationResult> {
     const apiUrl = this.normalizeApiUrl(config.apiUrl);
@@ -1121,7 +1161,7 @@ export class ImageClient {
         headers,
         body: JSON.stringify(payload),
         responseType: "text",
-        timeout: 300000,
+        timeout: config.requestTimeoutMs,
       });
     } catch (error: any) {
       const statusCode = error?.xmlhttp?.status;
@@ -1206,7 +1246,10 @@ export class ImageClient {
       // 兼容：模型可能返回一个可下载的图片 URL（Markdown / JSON url）
       const remoteUrl = this.extractHttpImageUrlFromOpenAIResponseJson(json);
       if (remoteUrl) {
-        const downloaded = await this.downloadImageUrlAsBase64(remoteUrl);
+        const downloaded = await this.downloadImageUrlAsBase64(
+          remoteUrl,
+          config.requestTimeoutMs,
+        );
         ztoolkit.log(
           `[AI-Butler] 成功下载图片，MIME: ${downloaded.mimeType}, 大小: ${Math.round(downloaded.imageBase64.length / 1024)} KB`,
         );
@@ -1254,6 +1297,7 @@ export class ImageClient {
       resolution?: string;
       requestMode?: ImageSummaryRequestMode;
       customHeaders?: ImageSummaryCustomHeadersInput;
+      requestTimeoutMs?: number;
     },
   ): Promise<ImageGenerationResult> {
     const requestMode = this.resolveRequestMode(
@@ -1287,6 +1331,9 @@ export class ImageClient {
     const customHeaders =
       options?.customHeaders ??
       ((getPref("imageSummaryCustomHeaders" as any) as string) || "");
+    const requestTimeoutMs = this.normalizeRequestTimeoutMs(
+      options?.requestTimeoutMs,
+    );
     // 读取启用/禁用设置（默认禁用以兼容更多 API 代理）
     const aspectRatioEnabled =
       (getPref("imageSummaryAspectRatioEnabled" as any) as boolean) ?? false;
@@ -1311,6 +1358,7 @@ export class ImageClient {
         aspectRatio: aspectRatioEnabled ? aspectRatio : "",
         resolution: resolutionEnabled ? resolution : "",
         customHeaders,
+        requestTimeoutMs,
       });
     }
 
@@ -1395,8 +1443,12 @@ export class ImageClient {
 
     tuneBoolPref("network.http.http2.enabled", false);
     tuneBoolPref("network.http.spdy.enabled", false);
-    tuneIntPref("network.http.response.timeout", 600);
-    tuneIntPref("network.http.connection-timeout", 600);
+    const networkTimeoutSeconds = Math.max(
+      30,
+      Math.ceil(requestTimeoutMs / 1000),
+    );
+    tuneIntPref("network.http.response.timeout", networkTimeoutSeconds);
+    tuneIntPref("network.http.connection-timeout", networkTimeoutSeconds);
 
     let response: any;
     try {
@@ -1404,7 +1456,7 @@ export class ImageClient {
         headers,
         body: JSON.stringify(payload),
         responseType: "text",
-        timeout: 600000, // 10 分钟超时，生图可能较慢
+        timeout: requestTimeoutMs,
       });
     } catch (error: any) {
       const statusCode = error?.xmlhttp?.status;
@@ -1609,6 +1661,7 @@ export class ImageClient {
     model?: string;
     requestMode?: ImageSummaryRequestMode;
     customHeaders?: ImageSummaryCustomHeadersInput;
+    requestTimeoutMs?: number;
   }): Promise<{ success: boolean; message: string }> {
     try {
       const result = await this.generateImage(

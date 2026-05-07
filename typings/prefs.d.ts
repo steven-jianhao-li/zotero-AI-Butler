@@ -55,6 +55,7 @@ declare namespace _ZoteroTypes {
       "pdfProcessMode": string;
       "pdfAttachmentMode": string;
       "imageSummaryCustomHeaders": string;
+      "imageSummaryRequestTimeoutSeconds": string;
       "imageSummaryAspectRatioEnabled": boolean;
       "imageSummaryAspectRatio": string;
       "imageSummaryResolutionEnabled": boolean;

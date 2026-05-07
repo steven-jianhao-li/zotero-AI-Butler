@@ -24,8 +24,9 @@
    - Gemini：默认为 `https://generativelanguage.googleapis.com`
    - OpenAI：填写您的兼容服务地址（可填基础地址或完整端点如 `/v1/responses`、`/v1/images/generations`；Images API 参考：`https://your.end.point/v1/images/generations`）
 5. 选择 **生图模型**（Gemini 推荐 `gemini-3-pro-image-preview`；OpenAI 兼容生图可使用 `gpt-image-2`）
-6. 如服务商要求额外请求头，可在 **额外请求 Headers** 中填写 JSON/Python dict 对象，例如 `{"X-ModelScope-Async-Mode": "true"}`
-7. 点击 **测试 API** 验证配置
+6. 如模型或服务商生成较慢，可调整 **生图请求超时时间**（默认 `600` 秒，即 10 分钟）
+7. 如服务商要求额外请求头，可在 **额外请求 Headers** 中填写 JSON/Python dict 对象，例如 `{"X-ModelScope-Async-Mode": "true"}`
+8. 点击 **测试 API** 验证配置
 
 ![一图总结设置页面](images/一图总结设置页面.png)
 
@@ -91,6 +92,7 @@
 ### ⚠️ 注意事项
 
 - 生图过程可能需要 30-60 秒，请耐心等待
+- 高分辨率或较慢的生图服务可能需要更久，可在一图总结设置中增大生图请求超时时间
 - 并非所有 API 端点都支持图片生成，请确保使用支持生图的模型
 - 图片质量取决于提示词和模型能力
 

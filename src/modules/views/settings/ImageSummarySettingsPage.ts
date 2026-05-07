@@ -169,6 +169,22 @@ export class ImageSummarySettingsPage {
       ),
     );
 
+    const timeoutInput = createInput(
+      "imageSummaryRequestTimeoutSeconds",
+      "number",
+      String(ImageClient.getImageSummaryRequestTimeoutSeconds()),
+      "600",
+    );
+    timeoutInput.min = "30";
+    timeoutInput.step = "1";
+    form.appendChild(
+      createFormGroup(
+        "生图请求超时时间 (秒)",
+        timeoutInput,
+        "一图总结第二阶段生图请求的超时时间，默认 600 秒 (10 分钟)，最小 30 秒。",
+      ),
+    );
+
     // === 生成选项区域 ===
     form.appendChild(createSectionTitle("⚙️ 生成选项"));
 
@@ -517,6 +533,20 @@ export class ImageSummarySettingsPage {
         }
       }
 
+      const timeoutInput = this.container.querySelector(
+        "#setting-imageSummaryRequestTimeoutSeconds",
+      ) as HTMLInputElement | null;
+      if (timeoutInput) {
+        const timeoutSeconds = ImageClient.getImageSummaryRequestTimeoutSeconds(
+          timeoutInput.value,
+        );
+        timeoutInput.value = String(timeoutSeconds);
+        setPref(
+          "imageSummaryRequestTimeoutSeconds" as any,
+          String(timeoutSeconds),
+        );
+      }
+
       // 下拉框单独处理 (requestMode)
       const modeSelect = this.container.querySelector(
         "#setting-imageSummaryRequestMode",
@@ -632,6 +662,13 @@ export class ImageSummarySettingsPage {
           "#setting-imageSummaryCustomHeaders",
         ) as HTMLTextAreaElement
       )?.value?.trim() || "";
+    const requestTimeoutMs = ImageClient.getImageSummaryRequestTimeoutMs(
+      (
+        this.container.querySelector(
+          "#setting-imageSummaryRequestTimeoutSeconds",
+        ) as HTMLInputElement | null
+      )?.value,
+    );
 
     // 页面内结果区域
     const resultBox = this.container.querySelector(
@@ -670,6 +707,7 @@ export class ImageSummarySettingsPage {
           model,
           requestMode: requestMode as any,
           customHeaders,
+          requestTimeoutMs,
         },
       );
 

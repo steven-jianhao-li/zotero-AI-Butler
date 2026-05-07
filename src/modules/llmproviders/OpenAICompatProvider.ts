@@ -77,6 +77,23 @@ export class OpenAICompatProvider implements ILlmProvider {
     return params;
   }
 
+  private buildPdfFilePart(base64Content: string, filename = "document.pdf") {
+    const normalized = base64Content
+      .trim()
+      .replace(/^data:application\/pdf;base64,/i, "");
+    const safeFilename = filename.trim() || "document.pdf";
+
+    return {
+      type: "file",
+      file: {
+        filename: /\.pdf$/i.test(safeFilename)
+          ? safeFilename
+          : `${safeFilename}.pdf`,
+        file_data: `data:application/pdf;base64,${normalized}`,
+      },
+    };
+  }
+
   async generateSummary(
     content: string,
     isBase64: boolean,
@@ -96,15 +113,12 @@ export class OpenAICompatProvider implements ILlmProvider {
     messages.push({ role: "system", content: SYSTEM_ROLE_PROMPT });
 
     if (isBase64) {
-      // 尝试使用多模态格式（某些兼容服务支持 image_url 或 vision）
+      // Chat Completions 文件部件格式；PDF 用 application/pdf data URL。
       messages.push({
         role: "user",
         content: [
           { type: "text", text: prompt || "请分析这个文档。" },
-          {
-            type: "image_url",
-            image_url: { url: `data:application/pdf;base64,${content}` },
-          },
+          this.buildPdfFilePart(content, "paper.pdf"),
         ],
       });
     } else {
@@ -299,17 +313,11 @@ export class OpenAICompatProvider implements ILlmProvider {
         if (isFirstUserMessage) {
           // 第一条用户消息需要附带论文内容
           if (isBase64) {
-            // Base64 模式：使用多模态格式
             messages.push({
               role: "user",
               content: [
                 { type: "text", text: msg.content },
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: `data:application/pdf;base64,${pdfContent}`,
-                  },
-                },
+                this.buildPdfFilePart(pdfContent, "paper.pdf"),
               ],
             });
           } else {
@@ -473,12 +481,10 @@ export class OpenAICompatProvider implements ILlmProvider {
     const userContent = testInput.isBase64
       ? [
           { type: "text", text: testInput.text },
-          {
-            type: "image_url",
-            image_url: {
-              url: `data:application/pdf;base64,${testInput.pdfBase64 || ""}`,
-            },
-          },
+          this.buildPdfFilePart(
+            testInput.pdfBase64 || "",
+            "connection-test.pdf",
+          ),
         ]
       : testInput.text;
 
@@ -610,17 +616,17 @@ export class OpenAICompatProvider implements ILlmProvider {
 
     if (pdfFiles.length === 0) throw new Error("没有要处理的 PDF 文件");
 
-    // 构建 image_url 部分（使用 PDF data URI）
+    // 构建 Chat Completions file 部分（使用 PDF data URI）
     const fileParts: any[] = [];
     for (let i = 0; i < pdfFiles.length; i++) {
       const pdfFile = pdfFiles[i];
       if (pdfFile.base64Content && pdfFile.base64Content.length > 0) {
-        fileParts.push({
-          type: "image_url",
-          image_url: {
-            url: `data:application/pdf;base64,${pdfFile.base64Content}`,
-          },
-        });
+        fileParts.push(
+          this.buildPdfFilePart(
+            pdfFile.base64Content,
+            pdfFile.displayName || `document_${i + 1}.pdf`,
+          ),
+        );
         ztoolkit.log(
           `[AI-Butler] 添加 PDF 附件 (${i + 1}/${pdfFiles.length}): ${pdfFile.displayName}, base64 长度: ${pdfFile.base64Content.length}`,
         );

@@ -805,7 +805,7 @@ export class LLMService {
 
   private static choosePolicy(
     requestedPolicy: LLMContentPolicy | undefined,
-    capabilities: LLMProviderCapabilities,
+    _capabilities: LLMProviderCapabilities,
   ): LLMContentPolicy {
     const rawMode = (requestedPolicy || getPref("pdfProcessMode") || "base64")
       .trim()
@@ -813,9 +813,8 @@ export class LLMService {
     let policy: LLMContentPolicy;
     if (rawMode === "text") policy = "text";
     else if (rawMode === "mineru") policy = "mineru";
-    else if (rawMode === "auto") {
-      policy = capabilities.supportsPdfBase64 ? "pdf-base64" : "text";
-    } else {
+    else if (rawMode === "auto") policy = "pdf-base64";
+    else {
       policy = "pdf-base64";
     }
 

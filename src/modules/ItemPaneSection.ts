@@ -22,6 +22,7 @@ import {
   LLMNoteMetadataService,
   type LLMNoteMetadata,
 } from "./llmNoteMetadata";
+import { markdownToZoteroNoteHtml } from "./noteMarkdown";
 import katex from "katex";
 // 注意: 不在主进程中直接 import 思维导图库（如 markmap-view、simple-mind-map）
 // 这些库在加载时会访问 document/window，而 Zotero Background 进程没有 DOM 环境
@@ -2296,13 +2297,15 @@ async function saveChatPairToNote(
     return;
   }
 
+  const renderedUserMessage = markdownToZoteroNoteHtml(userMessage);
+  const renderedAssistantMessage = markdownToZoteroNoteHtml(assistantMessage);
   const jsonMarker = `<!-- AI_BUTLER_CHAT_JSON: ${JSON.stringify({ id: pairId, user: userMessage, assistant: assistantMessage })} -->`;
   const blockContent = `
 <!-- AI_BUTLER_CHAT_PAIR_START id=${escapeHtmlForNote(pairId)} -->
 ${jsonMarker}
 <div id="ai-butler-pair-${escapeHtmlForNote(pairId)}" style="margin-top:14px; padding-top:8px; border-top:1px dashed #ccc;">
-  <div style="background-color:#e3f2fd; padding:10px; border-radius:6px; margin-bottom:8px;"><strong>👤 用户:</strong> ${escapeHtmlForNote(userMessage)}</div>
-  <div style="background-color:#f5f5f5; padding:10px; border-radius:6px;"><strong>🤖 AI管家:</strong><br/>${escapeHtmlForNote(assistantMessage).replace(/\n/g, "<br/>")}</div>
+  <div style="background-color:#e3f2fd; padding:10px; border-radius:6px; margin-bottom:8px;"><strong>👤 用户:</strong><div>${renderedUserMessage}</div></div>
+  <div style="background-color:#f5f5f5; padding:10px; border-radius:6px;"><strong>🤖 AI管家:</strong><div>${renderedAssistantMessage}</div></div>
   <div style="font-size:11px; color:#999; margin-top:6px;">保存时间: ${new Date().toLocaleString("zh-CN")} (来自快速提问)</div>
 </div>
 <!-- AI_BUTLER_CHAT_PAIR_END id=${escapeHtmlForNote(pairId)} -->

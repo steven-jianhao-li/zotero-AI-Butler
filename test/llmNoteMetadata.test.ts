@@ -97,4 +97,64 @@ describe("LLMNoteMetadataService", function () {
       providerName: "OpenRouter Backup",
     });
   });
+
+  it("replaces one metadata block and keeps it parseable", function () {
+    const wrapped = LLMNoteMetadataService.wrapHtml(
+      "<h2>AI 总结</h2><p>old</p>",
+      metadata("block-a"),
+    );
+
+    const updated = LLMNoteMetadataService.replaceBlockContent(
+      wrapped,
+      "block-a",
+      "<h2>AI 总结</h2><p>new</p>",
+    );
+    const blocks = LLMNoteMetadataService.parseAll(updated);
+
+    expect(blocks).to.have.length(1);
+    expect(blocks[0].blockId).to.equal("block-a");
+    expect(blocks[0].metadata).to.include({
+      providerName: "OpenAI Primary",
+      modelId: "gpt-5",
+    });
+    expect(LLMNoteMetadataService.stripSidebarMetadata(updated)).to.contain(
+      "<p>new</p>",
+    );
+    expect(LLMNoteMetadataService.stripSidebarMetadata(updated)).not.to.contain(
+      "<p>old</p>",
+    );
+  });
+
+  it("replaces only the requested block in a multi-block note", function () {
+    const first = LLMNoteMetadataService.wrapHtml(
+      "<div>first</div>",
+      metadata("block-1"),
+    );
+    const second = LLMNoteMetadataService.wrapHtml(
+      "<div>second</div>",
+      metadata("block-2"),
+    );
+    const noteHtml = `${first}\n<hr/>\n${second}`;
+
+    const updated = LLMNoteMetadataService.replaceBlockContent(
+      noteHtml,
+      "block-2",
+      "<div>second edited</div>",
+    );
+    const blocks = LLMNoteMetadataService.parseAll(updated);
+
+    expect(blocks.map((block) => block.blockId)).to.deep.equal([
+      "block-1",
+      "block-2",
+    ]);
+    expect(
+      LLMNoteMetadataService.stripSidebarMetadata(blocks[0].content),
+    ).to.contain("first");
+    expect(
+      LLMNoteMetadataService.stripSidebarMetadata(blocks[1].content),
+    ).to.contain("second edited");
+    expect(LLMNoteMetadataService.stripSidebarMetadata(updated)).not.to.contain(
+      ">second<",
+    );
+  });
 });

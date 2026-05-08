@@ -32,6 +32,7 @@ import {
   LLMNoteMetadataService,
   type LLMNoteMetadata,
 } from "./llmNoteMetadata";
+import { markdownToZoteroNoteHtml } from "./noteMarkdown";
 import type { LLMResponse } from "./llmproviders/types";
 import { SummaryView } from "./views/SummaryView";
 import { getPref } from "../utils/prefs";
@@ -731,7 +732,7 @@ export class NoteGenerator {
     metadata?: LLMNoteMetadata | null,
   ): string {
     // 将 Markdown 转换为笔记格式的 HTML
-    const htmlContent = this.convertMarkdownToNoteHTML(summary);
+    const htmlContent = markdownToZoteroNoteHtml(summary);
 
     // 定义笔记标题中允许的文献标题最大长度,避免 Zotero 同步问题
     const maxTitleLength = 100;

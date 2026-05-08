@@ -751,13 +751,7 @@ export class SummaryView extends BaseView {
     return `pair_${Date.now()}_${this.pairIdCounter}`;
   }
 
-  /**
-   * 获取或创建“AI管家-后续追问-论文名”独立笔记
-   */
-  private async getOrCreateChatNote(item: Zotero.Item): Promise<Zotero.Item> {
-    const title = (item.getField("title") as string) || "文献";
-
-    // 查找已有的聊天笔记：条件为包含我们约定的标题标识或带有专属标签
+  private async findChatNote(item: Zotero.Item): Promise<Zotero.Item | null> {
     const noteIDs = (item as any).getNotes?.() || [];
     for (const nid of noteIDs) {
       try {
@@ -774,6 +768,18 @@ export class SummaryView extends BaseView {
         continue;
       }
     }
+
+    return null;
+  }
+
+  /**
+   * 获取或创建“AI管家-后续追问-论文名”独立笔记
+   */
+  private async getOrCreateChatNote(item: Zotero.Item): Promise<Zotero.Item> {
+    const existingNote = await this.findChatNote(item);
+    if (existingNote) return existingNote;
+
+    const title = (item.getField("title") as string) || "文献";
 
     // 创建新笔记
     const note = new Zotero.Item("note");
@@ -837,7 +843,8 @@ ${jsonMarker}
     try {
       const item = await Zotero.Items.getAsync(this.currentItemId);
       if (!item) return;
-      const note = await this.getOrCreateChatNote(item);
+      const note = await this.findChatNote(item);
+      if (!note) return;
       let noteHtml = (note as any).getNote?.() || "";
 
       // 使用标记区间删除
@@ -1421,7 +1428,8 @@ ${jsonMarker}
    */
   private async loadExistingChatPairs(item: Zotero.Item): Promise<void> {
     try {
-      const note = await this.getOrCreateChatNote(item);
+      const note = await this.findChatNote(item);
+      if (!note) return;
       const html: string = (note as any).getNote?.() || "";
       // 提取 JSON 标记
       const regex = /<!--\s*AI_BUTLER_CHAT_JSON:\s*(\{[\s\S]*?\})\s*-->/g;

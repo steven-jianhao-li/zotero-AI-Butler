@@ -187,6 +187,39 @@ export class LLMNoteMetadataService {
     return blocks;
   }
 
+  static replaceBlockContent(
+    html: string,
+    blockId: string,
+    newContent: string,
+  ): string {
+    const regex =
+      /<!--\s*AI_BUTLER_LLM_BLOCK_BEGIN::v1::([^:\s]+)::[^>]*?-->\s*<!--\s*AI_BUTLER_LLM_META_B64URL::v1::([A-Za-z0-9_-]+)\s*-->([\s\S]*?)<!--\s*AI_BUTLER_LLM_BLOCK_END::v1::\1::[a-f0-9]+\s*-->/g;
+    let replaced = false;
+
+    const updated = html.replace(regex, (match, matchedBlockId, encoded) => {
+      if (matchedBlockId !== blockId) {
+        return match;
+      }
+
+      try {
+        const parsed = JSON.parse(base64UrlToUtf8(encoded));
+        if (!isMetadata(parsed) || parsed.blockId !== blockId) {
+          return match;
+        }
+        replaced = true;
+        return this.wrapHtml(newContent, parsed);
+      } catch {
+        return match;
+      }
+    });
+
+    if (!replaced) {
+      throw new Error(`LLM note block not found: ${blockId}`);
+    }
+
+    return updated;
+  }
+
   static getLatest(html: string): LLMNoteMetadata | null {
     const blocks = this.parseAll(html);
     return blocks.length > 0 ? blocks[blocks.length - 1].metadata : null;

@@ -418,10 +418,13 @@ export class LLMEndpointManager {
     providerType: LLMEndpointProviderType,
   ): LLMReasoningEffortSetting {
     const defaults = this.providerDefaults(providerType);
-    return normalizeReasoningEffortSetting(
+    const reasoningEffort = normalizeReasoningEffortSetting(
       getPref("reasoningEffort" as any),
       defaults.reasoningEffort || "default",
     );
+    return reasoningEffort === "default"
+      ? defaults.reasoningEffort || "default"
+      : reasoningEffort;
   }
 }
 

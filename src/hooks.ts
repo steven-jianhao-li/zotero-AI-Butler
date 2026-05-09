@@ -245,6 +245,7 @@ function initializeDefaultPrefsOnStartup() {
     maxApiSwitchCount: "3", // 最大切换次数
     failedKeyCooldown: "300000", // 失败密钥冷却时间(毫秒)，默认5分钟
     temperature: "0.7", // 默认温度参数,平衡创造性和准确性
+    reasoningEffort: "default",
     stream: true, // 默认启用流式输出,提供更好的用户体验
     summaryPrompt: getDefaultSummaryPrompt(), // 加载默认提示词模板
     promptVersion: PROMPT_VERSION, // 当前提示词版本号

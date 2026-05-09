@@ -16,11 +16,16 @@ import { ProviderRegistry } from "./llmproviders/ProviderRegistry";
 import "./llmproviders";
 import type { ILlmProvider, PdfFileInfo } from "./llmproviders/ILlmProvider";
 import type { ConnectionTestMode } from "./llmproviders/shared/connectionTest";
+import {
+  normalizeReasoningEffortSetting,
+  resolveReasoningEffort,
+} from "./llmproviders/shared/reasoning";
 import type {
   ConversationMessage,
   LLMOptions,
   LLMModelInfo,
   LLMProviderCapabilities,
+  LLMReasoningEffortSetting,
   LLMResponse,
   ProgressCb,
 } from "./llmproviders/types";
@@ -87,7 +92,7 @@ export type LLMGenerationOptions = {
   temperature?: number;
   topP?: number;
   maxOutputTokens?: number;
-  reasoningEffort?: string;
+  reasoningEffort?: LLMReasoningEffortSetting;
   verbosity?: string;
   responseFormat?: string;
   vendorOptions?: Record<string, unknown>;
@@ -277,6 +282,17 @@ export class LLMService {
       common.maxTokens =
         generation?.maxOutputTokens ??
         (parseInt((getPref("maxTokens") as string) || "4096", 10) || 4096);
+    }
+    const reasoningEffort = resolveReasoningEffort(
+      normalizeReasoningEffortSetting(
+        generation?.reasoningEffort ??
+          endpoint?.reasoningEffort ??
+          getPref("reasoningEffort" as any),
+        "default",
+      ),
+    );
+    if (reasoningEffort) {
+      common.reasoningEffort = reasoningEffort;
     }
     if (generation?.vendorOptions) {
       common.vendorOptions = generation.vendorOptions;
@@ -1020,6 +1036,7 @@ export class LLMService {
       { stream: false },
       {
         maxTokens: 16,
+        reasoningEffort: undefined,
         vendorOptions: {
           connectionTestMode: this.getConnectionTestMode(provider),
         },

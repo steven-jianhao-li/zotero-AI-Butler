@@ -3090,6 +3090,7 @@ export class ApiSettingsPage {
     setPref("temperature", "0.7");
     setPref("maxTokens", "8192");
     setPref("topP", "1.0");
+    setPref("reasoningEffort", "default");
     setPref("enableTemperature", true as any);
     setPref("enableMaxTokens", true as any);
     setPref("enableTopP", true as any);

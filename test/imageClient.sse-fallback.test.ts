@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { ImageClient } from "../src/modules/imageClient";
+import { ImageClient, ImageGenerationError } from "../src/modules/imageClient";
 
 type ImageClientInternals = {
   parseOpenAICompatibleResponse(rawResponse: unknown): {
@@ -40,9 +40,43 @@ type ImageClientInternals = {
     baseHeaders: Record<string, string>,
     customHeaders: unknown,
   ): Record<string, string>;
+  downloadImageUrlAsBase64(
+    url: string,
+    timeoutMs?: number,
+  ): Promise<{ imageBase64: string; mimeType: string }>;
 };
 
 const imageClientInternals = ImageClient as unknown as ImageClientInternals;
+
+async function withMockedImageDownload<T>(
+  contentType: string | null,
+  body: ArrayBuffer | ArrayBufferView | string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const originalZotero = (globalThis as any).Zotero;
+  (globalThis as any).Zotero = {
+    ...(originalZotero || {}),
+    HTTP: {
+      ...(originalZotero?.HTTP || {}),
+      request: async () => ({
+        status: 200,
+        response: body,
+        getResponseHeader: (name: string) =>
+          name.toLowerCase() === "content-type" ? contentType : null,
+      }),
+    },
+  };
+
+  try {
+    return await run();
+  } finally {
+    if (originalZotero === undefined) {
+      delete (globalThis as any).Zotero;
+    } else {
+      (globalThis as any).Zotero = originalZotero;
+    }
+  }
+}
 
 describe("ImageClient OpenAI compat response parsing", function () {
   it("should parse regular JSON response", function () {
@@ -199,5 +233,75 @@ describe("ImageClient OpenAI compat response parsing", function () {
       Authorization: "Bearer real-key",
       "X-ModelScope-Async-Mode": "true",
     });
+  });
+
+  it("should sniff downloaded PNG when response is application/octet-stream", async function () {
+    const pngBytes = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+
+    const result = await withMockedImageDownload(
+      "application/octet-stream",
+      pngBytes.buffer,
+      () =>
+        imageClientInternals.downloadImageUrlAsBase64(
+          "https://example.com/siliconflow-output",
+          30000,
+        ),
+    );
+
+    expect(result.mimeType).to.equal("image/png");
+    expect(result.imageBase64).to.equal("iVBORw0KGgo=");
+  });
+
+  it("should fallback to image URL suffix for generic content type", async function () {
+    const result = await withMockedImageDownload(
+      "application/octet-stream",
+      new Uint8Array([1, 2, 3, 4]).buffer,
+      () =>
+        imageClientInternals.downloadImageUrlAsBase64(
+          "https://cdn.example.com/result.webp?token=abc",
+          30000,
+        ),
+    );
+
+    expect(result.mimeType).to.equal("image/webp");
+  });
+
+  it("should parse octet-stream data URLs when bytes identify an image", function () {
+    const extracted = imageClientInternals.extractImageFromOpenAIResponseJson({
+      data: [
+        {
+          url: "data:application/octet-stream;base64,iVBORw0KGgo=",
+        },
+      ],
+    });
+
+    expect(extracted).to.deep.equal({
+      imageBase64: "iVBORw0KGgo=",
+      mimeType: "image/png",
+    });
+  });
+
+  it("should reject downloaded generic binary without image evidence", async function () {
+    let caught: unknown = null;
+    try {
+      await withMockedImageDownload(
+        "application/octet-stream",
+        new Uint8Array([1, 2, 3, 4]).buffer,
+        () =>
+          imageClientInternals.downloadImageUrlAsBase64(
+            "https://cdn.example.com/result",
+            30000,
+          ),
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).to.be.instanceOf(ImageGenerationError);
+    expect((caught as ImageGenerationError).details.errorName).to.equal(
+      "UnsupportedImageMimeType",
+    );
   });
 });

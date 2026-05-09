@@ -21,6 +21,7 @@ import {
   parseOpenAIResponsesDelta,
   parseOpenAIResponsesText,
 } from "./shared/openaiResponses";
+import { resolveOpenAIReasoningEffort } from "./shared/reasoning";
 
 export class OpenAIProvider implements ILlmProvider {
   readonly id = "openai";
@@ -30,7 +31,13 @@ export class OpenAIProvider implements ILlmProvider {
     supportsPdfBase64: true,
     maxPdfFiles: 20,
     supportsSystemPrompt: true,
-    supportedParams: ["temperature", "topP", "maxTokens", "stream"],
+    supportedParams: [
+      "temperature",
+      "topP",
+      "maxTokens",
+      "stream",
+      "reasoningEffort",
+    ],
   };
 
   async generateSummary(
@@ -91,6 +98,7 @@ export class OpenAIProvider implements ILlmProvider {
       if (options.topP !== undefined) basePayload.top_p = Number(options.topP);
       if (options.maxTokens !== undefined)
         basePayload.max_output_tokens = Number(options.maxTokens);
+      this.applyResponsesReasoning(basePayload, model, options);
 
       if (streamEnabled && onProgress) {
         const payload = { ...basePayload, stream: true } as any;
@@ -269,6 +277,7 @@ export class OpenAIProvider implements ILlmProvider {
     };
     if (options.temperature !== undefined)
       basePayload.temperature = Number(temperature);
+    this.applyChatReasoning(basePayload, model, options);
 
     if (streamEnabled && onProgress) {
       const body = JSON.stringify({ ...basePayload, stream: true });
@@ -495,6 +504,7 @@ export class OpenAIProvider implements ILlmProvider {
       if (options.topP !== undefined) basePayload.top_p = Number(options.topP);
       if (options.maxTokens !== undefined)
         basePayload.max_output_tokens = Number(options.maxTokens);
+      this.applyResponsesReasoning(basePayload, model, options);
 
       if (!streamEnabled || !onProgress) {
         try {
@@ -694,6 +704,7 @@ export class OpenAIProvider implements ILlmProvider {
     }
 
     const payload = { model, input, temperature, stream: true } as any;
+    this.applyChatReasoning(payload, model, options);
 
     const chunks: string[] = [];
     let delivered = 0;
@@ -895,6 +906,7 @@ export class OpenAIProvider implements ILlmProvider {
       max_output_tokens: options.maxTokens ?? 16,
       stream: false,
     } as any;
+    this.applyResponsesReasoning(payload, model, options);
     const payloadStr = JSON.stringify(payload, null, 2);
 
     let response: any;
@@ -1064,6 +1076,7 @@ export class OpenAIProvider implements ILlmProvider {
     ];
 
     const payload = { model, input, stream: true } as any;
+    this.applyResponsesReasoning(payload, model, options);
 
     const chunks: string[] = [];
     let delivered = 0;
@@ -1191,6 +1204,28 @@ export class OpenAIProvider implements ILlmProvider {
     const streamed = chunks.join("");
     if (gotAnyDelta && streamed) return streamed;
     return "";
+  }
+
+  private applyResponsesReasoning(
+    payload: Record<string, unknown>,
+    model: string,
+    options: LLMOptions,
+  ): void {
+    const effort = resolveOpenAIReasoningEffort(model, options.reasoningEffort);
+    if (effort) {
+      payload.reasoning = { effort };
+    }
+  }
+
+  private applyChatReasoning(
+    payload: Record<string, unknown>,
+    model: string,
+    options: LLMOptions,
+  ): void {
+    const effort = resolveOpenAIReasoningEffort(model, options.reasoningEffort);
+    if (effort) {
+      payload.reasoning_effort = effort;
+    }
   }
 
   private async nonStreamCompletion(

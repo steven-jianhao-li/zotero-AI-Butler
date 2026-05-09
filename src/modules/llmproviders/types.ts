@@ -5,6 +5,16 @@ export type ConversationMessage = {
   content: string;
 };
 
+export type LLMReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
+
+export type LLMReasoningEffortSetting = "default" | LLMReasoningEffort;
+
 export type LLMOptions = {
   apiUrl?: string;
   apiKey?: string;
@@ -14,6 +24,7 @@ export type LLMOptions = {
   temperature?: number;
   topP?: number;
   maxTokens?: number;
+  reasoningEffort?: LLMReasoningEffort;
   vendorOptions?: Record<string, unknown>;
 };
 

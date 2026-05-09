@@ -17,6 +17,7 @@ import {
   parseModelListResponse,
   requestModelListJson,
 } from "./shared/modelList";
+import { resolveOpenRouterReasoningEffort } from "./shared/reasoning";
 
 /**
  * OpenRouter Provider
@@ -31,7 +32,13 @@ export class OpenRouterProvider implements ILlmProvider {
     supportsPdfBase64: true,
     maxPdfFiles: 20,
     supportsSystemPrompt: true,
-    supportedParams: ["temperature", "topP", "maxTokens", "stream"],
+    supportedParams: [
+      "temperature",
+      "topP",
+      "maxTokens",
+      "stream",
+      "reasoningEffort",
+    ],
   };
 
   private ensureUrlAndKey(options: LLMOptions) {
@@ -71,6 +78,10 @@ export class OpenRouterProvider implements ILlmProvider {
       params.temperature = options.temperature;
     if (options.topP !== undefined) params.top_p = options.topP;
     if (options.maxTokens !== undefined) params.max_tokens = options.maxTokens;
+    const reasoningEffort = resolveOpenRouterReasoningEffort(
+      options.reasoningEffort,
+    );
+    if (reasoningEffort) params.reasoning = { effort: reasoningEffort };
     return params;
   }
 

@@ -224,10 +224,115 @@ export class ImageClient {
     mimeType: string;
   } | null {
     const m = dataUrl.match(
-      /^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)\s*$/i,
+      /^data:([^;,]+)(?:;[^,]*)?;base64,([A-Za-z0-9+/=\s]+)\s*$/i,
     );
     if (!m) return null;
-    return { mimeType: m[1], imageBase64: m[2] };
+
+    const imageBase64 = m[2].replace(/\s+/g, "");
+    const explicitMime = this.normalizeImageMimeType(m[1]);
+    const sniffedMime = this.guessMimeTypeFromBase64(imageBase64);
+    const mimeType = explicitMime || sniffedMime;
+    if (!mimeType) return null;
+
+    return { mimeType, imageBase64 };
+  }
+
+  private static normalizeImageMimeType(value: unknown): string | null {
+    const mime = String(value || "")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+    if (!mime) return null;
+    if (mime === "image/jpg") return "image/jpeg";
+    if (
+      mime === "image/png" ||
+      mime === "image/jpeg" ||
+      mime === "image/webp" ||
+      mime === "image/gif"
+    ) {
+      return mime;
+    }
+    return null;
+  }
+
+  private static guessMimeTypeFromBytes(bytes: Uint8Array): string | null {
+    if (bytes.byteLength >= 8) {
+      if (
+        bytes[0] === 0x89 &&
+        bytes[1] === 0x50 &&
+        bytes[2] === 0x4e &&
+        bytes[3] === 0x47 &&
+        bytes[4] === 0x0d &&
+        bytes[5] === 0x0a &&
+        bytes[6] === 0x1a &&
+        bytes[7] === 0x0a
+      ) {
+        return "image/png";
+      }
+    }
+
+    if (
+      bytes.byteLength >= 3 &&
+      bytes[0] === 0xff &&
+      bytes[1] === 0xd8 &&
+      bytes[2] === 0xff
+    ) {
+      return "image/jpeg";
+    }
+
+    if (bytes.byteLength >= 6) {
+      const signature = String.fromCharCode(
+        bytes[0],
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        bytes[4],
+        bytes[5],
+      );
+      if (signature === "GIF87a" || signature === "GIF89a") {
+        return "image/gif";
+      }
+    }
+
+    if (bytes.byteLength >= 12) {
+      const riff = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
+      const webp = String.fromCharCode(
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+      );
+      if (riff === "RIFF" && webp === "WEBP") {
+        return "image/webp";
+      }
+    }
+
+    return null;
+  }
+
+  private static getBytesFromBase64Prefix(base64: string): Uint8Array | null {
+    const normalized = (base64 || "").replace(/\s+/g, "");
+    if (!normalized) return null;
+
+    const prefixLength = Math.min(normalized.length, 64);
+    const alignedLength = Math.max(4, Math.floor(prefixLength / 4) * 4);
+    const prefix = normalized.slice(0, alignedLength);
+
+    try {
+      const binary = atob(prefix);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes;
+    } catch {
+      return null;
+    }
+  }
+
+  private static guessMimeTypeFromBase64(base64: string): string | null {
+    const bytes = this.getBytesFromBase64Prefix(base64);
+    return bytes ? this.guessMimeTypeFromBytes(bytes) : null;
   }
 
   private static getMimeTypeFromOpenAIImageObject(
@@ -241,9 +346,8 @@ export class ImageClient {
       source?.mediaType ||
       source?.data?.mime_type ||
       source?.data?.mimeType;
-    if (typeof explicit === "string" && /^image\//i.test(explicit.trim())) {
-      return explicit.trim();
-    }
+    const explicitMime = this.normalizeImageMimeType(explicit);
+    if (explicitMime) return explicitMime;
 
     const outputFormat = String(
       source?.output_format ||
@@ -281,10 +385,15 @@ export class ImageClient {
     const trimmed = b64.trim();
     const dataUrlImage = this.extractImageFromDataUrl(trimmed);
     if (dataUrlImage) return dataUrlImage;
+    if (/^https?:\/\//i.test(trimmed)) return null;
+
+    const normalized = trimmed.replace(/\s+/g, "");
+    if (!/^[A-Za-z0-9+/=]+$/.test(normalized)) return null;
+    const sniffedMime = this.guessMimeTypeFromBase64(normalized);
 
     return {
-      mimeType: this.getMimeTypeFromOpenAIImageObject(source),
-      imageBase64: trimmed,
+      mimeType: sniffedMime || this.getMimeTypeFromOpenAIImageObject(source),
+      imageBase64: normalized,
     };
   }
 
@@ -294,7 +403,6 @@ export class ImageClient {
     if (clean.endsWith(".jpg") || clean.endsWith(".jpeg")) return "image/jpeg";
     if (clean.endsWith(".webp")) return "image/webp";
     if (clean.endsWith(".gif")) return "image/gif";
-    if (clean.endsWith(".svg")) return "image/svg+xml";
     return null;
   }
 
@@ -317,10 +425,6 @@ export class ImageClient {
     return null;
   }
 
-  private static arrayBufferToBase64(buf: ArrayBuffer): string {
-    return this.bytesToBase64(new Uint8Array(buf));
-  }
-
   private static bytesToBase64(bytes: Uint8Array): string {
     const chunkSize = 0x8000;
     let binary = "";
@@ -331,6 +435,58 @@ export class ImageClient {
       );
     }
     return btoa(binary);
+  }
+
+  private static binaryStringToBytes(value: string): Uint8Array {
+    const bytes = new Uint8Array(value.length);
+    for (let i = 0; i < value.length; i++) {
+      bytes[i] = value.charCodeAt(i) & 0xff;
+    }
+    return bytes;
+  }
+
+  private static getImageMimeTypeForDownload(
+    headerMime: string,
+    endpoint: string,
+    bytes: Uint8Array,
+  ): string | null {
+    return (
+      this.normalizeImageMimeType(headerMime) ||
+      this.guessMimeTypeFromBytes(bytes) ||
+      this.guessMimeTypeFromUrl(endpoint)
+    );
+  }
+
+  private static toDownloadedImageResult(
+    bytes: Uint8Array,
+    headerMime: string,
+    endpoint: string,
+  ): { imageBase64: string; mimeType: string } {
+    const mimeType = this.getImageMimeTypeForDownload(
+      headerMime,
+      endpoint,
+      bytes,
+    );
+    if (!mimeType) {
+      throw new ImageGenerationError(
+        "Downloaded file is not a supported image",
+        {
+          errorName: "UnsupportedImageMimeType",
+          errorMessage:
+            "Image download succeeded, but the response could not be identified as PNG, JPEG, WebP, or GIF.",
+          requestUrl: endpoint,
+          responseBody: JSON.stringify({
+            contentType: headerMime || "",
+            byteLength: bytes.byteLength,
+            firstBytes: Array.from(bytes.slice(0, 12))
+              .map((byte) => byte.toString(16).padStart(2, "0"))
+              .join(" "),
+          }),
+        },
+      );
+    }
+
+    return { imageBase64: this.bytesToBase64(bytes), mimeType };
   }
 
   private static async downloadImageUrlAsBase64(
@@ -384,20 +540,22 @@ export class ImageClient {
       typeof contentTypeHeader === "string" && contentTypeHeader
         ? contentTypeHeader.split(";")[0].trim()
         : "";
-    const mimeType =
-      headerMime || this.guessMimeTypeFromUrl(endpoint) || "image/jpeg";
 
     const body = res?.response;
     const bodyTag = Object.prototype.toString.call(body);
     if (body instanceof ArrayBuffer) {
-      return { imageBase64: this.arrayBufferToBase64(body), mimeType };
+      return this.toDownloadedImageResult(
+        new Uint8Array(body),
+        headerMime,
+        endpoint,
+      );
     }
     // 跨窗口/跨 realm 的 ArrayBuffer：instanceof 可能失效
     if (bodyTag === "[object ArrayBuffer]") {
       try {
         const bytes = new Uint8Array(body as any);
         if (bytes.byteLength > 0) {
-          return { imageBase64: this.bytesToBase64(bytes), mimeType };
+          return this.toDownloadedImageResult(bytes, headerMime, endpoint);
         }
       } catch {
         /* ignore */
@@ -410,11 +568,14 @@ export class ImageClient {
         view.byteOffset,
         view.byteLength,
       );
-      return { imageBase64: this.bytesToBase64(bytes), mimeType };
+      return this.toDownloadedImageResult(bytes, headerMime, endpoint);
     }
     if (typeof body === "string" && body) {
-      // 兜底：某些环境可能返回二进制字符串
-      return { imageBase64: btoa(body), mimeType };
+      return this.toDownloadedImageResult(
+        this.binaryStringToBytes(body),
+        headerMime,
+        endpoint,
+      );
     }
 
     // 兜底：尝试把“看起来像 ArrayBuffer”的对象转成 Uint8Array
@@ -426,7 +587,7 @@ export class ImageClient {
       try {
         const bytes = new Uint8Array(body as any);
         if (bytes.byteLength > 0) {
-          return { imageBase64: this.bytesToBase64(bytes), mimeType };
+          return this.toDownloadedImageResult(bytes, headerMime, endpoint);
         }
       } catch {
         /* ignore */
@@ -486,10 +647,11 @@ export class ImageClient {
       if (maybe) return maybe;
       // 尝试从文本中提取 data URL（例如 Markdown/JSON 中夹带）
       const match = content.match(
-        /data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)/i,
+        /data:[^,;\s]+(?:;[^,]*)?;base64,[A-Za-z0-9+/=]+/i,
       );
       if (match) {
-        return { mimeType: match[1], imageBase64: match[2] };
+        const matchedImage = this.extractImageFromDataUrl(match[0]);
+        if (matchedImage) return matchedImage;
       }
 
       // 兜底：纯 Base64（没有 data: 前缀）
@@ -499,7 +661,10 @@ export class ImageClient {
         /^[A-Za-z0-9+/=]+$/.test(normalized) &&
         normalized.length % 4 === 0
       ) {
-        return { mimeType: "image/png", imageBase64: normalized };
+        return {
+          mimeType: this.guessMimeTypeFromBase64(normalized) || "image/png",
+          imageBase64: normalized,
+        };
       }
     }
 
@@ -727,7 +892,10 @@ export class ImageClient {
       if (imagePart?.inlineData?.data) {
         return {
           imageBase64: imagePart.inlineData.data,
-          mimeType: imagePart.inlineData.mimeType || "image/png",
+          mimeType:
+            this.normalizeImageMimeType(imagePart.inlineData.mimeType) ||
+            this.guessMimeTypeFromBase64(imagePart.inlineData.data) ||
+            "image/png",
         };
       }
     }
@@ -1623,7 +1791,10 @@ export class ImageClient {
       }
 
       const imageBase64 = imagePart.inlineData.data;
-      const mimeType = imagePart.inlineData.mimeType || "image/png";
+      const mimeType =
+        this.normalizeImageMimeType(imagePart.inlineData.mimeType) ||
+        this.guessMimeTypeFromBase64(imageBase64) ||
+        "image/png";
 
       ztoolkit.log(
         `[AI-Butler] 成功生成图片，MIME: ${mimeType}, 大小: ${Math.round(imageBase64.length / 1024)} KB`,

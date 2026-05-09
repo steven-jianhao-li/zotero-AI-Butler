@@ -60,7 +60,17 @@ export class ImageNoteGenerator {
     }
 
     // 将 base64 转换为 Blob
-    const blob = this.base64ToBlob(imageBase64, mimeType);
+    const normalizedMimeType = this.normalizeImageMimeTypeForEmbedding(
+      imageBase64,
+      mimeType,
+    );
+    if (normalizedMimeType !== mimeType) {
+      ztoolkit.log(
+        `[AI-Butler] Normalize image MIME for embedded note: ${mimeType || "unknown"} -> ${normalizedMimeType}`,
+      );
+    }
+
+    const blob = this.base64ToBlob(imageBase64, normalizedMimeType);
 
     // 使用官方 API 创建 embedded-image attachment
     // 这样图片作为独立附件存储，笔记中只保留 data-attachment-key 引用
@@ -104,6 +114,111 @@ export class ImageNoteGenerator {
     }
     const byteArray = new Uint8Array(byteNumbers);
     return new Blob([byteArray], { type: mimeType });
+  }
+
+  private static normalizeImageMimeType(value: unknown): string | null {
+    const mime = String(value || "")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+    if (!mime) return null;
+    if (mime === "image/jpg") return "image/jpeg";
+    if (
+      mime === "image/png" ||
+      mime === "image/jpeg" ||
+      mime === "image/webp" ||
+      mime === "image/gif"
+    ) {
+      return mime;
+    }
+    return null;
+  }
+
+  private static guessMimeTypeFromBase64(base64: string): string | null {
+    const normalized = (base64 || "").replace(/\s+/g, "");
+    if (!normalized) return null;
+
+    try {
+      const prefixLength = Math.min(normalized.length, 64);
+      const alignedLength = Math.max(4, Math.floor(prefixLength / 4) * 4);
+      const binary = atob(normalized.slice(0, alignedLength));
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return this.guessMimeTypeFromBytes(bytes);
+    } catch {
+      return null;
+    }
+  }
+
+  private static guessMimeTypeFromBytes(bytes: Uint8Array): string | null {
+    if (
+      bytes.byteLength >= 8 &&
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47 &&
+      bytes[4] === 0x0d &&
+      bytes[5] === 0x0a &&
+      bytes[6] === 0x1a &&
+      bytes[7] === 0x0a
+    ) {
+      return "image/png";
+    }
+
+    if (
+      bytes.byteLength >= 3 &&
+      bytes[0] === 0xff &&
+      bytes[1] === 0xd8 &&
+      bytes[2] === 0xff
+    ) {
+      return "image/jpeg";
+    }
+
+    if (bytes.byteLength >= 6) {
+      const signature = String.fromCharCode(
+        bytes[0],
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        bytes[4],
+        bytes[5],
+      );
+      if (signature === "GIF87a" || signature === "GIF89a") {
+        return "image/gif";
+      }
+    }
+
+    if (bytes.byteLength >= 12) {
+      const riff = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
+      const webp = String.fromCharCode(
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+      );
+      if (riff === "RIFF" && webp === "WEBP") {
+        return "image/webp";
+      }
+    }
+
+    return null;
+  }
+
+  private static normalizeImageMimeTypeForEmbedding(
+    imageBase64: string,
+    mimeType: string,
+  ): string {
+    const explicitMime = this.normalizeImageMimeType(mimeType);
+    if (explicitMime) return explicitMime;
+
+    const sniffedMime = this.guessMimeTypeFromBase64(imageBase64);
+    if (sniffedMime) return sniffedMime;
+
+    throw new Error(
+      `Unsupported generated image content type: ${mimeType || "unknown"}`,
+    );
   }
 
   /**

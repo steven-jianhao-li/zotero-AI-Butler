@@ -9,6 +9,7 @@ import {
   createNotice,
   createCard,
 } from "../ui/components";
+import { isRegularSummaryNote } from "../../aiNoteClassifier";
 import { TaskQueueManager } from "../../taskQueue";
 import { getDefaultSummaryPrompt } from "../../../utils/prompts";
 
@@ -333,13 +334,10 @@ export class DataSettingsPage {
           const note = await Zotero.Items.getAsync(noteID);
           if (!note) continue;
 
-          // 检查是否是 AI 生成的笔记
           const tags: Array<{ tag: string }> = (note as any).getTags?.() || [];
-          const hasTag = tags.some((t) => t.tag === "AI-Generated");
           const noteHtml: string = (note as any).getNote?.() || "";
-          const titleMatch = /<h2>\s*AI 管家\s*-/.test(noteHtml);
 
-          if (!hasTag && !titleMatch) continue;
+          if (!isRegularSummaryNote(tags, noteHtml)) continue;
 
           // 检查笔记内容是否为空
           // 移除标题和包装标签后检查剩余内容

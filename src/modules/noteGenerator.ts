@@ -46,6 +46,7 @@ import {
   type MultiRoundPromptItem,
   type SummaryMode,
 } from "../utils/prompts";
+import { isRegularSummaryNote } from "./aiNoteClassifier";
 
 type MultiModelSummaryResult = {
   endpoint: LLMEndpoint;
@@ -419,7 +420,7 @@ export class NoteGenerator {
     }
   }
 
-  /** 查找已有的 AI 笔记(通过标签或标题标识) */
+  /** 查找已有的 AI 总结笔记(通过标签或标题标识，排除后续追问等独立笔记) */
   public static async findExistingNote(
     item: Zotero.Item,
   ): Promise<Zotero.Item | null> {
@@ -430,11 +431,8 @@ export class NoteGenerator {
         const n = await Zotero.Items.getAsync(nid);
         if (!n) continue;
         const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-        const hasTag = tags.some((t) => t.tag === "AI-Generated");
-        const hasTableTag = tags.some((t) => t.tag === "AI-Table");
         const noteHtml: string = (n as any).getNote?.() || "";
-        const titleMatch = /<h2>\s*AI 管家\s*-/.test(noteHtml);
-        if (!hasTableTag && (hasTag || titleMatch)) {
+        if (isRegularSummaryNote(tags, noteHtml)) {
           if (!target) target = n;
           else {
             const a = (target as any).dateModified || 0;

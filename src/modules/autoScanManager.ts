@@ -17,6 +17,7 @@
  */
 
 import { getPref } from "../utils/prefs";
+import { isRegularSummaryNote } from "./aiNoteClassifier";
 import { TaskQueueManager } from "./taskQueue";
 
 /**
@@ -288,14 +289,9 @@ export class AutoScanManager {
         const n = await Zotero.Items.getAsync(nid);
         if (!n) continue;
 
-        // 检查标签
         const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-        const hasTag = tags.some((t) => t.tag === "AI-Generated");
-        if (hasTag) return true;
-
-        // 检查标题标记
         const noteHtml: string = (n as any).getNote?.() || "";
-        if (/<h2>\s*AI 管家\s*-/.test(noteHtml)) {
+        if (isRegularSummaryNote(tags, noteHtml)) {
           return true;
         }
       }

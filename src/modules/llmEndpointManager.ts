@@ -1,5 +1,7 @@
 import { getPref, setPref } from "../utils/prefs";
 import type { ProviderId } from "./apiKeyManager";
+import { normalizeReasoningEffortSetting } from "./llmproviders/shared/reasoning";
+import type { LLMReasoningEffortSetting } from "./llmproviders/types";
 
 export type LLMEndpointProviderType = ProviderId;
 export type LLMRoutingStrategy = "priority" | "roundRobin";
@@ -11,6 +13,7 @@ export interface LLMEndpoint {
   apiUrl: string;
   apiKey: string;
   model: string;
+  reasoningEffort?: LLMReasoningEffortSetting;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -26,6 +29,7 @@ export interface ProviderDefaults {
   label: string;
   apiUrl: string;
   model: string;
+  reasoningEffort?: LLMReasoningEffortSetting;
 }
 
 const PROVIDER_DEFAULTS: Record<LLMEndpointProviderType, ProviderDefaults> = {
@@ -33,36 +37,43 @@ const PROVIDER_DEFAULTS: Record<LLMEndpointProviderType, ProviderDefaults> = {
     label: "OpenAI (Responses 新接口)",
     apiUrl: "https://api.openai.com/v1/responses",
     model: "gpt-5",
+    reasoningEffort: "medium",
   },
   "openai-compat": {
     label: "OpenAI 兼容 (Chat Completions)",
     apiUrl: "https://api.openai.com/v1/chat/completions",
     model: "gpt-3.5-turbo",
+    reasoningEffort: "default",
   },
   google: {
     label: "Google Gemini",
     apiUrl: "https://generativelanguage.googleapis.com",
     model: "gemini-2.5-pro",
+    reasoningEffort: "default",
   },
   anthropic: {
     label: "Anthropic Claude",
     apiUrl: "https://api.anthropic.com",
     model: "claude-3-5-sonnet-20241022",
+    reasoningEffort: "default",
   },
   openrouter: {
     label: "OpenRouter",
     apiUrl: "https://openrouter.ai/api/v1/chat/completions",
     model: "google/gemma-3-27b-it",
+    reasoningEffort: "default",
   },
   volcanoark: {
     label: "火山方舟 (Volcano Ark)",
     apiUrl: "https://ark.cn-beijing.volces.com/api/v3/responses",
     model: "doubao-seed-1-8-251228",
+    reasoningEffort: "default",
   },
   ollama: {
     label: "Ollama",
     apiUrl: "http://localhost:11434",
     model: "llama3.2",
+    reasoningEffort: "default",
   },
 };
 
@@ -115,6 +126,10 @@ function normalizeEndpoint(
     apiUrl: String(raw.apiUrl || defaults.apiUrl).trim(),
     apiKey: String(raw.apiKey || "").trim(),
     model: String(raw.model || defaults.model).trim(),
+    reasoningEffort: normalizeReasoningEffortSetting(
+      raw.reasoningEffort,
+      defaults.reasoningEffort || "default",
+    ),
     enabled: raw.enabled !== false,
     createdAt,
     updatedAt: raw.updatedAt || createdAt,
@@ -152,6 +167,7 @@ export class LLMEndpointManager {
       apiUrl: defaults.apiUrl,
       apiKey: "",
       model: defaults.model,
+      reasoningEffort: defaults.reasoningEffort || "default",
       enabled: true,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -340,6 +356,7 @@ export class LLMEndpointManager {
       apiUrl: this.getLegacyApiUrl(providerType) || defaults.apiUrl,
       apiKey: this.getLegacyApiKey(providerType),
       model: this.getLegacyModel(providerType) || defaults.model,
+      reasoningEffort: this.getLegacyReasoningEffort(providerType),
       enabled: true,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -395,6 +412,16 @@ export class LLMEndpointManager {
       return String(getPref("openaiApiModel") || "").trim();
     }
     return value.trim();
+  }
+
+  private static getLegacyReasoningEffort(
+    providerType: LLMEndpointProviderType,
+  ): LLMReasoningEffortSetting {
+    const defaults = this.providerDefaults(providerType);
+    return normalizeReasoningEffortSetting(
+      getPref("reasoningEffort" as any),
+      defaults.reasoningEffort || "default",
+    );
   }
 }
 

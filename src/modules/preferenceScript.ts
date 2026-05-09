@@ -223,6 +223,7 @@ function initializeDefaultPrefs() {
     openaiApiUrl: "https://api.openai.com/v1/responses",
     openaiApiModel: "gpt-5",
     temperature: "0.7",
+    reasoningEffort: "default",
     stream: true,
     summaryPrompt: getDefaultSummaryPrompt(),
     promptVersion: PROMPT_VERSION,

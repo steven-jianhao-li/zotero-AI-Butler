@@ -12,6 +12,7 @@ const prefKeys = [
   "multiModelSummaryEnabled",
   "multiModelSummaryEndpointIds",
   "maxApiSwitchCount",
+  "reasoningEffort",
   "provider",
   "openaiCompatApiUrl",
   "openaiCompatApiKey",
@@ -80,8 +81,37 @@ describe("LLMEndpointManager", function () {
       apiUrl: "https://example.test/v1/chat/completions",
       apiKey: "sk-legacy",
       model: "legacy-model",
+      reasoningEffort: "default",
       enabled: true,
     });
+  });
+
+  it("defaults official OpenAI endpoints to medium reasoning effort", function () {
+    Zotero.Prefs.set(prefName("llmEndpoints"), "[]", true);
+    Zotero.Prefs.set(prefName("provider"), "openai", true);
+
+    const endpoints = LLMEndpointManager.getEndpoints();
+
+    expect(endpoints[0]).to.include({
+      providerType: "openai",
+      reasoningEffort: "medium",
+    });
+  });
+
+  it("normalizes stored reasoning effort values", function () {
+    LLMEndpointManager.saveEndpoints([
+      { ...makeEndpoint("a"), reasoningEffort: "high" },
+      {
+        ...makeEndpoint("b"),
+        providerType: "openai-compat",
+        reasoningEffort: "invalid" as any,
+      },
+    ]);
+
+    const endpoints = LLMEndpointManager.getEndpoints();
+
+    expect(endpoints[0].reasoningEffort).to.equal("high");
+    expect(endpoints[1].reasoningEffort).to.equal("default");
   });
 
   it("returns priority route order and skips disabled endpoints", function () {

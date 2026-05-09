@@ -17,6 +17,7 @@ import {
   parseModelListResponse,
   requestModelListJson,
 } from "./shared/modelList";
+import { resolveReasoningEffort } from "./shared/reasoning";
 
 /**
  * OpenAI 旧接口兼容 Provider（Chat Completions 格式）
@@ -36,7 +37,13 @@ export class OpenAICompatProvider implements ILlmProvider {
     supportsPdfBase64: true,
     maxPdfFiles: 20,
     supportsSystemPrompt: true,
-    supportedParams: ["temperature", "topP", "maxTokens", "stream"],
+    supportedParams: [
+      "temperature",
+      "topP",
+      "maxTokens",
+      "stream",
+      "reasoningEffort",
+    ],
   };
 
   private ensureUrlAndKey(options: LLMOptions) {
@@ -74,6 +81,8 @@ export class OpenAICompatProvider implements ILlmProvider {
       params.temperature = options.temperature;
     if (options.topP !== undefined) params.top_p = options.topP;
     if (options.maxTokens !== undefined) params.max_tokens = options.maxTokens;
+    const reasoningEffort = resolveReasoningEffort(options.reasoningEffort);
+    if (reasoningEffort) params.reasoning_effort = reasoningEffort;
     return params;
   }
 

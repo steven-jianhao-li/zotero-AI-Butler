@@ -40,6 +40,7 @@ declare namespace _ZoteroTypes {
       "enableMaxTokens": boolean;
       "topP": string;
       "enableTopP": boolean;
+      "reasoningEffort": string;
       "stream": boolean;
       "requestTimeout": string;
       "mineruApiKey": string;

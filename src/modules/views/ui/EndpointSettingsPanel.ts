@@ -1,5 +1,6 @@
 import { getPref, setPref } from "../../../utils/prefs";
 import LLMService from "../../llmService";
+import { normalizeReasoningEffortSetting } from "../../llmproviders/shared/reasoning";
 import {
   LLMEndpointManager,
   type LLMEndpoint,
@@ -48,6 +49,25 @@ function smallMuted(text: string): HTMLElement {
 
 function fieldDescription(text: string): string {
   return text;
+}
+
+function reasoningEffortOptions(): Array<{ value: string; label: string }> {
+  return [
+    { value: "default", label: "默认：依赖模型默认行为，不作任何配置" },
+    { value: "none", label: "关闭：禁用推理" },
+    { value: "low", label: "浮想：低强度推理" },
+    { value: "medium", label: "斟酌：中强度推理" },
+    { value: "high", label: "沉思：高强度推理" },
+    { value: "xhigh", label: "穷究：超高强度推理" },
+  ];
+}
+
+function endpointSupportsReasoningEffort(endpoint: LLMEndpoint): boolean {
+  return (
+    endpoint.providerType === "openai" ||
+    endpoint.providerType === "openai-compat" ||
+    endpoint.providerType === "openrouter"
+  );
 }
 
 export class EndpointSettingsPanel {
@@ -505,7 +525,9 @@ export class EndpointSettingsPanel {
       borderRadius: "8px",
       background: "var(--ai-surface)",
       boxSizing: "border-box",
-      overflow: "hidden",
+      overflow: isExpanded ? "visible" : "hidden",
+      position: "relative",
+      zIndex: isExpanded ? String(1000 - index) : "0",
     });
 
     const header = document.createElement("div");
@@ -664,6 +686,9 @@ export class EndpointSettingsPanel {
     details.appendChild(this.renderApiUrlField(endpoint));
     details.appendChild(this.renderApiKeyField(endpoint));
     details.appendChild(this.renderModelField(endpoint));
+    if (endpointSupportsReasoningEffort(endpoint)) {
+      details.appendChild(this.renderReasoningEffortField(endpoint));
+    }
     details.appendChild(this.renderConnectionTest(endpoint));
     return details;
   }
@@ -854,6 +879,30 @@ export class EndpointSettingsPanel {
         "【必填】要使用的模型 ID。可手动填写，也可尝试从供应商接口获取模型列表。",
       ),
     );
+  }
+
+  private renderReasoningEffortField(endpoint: LLMEndpoint): HTMLElement {
+    const defaults = LLMEndpointManager.providerDefaults(endpoint.providerType);
+    const value = normalizeReasoningEffortSetting(
+      endpoint.reasoningEffort,
+      defaults.reasoningEffort || "default",
+    );
+    endpoint.reasoningEffort = value;
+
+    const select = createSelect(
+      `endpoint-${endpoint.id}-reasoningEffort`,
+      reasoningEffortOptions(),
+      value,
+      (newValue) => {
+        endpoint.reasoningEffort = normalizeReasoningEffortSetting(
+          newValue,
+          "default",
+        );
+        this.persist();
+      },
+    );
+
+    return createFormGroup("思维链长度", select);
   }
 
   private renderConnectionTest(endpoint: LLMEndpoint): HTMLElement {

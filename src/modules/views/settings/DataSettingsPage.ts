@@ -160,6 +160,7 @@ export class DataSettingsPage {
       "enableMaxTokens",
       "topP",
       "enableTopP",
+      "reasoningEffort",
       "stream",
       "summaryPrompt",
       "customPrompts",
@@ -275,6 +276,7 @@ export class DataSettingsPage {
     setPref("temperature", "0.7");
     setPref("maxTokens", "4096");
     setPref("topP", "1.0");
+    setPref("reasoningEffort", "default");
     setPref("enableTemperature", true as any);
     setPref("enableMaxTokens", true as any);
     setPref("enableTopP", true as any);

@@ -77,7 +77,8 @@ Google AI Studio 免费层级对不同模型有不同的速率限制。查看可
 2. 平台选择 **OpenAI**
 3. 粘贴 API 密钥
 4. 模型名称填写（从 [官方模型列表](https://platform.openai.com/docs/models) 获取，模型名在Snapshots下，例如：`gpt-5.2`、`gpt-5-mini`）
-5. 点击 **"测试连接"**
+5. 如使用支持推理的 GPT / o 系列模型，可在该模型平台详情中调整 **思维链长度**；OpenAI 官方端点默认使用 **斟酌**
+6. 点击 **"测试连接"**
 
 ![OpenAI 模型名获取](images/api-config-openai-models.png)
 

@@ -28,6 +28,11 @@
 import { getPref } from "../utils/prefs";
 import { NoteGenerator } from "./noteGenerator";
 import { PDFExtractor } from "./pdfExtractor";
+import type { LLMAbortSignal } from "./llmproviders/types";
+import {
+  LLM_REQUEST_ABORT_MESSAGE,
+  isAbortError,
+} from "./llmproviders/shared/requestAbort";
 import { TaskArtifacts, type FixedTaskArtifactType } from "./taskArtifacts";
 
 function logTaskQueue(...args: Parameters<ZToolkit["log"]>): void {
@@ -43,6 +48,63 @@ function logTaskQueue(...args: Parameters<ZToolkit["log"]>): void {
 /** 无 PDF 附件错误标识 */
 const NO_PDF_ERROR_MSG =
   "该条目没有 PDF 附件，无法进行 AI 分析。请先为该文献添加 PDF 文件。";
+const TASK_ABORT_DETAIL = "该总结任务已由用户手动终止。";
+
+type TaskAbortController = {
+  signal: LLMAbortSignal;
+  abort(reason?: unknown): void;
+};
+
+class SimpleAbortSignal implements LLMAbortSignal {
+  public aborted = false;
+  public reason?: unknown;
+  private listeners: Set<() => void> = new Set();
+
+  addEventListener(type: "abort", listener: () => void): void {
+    if (type === "abort") this.listeners.add(listener);
+  }
+
+  removeEventListener(type: "abort", listener: () => void): void {
+    if (type === "abort") this.listeners.delete(listener);
+  }
+
+  abort(reason?: unknown): void {
+    if (this.aborted) return;
+    this.aborted = true;
+    this.reason = reason;
+    const listeners = Array.from(this.listeners);
+    this.listeners.clear();
+    for (const listener of listeners) {
+      listener();
+    }
+  }
+
+  throwIfAborted(): void {
+    if (!this.aborted) return;
+    throw new Error(
+      typeof this.reason === "string" ? this.reason : LLM_REQUEST_ABORT_MESSAGE,
+    );
+  }
+}
+
+class SimpleAbortController implements TaskAbortController {
+  public readonly signal = new SimpleAbortSignal();
+
+  abort(reason?: unknown): void {
+    this.signal.abort(reason);
+  }
+}
+
+function createTaskAbortController(): TaskAbortController {
+  const NativeAbortController = (
+    globalThis as unknown as {
+      AbortController?: new () => TaskAbortController;
+    }
+  ).AbortController;
+  return NativeAbortController
+    ? new NativeAbortController()
+    : new SimpleAbortController();
+}
 
 /**
  * 任务状态枚举
@@ -158,6 +220,12 @@ export class TaskQueueManager {
 
   /** 当前正在处理的任务ID集合 */
   private processingTasks: Set<string> = new Set();
+
+  /** 正在执行的总结任务中断控制器 */
+  private taskAbortControllers: Map<string, TaskAbortController> = new Map();
+
+  /** 已请求终止但底层请求尚未结束的任务 */
+  private abortingTasks: Set<string> = new Set();
 
   /** 任务进度回调函数集合 */
   private progressCallbacks: Set<TaskProgressCallback> = new Set();
@@ -1241,6 +1309,12 @@ export class TaskQueueManager {
     // 停止执行器
     this.stop();
 
+    this.taskAbortControllers.forEach((controller) => {
+      controller.abort(LLM_REQUEST_ABORT_MESSAGE);
+    });
+    this.taskAbortControllers.clear();
+    this.abortingTasks.clear();
+
     // 清空队列
     this.tasks.clear();
     this.processingTasks.clear();
@@ -1296,6 +1370,7 @@ export class TaskQueueManager {
     task.completedAt = undefined;
     task.duration = undefined;
     task.createdAt = new Date();
+    this.abortingTasks.delete(taskId);
 
     await this.saveToStorage();
     logTaskQueue(`重试任务: ${taskId}`);
@@ -1304,6 +1379,37 @@ export class TaskQueueManager {
     if (!this.isRunning) {
       this.start();
     }
+  }
+
+  /**
+   * 终止正在执行的论文总结任务
+   *
+   * @param taskId 任务ID
+   */
+  public async abortTask(taskId: string): Promise<void> {
+    const task = this.tasks.get(taskId);
+    if (!task || task.status !== TaskStatus.PROCESSING) {
+      return;
+    }
+
+    const taskType = task.taskType || "summary";
+    if (taskType !== "summary") {
+      throw new Error("当前只支持终止论文总结任务");
+    }
+
+    this.abortingTasks.add(taskId);
+    task.workflowStage = "正在终止";
+    task.error = LLM_REQUEST_ABORT_MESSAGE;
+    task.errorDetails = TASK_ABORT_DETAIL;
+    this.notifyProgress(taskId, task.progress, "正在终止");
+
+    const controller = this.taskAbortControllers.get(taskId);
+    if (controller) {
+      controller.abort(LLM_REQUEST_ABORT_MESSAGE);
+    }
+
+    await this.saveToStorage();
+    logTaskQueue(`用户终止任务: ${task.title} (${taskId})`);
   }
 
   // ==================== 队列查询 ====================
@@ -1598,7 +1704,11 @@ export class TaskQueueManager {
     task.progress = 0;
     task.error = undefined;
     task.errorDetails = undefined;
+    task.workflowStage = undefined;
     this.processingTasks.add(taskId);
+    this.abortingTasks.delete(taskId);
+    const abortController = createTaskAbortController();
+    this.taskAbortControllers.set(taskId, abortController);
     await this.saveToStorage();
 
     logTaskQueue(`开始执行任务: ${task.title} (${taskId})`);
@@ -1626,6 +1736,9 @@ export class TaskQueueManager {
           this.notifyProgress(taskId, progress, message);
         },
         (chunk: string) => {
+          if (this.abortingTasks.has(taskId)) {
+            return;
+          }
           // 将增量内容广播给监听者
           try {
             // 首次到来时发送 start 事件
@@ -1637,8 +1750,12 @@ export class TaskQueueManager {
             logTaskQueue(`流式内容广播失败: ${e}`);
           }
         },
-        task.options,
+        { ...(task.options || {}), abortSignal: abortController.signal },
       );
+
+      if (this.abortingTasks.has(taskId) || abortController.signal.aborted) {
+        throw new Error(LLM_REQUEST_ABORT_MESSAGE);
+      }
 
       // 任务成功完成
       task.status = TaskStatus.COMPLETED;
@@ -1659,19 +1776,29 @@ export class TaskQueueManager {
       return false; // 非快速失败，计入批次
     } catch (error: any) {
       // 任务失败
-      task.error = this.getTaskErrorMessage(error);
-      task.errorDetails = this.buildTaskErrorDetails(task, error);
+      const isTaskAborted =
+        this.abortingTasks.has(taskId) ||
+        abortController.signal.aborted ||
+        isAbortError(error, abortController.signal);
+      task.error = isTaskAborted
+        ? LLM_REQUEST_ABORT_MESSAGE
+        : this.getTaskErrorMessage(error);
+      task.errorDetails = isTaskAborted
+        ? TASK_ABORT_DETAIL
+        : this.buildTaskErrorDetails(task, error);
       const suppressTaskRetry = this.shouldSuppressTaskRetry(error, task);
 
       // 无 PDF 附件错误直接标记失败，不重试（用户需要手动添加 PDF）
       const isNoPdfError = task.error === NO_PDF_ERROR_MSG;
-      if (isNoPdfError || suppressTaskRetry) {
+      if (isTaskAborted || isNoPdfError || suppressTaskRetry) {
         task.status = TaskStatus.FAILED;
         task.completedAt = new Date();
         logTaskQueue(
-          isNoPdfError
-            ? `任务失败（无 PDF 附件）: ${task.title}`
-            : `任务失败（API 尝试已用尽，不再进行队列重试）: ${task.title}`,
+          isTaskAborted
+            ? `任务已终止: ${task.title}`
+            : isNoPdfError
+              ? `任务失败（无 PDF 附件）: ${task.title}`
+              : `任务失败（API 尝试已用尽，不再进行队列重试）: ${task.title}`,
         );
       } else {
         task.retryCount++;
@@ -1697,6 +1824,8 @@ export class TaskQueueManager {
     } finally {
       // 移除处理中标记
       this.processingTasks.delete(taskId);
+      this.taskAbortControllers.delete(taskId);
+      this.abortingTasks.delete(taskId);
       await this.saveToStorage();
     }
   }

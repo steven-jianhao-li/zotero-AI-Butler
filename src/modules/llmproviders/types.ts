@@ -1,5 +1,17 @@
 export type ProgressCb = (chunk: string) => Promise<void> | void;
 
+export type LLMAbortSignal = {
+  readonly aborted: boolean;
+  readonly reason?: unknown;
+  addEventListener?(
+    type: "abort",
+    listener: () => void,
+    options?: { once?: boolean } | boolean,
+  ): void;
+  removeEventListener?(type: "abort", listener: () => void): void;
+  throwIfAborted?(): void;
+};
+
 export type ConversationMessage = {
   role: "system" | "user" | "assistant";
   content: string;
@@ -26,6 +38,7 @@ export type LLMOptions = {
   maxTokens?: number;
   reasoningEffort?: LLMReasoningEffort;
   vendorOptions?: Record<string, unknown>;
+  abortSignal?: LLMAbortSignal;
 };
 
 export type LLMProviderParam =

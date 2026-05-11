@@ -17,6 +17,12 @@ import {
   parseModelListResponse,
   requestModelListJson,
 } from "./shared/modelList";
+import {
+  bindAbortSignal,
+  isAbortError,
+  normalizeAbortError,
+  throwIfAborted,
+} from "./shared/requestAbort";
 
 /**
  * 火山引擎 Ark Provider
@@ -51,6 +57,7 @@ export class VolcanoArkProvider implements ILlmProvider {
 
     if (!baseUrl) throw new Error("火山引擎 API URL 未配置");
     if (!apiKey) throw new Error("火山引擎 API Key 未配置");
+    throwIfAborted(options.abortSignal);
 
     // 如果 baseUrl 已经以 /responses 结尾，直接使用；否则追加
     const endpoint = baseUrl.endsWith("/responses")
@@ -112,6 +119,8 @@ export class VolcanoArkProvider implements ILlmProvider {
     let processedLength = 0;
     let partialLine = "";
     let gotAnyDelta = false;
+    let abortError: Error | null = null;
+    let cleanupAbortSignal: (() => void) | undefined;
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
@@ -124,6 +133,13 @@ export class VolcanoArkProvider implements ILlmProvider {
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
         errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
+          cleanupAbortSignal = bindAbortSignal(
+            options.abortSignal,
+            xmlhttp,
+            (error) => {
+              abortError = error;
+            },
+          );
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;
             if (status >= 400) {
@@ -188,6 +204,9 @@ export class VolcanoArkProvider implements ILlmProvider {
         },
       });
     } catch (error: any) {
+      if (abortError || isAbortError(error, options.abortSignal)) {
+        throw normalizeAbortError(abortError || error, options.abortSignal);
+      }
       let errorMessage = error?.message || "火山引擎请求失败";
       try {
         const responseText =
@@ -207,6 +226,8 @@ export class VolcanoArkProvider implements ILlmProvider {
       }
       if (gotAnyDelta && chunks.length > 0) return chunks.join("");
       throw new Error(errorMessage);
+    } finally {
+      cleanupAbortSignal?.();
     }
 
     const streamed = chunks.join("");
@@ -230,6 +251,7 @@ export class VolcanoArkProvider implements ILlmProvider {
 
     if (!baseUrl) throw new Error("火山引擎 API URL 未配置");
     if (!apiKey) throw new Error("火山引擎 API Key 未配置");
+    throwIfAborted(options.abortSignal);
 
     // 如果 baseUrl 已经以 /responses 结尾，直接使用；否则追加
     const endpoint = baseUrl.endsWith("/responses")
@@ -299,6 +321,7 @@ export class VolcanoArkProvider implements ILlmProvider {
     let partialLine = "";
     let abortError: Error | null = null;
     let gotAnyDelta = false;
+    let cleanupAbortSignal: (() => void) | undefined;
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
@@ -311,6 +334,13 @@ export class VolcanoArkProvider implements ILlmProvider {
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
         errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
+          cleanupAbortSignal = bindAbortSignal(
+            options.abortSignal,
+            xmlhttp,
+            (error) => {
+              abortError = error;
+            },
+          );
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;
             if (status >= 400) {
@@ -396,10 +426,16 @@ export class VolcanoArkProvider implements ILlmProvider {
       });
     } catch (error: any) {
       if (abortError) {
+        if (isAbortError(abortError, options.abortSignal)) {
+          throw normalizeAbortError(abortError, options.abortSignal);
+        }
         if (gotAnyDelta && chunks.length > 0) {
           return chunks.join("");
         }
         throw abortError;
+      }
+      if (isAbortError(error, options.abortSignal)) {
+        throw normalizeAbortError(error, options.abortSignal);
       }
       let errorMessage = error?.message || "火山引擎请求失败";
       try {
@@ -425,6 +461,8 @@ export class VolcanoArkProvider implements ILlmProvider {
       });
       if (gotAnyDelta && chunks.length > 0) return chunks.join("");
       throw new Error(errorMessage);
+    } finally {
+      cleanupAbortSignal?.();
     }
 
     return chunks.join("");
@@ -716,6 +754,7 @@ export class VolcanoArkProvider implements ILlmProvider {
     if (!baseUrl) throw new Error("火山引擎 API URL 未配置");
     if (!apiKey) throw new Error("火山引擎 API Key 未配置");
     if (pdfFiles.length === 0) throw new Error("没有要处理的 PDF 文件");
+    throwIfAborted(options.abortSignal);
 
     // 如果 baseUrl 已经以 /responses 结尾，直接使用；否则追加
     const endpoint = baseUrl.endsWith("/responses")
@@ -781,6 +820,8 @@ export class VolcanoArkProvider implements ILlmProvider {
     let processedLength = 0;
     let partialLine = "";
     let gotAnyDelta = false;
+    let abortError: Error | null = null;
+    let cleanupAbortSignal: (() => void) | undefined;
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
@@ -793,6 +834,13 @@ export class VolcanoArkProvider implements ILlmProvider {
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
         errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
+          cleanupAbortSignal = bindAbortSignal(
+            options.abortSignal,
+            xmlhttp,
+            (error) => {
+              abortError = error;
+            },
+          );
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;
             if (status >= 400) {
@@ -856,6 +904,9 @@ export class VolcanoArkProvider implements ILlmProvider {
         },
       });
     } catch (error: any) {
+      if (abortError || isAbortError(error, options.abortSignal)) {
+        throw normalizeAbortError(abortError || error, options.abortSignal);
+      }
       let errorMessage = error?.message || "火山引擎请求失败";
       try {
         const responseText =
@@ -875,6 +926,8 @@ export class VolcanoArkProvider implements ILlmProvider {
       }
       if (gotAnyDelta && chunks.length > 0) return chunks.join("");
       throw new Error(errorMessage);
+    } finally {
+      cleanupAbortSignal?.();
     }
 
     const streamed = chunks.join("");

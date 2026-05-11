@@ -17,6 +17,12 @@ import {
   parseModelListResponse,
   requestModelListJson,
 } from "./shared/modelList";
+import {
+  bindAbortSignal,
+  isAbortError,
+  normalizeAbortError,
+  throwIfAborted,
+} from "./shared/requestAbort";
 import { resolveOpenRouterReasoningEffort } from "./shared/reasoning";
 
 /**
@@ -363,6 +369,7 @@ export class OpenRouterProvider implements ILlmProvider {
     options: LLMOptions,
     onProgress?: ProgressCb,
   ): Promise<string> {
+    throwIfAborted(options.abortSignal);
     const payloadWithStream = { ...payload, stream: true };
     const chunks: string[] = [];
     let delivered = 0;
@@ -370,6 +377,7 @@ export class OpenRouterProvider implements ILlmProvider {
     let partialLine = "";
     let gotAnyDelta = false;
     let abortError: Error | null = null;
+    let cleanupAbortSignal: (() => void) | undefined;
 
     try {
       await Zotero.HTTP.request("POST", apiUrl, {
@@ -379,6 +387,13 @@ export class OpenRouterProvider implements ILlmProvider {
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
         errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
+          cleanupAbortSignal = bindAbortSignal(
+            options.abortSignal,
+            xmlhttp,
+            (error) => {
+              abortError = error;
+            },
+          );
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;
             if (status >= 400) {
@@ -457,13 +472,21 @@ export class OpenRouterProvider implements ILlmProvider {
       });
     } catch (error: any) {
       if (abortError) {
+        if (isAbortError(abortError, options.abortSignal)) {
+          throw normalizeAbortError(abortError, options.abortSignal);
+        }
         if (gotAnyDelta && chunks.length > 0) return chunks.join("");
         throw abortError;
+      }
+      if (isAbortError(error, options.abortSignal)) {
+        throw normalizeAbortError(error, options.abortSignal);
       }
       const errorMessage = error?.message || "OpenRouter request failed";
       // ... Error parsing ...
       if (gotAnyDelta && chunks.length > 0) return chunks.join("");
       throw new Error(errorMessage);
+    } finally {
+      cleanupAbortSignal?.();
     }
     return chunks.join("");
   }
@@ -475,6 +498,9 @@ export class OpenRouterProvider implements ILlmProvider {
     options: LLMOptions,
     onProgress?: ProgressCb,
   ): Promise<string> {
+    throwIfAborted(options.abortSignal);
+    let abortError: Error | null = null;
+    let cleanupAbortSignal: (() => void) | undefined;
     try {
       const res = await Zotero.HTTP.request("POST", apiUrl, {
         headers: this.buildHeaders(apiKey),
@@ -482,16 +508,31 @@ export class OpenRouterProvider implements ILlmProvider {
         responseType: "json",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
         errorDelayMax: 0,
+        requestObserver: (xmlhttp: XMLHttpRequest) => {
+          cleanupAbortSignal = bindAbortSignal(
+            options.abortSignal,
+            xmlhttp,
+            (error) => {
+              abortError = error;
+            },
+          );
+        },
       });
+      throwIfAborted(options.abortSignal);
       const data = res.response || res;
       const text = data?.choices?.[0]?.message?.content || "";
       const result = typeof text === "string" ? text : JSON.stringify(text);
       if (onProgress && result) await onProgress(result);
       return result;
     } catch (e: any) {
+      if (abortError || isAbortError(e, options.abortSignal)) {
+        throw normalizeAbortError(abortError || e, options.abortSignal);
+      }
       // ... Error handling ...
       const msg = e?.message || "OpenRouter request failed";
       throw new Error(msg);
+    } finally {
+      cleanupAbortSignal?.();
     }
   }
 

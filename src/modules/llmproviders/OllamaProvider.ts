@@ -17,6 +17,12 @@ import {
   parseModelListResponse,
   requestModelListJson,
 } from "./shared/modelList";
+import {
+  bindAbortSignal,
+  isAbortError,
+  normalizeAbortError,
+  throwIfAborted,
+} from "./shared/requestAbort";
 
 type OllamaChatMessage = {
   role: "system" | "user" | "assistant";
@@ -298,6 +304,9 @@ export class OllamaProvider implements ILlmProvider {
     options: LLMOptions,
     onProgress?: ProgressCb,
   ): Promise<string> {
+    throwIfAborted(options.abortSignal);
+    let abortError: Error | null = null;
+    let cleanupAbortSignal: (() => void) | undefined;
     try {
       const response = await Zotero.HTTP.request("POST", chatUrl, {
         headers: this.buildHeaders(apiKey),
@@ -305,13 +314,28 @@ export class OllamaProvider implements ILlmProvider {
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
         errorDelayMax: 0,
+        requestObserver: (xmlhttp: XMLHttpRequest) => {
+          cleanupAbortSignal = bindAbortSignal(
+            options.abortSignal,
+            xmlhttp,
+            (error) => {
+              abortError = error;
+            },
+          );
+        },
       });
+      throwIfAborted(options.abortSignal);
       const text = this.extractTextFromRawResponse(response.response || "");
       if (!text) throw new Error("Ollama 返回内容为空");
       if (onProgress) await onProgress(text);
       return text;
     } catch (error: any) {
+      if (abortError || isAbortError(error, options.abortSignal)) {
+        throw normalizeAbortError(abortError || error, options.abortSignal);
+      }
       throw this.toRequestError(error, "Ollama 请求失败");
+    } finally {
+      cleanupAbortSignal?.();
     }
   }
 
@@ -322,10 +346,12 @@ export class OllamaProvider implements ILlmProvider {
     options: LLMOptions,
     onProgress?: ProgressCb,
   ): Promise<string> {
+    throwIfAborted(options.abortSignal);
     const chunks: string[] = [];
     let processedLength = 0;
     let pending = "";
     let abortError: Error | null = null;
+    let cleanupAbortSignal: (() => void) | undefined;
 
     const deliver = (chunk: string) => {
       if (!chunk) return;
@@ -363,6 +389,13 @@ export class OllamaProvider implements ILlmProvider {
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
         errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
+          cleanupAbortSignal = bindAbortSignal(
+            options.abortSignal,
+            xmlhttp,
+            (error) => {
+              abortError = error;
+            },
+          );
           xmlhttp.onprogress = (event: any) => {
             const status = event.target.status;
             if (status >= 400) {
@@ -393,11 +426,20 @@ export class OllamaProvider implements ILlmProvider {
         },
       });
     } catch (error: any) {
+      if (abortError && isAbortError(abortError, options.abortSignal)) {
+        throw normalizeAbortError(abortError, options.abortSignal);
+      }
+      if (isAbortError(error, options.abortSignal)) {
+        throw normalizeAbortError(error, options.abortSignal);
+      }
       if (abortError && chunks.length === 0) throw abortError;
       if (chunks.length > 0) return chunks.join("");
       throw this.toRequestError(error, "Ollama 流式请求失败");
+    } finally {
+      cleanupAbortSignal?.();
     }
 
+    throwIfAborted(options.abortSignal);
     const rawResponse = response?.response || "";
     if (rawResponse.length > processedLength) {
       processLines(rawResponse.slice(processedLength));

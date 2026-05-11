@@ -33,7 +33,10 @@ import {
   LLMNoteMetadataService,
   type LLMNoteMetadata,
 } from "../llmNoteMetadata";
-import { markdownToZoteroNoteHtml } from "../noteMarkdown";
+import {
+  buildFollowUpChatPairNoteHtml,
+  normalizeFollowUpChatNoteHtml,
+} from "../noteMarkdown";
 
 /**
  * AI 总结视图类
@@ -806,22 +809,14 @@ export class SummaryView extends BaseView {
       const item = await Zotero.Items.getAsync(this.currentItemId);
       if (!item) return;
       const note = await this.getOrCreateChatNote(item);
-      let noteHtml = (note as any).getNote?.() || "";
-
-      const renderedUserMessage = markdownToZoteroNoteHtml(userMessage);
-      const renderedAssistantMessage =
-        markdownToZoteroNoteHtml(assistantMessage);
-      const jsonMarker = `<!-- AI_BUTLER_CHAT_JSON: ${JSON.stringify({ id: pairId, user: userMessage, assistant: assistantMessage })} -->`;
-      const blockContent = `
-<!-- AI_BUTLER_CHAT_PAIR_START id=${this.escapeHtml(pairId)} -->
-${jsonMarker}
-<div id="ai-butler-pair-${this.escapeHtml(pairId)}" style="margin-top:14px; padding-top:8px; border-top:1px dashed #ccc;">
-  <div style="background-color:#e3f2fd; padding:10px; border-radius:6px; margin-bottom:8px;"><strong>👤 用户:</strong><div>${renderedUserMessage}</div></div>
-  <div style="background-color:#f5f5f5; padding:10px; border-radius:6px;"><strong>🤖 AI管家:</strong><div>${renderedAssistantMessage}</div></div>
-  <div style="font-size:11px; color:#999; margin-top:6px;">保存时间: ${new Date().toLocaleString("zh-CN")}</div>
-</div>
-<!-- AI_BUTLER_CHAT_PAIR_END id=${this.escapeHtml(pairId)} -->
-`;
+      let noteHtml = normalizeFollowUpChatNoteHtml(
+        (note as any).getNote?.() || "",
+      );
+      const blockContent = buildFollowUpChatPairNoteHtml({
+        pairId,
+        userMessage,
+        assistantMessage,
+      });
       const block = metadata
         ? LLMNoteMetadataService.wrapHtml(blockContent, metadata)
         : blockContent;

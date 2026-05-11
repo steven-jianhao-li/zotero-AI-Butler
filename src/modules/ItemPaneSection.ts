@@ -22,7 +22,10 @@ import {
   LLMNoteMetadataService,
   type LLMNoteMetadata,
 } from "./llmNoteMetadata";
-import { markdownToZoteroNoteHtml } from "./noteMarkdown";
+import {
+  buildFollowUpChatPairNoteHtml,
+  normalizeFollowUpChatNoteHtml,
+} from "./noteMarkdown";
 import katex from "katex";
 // 注意: 不在主进程中直接 import 思维导图库（如 markmap-view、simple-mind-map）
 // 这些库在加载时会访问 document/window，而 Zotero Background 进程没有 DOM 环境
@@ -2725,26 +2728,25 @@ async function saveChatPairToNote(
 ): Promise<void> {
   const note = await getOrCreateChatNote(item);
   let noteHtml = (note as any).getNote?.() || "";
+  const normalizedNoteHtml = normalizeFollowUpChatNoteHtml(noteHtml);
 
   // 检查是否已存在相同 pairId 的对话对，防止重复保存
-  if (noteHtml.includes(`AI_BUTLER_CHAT_PAIR_START id=${pairId}`)) {
+  if (normalizedNoteHtml.includes(`AI_BUTLER_CHAT_PAIR_START id=${pairId}`)) {
+    if (normalizedNoteHtml !== noteHtml) {
+      (note as any).setNote(normalizedNoteHtml);
+      await (note as any).saveTx();
+    }
     ztoolkit.log("[AI-Butler] 该对话对已保存过，跳过重复保存");
     return;
   }
+  noteHtml = normalizedNoteHtml;
 
-  const renderedUserMessage = markdownToZoteroNoteHtml(userMessage);
-  const renderedAssistantMessage = markdownToZoteroNoteHtml(assistantMessage);
-  const jsonMarker = `<!-- AI_BUTLER_CHAT_JSON: ${JSON.stringify({ id: pairId, user: userMessage, assistant: assistantMessage })} -->`;
-  const blockContent = `
-<!-- AI_BUTLER_CHAT_PAIR_START id=${escapeHtmlForNote(pairId)} -->
-${jsonMarker}
-<div id="ai-butler-pair-${escapeHtmlForNote(pairId)}" style="margin-top:14px; padding-top:8px; border-top:1px dashed #ccc;">
-  <div style="background-color:#e3f2fd; padding:10px; border-radius:6px; margin-bottom:8px;"><strong>👤 用户:</strong><div>${renderedUserMessage}</div></div>
-  <div style="background-color:#f5f5f5; padding:10px; border-radius:6px;"><strong>🤖 AI管家:</strong><div>${renderedAssistantMessage}</div></div>
-  <div style="font-size:11px; color:#999; margin-top:6px;">保存时间: ${new Date().toLocaleString("zh-CN")} (来自快速提问)</div>
-</div>
-<!-- AI_BUTLER_CHAT_PAIR_END id=${escapeHtmlForNote(pairId)} -->
-`;
+  const blockContent = buildFollowUpChatPairNoteHtml({
+    pairId,
+    userMessage,
+    assistantMessage,
+    sourceLabel: "来自快速提问",
+  });
   const block = metadata
     ? LLMNoteMetadataService.wrapHtml(blockContent, metadata)
     : blockContent;

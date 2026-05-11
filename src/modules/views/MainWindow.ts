@@ -62,6 +62,12 @@ type OpenDialogWindow = Window & {
   ) => Window | null;
 };
 
+type AdaptiveDialogSize = {
+  width: number;
+  height: number;
+  compact: boolean;
+};
+
 /**
  * 主窗口类
  *
@@ -87,6 +93,8 @@ export class MainWindow {
   private uiInitialized: boolean = false;
   /** 是否正在执行初始化，避免并发重复渲染 */
   private uiInitializing: boolean = false;
+  /** 小屏/低分辨率下使用更紧凑的主窗口布局 */
+  private useCompactLayout: boolean = false;
 
   /** 当前激活的标签页 */
   private activeTab: TabType = "dashboard";
@@ -203,8 +211,8 @@ export class MainWindow {
           this.onUnload();
         },
       };
-      const defaultW = 950;
-      const defaultH = 750;
+      const dialogSize = this.getAdaptiveDialogSize();
+      this.useCompactLayout = dialogSize.compact;
 
       this.dialog = this.createToolkitDialog(1, 1)
         .addCell(0, 0, {
@@ -222,8 +230,8 @@ export class MainWindow {
         })
         .setDialogData(dialogData)
         .open("AI Butler - 智能文献管家", {
-          width: defaultW,
-          height: defaultH,
+          width: dialogSize.width,
+          height: dialogSize.height,
           centerscreen: true,
           resizable: true,
         });
@@ -284,6 +292,72 @@ export class MainWindow {
     return opener;
   }
 
+  private getAdaptiveDialogSize(): AdaptiveDialogSize {
+    const { width: screenWidth, height: screenHeight } =
+      this.getAvailableScreenSize();
+    const lowResolution = screenWidth <= 1440 || screenHeight <= 900;
+    const targetWidth = lowResolution ? 820 : 950;
+    const targetHeight = lowResolution ? 560 : 750;
+    const horizontalMargin = lowResolution ? 96 : 160;
+    const verticalMargin = lowResolution ? 128 : 160;
+    const width = this.clampDialogDimension(
+      screenWidth,
+      targetWidth,
+      horizontalMargin,
+      640,
+    );
+    const height = this.clampDialogDimension(
+      screenHeight,
+      targetHeight,
+      verticalMargin,
+      460,
+    );
+
+    return {
+      width,
+      height,
+      compact: lowResolution || width < 900 || height < 700,
+    };
+  }
+
+  private getAvailableScreenSize(): { width: number; height: number } {
+    const fallback = { width: 1280, height: 800 };
+    try {
+      const mainWindow = Zotero.getMainWindow() as Window | null;
+      const screenInfo = mainWindow?.screen;
+      const width =
+        this.getPositiveNumber(screenInfo?.availWidth) ||
+        this.getPositiveNumber(screenInfo?.width) ||
+        fallback.width;
+      const height =
+        this.getPositiveNumber(screenInfo?.availHeight) ||
+        this.getPositiveNumber(screenInfo?.height) ||
+        fallback.height;
+      return { width, height };
+    } catch {
+      return fallback;
+    }
+  }
+
+  private getPositiveNumber(value: unknown): number {
+    return typeof value === "number" && Number.isFinite(value) && value > 0
+      ? value
+      : 0;
+  }
+
+  private clampDialogDimension(
+    available: number,
+    target: number,
+    margin: number,
+    minimum: number,
+  ): number {
+    const safeMaximum = Math.max(
+      Math.min(minimum, available),
+      available - margin,
+    );
+    return Math.round(Math.min(target, safeMaximum));
+  }
+
   private applyRootThemeClass(): void {
     try {
       const root = this.dialog?.window.document.getElementById(
@@ -320,6 +394,7 @@ export class MainWindow {
       }
 
       if (root) {
+        root.classList.toggle("ai-butler-compact", this.useCompactLayout);
         if (isDark) root.classList.add("ai-butler-dark");
         else root.classList.remove("ai-butler-dark");
       }
@@ -405,6 +480,9 @@ export class MainWindow {
         this.uiInitializing = false;
         return;
       }
+
+      host.classList.add("ai-butler-root");
+      host.classList.toggle("ai-butler-compact", this.useCompactLayout);
 
       // 注入 CSS（只在首次完成时执行）
       this.injectStyles();

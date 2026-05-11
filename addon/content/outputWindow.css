@@ -71,6 +71,172 @@
   overflow-y: hidden;
 }
 
+.ai-butler-compact #ai-butler-summary-view > div:first-child {
+  padding: 14px 16px 0 !important;
+}
+
+.ai-butler-compact #ai-butler-summary-view > div:first-child h2 {
+  margin-bottom: 12px !important;
+  padding-bottom: 8px !important;
+  font-size: 18px !important;
+}
+
+.ai-butler-compact #ai-butler-summary-view #ai-butler-chat-container {
+  padding: 10px 16px !important;
+}
+
+.ai-butler-compact #ai-butler-summary-view #ai-butler-chat-toggle-button {
+  margin-bottom: 8px !important;
+}
+
+.ai-butler-compact #ai-butler-summary-view #ai-butler-chat-input-area {
+  gap: 8px !important;
+}
+
+.ai-butler-compact #ai-butler-summary-view #ai-butler-chat-input {
+  min-height: 64px !important;
+  padding: 8px !important;
+}
+
+.ai-butler-compact #ai-butler-summary-view > div:last-child {
+  padding: 10px 16px 12px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view > div:first-child,
+.ai-butler-compact
+  #ai-butler-task-queue-view
+  #task-header-wrapper
+  > div:first-child {
+  padding: 14px 20px 0 !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view > div:first-child h2,
+.ai-butler-compact #ai-butler-task-queue-view #task-header-wrapper h2 {
+  margin-bottom: 10px !important;
+  padding-bottom: 7px !important;
+  font-size: 18px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view #butler-status-card {
+  margin: 0 20px 12px !important;
+  padding: 18px 24px !important;
+  border-radius: 8px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view #status-icon {
+  font-size: 34px !important;
+  margin-bottom: 8px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view #status-text {
+  font-size: 20px !important;
+  margin-bottom: 6px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view #status-detail {
+  font-size: 13px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view #stats-section,
+.ai-butler-compact #ai-butler-task-queue-view #stats-section {
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)) !important;
+  gap: 8px !important;
+  padding: 0 20px 10px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view .stat-card,
+.ai-butler-compact #ai-butler-task-queue-view .stat-card {
+  min-height: 0 !important;
+  padding: 10px 12px !important;
+  border-radius: 6px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view .stat-card .ai-card__header,
+.ai-butler-compact #ai-butler-task-queue-view .stat-card .ai-card__header {
+  margin-bottom: 4px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view .stat-card .ai-card__title,
+.ai-butler-compact #ai-butler-task-queue-view .stat-card .ai-card__title {
+  font-size: 11px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view .stat-card .ai-card__value,
+.ai-butler-compact #ai-butler-task-queue-view .stat-card .ai-card__value {
+  font-size: 24px !important;
+  line-height: 1.05 !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view .stat-card .ai-card__icon {
+  font-size: 18px !important;
+}
+
+.ai-butler-compact
+  #ai-butler-task-queue-view
+  #task-header-wrapper
+  > div:last-child {
+  gap: 6px !important;
+  padding: 0 20px 8px !important;
+}
+
+.ai-butler-compact #ai-butler-task-queue-view #task-header-wrapper button,
+.ai-butler-compact #ai-butler-task-queue-view #task-header-wrapper input {
+  min-height: 0 !important;
+  padding: 5px 10px !important;
+  font-size: 12px !important;
+  line-height: 1.15 !important;
+}
+
+.ai-butler-compact #ai-butler-task-queue-view #task-header-wrapper input {
+  min-width: 150px !important;
+}
+
+.ai-butler-compact #ai-butler-task-queue-view #task-header-wrapper span {
+  margin-left: 2px !important;
+  margin-right: 2px !important;
+}
+
+.ai-butler-compact #ai-butler-task-queue-view #task-list-container {
+  padding: 0 20px 12px !important;
+}
+
+.ai-butler-compact #ai-butler-task-queue-view .task-item {
+  padding: 12px !important;
+  margin-bottom: 8px !important;
+}
+
+.ai-butler-compact #ai-butler-task-queue-view .task-item .ai-card__header {
+  margin-bottom: 4px !important;
+}
+
+.ai-butler-compact #ai-butler-task-queue-view .task-item .ai-card__title {
+  font-size: 13px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view > div:nth-child(4),
+.ai-butler-compact #ai-butler-dashboard-view > div:nth-child(5) {
+  padding: 0 20px 12px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view h3 {
+  margin-bottom: 8px !important;
+  font-size: 15px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view button {
+  padding: 10px 12px !important;
+  gap: 6px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view button span {
+  font-size: 16px !important;
+}
+
+.ai-butler-compact #ai-butler-dashboard-view #activity-list {
+  padding: 10px !important;
+  max-height: 220px !important;
+}
+
 #ai-butler-stop-button {
   font-size: 16px !important;
   font-weight: 700 !important;

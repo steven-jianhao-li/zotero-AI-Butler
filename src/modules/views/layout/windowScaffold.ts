@@ -74,12 +74,20 @@ function applyHostFrame(host: HTMLElement): void {
   } as Partial<CSSStyleDeclaration>);
 }
 
+function isCompactHost(host: HTMLElement): boolean {
+  return (
+    host.classList.contains("ai-butler-compact") ||
+    !!host.closest(".ai-butler-compact")
+  );
+}
+
 export function createMainWindowScaffold<T extends string>(
   host: HTMLElement,
   tabs: Array<MainTabDescriptor<T>>,
   onTabClick: (tabId: T) => void,
 ): MainWindowScaffoldRefs<T> {
   const doc = getDocument(host);
+  const compact = isCompactHost(host);
   applyHostFrame(host);
   host.innerHTML = "";
 
@@ -107,7 +115,9 @@ export function createMainWindowScaffold<T extends string>(
       display: "flex",
       minHeight: "0",
       backgroundColor: "var(--ai-surface)",
-      borderBottom: "2px solid var(--ai-border)",
+      borderBottom: compact
+        ? "1px solid var(--ai-border)"
+        : "2px solid var(--ai-border)",
       boxShadow: "0 1px 0 rgba(0, 0, 0, 0.04)",
       zIndex: "20",
     },
@@ -132,19 +142,19 @@ export function createMainWindowScaffold<T extends string>(
       styles: {
         flex: "1",
         minWidth: "0",
-        padding: "12px 20px",
+        padding: compact ? "8px 14px" : "12px 20px",
         border: "none",
         borderBottom: "3px solid transparent",
         backgroundColor: "transparent",
         color: "var(--ai-text-muted)",
-        fontSize: "14px",
+        fontSize: compact ? "13px" : "14px",
         fontWeight: "600",
         cursor: "pointer",
         transition: "all 0.2s",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        gap: "6px",
+        gap: compact ? "4px" : "6px",
         boxSizing: "border-box",
         whiteSpace: "nowrap",
       },
@@ -201,6 +211,7 @@ export function createSettingsScaffold<T extends string>(
   onCategoryClick: (categoryId: T) => void,
 ): SettingsScaffoldRefs<T> {
   const doc = getDocument(host);
+  const compact = isCompactHost(host);
   applyHostFrame(host);
   host.innerHTML = "";
 
@@ -225,7 +236,7 @@ export function createSettingsScaffold<T extends string>(
       minHeight: "0",
       minWidth: "0",
       overflow: "hidden",
-      padding: "18px 0",
+      padding: compact ? "12px 0" : "18px 0",
       borderRight: "1px solid var(--ai-border)",
       backgroundColor: "var(--ai-surface-2)",
       boxShadow: "1px 0 0 rgba(0, 0, 0, 0.02)",
@@ -241,7 +252,7 @@ export function createSettingsScaffold<T extends string>(
       minWidth: "0",
       overflowY: "auto",
       overflowX: "hidden",
-      padding: "24px 28px 36px",
+      padding: compact ? "18px 22px 28px" : "24px 28px 36px",
       backgroundColor: "var(--ai-surface)",
       boxSizing: "border-box",
       overscrollBehavior: "contain",
@@ -259,8 +270,8 @@ export function createSettingsScaffold<T extends string>(
         alignItems: "center",
         justifyContent: "flex-start",
         width: "100%",
-        minHeight: "38px",
-        padding: "9px 18px 9px 20px",
+        minHeight: compact ? "34px" : "38px",
+        padding: compact ? "7px 14px 7px 18px" : "9px 18px 9px 20px",
         border: "none",
         borderLeft: "3px solid transparent",
         backgroundColor: "transparent",

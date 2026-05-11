@@ -5,6 +5,23 @@ type ProtectedFormula = {
   isBlock: boolean;
 };
 
+export type FollowUpChatPairNoteHtmlOptions = {
+  pairId: string;
+  userMessage: string;
+  assistantMessage: string;
+  savedAt?: Date | string;
+  sourceLabel?: string;
+};
+
+const FOLLOW_UP_CHAT_PAIR_STYLE =
+  "margin-top:14px; padding-top:8px; border-top:1px dashed #8a8a8a;";
+const FOLLOW_UP_CHAT_USER_STYLE =
+  "padding:10px; border-left:3px solid #4f8fd9; border-radius:4px; margin-bottom:8px; color:inherit; background:transparent;";
+const FOLLOW_UP_CHAT_ASSISTANT_STYLE =
+  "padding:10px; border-left:3px solid #59c0bc; border-radius:4px; color:inherit; background:transparent;";
+const FOLLOW_UP_CHAT_TIME_STYLE =
+  "font-size:11px; color:inherit; opacity:0.65; margin-top:6px;";
+
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -68,4 +85,57 @@ export function markdownToZoteroNoteHtml(markdown: string): string {
       return `<span class="math">$${escapedContent}$</span>`;
     },
   );
+}
+
+export function buildFollowUpChatPairNoteHtml(
+  options: FollowUpChatPairNoteHtmlOptions,
+): string {
+  const renderedUserMessage = markdownToZoteroNoteHtml(options.userMessage);
+  const renderedAssistantMessage = markdownToZoteroNoteHtml(
+    options.assistantMessage,
+  );
+  const pairId = escapeHtml(options.pairId);
+  const savedAt =
+    typeof options.savedAt === "string"
+      ? options.savedAt
+      : (options.savedAt ?? new Date()).toLocaleString("zh-CN");
+  const sourceSuffix = options.sourceLabel
+    ? ` (${escapeHtml(options.sourceLabel)})`
+    : "";
+  const jsonMarker = `<!-- AI_BUTLER_CHAT_JSON: ${JSON.stringify({
+    id: options.pairId,
+    user: options.userMessage,
+    assistant: options.assistantMessage,
+  })} -->`;
+
+  return `
+<!-- AI_BUTLER_CHAT_PAIR_START id=${pairId} -->
+${jsonMarker}
+<div id="ai-butler-pair-${pairId}" style="${FOLLOW_UP_CHAT_PAIR_STYLE}">
+  <div style="${FOLLOW_UP_CHAT_USER_STYLE}"><strong>👤 用户:</strong><div>${renderedUserMessage}</div></div>
+  <div style="${FOLLOW_UP_CHAT_ASSISTANT_STYLE}"><strong>🤖 AI管家:</strong><div>${renderedAssistantMessage}</div></div>
+  <div style="${FOLLOW_UP_CHAT_TIME_STYLE}">保存时间: ${escapeHtml(savedAt)}${sourceSuffix}</div>
+</div>
+<!-- AI_BUTLER_CHAT_PAIR_END id=${pairId} -->
+`;
+}
+
+export function normalizeFollowUpChatNoteHtml(html: string): string {
+  return html
+    .replace(
+      /style="background-color:\s*#e3f2fd;\s*padding:\s*10px;\s*border-radius:\s*6px;\s*margin-bottom:\s*8px;?"/gi,
+      `style="${FOLLOW_UP_CHAT_USER_STYLE}"`,
+    )
+    .replace(
+      /style="background-color:\s*#f5f5f5;\s*padding:\s*10px;\s*border-radius:\s*6px;?"/gi,
+      `style="${FOLLOW_UP_CHAT_ASSISTANT_STYLE}"`,
+    )
+    .replace(
+      /style="font-size:\s*11px;\s*color:\s*#999;\s*margin-top:\s*6px;?"/gi,
+      `style="${FOLLOW_UP_CHAT_TIME_STYLE}"`,
+    )
+    .replace(
+      /style="margin-top:\s*14px;\s*padding-top:\s*8px;\s*border-top:\s*1px\s+dashed\s+#ccc;?"/gi,
+      `style="${FOLLOW_UP_CHAT_PAIR_STYLE}"`,
+    );
 }

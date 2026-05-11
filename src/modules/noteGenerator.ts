@@ -33,7 +33,8 @@ import {
   type LLMNoteMetadata,
 } from "./llmNoteMetadata";
 import { markdownToZoteroNoteHtml } from "./noteMarkdown";
-import type { LLMResponse } from "./llmproviders/types";
+import type { LLMAbortSignal, LLMResponse } from "./llmproviders/types";
+import { throwIfAborted } from "./llmproviders/shared/requestAbort";
 import { SummaryView } from "./views/SummaryView";
 import { getPref } from "../utils/prefs";
 import { MainWindow } from "./views/MainWindow";
@@ -96,7 +97,11 @@ export class NoteGenerator {
     outputWindow?: SummaryView,
     progressCallback?: (message: string, progress: number) => void,
     streamCallback?: (chunk: string) => void,
-    options?: { summaryMode?: string; forceOverwrite?: boolean },
+    options?: {
+      summaryMode?: string;
+      forceOverwrite?: boolean;
+      abortSignal?: LLMAbortSignal;
+    },
   ): Promise<{ note: Zotero.Item; content: string }> {
     // 获取文献标题,用于日志和用户反馈
     const itemTitle = item.getField("title") as string;
@@ -106,6 +111,7 @@ export class NoteGenerator {
     let noteContentOverride: string | null = null;
 
     try {
+      throwIfAborted(options?.abortSignal);
       // 笔记管理策略: skip/overwrite/append
       const policy = (
         (getPref("noteStrategy" as any) as string) || "skip"
@@ -123,6 +129,7 @@ export class NoteGenerator {
       }
 
       // 步骤 1: PDF 处理
+      throwIfAborted(options?.abortSignal);
       progressCallback?.("正在处理PDF...", 10);
 
       // 检查 PDF 文件大小限制
@@ -222,6 +229,7 @@ export class NoteGenerator {
 
       // 步骤 2: AI 模型总结生成
       // 通知进度回调开始 AI 分析 (40% 完成)
+      throwIfAborted(options?.abortSignal);
       progressCallback?.(
         summaryMode === "single"
           ? "正在生成AI总结..."
@@ -249,6 +257,7 @@ export class NoteGenerator {
           outputWindow,
           progressCallback,
           streamCallback,
+          abortSignal: options?.abortSignal,
         });
         fullContent = multiModelResult.content;
         noteContentOverride = multiModelResult.noteHtml;
@@ -280,6 +289,7 @@ export class NoteGenerator {
               item,
               attachmentMode: "all",
             },
+            transport: { abortSignal: options?.abortSignal },
             onProgress,
           });
         } else {
@@ -290,6 +300,7 @@ export class NoteGenerator {
               item,
               attachmentMode: "default",
             },
+            transport: { abortSignal: options?.abortSignal },
             onProgress,
           });
         }
@@ -305,6 +316,8 @@ export class NoteGenerator {
           outputWindow,
           progressCallback,
           streamCallback,
+          undefined,
+          options?.abortSignal,
         );
         fullContent = multiRoundResult.content;
         llmMetadata = LLMNoteMetadataService.fromResponse(
@@ -315,6 +328,7 @@ export class NoteGenerator {
 
       // 步骤 3: 创建/更新笔记
       // 通知进度回调开始创建笔记 (80% 完成)
+      throwIfAborted(options?.abortSignal);
       progressCallback?.("正在创建笔记...", 80);
 
       // 检查内容是否为空，防止创建空笔记
@@ -459,6 +473,7 @@ export class NoteGenerator {
     outputWindow?: SummaryView;
     progressCallback?: (message: string, progress: number) => void;
     streamCallback?: (chunk: string) => void;
+    abortSignal?: LLMAbortSignal;
   }): Promise<{ content: string; noteHtml: string }> {
     const {
       item,
@@ -472,6 +487,7 @@ export class NoteGenerator {
       outputWindow,
       progressCallback,
       streamCallback,
+      abortSignal,
     } = params;
     const total = endpoints.length;
     let completed = 0;
@@ -494,6 +510,7 @@ export class NoteGenerator {
           isBase64,
           pdfAttachmentMode,
           prefMode,
+          abortSignal,
         });
         completed++;
         progressCallback?.(
@@ -606,6 +623,7 @@ export class NoteGenerator {
     isBase64: boolean;
     pdfAttachmentMode: string;
     prefMode: string;
+    abortSignal?: LLMAbortSignal;
   }): Promise<MultiModelSummaryResult> {
     const {
       item,
@@ -616,6 +634,7 @@ export class NoteGenerator {
       isBase64,
       pdfAttachmentMode,
       prefMode,
+      abortSignal,
     } = params;
 
     let content = "";
@@ -634,6 +653,7 @@ export class NoteGenerator {
           item,
           attachmentMode,
         },
+        transport: { abortSignal },
       });
       content = response.text;
     } else {
@@ -646,6 +666,7 @@ export class NoteGenerator {
         undefined,
         undefined,
         endpoint.id,
+        abortSignal,
       );
       if (!multiRoundResult.response) {
         throw new Error("该供应商未成功完成任何一轮总结");
@@ -968,6 +989,7 @@ export class NoteGenerator {
     progressCallback?: (message: string, progress: number) => void,
     streamCallback?: (chunk: string) => void,
     endpointId?: string,
+    abortSignal?: LLMAbortSignal,
   ): Promise<{ content: string; response?: LLMResponse }> {
     // 读取多轮提示词配置
     const multiRoundPromptsJson = getPref("multiRoundPrompts" as any) as string;
@@ -1002,6 +1024,7 @@ export class NoteGenerator {
       const roundNum = i + 1;
       const progressPercent = 40 + Math.floor((i / totalRounds) * 40); // 40% - 80%
 
+      throwIfAborted(abortSignal);
       progressCallback?.(
         `正在进行第 ${roundNum}/${totalRounds} 轮对话: ${currentPrompt.title}`,
         progressPercent,
@@ -1042,6 +1065,7 @@ export class NoteGenerator {
             policy: isBase64 ? "pdf-base64" : "text",
           },
           conversation: conversationHistory,
+          transport: { abortSignal },
           onProgress: onRoundProgress,
         };
         const response = endpointId
@@ -1096,6 +1120,7 @@ export class NoteGenerator {
       };
     } else {
       // 总结模式：基于所有对话进行最终总结
+      throwIfAborted(abortSignal);
       progressCallback?.("正在生成最终总结...", 85);
 
       if (outputWindow) {
@@ -1134,6 +1159,7 @@ export class NoteGenerator {
             policy: isBase64 ? "pdf-base64" : "text",
           },
           conversation: conversationHistory,
+          transport: { abortSignal },
           onProgress: onFinalProgress,
         };
         const response = endpointId

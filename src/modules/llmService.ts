@@ -20,8 +20,14 @@ import {
   normalizeReasoningEffortSetting,
   resolveReasoningEffort,
 } from "./llmproviders/shared/reasoning";
+import {
+  isAbortError,
+  normalizeAbortError,
+  throwIfAborted,
+} from "./llmproviders/shared/requestAbort";
 import type {
   ConversationMessage,
+  LLMAbortSignal,
   LLMOptions,
   LLMModelInfo,
   LLMProviderCapabilities,
@@ -103,6 +109,7 @@ export type LLMTransportOptions = {
   timeoutMs?: number;
   retry?: boolean;
   keyRotation?: boolean;
+  abortSignal?: LLMAbortSignal;
 };
 
 export type LLMGenerateRequest = {
@@ -266,6 +273,7 @@ export class LLMService {
     const common: LLMOptions = {
       stream: transport?.stream ?? getPref("stream") ?? true,
       requestTimeoutMs: transport?.timeoutMs ?? this.getRequestTimeout(),
+      abortSignal: transport?.abortSignal,
     };
 
     if (enableTemperature) {
@@ -496,6 +504,7 @@ export class LLMService {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
+      throwIfAborted(request.transport?.abortSignal);
       const endpoint = route.endpoints[attempt % route.endpoints.length];
       try {
         const response = await this.generateOnceWithEndpoint(
@@ -506,6 +515,9 @@ export class LLMService {
         LLMEndpointManager.markEndpointAttempted(endpoint.id);
         return response;
       } catch (error: unknown) {
+        if (isAbortError(error, request.transport?.abortSignal)) {
+          throw normalizeAbortError(error, request.transport?.abortSignal);
+        }
         LLMEndpointManager.markEndpointAttempted(endpoint.id);
         lastError = error instanceof Error ? error : new Error(String(error));
         ztoolkit.log(
@@ -524,12 +536,14 @@ export class LLMService {
   ): Promise<LLMResponse> {
     const provider = this.getProviderForEndpoint(endpoint);
     const warnings: string[] = [];
+    throwIfAborted(request.transport?.abortSignal);
     const resolved = await this.resolveContent(
       provider,
       request.content,
       warnings,
       true,
     );
+    throwIfAborted(request.transport?.abortSignal);
     const options = this.buildOptions(
       endpoint,
       request.generation,
@@ -550,6 +564,9 @@ export class LLMService {
           request.onProgress,
         );
       } catch (error: unknown) {
+        if (isAbortError(error, options.abortSignal)) {
+          throw normalizeAbortError(error, options.abortSignal);
+        }
         throw this.toApiCallError(endpoint, error);
       }
     } else {
@@ -562,6 +579,9 @@ export class LLMService {
           request.onProgress,
         );
       } catch (error: unknown) {
+        if (isAbortError(error, options.abortSignal)) {
+          throw normalizeAbortError(error, options.abortSignal);
+        }
         throw this.toApiCallError(endpoint, error);
       }
     }
@@ -584,9 +604,13 @@ export class LLMService {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      throwIfAborted(request.transport?.abortSignal);
       try {
         return await this.generateOnceWithEndpoint(endpoint, request, prompt);
       } catch (error: unknown) {
+        if (isAbortError(error, request.transport?.abortSignal)) {
+          throw normalizeAbortError(error, request.transport?.abortSignal);
+        }
         lastError = error instanceof Error ? error : new Error(String(error));
         ztoolkit.log(
           `[LLMService] API failed via ${endpoint.name} (${attempt + 1}/${maxAttempts}): ${lastError.message}`,
@@ -606,12 +630,16 @@ export class LLMService {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
+      throwIfAborted(request.transport?.abortSignal);
       const endpoint = route.endpoints[attempt % route.endpoints.length];
       try {
         const response = await this.chatOnceWithEndpoint(endpoint, request);
         LLMEndpointManager.markEndpointAttempted(endpoint.id);
         return response;
       } catch (error: unknown) {
+        if (isAbortError(error, request.transport?.abortSignal)) {
+          throw normalizeAbortError(error, request.transport?.abortSignal);
+        }
         LLMEndpointManager.markEndpointAttempted(endpoint.id);
         lastError = error instanceof Error ? error : new Error(String(error));
         ztoolkit.log(
@@ -629,12 +657,14 @@ export class LLMService {
   ): Promise<LLMResponse> {
     const provider = this.getProviderForEndpoint(endpoint);
     const warnings: string[] = [];
+    throwIfAborted(request.transport?.abortSignal);
     const resolved = await this.resolveContent(
       provider,
       request.content,
       warnings,
       false,
     );
+    throwIfAborted(request.transport?.abortSignal);
     if (resolved.mode !== "single") {
       throw new Error("Chat requests do not support multi-file input.");
     }
@@ -653,6 +683,9 @@ export class LLMService {
         request.onProgress,
       );
     } catch (error: unknown) {
+      if (isAbortError(error, options.abortSignal)) {
+        throw normalizeAbortError(error, options.abortSignal);
+      }
       throw this.toApiCallError(endpoint, error);
     }
     return this.toResponse(
@@ -673,9 +706,13 @@ export class LLMService {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      throwIfAborted(request.transport?.abortSignal);
       try {
         return await this.chatOnceWithEndpoint(endpoint, request);
       } catch (error: unknown) {
+        if (isAbortError(error, request.transport?.abortSignal)) {
+          throw normalizeAbortError(error, request.transport?.abortSignal);
+        }
         lastError = error instanceof Error ? error : new Error(String(error));
         ztoolkit.log(
           `[LLMService] Chat API failed via ${endpoint.name} (${attempt + 1}/${maxAttempts}): ${lastError.message}`,
@@ -711,6 +748,7 @@ export class LLMService {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
+      throwIfAborted(request.transport?.abortSignal);
       try {
         const options = this.buildOptions(
           providerId,
@@ -740,6 +778,9 @@ export class LLMService {
         if (useKeyRotation) ApiKeyManager.advanceToNextKey(keyManagerId);
         return this.toResponse(text, providerId, options, warnings);
       } catch (error: unknown) {
+        if (isAbortError(error, request.transport?.abortSignal)) {
+          throw normalizeAbortError(error, request.transport?.abortSignal);
+        }
         lastError = error instanceof Error ? error : new Error(String(error));
         ztoolkit.log(
           `[LLMService] API 调用失败 (尝试 ${attempt + 1}/${maxRetries}): ${lastError.message}`,

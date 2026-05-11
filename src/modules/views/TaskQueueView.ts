@@ -744,6 +744,36 @@ export class TaskQueueView extends BaseView {
     });
     actions.appendChild(detailBtn);
 
+    if (
+      (task.taskType || "summary") === "summary" &&
+      task.status === TaskStatus.PROCESSING
+    ) {
+      const abortBtn = this.createElement("button", {
+        styles: {
+          padding: "6px 12px",
+          border: "1px solid #e53935",
+          borderRadius: "4px",
+          backgroundColor: "#fff5f5",
+          color: "#c62828",
+          cursor: "pointer",
+          fontSize: "12px",
+          fontWeight: "600",
+        },
+        textContent: "🛑 终止",
+      }) as HTMLButtonElement;
+      abortBtn.title = "终止当前 AI 总结输出";
+
+      abortBtn.addEventListener("click", async (event: Event) => {
+        event.stopPropagation();
+        abortBtn.disabled = true;
+        abortBtn.style.cursor = "wait";
+        abortBtn.textContent = "⏳ 终止中";
+        await this.abortTask(task.id);
+      });
+
+      actions.appendChild(abortBtn);
+    }
+
     if (task.status === TaskStatus.FAILED) {
       const retryBtn = this.createElement("button", {
         styles: {
@@ -1040,6 +1070,21 @@ export class TaskQueueView extends BaseView {
     try {
       if (this.manager) {
         await this.manager.retryTask(taskId);
+      }
+    } finally {
+      this.syncFromManager();
+    }
+  }
+
+  /**
+   * 终止处理中任务
+   *
+   * @param taskId 任务 ID
+   */
+  public async abortTask(taskId: string): Promise<void> {
+    try {
+      if (this.manager) {
+        await this.manager.abortTask(taskId);
       }
     } finally {
       this.syncFromManager();

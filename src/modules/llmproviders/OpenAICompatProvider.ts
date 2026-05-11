@@ -18,6 +18,12 @@ import {
   requestModelListJson,
 } from "./shared/modelList";
 import { resolveReasoningEffort } from "./shared/reasoning";
+import {
+  bindAbortSignal,
+  isAbortError,
+  normalizeAbortError,
+  throwIfAborted,
+} from "./shared/requestAbort";
 
 /**
  * OpenAI 旧接口兼容 Provider（Chat Completions 格式）
@@ -113,6 +119,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
     const model = (options.model || "gpt-3.5-turbo").trim();
     const streamEnabled = options.stream ?? true;
+    throwIfAborted(options.abortSignal);
 
     // Chat Completions 的消息结构
     const messages: Array<{
@@ -149,6 +156,7 @@ export class OpenAICompatProvider implements ILlmProvider {
       let partialLine = "";
       let gotAnyDelta = false;
       let abortError: Error | null = null;
+      let cleanupAbortSignal: (() => void) | undefined;
 
       try {
         await Zotero.HTTP.request("POST", apiUrl, {
@@ -158,6 +166,13 @@ export class OpenAICompatProvider implements ILlmProvider {
           timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
           errorDelayMax: 0,
           requestObserver: (xmlhttp: XMLHttpRequest) => {
+            cleanupAbortSignal = bindAbortSignal(
+              options.abortSignal,
+              xmlhttp,
+              (error) => {
+                abortError = error;
+              },
+            );
             xmlhttp.onprogress = (e: any) => {
               const status = e.target.status;
               if (status >= 400) {
@@ -235,8 +250,14 @@ export class OpenAICompatProvider implements ILlmProvider {
         });
       } catch (error: any) {
         if (abortError) {
+          if (isAbortError(abortError, options.abortSignal)) {
+            throw normalizeAbortError(abortError, options.abortSignal);
+          }
           if (gotAnyDelta && chunks.length > 0) return chunks.join("");
           throw abortError;
+        }
+        if (isAbortError(error, options.abortSignal)) {
+          throw normalizeAbortError(error, options.abortSignal);
         }
         let errorMessage = error?.message || "OpenAI 兼容请求失败";
         try {
@@ -257,12 +278,16 @@ export class OpenAICompatProvider implements ILlmProvider {
         }
         if (gotAnyDelta && chunks.length > 0) return chunks.join("");
         throw new Error(errorMessage);
+      } finally {
+        cleanupAbortSignal?.();
       }
 
       return chunks.join("");
     }
 
     // 非流式
+    let abortError: Error | null = null;
+    let cleanupAbortSignal: (() => void) | undefined;
     try {
       const res = await Zotero.HTTP.request("POST", apiUrl, {
         headers: this.buildHeaders(apiKey),
@@ -270,13 +295,26 @@ export class OpenAICompatProvider implements ILlmProvider {
         responseType: "json",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
         errorDelayMax: 0,
+        requestObserver: (xmlhttp: XMLHttpRequest) => {
+          cleanupAbortSignal = bindAbortSignal(
+            options.abortSignal,
+            xmlhttp,
+            (error) => {
+              abortError = error;
+            },
+          );
+        },
       });
+      throwIfAborted(options.abortSignal);
       const data = res.response || res;
       const text = data?.choices?.[0]?.message?.content || "";
       const result = typeof text === "string" ? text : JSON.stringify(text);
       if (onProgress && result) await onProgress(result);
       return result;
     } catch (e: any) {
+      if (abortError || isAbortError(e, options.abortSignal)) {
+        throw normalizeAbortError(abortError || e, options.abortSignal);
+      }
       let errorMessage = e?.message || "OpenAI 兼容请求失败";
       try {
         const responseText = e?.xmlhttp?.response || e?.xmlhttp?.responseText;
@@ -294,6 +332,8 @@ export class OpenAICompatProvider implements ILlmProvider {
         /* ignore */
       }
       throw new Error(errorMessage);
+    } finally {
+      cleanupAbortSignal?.();
     }
   }
 
@@ -355,6 +395,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     let partialLine = "";
     let gotAnyDelta = false;
     let abortError: Error | null = null;
+    let cleanupAbortSignal: (() => void) | undefined;
 
     try {
       await Zotero.HTTP.request("POST", apiUrl, {
@@ -364,6 +405,13 @@ export class OpenAICompatProvider implements ILlmProvider {
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
         errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
+          cleanupAbortSignal = bindAbortSignal(
+            options.abortSignal,
+            xmlhttp,
+            (error) => {
+              abortError = error;
+            },
+          );
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;
             if (status >= 400) {
@@ -442,8 +490,14 @@ export class OpenAICompatProvider implements ILlmProvider {
       });
     } catch (error: any) {
       if (abortError) {
+        if (isAbortError(abortError, options.abortSignal)) {
+          throw normalizeAbortError(abortError, options.abortSignal);
+        }
         if (gotAnyDelta && chunks.length > 0) return chunks.join("");
         throw abortError;
+      }
+      if (isAbortError(error, options.abortSignal)) {
+        throw normalizeAbortError(error, options.abortSignal);
       }
       let errorMessage = error?.message || "OpenAI 兼容请求失败";
       try {
@@ -464,6 +518,8 @@ export class OpenAICompatProvider implements ILlmProvider {
       }
       if (gotAnyDelta && chunks.length > 0) return chunks.join("");
       throw new Error(errorMessage);
+    } finally {
+      cleanupAbortSignal?.();
     }
 
     return chunks.join("");
@@ -622,6 +678,7 @@ export class OpenAICompatProvider implements ILlmProvider {
   ): Promise<string> {
     const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
     const model = (options.model || "gpt-3.5-turbo").trim();
+    throwIfAborted(options.abortSignal);
 
     if (pdfFiles.length === 0) throw new Error("没有要处理的 PDF 文件");
 
@@ -677,6 +734,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     let partialLine = "";
     let gotAnyDelta = false;
     let abortError: Error | null = null;
+    let cleanupAbortSignal: (() => void) | undefined;
 
     try {
       await Zotero.HTTP.request("POST", apiUrl, {
@@ -686,6 +744,13 @@ export class OpenAICompatProvider implements ILlmProvider {
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
         errorDelayMax: 0,
         requestObserver: (xmlhttp: XMLHttpRequest) => {
+          cleanupAbortSignal = bindAbortSignal(
+            options.abortSignal,
+            xmlhttp,
+            (error) => {
+              abortError = error;
+            },
+          );
           xmlhttp.onprogress = (e: any) => {
             const status = e.target.status;
             if (status >= 400) {
@@ -764,8 +829,14 @@ export class OpenAICompatProvider implements ILlmProvider {
       });
     } catch (error: any) {
       if (abortError) {
+        if (isAbortError(abortError, options.abortSignal)) {
+          throw normalizeAbortError(abortError, options.abortSignal);
+        }
         if (gotAnyDelta && chunks.length > 0) return chunks.join("");
         throw abortError;
+      }
+      if (isAbortError(error, options.abortSignal)) {
+        throw normalizeAbortError(error, options.abortSignal);
       }
       let errorMessage = error?.message || "OpenAI 兼容多文件请求失败";
       try {
@@ -786,6 +857,8 @@ export class OpenAICompatProvider implements ILlmProvider {
       }
       if (gotAnyDelta && chunks.length > 0) return chunks.join("");
       throw new Error(errorMessage);
+    } finally {
+      cleanupAbortSignal?.();
     }
 
     const streamed = chunks.join("");

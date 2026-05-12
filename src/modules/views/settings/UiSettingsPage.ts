@@ -102,6 +102,20 @@ export class UiSettingsPage {
       ),
     );
 
+    const openTaskPanelOnSummon =
+      (getPref("openTaskPanelOnSummon" as any) as boolean) ?? false;
+    const openTaskPanelOnSummonBox = createCheckbox(
+      "openTaskPanelOnSummon",
+      !!openTaskPanelOnSummon,
+    );
+    form.appendChild(
+      createFormGroup(
+        "召唤 AI 后自动打开任务面板",
+        openTaskPanelOnSummonBox,
+        "关闭后，右键召唤 AI 只在右下角提示入队结果，不弹出 AI 管家任务面板",
+      ),
+    );
+
     // 笔记管理策略
     const policy = (
       (getPref("noteStrategy" as any) as string) || "skip"
@@ -213,6 +227,12 @@ export class UiSettingsPage {
       const saveChatHistoryVal =
         (form.querySelector("#setting-saveChatHistory") as HTMLInputElement)
           ?.checked ?? true;
+      const openTaskPanelOnSummonVal =
+        (
+          form.querySelector(
+            "#setting-openTaskPanelOnSummon",
+          ) as HTMLInputElement
+        )?.checked ?? false;
       const policyVal = (policySelect as any).getValue
         ? (policySelect as any).getValue()
         : policy;
@@ -226,6 +246,10 @@ export class UiSettingsPage {
       setPref("autoScroll", !!autoVal as any);
       setPref("autoScan", !!autoScanVal as any);
       setPref("saveChatHistory", !!saveChatHistoryVal as any);
+      setPref(
+        "openTaskPanelOnSummon" as any,
+        !!openTaskPanelOnSummonVal as any,
+      );
       setPref("noteStrategy" as any, policyVal);
       setPref("tableStrategy" as any, tablePolicyVal);
       setPref("markdownTheme" as any, themeVal);
@@ -255,6 +279,7 @@ export class UiSettingsPage {
       setPref("autoScroll", true as any);
       setPref("autoScan", true as any);
       setPref("saveChatHistory", true as any);
+      setPref("openTaskPanelOnSummon" as any, false as any);
       setPref("noteStrategy" as any, "skip");
       setPref("tableStrategy" as any, "skip");
       resetUICustomizationPrefs();

@@ -176,6 +176,7 @@ export class DataSettingsPage {
       "autoScroll",
       "windowWidth",
       "windowHeight",
+      "openTaskPanelOnSummon",
       "notePrefix",
       "noteStrategy",
     ];
@@ -285,6 +286,7 @@ export class DataSettingsPage {
     setPref("theme", "system");
     setPref("fontSize", "14");
     setPref("autoScroll", true as any);
+    setPref("openTaskPanelOnSummon" as any, false as any);
     setPref("windowWidth", "900");
     setPref("windowHeight", "650");
     setPref("maxRetries", "3");

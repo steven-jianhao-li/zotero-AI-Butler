@@ -254,6 +254,7 @@ function initializeDefaultPrefsOnStartup() {
     contextMenuItemOrder: DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF,
     sidebarModuleVisibility: DEFAULT_SIDEBAR_MODULE_VISIBILITY_PREF,
     sidebarModuleOrder: DEFAULT_SIDEBAR_MODULE_ORDER_PREF,
+    openTaskPanelOnSummon: false,
   };
 
   // 遍历所有配置项,确保每项都有有效值
@@ -383,6 +384,20 @@ function bindUICustomizationRefreshEvent(win: Window): void {
   win.addEventListener(UI_CUSTOMIZATION_CHANGED_EVENT, () => {
     refreshAIButlerContextMenuItems();
   });
+}
+
+async function maybeOpenTaskPanelAfterQueue(): Promise<void> {
+  if (getPref("openTaskPanelOnSummon") !== true) {
+    return;
+  }
+
+  const mainWin = MainWindow.getInstance();
+  await mainWin.open("tasks");
+  try {
+    mainWin.getTaskQueueView().refresh();
+  } catch (e) {
+    ztoolkit.log("[AI-Butler] 刷新任务队列视图失败:", e);
+  }
 }
 
 /**
@@ -1041,17 +1056,7 @@ async function handleGenerateSummary() {
   try {
     const manager = TaskQueueManager.getInstance();
     await manager.addTasks(items, true); // 右键触发,默认优先处理
-
-    // 打开主窗口并切换到任务队列标签页（使用单例）
-    const mainWin = MainWindow.getInstance();
-    await mainWin.open("tasks");
-    // 立即刷新一次，确保用户看到刚入队的任务，避免“空白”误解
-    try {
-      mainWin.getTaskQueueView().refresh();
-    } catch (e) {
-      // 安全兜底，不影响后续流程
-      ztoolkit.log("[AI-Butler] 刷新任务队列视图失败:", e);
-    }
+    await maybeOpenTaskPanelAfterQueue();
 
     progressWin
       .createLine({

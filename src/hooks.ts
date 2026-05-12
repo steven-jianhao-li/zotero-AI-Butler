@@ -1047,7 +1047,7 @@ async function handleGenerateSummary() {
     return;
   }
 
-  // 第三步:将条目加入任务队列(优先处理)并提示用户
+  // 第三步:单篇优先入队，多选按普通队列遵守批次设置
   const progressWin = new ztoolkit.ProgressWindow("AI Butler", {
     closeOnClick: true,
     closeTime: 4000,
@@ -1055,12 +1055,15 @@ async function handleGenerateSummary() {
 
   try {
     const manager = TaskQueueManager.getInstance();
-    await manager.addTasks(items, true); // 右键触发,默认优先处理
+    const priority = items.length === 1;
+    await manager.addTasks(items, priority);
     await maybeOpenTaskPanelAfterQueue();
 
     progressWin
       .createLine({
-        text: `已加入队列: ${items.length} 篇文献，开始处理...`,
+        text: priority
+          ? "已加入优先队列: 1 篇文献，开始处理..."
+          : `已加入普通队列: ${items.length} 篇文献，将按批次设置处理`,
         type: "success",
       })
       .show();
@@ -1459,10 +1462,11 @@ async function handleMultiRoundSummary(
   try {
     const { TaskQueueManager } = await import("./modules/taskQueue");
     const taskQueue = TaskQueueManager.getInstance();
+    const priority = items.length === 1;
 
     // 批量添加任务，带有特定选项
     for (const item of items) {
-      await taskQueue.addTask(item, true, {
+      await taskQueue.addTask(item, priority, {
         summaryMode: mode,
         forceOverwrite: true,
       });
@@ -1473,7 +1477,9 @@ async function handleMultiRoundSummary(
       closeTime: 3000,
     })
       .createLine({
-        text: `已将 ${items.length} 个重分析任务加入高优队列`,
+        text: priority
+          ? "已将 1 个重分析任务加入高优队列"
+          : `已将 ${items.length} 个重分析任务加入普通队列，将按批次设置处理`,
         type: "success",
       })
       .show();

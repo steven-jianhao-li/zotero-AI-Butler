@@ -30,6 +30,7 @@ export type FluentMessageId =
   | 'itempane-ai-temp-chat'
   | 'library-toolbar-ai-butler'
   | 'menuitem-chatWithAI'
+  | 'menuitem-clearCollectionAiNotes'
   | 'menuitem-filemenulabel'
   | 'menuitem-fillTable'
   | 'menuitem-generateSummary'

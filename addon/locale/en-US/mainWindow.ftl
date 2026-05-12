@@ -17,3 +17,4 @@ itempane-ai-section-sidenav =
 
 menuitem-literatureReview = AI Butler Literature Review
 menuitem-fillTable = AI Butler Fill Table
+menuitem-clearCollectionAiNotes = Clear AI Butler Notes in Collection

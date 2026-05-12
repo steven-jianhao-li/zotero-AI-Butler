@@ -20,3 +20,4 @@ itempane-ai-section-sidenav =
 
 menuitem-literatureReview = AI管家文献综述
 menuitem-fillTable = AI管家填表
+menuitem-clearCollectionAiNotes = 清空该分类 AI 管家笔记

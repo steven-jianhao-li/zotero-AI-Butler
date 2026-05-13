@@ -19,6 +19,7 @@
 
 import { BaseView } from "./BaseView";
 import { isRegularSummaryNote } from "../aiNoteClassifier";
+import { ContentExtractor } from "../contentExtractor";
 import { TaskQueueManager } from "../taskQueue";
 import { MainWindow } from "./MainWindow";
 
@@ -468,6 +469,7 @@ export class LibraryScannerView extends BaseView {
     const result = new Map<number, Zotero.Item>();
     let checkedCount = 0;
     let withAINoteCount = 0;
+    let withoutAnalyzableCount = 0;
     let skippedCount = 0;
 
     for (const itemID of itemIDs) {
@@ -490,13 +492,21 @@ export class LibraryScannerView extends BaseView {
       const hasNote = await this.hasExistingAINote(item);
       if (hasNote) {
         withAINoteCount++;
-      } else {
-        result.set(itemID, item);
+        continue;
       }
+
+      const hasAnalyzable =
+        await ContentExtractor.hasAnalyzableAttachment(item);
+      if (!hasAnalyzable) {
+        withoutAnalyzableCount++;
+        continue;
+      }
+
+      result.set(itemID, item);
     }
 
     this.log(
-      `[LibraryScanner] 条目检查完成: library="${libraryLabel}", checked=${checkedCount}, skipped=${skippedCount}, withAINote=${withAINoteCount}, withoutAINote=${result.size}`,
+      `[LibraryScanner] 条目检查完成: library="${libraryLabel}", checked=${checkedCount}, skipped=${skippedCount}, withAINote=${withAINoteCount}, withoutAnalyzable=${withoutAnalyzableCount}, withoutAINote=${result.size}`,
     );
     return result;
   }

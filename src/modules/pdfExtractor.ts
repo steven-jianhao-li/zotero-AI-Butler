@@ -940,4 +940,8 @@ export class PDFExtractor {
       throw new Error(`Failed to read or encode PDF: ${message}`);
     }
   }
+
+  public static isPdfAttachment(attachment: Zotero.Item): boolean {
+    return attachment.attachmentContentType === "application/pdf";
+  }
 }

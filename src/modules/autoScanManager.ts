@@ -18,6 +18,7 @@
 
 import { getPref } from "../utils/prefs";
 import { isRegularSummaryNote } from "./aiNoteClassifier";
+import { ContentExtractor } from "./contentExtractor";
 import { TaskQueueManager } from "./taskQueue";
 
 /**
@@ -183,29 +184,11 @@ export class AutoScanManager {
     return true;
   }
 
-  /** 判断是否存在可用的 PDF 附件 */
-  private async hasUsablePDFAttachment(item: Zotero.Item): Promise<boolean> {
-    try {
-      const attIDs: number[] = ((item as any).getAttachments?.() ||
-        []) as number[];
-      for (const aid of attIDs) {
-        const att = await Zotero.Items.getAsync(aid);
-        if (!att || !att.isAttachment()) continue;
-        const mime = (att as any).attachmentMIMEType || "";
-        const file = await (att as any).getFile?.();
-        if (mime === "application/pdf" && file) {
-          return true;
-        }
-        // 若 MIME 未填，退化到扩展名判断
-        const path = (att as any).getFilePath?.() || "";
-        if (path && /\.pdf$/i.test(path)) {
-          return true;
-        }
-      }
-    } catch (e) {
-      // 忽略单条异常
-    }
-    return false;
+  /** 判断是否存在可用的可分析附件 */
+  private async hasUsableAnalyzableAttachment(
+    item: Zotero.Item,
+  ): Promise<boolean> {
+    return ContentExtractor.hasAnalyzableAttachment(item);
   }
 
   /** 如果条目附件已就绪且需要 AI，则入队；否则进入待观察并轮询重试 */
@@ -213,8 +196,8 @@ export class AutoScanManager {
     // 已有 AI 笔记则不处理
     if (await this.hasExistingAINote(item)) return;
 
-    // 检查 PDF 附件
-    if (await this.hasUsablePDFAttachment(item)) {
+    // 检查可分析附件
+    if (await this.hasUsableAnalyzableAttachment(item)) {
       // 具备条件，入队
       this.pendingParents.delete(item.id);
       const tqm = TaskQueueManager.getInstance();
@@ -239,7 +222,7 @@ export class AutoScanManager {
       this.pendingParents.delete(item.id);
       (item as any)[attemptKey] = 0;
       ztoolkit.log(
-        `[AutoScan] 附件仍未就绪，放弃自动加入: ${item.getField("title")}`,
+        `[AutoScan] 可分析附件仍未就绪，放弃自动加入: ${item.getField("title")}`,
       );
       return;
     }

@@ -23,7 +23,15 @@ import {
   type LLMNoteMetadata,
 } from "./llmNoteMetadata";
 import {
+  appendQuickChatTurn,
+  buildQuickChatConversation,
+  createChatAbortController,
+  isChatAbortError,
+  type ChatAbortControllerLike,
+} from "./chatContext";
+import {
   buildFollowUpChatPairNoteHtml,
+  markdownToDisplayHtml,
   normalizeFollowUpChatNoteHtml,
 } from "./noteMarkdown";
 import katex from "katex";
@@ -36,8 +44,12 @@ interface ChatState {
   itemId: number | null;
   pdfContent: string;
   isBase64: boolean;
-  conversationHistory: Array<{ role: string; content: string }>;
+  conversationHistory: Array<{
+    role: "system" | "user" | "assistant";
+    content: string;
+  }>;
   isChatting: boolean;
+  abortController: ChatAbortControllerLike | null;
   savedPairIds: Set<string>; // 已保存的对话对 ID，防止重复保存
 }
 
@@ -58,6 +70,7 @@ let currentChatState: ChatState = {
   isBase64: false,
   conversationHistory: [],
   isChatting: false,
+  abortController: null,
   savedPairIds: new Set(),
 };
 
@@ -681,12 +694,14 @@ function renderItemPaneSection(
 
   // 重置聊天状态（如果切换了条目）
   if (currentChatState.itemId !== item.id) {
+    currentChatState.abortController?.abort("快速追问条目已切换");
     currentChatState = {
       itemId: item.id,
       pdfContent: "",
       isBase64: false,
       conversationHistory: [],
       isChatting: false,
+      abortController: null,
       savedPairIds: new Set(),
     };
   }
@@ -777,7 +792,7 @@ function renderActionButtons(
     }
   });
 
-  // 快速提问按钮
+  // 快速追问按钮
   const quickChatBtn = createButton(
     doc,
     getString("itempane-ai-temp-chat"),
@@ -2309,12 +2324,45 @@ async function loadMindmapContent(
  * 渲染聊天区域
 
  */
+async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
+  if (doc.getElementById("ai-butler-quick-chat-katex-style")) return;
+  try {
+    const { themeManager } = await import("./themeManager");
+    const katexCss = await themeManager.loadKatexCss();
+    const styleEl = doc.createElement("style");
+    styleEl.id = "ai-butler-quick-chat-katex-style";
+    styleEl.textContent = `${katexCss}
+#ai-butler-inline-chat .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+#ai-butler-inline-chat .katex-inline {
+  overflow-wrap: normal;
+  word-break: normal;
+}`;
+    const target = doc.head || doc.documentElement;
+    if (target) {
+      target.appendChild(styleEl);
+    }
+  } catch (err) {
+    ztoolkit.log("[AI-Butler] 快速追问 KaTeX 样式加载失败:", err);
+  }
+}
+
 function renderChatArea(
   body: HTMLElement,
   doc: Document,
   item: Zotero.Item,
   initiallyVisible = false,
 ): void {
+  currentChatState.abortController?.abort("快速追问界面已刷新");
+  currentChatState.conversationHistory = [];
+  currentChatState.isChatting = false;
+  currentChatState.abortController = null;
+  currentChatState.savedPairIds = new Set();
+  void ensureQuickChatKatexCss(doc);
+
   const chatArea = doc.createElement("div");
   chatArea.id = "ai-butler-inline-chat";
   chatArea.style.cssText = `
@@ -2335,7 +2383,7 @@ function renderChatArea(
     font-size: 12px;
     font-weight: 500;
   `;
-  chatHeader.textContent = "💬 快速提问";
+  chatHeader.textContent = "💬 快速追问（论文+本次对话）";
 
   // 消息显示区
   const messagesArea = doc.createElement("div");
@@ -2405,8 +2453,15 @@ function renderChatArea(
   };
 
   const loadPdfContentIfNeeded = async (): Promise<void> => {
+    if (currentChatState.pdfContent) {
+      if (!messagesArea.textContent?.trim()) {
+        messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">✅ 论文内容已加载，可以开始提问！</div>`;
+      }
+      return;
+    }
+
     // 如果尚未加载 PDF 内容，则加载
-    if (!currentChatState.pdfContent && item) {
+    if (item) {
       try {
         const { PDFExtractor } = await import("./pdfExtractor");
         const prefMode =
@@ -2430,7 +2485,7 @@ function renderChatArea(
           messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 无法加载论文内容，请确保该文献有 PDF 附件</div>`;
         }
       } catch (err: any) {
-        ztoolkit.log("[AI-Butler] 快速提问加载 PDF 失败:", err);
+        ztoolkit.log("[AI-Butler] 快速追问加载 PDF 失败:", err);
         messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 加载失败: ${err?.message || "未知错误"}</div>`;
       }
     }
@@ -2476,15 +2531,19 @@ function renderChatArea(
     void loadPdfContentIfNeeded();
   }
 
-  // 发送消息处理 - 快速提问（不保存历史，每次只发送论文+当前问题）
+  // 发送消息处理 - 快速追问（上下文为论文 + 当前对话框内历史）
   sendBtn.addEventListener("click", async () => {
     const question = inputBox.value.trim();
-    if (!question) return;
 
-    // 检查是否正在聊天中
     if (currentChatState.isChatting) {
+      sendBtn.textContent = "终止中...";
+      sendBtn.style.background = "#9e9e9e";
+      (sendBtn as HTMLButtonElement).disabled = true;
+      currentChatState.abortController?.abort("用户已终止快速追问");
       return;
     }
+
+    if (!question) return;
 
     // 检查是否有 PDF 内容
     if (!currentChatState.pdfContent) {
@@ -2494,9 +2553,10 @@ function renderChatArea(
 
     // 设置为正在聊天状态
     currentChatState.isChatting = true;
-    sendBtn.textContent = "发送中...";
-    sendBtn.style.background = "#9e9e9e";
-    (sendBtn as HTMLButtonElement).disabled = true;
+    currentChatState.abortController = createChatAbortController();
+    sendBtn.textContent = "终止";
+    sendBtn.style.background = "#f44336";
+    (sendBtn as HTMLButtonElement).disabled = false;
     (inputBox as HTMLTextAreaElement).disabled = true;
 
     // 生成唯一对话对 ID
@@ -2567,15 +2627,16 @@ function renderChatArea(
     // 滚动到底部
     messagesArea.scrollTop = messagesArea.scrollHeight;
 
+    let fullResponse = "";
+
     try {
       const { default: LLMService } = await import("./llmService");
 
-      // 快速提问的关键：每次只发送论文+当前问题，不累积历史
-      const conversationHistory: Array<{ role: "user"; content: string }> = [
-        { role: "user", content: question },
-      ];
+      const conversationHistory = buildQuickChatConversation(
+        currentChatState.conversationHistory,
+        question,
+      );
 
-      let fullResponse = "";
       let responseMetadata: LLMNoteMetadata | null = null;
       const response = await LLMService.chat({
         content: {
@@ -2585,10 +2646,13 @@ function renderChatArea(
           policy: currentChatState.isBase64 ? "pdf-base64" : "text",
         },
         conversation: conversationHistory,
+        transport: {
+          abortSignal: currentChatState.abortController?.signal,
+        },
         onProgress: (chunk: string) => {
           fullResponse += chunk;
           // 流式更新 AI 回复
-          aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${escapeHtmlForChat(fullResponse)}`;
+          aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${markdownToDisplayHtml(fullResponse)}`;
           // 滚动到底部
           messagesArea.scrollTop = messagesArea.scrollHeight;
         },
@@ -2597,7 +2661,13 @@ function renderChatArea(
       responseMetadata = LLMNoteMetadataService.fromResponse("chat", response);
 
       // 完成后最终更新
-      aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${escapeHtmlForChat(fullResponse)}`;
+      aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${markdownToDisplayHtml(fullResponse)}`;
+
+      currentChatState.conversationHistory = appendQuickChatTurn(
+        currentChatState.conversationHistory,
+        question,
+        fullResponse,
+      );
 
       // 显示保存按钮
       saveArea.style.display = "flex";
@@ -2627,18 +2697,25 @@ function renderChatArea(
           saveBtn.textContent = "✅ 已保存";
           saveBtn.style.background = "#4caf50";
         } catch (err: any) {
-          ztoolkit.log("[AI-Butler] 保存快速提问对话失败:", err);
+          ztoolkit.log("[AI-Butler] 保存快速追问对话失败:", err);
           saveBtn.textContent = "❌ 保存失败";
           saveBtn.style.background = "#f44336";
           (saveBtn as HTMLButtonElement).disabled = false;
         }
       });
     } catch (err: any) {
-      ztoolkit.log("[AI-Butler] 快速提问发送失败:", err);
+      if (isChatAbortError(err, currentChatState.abortController?.signal)) {
+        aiMsgDiv.innerHTML = fullResponse
+          ? `<strong>🤖 AI管家:</strong><br/>${markdownToDisplayHtml(fullResponse)}<div style="color: #777; font-size: 11px; margin-top: 6px;">已终止，本轮不会保存或加入上下文。</div>`
+          : `<strong>🤖 AI管家:</strong> <span style="color: #777;">已终止，未生成内容。</span>`;
+        return;
+      }
+      ztoolkit.log("[AI-Butler] 快速追问发送失败:", err);
       aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong> <span style="color: #f44336;">❌ 错误: ${err?.message || "发送失败"}</span>`;
     } finally {
       // 恢复状态
       currentChatState.isChatting = false;
+      currentChatState.abortController = null;
       sendBtn.textContent = "发送";
       sendBtn.style.background = "#59c0bc";
       (sendBtn as HTMLButtonElement).disabled = false;
@@ -2745,7 +2822,7 @@ async function saveChatPairToNote(
     pairId,
     userMessage,
     assistantMessage,
-    sourceLabel: "来自快速提问",
+    sourceLabel: "来自快速追问",
   });
   const block = metadata
     ? LLMNoteMetadataService.wrapHtml(blockContent, metadata)
@@ -2754,7 +2831,7 @@ async function saveChatPairToNote(
   noteHtml += block;
   (note as any).setNote(noteHtml);
   await (note as any).saveTx();
-  ztoolkit.log("[AI-Butler] 快速提问对话已保存到笔记");
+  ztoolkit.log("[AI-Butler] 快速追问对话已保存到笔记");
 }
 
 /**

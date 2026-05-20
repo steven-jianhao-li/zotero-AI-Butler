@@ -1500,8 +1500,8 @@ async function handleChatWithAI() {
     // 通过 SummaryView 加载该文献的笔记(会自动显示聊天界面)
     const summaryView = mainWin.getSummaryView();
     if (summaryView) {
-      // 调用 showSavedNoteForItem 需要传入条目ID
-      await (summaryView as any).showSavedNoteForItem(parentItemID);
+      // 使用统一聊天入口；它会加载已有总结和后续追问历史。
+      await (summaryView as any).loadItemForChat(parentItemID);
     }
   } catch (error: any) {
     ztoolkit.log("[AI-Butler] 打开聊天失败:", error);

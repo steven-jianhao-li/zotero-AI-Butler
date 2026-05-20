@@ -1,4 +1,5 @@
 import { marked } from "marked";
+import katex from "katex";
 
 type ProtectedFormula = {
   content: string;
@@ -11,6 +12,12 @@ export type FollowUpChatPairNoteHtmlOptions = {
   assistantMessage: string;
   savedAt?: Date | string;
   sourceLabel?: string;
+};
+
+export type FollowUpChatPair = {
+  id: string;
+  user: string;
+  assistant: string;
 };
 
 const FOLLOW_UP_CHAT_PAIR_STYLE =
@@ -87,6 +94,135 @@ export function markdownToZoteroNoteHtml(markdown: string): string {
   );
 }
 
+/**
+ * Convert Markdown into display HTML for plugin UI surfaces, including KaTeX
+ * rendering for LaTeX formulas.
+ */
+export function markdownToDisplayHtml(markdown: string): string {
+  const formulas: ProtectedFormula[] = [];
+  let html = markdown;
+
+  html = html.replace(/\\\[([\s\S]*?)\\\]/g, (_match, formula) => {
+    const placeholder = `AI_BUTLER_FORMULA_BLOCK_${formulas.length}_END`;
+    formulas.push({ content: formula.trim(), isBlock: true });
+    return placeholder;
+  });
+
+  html = html.replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula) => {
+    const placeholder = `AI_BUTLER_FORMULA_BLOCK_${formulas.length}_END`;
+    formulas.push({ content: formula.trim(), isBlock: true });
+    return placeholder;
+  });
+
+  html = html.replace(/\\\((.*?)\\\)/g, (_match, formula) => {
+    const placeholder = `AI_BUTLER_FORMULA_INLINE_${formulas.length}_END`;
+    formulas.push({ content: formula.trim(), isBlock: false });
+    return placeholder;
+  });
+
+  // eslint-disable-next-line no-useless-escape
+  html = html.replace(/\$([^\$\n]+?)\$/g, (_match, formula) => {
+    const placeholder = `AI_BUTLER_FORMULA_INLINE_${formulas.length}_END`;
+    formulas.push({ content: formula.trim(), isBlock: false });
+    return placeholder;
+  });
+
+  marked.setOptions({
+    breaks: true,
+    gfm: true,
+  });
+
+  try {
+    html = marked.parse(html) as string;
+  } catch {
+    html = `<p>${escapeHtml(html)}</p>`;
+  }
+
+  const renderFormula = (_match: string, _type: string, index: string) => {
+    const formulaData = formulas[parseInt(index)];
+    if (!formulaData) return _match;
+
+    const { content, isBlock } = formulaData;
+    try {
+      const rendered = katex.renderToString(content, {
+        throwOnError: false,
+        displayMode: isBlock,
+        output: "html",
+        trust: true,
+        strict: false,
+      });
+
+      if (isBlock) {
+        return `<div class="katex-display">${rendered}</div>`;
+      }
+      return `<span class="katex-inline">${rendered}</span>`;
+    } catch {
+      const escapedContent = escapeHtml(content);
+      if (isBlock) {
+        return `<pre class="math-fallback">$$${escapedContent}$$</pre>`;
+      }
+      return `<code class="math-fallback">$${escapedContent}$</code>`;
+    }
+  };
+
+  html = html.replace(
+    /<p>\s*AI_BUTLER_FORMULA_BLOCK_(\d+)_END\s*<\/p>/g,
+    (match, index) => renderFormula(match, "BLOCK", index),
+  );
+
+  return html.replace(
+    /AI_BUTLER_FORMULA_(BLOCK|INLINE)_(\d+)_END/g,
+    renderFormula,
+  );
+}
+
+function escapeJsonForHtmlComment(json: string): string {
+  return json
+    .replace(/</g, "\\u003C")
+    .replace(/>/g, "\\u003E")
+    .replace(/--/g, "-\\u002D");
+}
+
+function normalizeFollowUpChatPair(raw: unknown): FollowUpChatPair | null {
+  if (!raw || typeof raw !== "object") return null;
+  const pair = raw as Partial<FollowUpChatPair>;
+  if (
+    pair.id === undefined ||
+    pair.user === undefined ||
+    pair.assistant === undefined
+  ) {
+    return null;
+  }
+
+  return {
+    id: String(pair.id),
+    user: String(pair.user),
+    assistant: String(pair.assistant),
+  };
+}
+
+export function parseFollowUpChatPairsFromNoteHtml(
+  html: string,
+): FollowUpChatPair[] {
+  const pairs: FollowUpChatPair[] = [];
+  const seenIds = new Set<string>();
+  const markerPattern = /<!--\s*AI_BUTLER_CHAT_JSON:\s*([\s\S]*?)\s*-->/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = markerPattern.exec(html)) !== null) {
+    try {
+      const parsed = normalizeFollowUpChatPair(JSON.parse(match[1].trim()));
+      if (!parsed || seenIds.has(parsed.id)) continue;
+      seenIds.add(parsed.id);
+      pairs.push(parsed);
+    } catch {
+      // Ignore malformed legacy markers and keep scanning later pairs.
+    }
+  }
+
+  return pairs;
+}
+
 export function buildFollowUpChatPairNoteHtml(
   options: FollowUpChatPairNoteHtmlOptions,
 ): string {
@@ -102,11 +238,13 @@ export function buildFollowUpChatPairNoteHtml(
   const sourceSuffix = options.sourceLabel
     ? ` (${escapeHtml(options.sourceLabel)})`
     : "";
-  const jsonMarker = `<!-- AI_BUTLER_CHAT_JSON: ${JSON.stringify({
-    id: options.pairId,
-    user: options.userMessage,
-    assistant: options.assistantMessage,
-  })} -->`;
+  const jsonMarker = `<!-- AI_BUTLER_CHAT_JSON: ${escapeJsonForHtmlComment(
+    JSON.stringify({
+      id: options.pairId,
+      user: options.userMessage,
+      assistant: options.assistantMessage,
+    }),
+  )} -->`;
 
   return `
 <!-- AI_BUTLER_CHAT_PAIR_START id=${pairId} -->

@@ -361,23 +361,17 @@ export class SummaryView extends BaseView {
     });
 
     // 追问按钮 - 使用统一的按钮组件
-    const chatControls = this.createElement("div", {
-      styles: {
-        display: "flex",
-        alignItems: "center",
-        gap: "6px",
-        marginBottom: "12px",
-        minWidth: "0",
-      },
-    });
-    const chatButton = createStyledButton("💬 完整追问", "#667eea", "medium");
+    const chatButton = createStyledButton("", "#667eea", "medium");
     chatButton.id = "ai-butler-chat-toggle-button";
     Object.assign(chatButton.style, {
-      flex: "0 1 auto",
+      marginBottom: "12px",
       minWidth: "0",
     });
-    chatControls.appendChild(chatButton);
-    chatControls.appendChild(
+    const chatButtonText = this.createElement("span", {
+      textContent: "💬 完整追问",
+    });
+    chatButton.appendChild(chatButtonText);
+    chatButton.appendChild(
       this.createContextInfoIcon(getString("itempane-ai-open-chat-tooltip")),
     );
 
@@ -388,10 +382,10 @@ export class SummaryView extends BaseView {
       if (inputArea) {
         if (inputArea.style.display === "none" || !inputArea.style.display) {
           inputArea.style.display = "flex";
-          chatButton.innerHTML = "🔽 收起完整追问";
+          chatButtonText.textContent = "🔽 收起完整追问";
         } else {
           inputArea.style.display = "none";
-          chatButton.innerHTML = "💬 完整追问";
+          chatButtonText.textContent = "💬 完整追问";
         }
       }
     });
@@ -457,7 +451,7 @@ export class SummaryView extends BaseView {
     inputArea.appendChild(this.chatInput);
     inputArea.appendChild(this.chatSendButton);
 
-    container.appendChild(chatControls);
+    container.appendChild(chatButton);
     container.appendChild(inputArea);
 
     return container;
@@ -473,9 +467,9 @@ export class SummaryView extends BaseView {
       styles: {
         width: "18px",
         height: "18px",
-        border: "1px solid rgba(102, 126, 234, 0.75)",
+        border: "1px solid currentColor",
         borderRadius: "50%",
-        color: "#667eea",
+        color: "inherit",
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
@@ -484,6 +478,7 @@ export class SummaryView extends BaseView {
         lineHeight: "1",
         cursor: "help",
         flex: "0 0 auto",
+        opacity: "0.85",
       },
     });
   }

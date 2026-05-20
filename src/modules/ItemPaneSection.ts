@@ -748,6 +748,7 @@ function createButton(
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
   `;
   btn.addEventListener("mouseenter", () => {
     if (isPrimary) {
@@ -770,9 +771,9 @@ function createContextInfoIcon(doc: Document, tooltip: string): HTMLElement {
   icon.style.cssText = `
     width: 17px;
     height: 17px;
-    border: 1px solid rgba(89, 192, 188, 0.75);
+    border: 1px solid currentColor;
     border-radius: 50%;
-    color: #59c0bc;
+    color: inherit;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -782,27 +783,18 @@ function createContextInfoIcon(doc: Document, tooltip: string): HTMLElement {
     cursor: help;
     flex: 0 0 auto;
     align-self: center;
+    opacity: 0.85;
   `;
   return icon;
 }
 
-function createChatActionGroup(
+function appendContextInfoIconToButton(
   doc: Document,
   button: HTMLButtonElement,
   tooltip: string,
-): HTMLElement {
-  const group = doc.createElement("div");
-  group.style.cssText = `
-    display: flex;
-    align-items: stretch;
-    gap: 4px;
-    flex: 1 1 0;
-    min-width: 0;
-  `;
+): void {
   button.style.minWidth = "0";
-  group.appendChild(button);
-  group.appendChild(createContextInfoIcon(doc, tooltip));
-  return group;
+  button.appendChild(createContextInfoIcon(doc, tooltip));
 }
 
 /**
@@ -827,6 +819,11 @@ function renderActionButtons(
     getString("itempane-ai-open-chat"),
     true,
   );
+  appendContextInfoIconToButton(
+    doc,
+    fullChatBtn,
+    getString("itempane-ai-open-chat-tooltip"),
+  );
   fullChatBtn.addEventListener("click", async () => {
     try {
       await handleOpenAIChat(item.id);
@@ -840,6 +837,11 @@ function renderActionButtons(
     doc,
     getString("itempane-ai-temp-chat"),
     false,
+  );
+  appendContextInfoIconToButton(
+    doc,
+    quickChatBtn,
+    getString("itempane-ai-temp-chat-tooltip"),
   );
   quickChatBtn.id = "ai-butler-quick-chat-btn";
   quickChatBtn.addEventListener("click", () => {
@@ -938,21 +940,9 @@ function renderActionButtons(
     }
   });
 
-  btnContainer.appendChild(
-    createChatActionGroup(
-      doc,
-      fullChatBtn,
-      getString("itempane-ai-open-chat-tooltip"),
-    ),
-  );
+  btnContainer.appendChild(fullChatBtn);
   if (isSidebarModuleEnabled("quickChat")) {
-    btnContainer.appendChild(
-      createChatActionGroup(
-        doc,
-        quickChatBtn,
-        getString("itempane-ai-temp-chat-tooltip"),
-      ),
-    );
+    btnContainer.appendChild(quickChatBtn);
   }
   btnContainer.appendChild(refreshBtn);
   body.appendChild(btnContainer);

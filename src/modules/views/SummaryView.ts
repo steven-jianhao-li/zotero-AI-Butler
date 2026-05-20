@@ -27,6 +27,7 @@ import { BaseView } from "./BaseView";
 import { MainWindow } from "./MainWindow";
 import { marked } from "marked";
 import { getPref } from "../../utils/prefs";
+import { getString } from "../../utils/locale";
 import { createStyledButton } from "./ui/components";
 import {
   LLMNoteMetadataService,
@@ -360,15 +361,25 @@ export class SummaryView extends BaseView {
     });
 
     // 追问按钮 - 使用统一的按钮组件
-    const chatButton = createStyledButton(
-      "💬 完整追问（论文、笔记与追问）",
-      "#667eea",
-      "medium",
-    );
+    const chatControls = this.createElement("div", {
+      styles: {
+        display: "flex",
+        alignItems: "center",
+        gap: "6px",
+        marginBottom: "12px",
+        minWidth: "0",
+      },
+    });
+    const chatButton = createStyledButton("💬 完整追问", "#667eea", "medium");
     chatButton.id = "ai-butler-chat-toggle-button";
     Object.assign(chatButton.style, {
-      marginBottom: "12px",
+      flex: "0 1 auto",
+      minWidth: "0",
     });
+    chatControls.appendChild(chatButton);
+    chatControls.appendChild(
+      this.createContextInfoIcon(getString("itempane-ai-open-chat-tooltip")),
+    );
 
     chatButton.addEventListener("click", () => {
       const inputArea = container.querySelector(
@@ -380,7 +391,7 @@ export class SummaryView extends BaseView {
           chatButton.innerHTML = "🔽 收起完整追问";
         } else {
           inputArea.style.display = "none";
-          chatButton.innerHTML = "💬 完整追问（论文、笔记与追问）";
+          chatButton.innerHTML = "💬 完整追问";
         }
       }
     });
@@ -446,10 +457,35 @@ export class SummaryView extends BaseView {
     inputArea.appendChild(this.chatInput);
     inputArea.appendChild(this.chatSendButton);
 
-    container.appendChild(chatButton);
+    container.appendChild(chatControls);
     container.appendChild(inputArea);
 
     return container;
+  }
+
+  private createContextInfoIcon(tooltip: string): HTMLElement {
+    return this.createElement("span", {
+      textContent: "i",
+      attributes: {
+        title: tooltip,
+        "aria-label": tooltip,
+      },
+      styles: {
+        width: "18px",
+        height: "18px",
+        border: "1px solid rgba(102, 126, 234, 0.75)",
+        borderRadius: "50%",
+        color: "#667eea",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: "11px",
+        fontWeight: "700",
+        lineHeight: "1",
+        cursor: "help",
+        flex: "0 0 auto",
+      },
+    });
   }
 
   /**

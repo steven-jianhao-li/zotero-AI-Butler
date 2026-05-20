@@ -762,6 +762,49 @@ function createButton(
   return btn;
 }
 
+function createContextInfoIcon(doc: Document, tooltip: string): HTMLElement {
+  const icon = doc.createElement("span");
+  icon.textContent = "i";
+  icon.title = tooltip;
+  icon.setAttribute("aria-label", tooltip);
+  icon.style.cssText = `
+    width: 17px;
+    height: 17px;
+    border: 1px solid rgba(89, 192, 188, 0.75);
+    border-radius: 50%;
+    color: #59c0bc;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    flex: 0 0 auto;
+    align-self: center;
+  `;
+  return icon;
+}
+
+function createChatActionGroup(
+  doc: Document,
+  button: HTMLButtonElement,
+  tooltip: string,
+): HTMLElement {
+  const group = doc.createElement("div");
+  group.style.cssText = `
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    flex: 1 1 0;
+    min-width: 0;
+  `;
+  button.style.minWidth = "0";
+  group.appendChild(button);
+  group.appendChild(createContextInfoIcon(doc, tooltip));
+  return group;
+}
+
 /**
  * 渲染操作按钮区域
  */
@@ -895,9 +938,21 @@ function renderActionButtons(
     }
   });
 
-  btnContainer.appendChild(fullChatBtn);
+  btnContainer.appendChild(
+    createChatActionGroup(
+      doc,
+      fullChatBtn,
+      getString("itempane-ai-open-chat-tooltip"),
+    ),
+  );
   if (isSidebarModuleEnabled("quickChat")) {
-    btnContainer.appendChild(quickChatBtn);
+    btnContainer.appendChild(
+      createChatActionGroup(
+        doc,
+        quickChatBtn,
+        getString("itempane-ai-temp-chat-tooltip"),
+      ),
+    );
   }
   btnContainer.appendChild(refreshBtn);
   body.appendChild(btnContainer);
@@ -2377,13 +2432,21 @@ function renderChatArea(
 
   const chatHeader = doc.createElement("div");
   chatHeader.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 6px;
     padding: 8px 10px;
     background: rgba(89, 192, 188, 0.1);
     border-bottom: 1px solid rgba(89, 192, 188, 0.2);
     font-size: 12px;
     font-weight: 500;
   `;
-  chatHeader.textContent = "💬 快速追问（论文+本次对话）";
+  const chatTitle = doc.createElement("span");
+  chatTitle.textContent = "💬 快速追问";
+  chatHeader.appendChild(chatTitle);
+  chatHeader.appendChild(
+    createContextInfoIcon(doc, getString("itempane-ai-temp-chat-tooltip")),
+  );
 
   // 消息显示区
   const messagesArea = doc.createElement("div");

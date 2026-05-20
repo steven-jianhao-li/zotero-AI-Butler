@@ -856,7 +856,7 @@ function renderActionButtons(
   // 刷新按钮
   const refreshBtn = doc.createElement("button");
   refreshBtn.id = "ai-butler-refresh-btn";
-  refreshBtn.title = "刷新当前显示的 AI 管家侧边栏内容";
+  refreshBtn.title = "重新渲染 AI 管家侧边栏";
   refreshBtn.textContent = "🔄";
   refreshBtn.style.cssText = `
     padding: 8px 12px;
@@ -879,62 +879,13 @@ function renderActionButtons(
     refreshBtn.style.background = "transparent";
   });
   refreshBtn.addEventListener("click", async () => {
-    // 显示刷新中状态
     refreshBtn.textContent = "⏳";
     refreshBtn.style.pointerEvents = "none";
     try {
-      // 刷新 AI 笔记
-      if (isSidebarModuleEnabled("note")) {
-        const noteContent = doc.getElementById(
-          "ai-butler-note-content",
-        ) as HTMLElement | null;
-        if (noteContent) {
-          if (isSidebarNoteEditing(item.id)) {
-            setSidebarNoteEditStatus(doc, "编辑中，已跳过刷新。");
-          } else {
-            noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-            await loadNoteContent(doc, item, noteContent);
-          }
-        }
-      }
-      // 刷新表格归纳
-      if (isSidebarModuleEnabled("table")) {
-        const tableContent = doc.getElementById(
-          "ai-butler-table-content",
-        ) as HTMLElement | null;
-        if (tableContent) {
-          tableContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-          await loadTableContent(item, tableContent);
-        }
-      }
-      // 刷新一图总结
-      if (isSidebarModuleEnabled("imageSummary")) {
-        const imageContainer = doc.getElementById(
-          "ai-butler-image-container",
-        ) as HTMLElement | null;
-        const imageBtnContainer = doc.getElementById(
-          "ai-butler-image-btn-container",
-        ) as HTMLElement | null;
-        if (imageContainer && imageBtnContainer) {
-          imageContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-          imageBtnContainer.innerHTML = "";
-          await loadImageSummary(doc, item, imageContainer, imageBtnContainer);
-        }
-      }
-      // 刷新思维导图
-      if (isSidebarModuleEnabled("mindmap")) {
-        const mindmapContainer = doc.getElementById(
-          "ai-butler-mindmap-container",
-        ) as HTMLElement | null;
-        if (mindmapContainer) {
-          mindmapContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-          await loadMindmapContent(doc, item, mindmapContainer);
-        }
-      }
+      await refreshCurrentItemPaneSection();
     } catch (err: any) {
-      ztoolkit.log("[AI-Butler] 刷新失败:", err);
+      ztoolkit.log("[AI-Butler] 重新渲染侧边栏失败:", err);
     } finally {
-      // 恢复按钮状态
       refreshBtn.textContent = "🔄";
       refreshBtn.style.pointerEvents = "auto";
     }

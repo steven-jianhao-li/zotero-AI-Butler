@@ -262,15 +262,12 @@ export class LibraryScannerView extends BaseView {
         true,
         false,
       );
-      const candidateItems = allItems.filter((item) =>
-        this.shouldScanItem(item),
-      );
       ztoolkit.log(
-        `[LibraryScanner] 扫描库: id=${library.libraryID}, name="${libraryLabel}", collections=${collections.length}, topLevelItems=${allItems.length}, candidates=${candidateItems.length}`,
+        `[LibraryScanner] 扫描库: id=${library.libraryID}, name="${libraryLabel}", collections=${collections.length}, topLevelItems=${allItems.length}`,
       );
 
       const unprocessedItems = await this.collectUnprocessedItems(
-        candidateItems,
+        allItems,
         libraryLabel,
         scanId,
       );
@@ -366,9 +363,9 @@ export class LibraryScannerView extends BaseView {
     }
 
     // 处理收藏夹中的条目
-    const items = collection.getChildItems();
-    for (const item of items) {
-      const unprocessedItem = unprocessedItems.get(item.id);
+    const itemIDs = collection.getChildItems(true);
+    for (const itemID of itemIDs) {
+      const unprocessedItem = unprocessedItems.get(itemID);
       if (!unprocessedItem) continue;
 
       const itemNode = this.buildItemNode(unprocessedItem);
@@ -414,9 +411,16 @@ export class LibraryScannerView extends BaseView {
   ): Zotero.Item[] {
     const items: Zotero.Item[] = [];
     for (const item of unprocessedItems.values()) {
-      const collectionIDs: number[] = (item as any).getCollections?.() || [];
-      if (collectionIDs.length === 0) {
-        items.push(item);
+      try {
+        const collectionIDs: number[] = (item as any).getCollections?.() || [];
+        if (collectionIDs.length === 0) {
+          items.push(item);
+        }
+      } catch (error) {
+        ztoolkit.log(
+          `[LibraryScanner] 读取条目分类失败，跳过未分类分组: item=${this.getItemDebugID(item)}`,
+          error,
+        );
       }
     }
 
@@ -457,6 +461,7 @@ export class LibraryScannerView extends BaseView {
     const result = new Map<number, Zotero.Item>();
     let checkedCount = 0;
     let withAINoteCount = 0;
+    let skippedCount = 0;
 
     for (const item of items) {
       if (!this.isCurrentScan(scanId)) return result;
@@ -469,7 +474,12 @@ export class LibraryScannerView extends BaseView {
         await this.yieldToUI();
       }
 
-      await this.ensureItemDataLoaded(item);
+      const loaded = await this.ensureItemDataLoaded(item);
+      if (!loaded || !this.shouldScanItem(item)) {
+        skippedCount++;
+        continue;
+      }
+
       const hasNote = await this.hasExistingAINote(item);
       if (hasNote) {
         withAINoteCount++;
@@ -479,23 +489,33 @@ export class LibraryScannerView extends BaseView {
     }
 
     ztoolkit.log(
-      `[LibraryScanner] 条目检查完成: library="${libraryLabel}", checked=${checkedCount}, withAINote=${withAINoteCount}, withoutAINote=${result.size}`,
+      `[LibraryScanner] 条目检查完成: library="${libraryLabel}", checked=${checkedCount}, skipped=${skippedCount}, withAINote=${withAINoteCount}, withoutAINote=${result.size}`,
     );
     return result;
   }
 
   private shouldScanItem(item: Zotero.Item): boolean {
-    return !item.isNote() && !item.isAttachment() && !item.parentID;
-  }
-
-  private async ensureItemDataLoaded(item: Zotero.Item): Promise<void> {
     try {
-      await item.loadAllData();
+      return !item.isNote() && !item.isAttachment() && !item.parentID;
     } catch (error) {
       ztoolkit.log(
-        `[LibraryScanner] 条目完整数据加载失败，继续使用可用字段: item=${this.getItemDebugID(item)}`,
+        `[LibraryScanner] 条目基础信息不可用，跳过: item=${this.getItemDebugID(item)}`,
         error,
       );
+      return false;
+    }
+  }
+
+  private async ensureItemDataLoaded(item: Zotero.Item): Promise<boolean> {
+    try {
+      await item.loadAllData();
+      return true;
+    } catch (error) {
+      ztoolkit.log(
+        `[LibraryScanner] 条目完整数据加载失败，跳过: item=${this.getItemDebugID(item)}`,
+        error,
+      );
+      return false;
     }
   }
 

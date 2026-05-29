@@ -159,11 +159,23 @@ export class LiteratureReviewView extends BaseView {
       styles: {
         display: "flex",
         flexDirection: "column",
+        position: "relative",
         width: "100%",
         height: "100%", // Match parent container height
+        minHeight: "0",
         overflow: "hidden",
         fontFamily: "system-ui, -apple-system, sans-serif",
         backgroundColor: "var(--ai-bg)",
+      },
+    });
+
+    const contentRegion = this.createElement("div", {
+      styles: {
+        display: "flex",
+        flexDirection: "column",
+        flex: "1 1 auto",
+        minHeight: "0",
+        overflow: "hidden",
       },
     });
 
@@ -205,6 +217,7 @@ export class LiteratureReviewView extends BaseView {
         borderBottom: "1px solid var(--ai-review-panel-border)",
         flexShrink: "0",
         maxHeight: "42%",
+        minHeight: "0",
         overflowY: "auto",
       },
     });
@@ -563,8 +576,8 @@ export class LiteratureReviewView extends BaseView {
     // 树形结构容器包装 (用于内滚动布局)
     const treeWrapper = this.createElement("div", {
       styles: {
-        flex: "1",
-        minHeight: "220px",
+        flex: "1 1 0",
+        minHeight: "0",
         position: "relative",
         background: "var(--ai-surface)",
       },
@@ -595,8 +608,12 @@ export class LiteratureReviewView extends BaseView {
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
+        gap: "16px",
         flexShrink: "0",
-        zIndex: "10",
+        minHeight: "68px",
+        boxSizing: "border-box",
+        boxShadow: "0 -8px 20px rgba(15, 23, 42, 0.08)",
+        zIndex: "20",
       },
     });
 
@@ -605,6 +622,8 @@ export class LiteratureReviewView extends BaseView {
       styles: {
         fontSize: "14px",
         color: "var(--ai-text-muted)",
+        flexShrink: "0",
+        whiteSpace: "nowrap",
       },
       innerHTML: "已选择: <strong>0</strong> 个 PDF",
     });
@@ -614,6 +633,8 @@ export class LiteratureReviewView extends BaseView {
       styles: {
         display: "flex",
         gap: "12px",
+        flexWrap: "wrap",
+        justifyContent: "flex-end",
       },
     });
 
@@ -655,10 +676,12 @@ export class LiteratureReviewView extends BaseView {
     footer.appendChild(this.selectedCountElement);
     footer.appendChild(buttonContainer);
 
-    container.appendChild(header);
-    container.appendChild(formContainer);
-    container.appendChild(selectionHeader);
-    container.appendChild(treeWrapper); // Append wrapper instead of treeContainer
+    contentRegion.appendChild(header);
+    contentRegion.appendChild(formContainer);
+    contentRegion.appendChild(selectionHeader);
+    contentRegion.appendChild(treeWrapper);
+
+    container.appendChild(contentRegion);
     container.appendChild(footer);
 
     return container;

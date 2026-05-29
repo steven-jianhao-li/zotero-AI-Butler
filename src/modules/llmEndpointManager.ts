@@ -5,6 +5,8 @@ import type { LLMReasoningEffortSetting } from "./llmproviders/types";
 
 export type LLMEndpointProviderType = ProviderId;
 export type LLMRoutingStrategy = "priority" | "roundRobin";
+export type LLMPdfProcessMode = "base64" | "text" | "mineru";
+export type LLMEndpointPdfProcessMode = "global" | LLMPdfProcessMode;
 
 export interface LLMEndpoint {
   id: string;
@@ -14,6 +16,7 @@ export interface LLMEndpoint {
   apiKey: string;
   model: string;
   reasoningEffort?: LLMReasoningEffortSetting;
+  pdfProcessMode?: LLMEndpointPdfProcessMode;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -101,6 +104,26 @@ function safeProviderType(raw: unknown): LLMEndpointProviderType {
   return "openai";
 }
 
+function normalizeGlobalPdfProcessMode(raw: unknown): LLMPdfProcessMode {
+  const value = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (value === "text" || value === "mineru") return value;
+  return "base64";
+}
+
+function normalizeEndpointPdfProcessMode(
+  raw: unknown,
+): LLMEndpointPdfProcessMode {
+  const value = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (value === "base64" || value === "text" || value === "mineru") {
+    return value;
+  }
+  return "global";
+}
+
 function parseJsonArray(raw: unknown): unknown[] {
   if (typeof raw !== "string" || !raw.trim()) return [];
   try {
@@ -130,6 +153,7 @@ function normalizeEndpoint(
       raw.reasoningEffort,
       defaults.reasoningEffort || "default",
     ),
+    pdfProcessMode: normalizeEndpointPdfProcessMode(raw.pdfProcessMode),
     enabled: raw.enabled !== false,
     createdAt,
     updatedAt: raw.updatedAt || createdAt,
@@ -155,6 +179,38 @@ export class LLMEndpointManager {
     return safeProviderType(providerType) === "ollama";
   }
 
+  static normalizePdfProcessMode(raw: unknown): LLMEndpointPdfProcessMode {
+    return normalizeEndpointPdfProcessMode(raw);
+  }
+
+  static getGlobalPdfProcessMode(): LLMPdfProcessMode {
+    return normalizeGlobalPdfProcessMode(getPref("pdfProcessMode" as any));
+  }
+
+  static getEffectivePdfProcessMode(
+    endpoint?: Pick<LLMEndpoint, "pdfProcessMode"> | null,
+  ): LLMPdfProcessMode {
+    const endpointMode = normalizeEndpointPdfProcessMode(
+      endpoint?.pdfProcessMode,
+    );
+    return endpointMode === "global"
+      ? this.getGlobalPdfProcessMode()
+      : endpointMode;
+  }
+
+  static pdfProcessModeLabel(mode: LLMEndpointPdfProcessMode): string {
+    switch (normalizeEndpointPdfProcessMode(mode)) {
+      case "base64":
+        return "Base64 文件输入";
+      case "text":
+        return "文本提取";
+      case "mineru":
+        return "MinerU";
+      default:
+        return "跟随全局默认";
+    }
+  }
+
   static createEndpoint(
     providerType: LLMEndpointProviderType = "openai",
   ): LLMEndpoint {
@@ -168,6 +224,7 @@ export class LLMEndpointManager {
       apiKey: "",
       model: defaults.model,
       reasoningEffort: defaults.reasoningEffort || "default",
+      pdfProcessMode: "global",
       enabled: true,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -357,6 +414,7 @@ export class LLMEndpointManager {
       apiKey: this.getLegacyApiKey(providerType),
       model: this.getLegacyModel(providerType) || defaults.model,
       reasoningEffort: this.getLegacyReasoningEffort(providerType),
+      pdfProcessMode: "global",
       enabled: true,
       createdAt: timestamp,
       updatedAt: timestamp,

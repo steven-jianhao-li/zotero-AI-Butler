@@ -85,7 +85,7 @@ pref("__prefsPrefix__.batchSize", "1");
 pref("__prefsPrefix__.batchInterval", "60");
 pref("__prefsPrefix__.autoScan", false);
 pref("__prefsPrefix__.scanInterval", "300");
-pref("__prefsPrefix__.pdfProcessMode", "base64"); // "text" 或 "base64"
+pref("__prefsPrefix__.pdfProcessMode", "base64"); // "text"、"base64" 或 "mineru"
 pref("__prefsPrefix__.pdfAttachmentMode", "default"); // "default" 或 "all"
 
 // ==================== 一图总结配置 ====================

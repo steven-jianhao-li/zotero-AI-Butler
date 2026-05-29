@@ -62,6 +62,18 @@ function reasoningEffortOptions(): Array<{ value: string; label: string }> {
   ];
 }
 
+function pdfProcessModeOptions(): Array<{ value: string; label: string }> {
+  const globalLabel = LLMEndpointManager.pdfProcessModeLabel(
+    LLMEndpointManager.getGlobalPdfProcessMode(),
+  );
+  return [
+    { value: "global", label: `跟随全局默认（当前：${globalLabel}）` },
+    { value: "base64", label: "Base64 文件输入：发送原始 PDF 给多模态模型" },
+    { value: "text", label: "文本提取：只发送 Zotero 提取的正文文本" },
+    { value: "mineru", label: "MinerU：先解析为高质量 Markdown" },
+  ];
+}
+
 function endpointSupportsReasoningEffort(endpoint: LLMEndpoint): boolean {
   return (
     endpoint.providerType === "openai" ||
@@ -432,7 +444,7 @@ export class EndpointSettingsPanel {
         whiteSpace: "nowrap",
       });
       const detail = document.createElement("div");
-      detail.textContent = `${LLMEndpointManager.providerLabel(endpoint.providerType)} · ${endpoint.model || "未填写模型"}`;
+      detail.textContent = `${LLMEndpointManager.providerLabel(endpoint.providerType)} · ${endpoint.model || "未填写模型"} · PDF ${this.describeEndpointPdfMode(endpoint)}`;
       Object.assign(detail.style, {
         marginTop: "3px",
         color: "var(--ai-text-muted)",
@@ -570,7 +582,7 @@ export class EndpointSettingsPanel {
     const type = document.createElement("div");
     type.textContent = `供应商类型：${LLMEndpointManager.providerLabel(
       endpoint.providerType,
-    )}`;
+    )} · PDF：${this.describeEndpointPdfMode(endpoint)}`;
     Object.assign(type.style, {
       color: "var(--ai-text-muted)",
       fontSize: "12px",
@@ -686,6 +698,7 @@ export class EndpointSettingsPanel {
     details.appendChild(this.renderApiUrlField(endpoint));
     details.appendChild(this.renderApiKeyField(endpoint));
     details.appendChild(this.renderModelField(endpoint));
+    details.appendChild(this.renderPdfProcessModeField(endpoint));
     if (endpointSupportsReasoningEffort(endpoint)) {
       details.appendChild(this.renderReasoningEffortField(endpoint));
     }
@@ -877,6 +890,93 @@ export class EndpointSettingsPanel {
       wrapper,
       fieldDescription(
         "【必填】要使用的模型 ID。可手动填写，也可尝试从供应商接口获取模型列表。",
+      ),
+    );
+  }
+
+  private renderPdfProcessModeField(endpoint: LLMEndpoint): HTMLElement {
+    const document = doc();
+    const value = LLMEndpointManager.normalizePdfProcessMode(
+      endpoint.pdfProcessMode,
+    );
+    endpoint.pdfProcessMode = value;
+
+    const wrapper = document.createElement("div");
+    Object.assign(wrapper.style, {
+      display: "flex",
+      flexDirection: "column",
+      gap: "8px",
+    });
+
+    const select = createSelect(
+      `endpoint-${endpoint.id}-pdfProcessMode`,
+      pdfProcessModeOptions(),
+      value,
+      (newValue) => {
+        endpoint.pdfProcessMode =
+          LLMEndpointManager.normalizePdfProcessMode(newValue);
+        this.persist();
+        this.render();
+      },
+    );
+    wrapper.appendChild(select);
+
+    const effectiveMode =
+      LLMEndpointManager.getEffectivePdfProcessMode(endpoint);
+    const effectiveLabel =
+      LLMEndpointManager.pdfProcessModeLabel(effectiveMode);
+    const supportsBase64 = this.endpointSupportsPdfBase64(endpoint);
+    const status = document.createElement("div");
+    Object.assign(status.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      flexWrap: "wrap",
+      color: "var(--ai-text-muted)",
+      fontSize: "12px",
+      lineHeight: "1.45",
+    });
+
+    const badge = document.createElement("span");
+    badge.textContent = `实际使用：${effectiveLabel}`;
+    Object.assign(badge.style, {
+      display: "inline-flex",
+      alignItems: "center",
+      padding: "2px 8px",
+      borderRadius: "999px",
+      border:
+        effectiveMode === "base64" && !supportsBase64
+          ? "1px solid rgba(245, 124, 0, 0.65)"
+          : "1px solid rgba(89, 192, 188, 0.45)",
+      background:
+        effectiveMode === "base64" && !supportsBase64
+          ? "rgba(245, 124, 0, 0.1)"
+          : "rgba(89, 192, 188, 0.1)",
+      color:
+        effectiveMode === "base64" && !supportsBase64 ? "#f57c00" : "#3aa7a3",
+      fontWeight: "600",
+    });
+    status.appendChild(badge);
+
+    const hint = document.createElement("span");
+    if (effectiveMode === "base64" && !supportsBase64) {
+      hint.textContent =
+        "该供应商声明不支持 PDF Base64；建议为这个模型单独改为文本提取或 MinerU。";
+      hint.style.color = "#f57c00";
+    } else if (value === "global") {
+      hint.textContent =
+        "当前模型未单独覆盖，会随下方全局 PDF 处理模式一起变化。";
+    } else {
+      hint.textContent = "该模型会使用这里指定的 PDF 处理方式。";
+    }
+    status.appendChild(hint);
+    wrapper.appendChild(status);
+
+    return createFormGroup(
+      "PDF 处理方式",
+      wrapper,
+      fieldDescription(
+        "为这个模型单独设置 PDF 输入模式。用于避免不支持文件输入的模型在全局 Base64 模式下报错。",
       ),
     );
   }
@@ -1197,6 +1297,25 @@ export class EndpointSettingsPanel {
       onClick();
     });
     return button;
+  }
+
+  private endpointSupportsPdfBase64(endpoint: LLMEndpoint): boolean {
+    try {
+      return LLMService.endpointSupportsPdfBase64(endpoint);
+    } catch {
+      return true;
+    }
+  }
+
+  private describeEndpointPdfMode(endpoint: LLMEndpoint): string {
+    const configured = LLMEndpointManager.normalizePdfProcessMode(
+      endpoint.pdfProcessMode,
+    );
+    const effective = LLMEndpointManager.getEffectivePdfProcessMode(endpoint);
+    const effectiveLabel = LLMEndpointManager.pdfProcessModeLabel(effective);
+    return configured === "global"
+      ? `跟随全局（${effectiveLabel}）`
+      : effectiveLabel;
   }
 
   private async testEndpoint(

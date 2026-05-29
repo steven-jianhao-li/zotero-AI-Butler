@@ -2468,9 +2468,9 @@ function renderChatArea(
     if (item) {
       try {
         const { PDFExtractor } = await import("./pdfExtractor");
-        const prefMode =
-          (getPref("pdfProcessMode" as any) as string) || "base64";
-        const isBase64 = prefMode === "base64";
+        const { default: LLMService } = await import("./llmService");
+        const pdfMode = LLMService.getEffectivePdfProcessMode();
+        const isBase64 = pdfMode === "base64";
 
         messagesArea.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">📄 正在加载论文内容...</div>`;
 
@@ -2478,7 +2478,7 @@ function renderChatArea(
         if (isBase64) {
           pdfContent = await PDFExtractor.extractBase64FromItem(item);
         } else {
-          pdfContent = await PDFExtractor.extractTextFromItem(item);
+          pdfContent = await PDFExtractor.extractTextFromItem(item, pdfMode);
         }
 
         if (pdfContent) {

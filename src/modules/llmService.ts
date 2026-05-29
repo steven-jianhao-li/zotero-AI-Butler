@@ -10,7 +10,11 @@
 import { getPref } from "../utils/prefs";
 import { getDefaultSummaryPrompt } from "../utils/prompts";
 import { ApiKeyManager, type ProviderId } from "./apiKeyManager";
-import { LLMEndpointManager, type LLMEndpoint } from "./llmEndpointManager";
+import {
+  LLMEndpointManager,
+  type LLMEndpoint,
+  type LLMPdfProcessMode,
+} from "./llmEndpointManager";
 import { PDFExtractor } from "./pdfExtractor";
 import { ProviderRegistry } from "./llmproviders/ProviderRegistry";
 import "./llmproviders";
@@ -256,6 +260,19 @@ export class LLMService {
     };
   }
 
+  static getEffectivePdfProcessMode(endpoint?: LLMEndpoint): LLMPdfProcessMode {
+    if (endpoint) {
+      return LLMEndpointManager.getEffectivePdfProcessMode(endpoint);
+    }
+
+    try {
+      const activeEndpoint = LLMEndpointManager.prepareRoute().endpoints[0];
+      return LLMEndpointManager.getEffectivePdfProcessMode(activeEndpoint);
+    } catch {
+      return LLMEndpointManager.getGlobalPdfProcessMode();
+    }
+  }
+
   static buildOptions(
     providerId: string | LLMEndpoint,
     generation?: LLMGenerationOptions,
@@ -472,6 +489,11 @@ export class LLMService {
     );
   }
 
+  static endpointSupportsPdfBase64(endpoint: LLMEndpoint): boolean {
+    const provider = this.getProviderForEndpoint(endpoint);
+    return this.getProviderCapabilities(provider).supportsPdfBase64;
+  }
+
   private static getRunnableEndpoint(endpointId: string): LLMEndpoint {
     const endpoint = LLMEndpointManager.getEndpoint(endpointId);
     if (!endpoint) {
@@ -542,6 +564,7 @@ export class LLMService {
       request.content,
       warnings,
       true,
+      endpoint,
     );
     throwIfAborted(request.transport?.abortSignal);
     const options = this.buildOptions(
@@ -663,6 +686,7 @@ export class LLMService {
       request.content,
       warnings,
       false,
+      endpoint,
     );
     throwIfAborted(request.transport?.abortSignal);
     if (resolved.mode !== "single") {
@@ -826,6 +850,7 @@ export class LLMService {
     input: LLMContentInput,
     warnings: string[],
     allowMultiFile: boolean,
+    endpoint?: LLMEndpoint,
   ): Promise<ResolvedContent> {
     if (input.kind === "text") {
       return { mode: "single", content: input.text, isBase64: false, warnings };
@@ -841,7 +866,7 @@ export class LLMService {
     }
 
     const capabilities = this.getProviderCapabilities(provider);
-    const policy = this.choosePolicy(input.policy, capabilities);
+    const policy = this.choosePolicy(input.policy, capabilities, endpoint);
 
     if (input.kind === "zotero-item") {
       return this.resolveZoteroItemContent(
@@ -871,8 +896,11 @@ export class LLMService {
   private static choosePolicy(
     requestedPolicy: LLMContentPolicy | undefined,
     _capabilities: LLMProviderCapabilities,
+    endpoint?: LLMEndpoint,
   ): LLMContentPolicy {
-    const rawMode = (requestedPolicy || getPref("pdfProcessMode") || "base64")
+    const rawMode = (
+      requestedPolicy || LLMEndpointManager.getEffectivePdfProcessMode(endpoint)
+    )
       .trim()
       .toLowerCase();
     let policy: LLMContentPolicy;
@@ -955,7 +983,7 @@ export class LLMService {
       };
     }
 
-    const text = await PDFExtractor.extractTextFromItem(input.item);
+    const text = await PDFExtractor.extractTextFromItem(input.item, policy);
     return {
       mode: "single",
       content: this.normalizeText(text),
@@ -978,7 +1006,7 @@ export class LLMService {
 
     const text =
       policy === "mineru" && input.item
-        ? await PDFExtractor.extractTextFromItem(input.item)
+        ? await PDFExtractor.extractTextFromItem(input.item, "mineru")
         : await PDFExtractor.extractTextFromAttachment(input.attachment);
     return {
       mode: "single",
@@ -1079,7 +1107,7 @@ export class LLMService {
         maxTokens: 16,
         reasoningEffort: undefined,
         vendorOptions: {
-          connectionTestMode: this.getConnectionTestMode(provider),
+          connectionTestMode: this.getConnectionTestMode(provider, endpoint),
         },
       },
     );
@@ -1087,10 +1115,12 @@ export class LLMService {
 
   private static getConnectionTestMode(
     provider: ILlmProvider,
+    endpoint?: LLMEndpoint,
   ): ConnectionTestMode {
     const policy = this.choosePolicy(
       undefined,
       this.getProviderCapabilities(provider),
+      endpoint,
     );
     return policy === "pdf-base64" ? "pdf-base64" : "text";
   }

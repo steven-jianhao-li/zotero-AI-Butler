@@ -1288,15 +1288,15 @@ export class SummaryView extends BaseView {
       // 获取 PDF 内容以支持追问
       try {
         const { PDFExtractor } = await import("../pdfExtractor");
-        const prefMode =
-          ((getPref as any)("pdfProcessMode") as string) || "base64";
-        const isBase64 = prefMode === "base64";
+        const { default: LLMService } = await import("../llmService");
+        const pdfMode = LLMService.getEffectivePdfProcessMode();
+        const isBase64 = pdfMode === "base64";
 
         let pdfContent = "";
         if (isBase64) {
           pdfContent = await PDFExtractor.extractBase64FromItem(item);
         } else {
-          pdfContent = await PDFExtractor.extractTextFromItem(item);
+          pdfContent = await PDFExtractor.extractTextFromItem(item, pdfMode);
         }
 
         this.hideLoading();
@@ -1490,16 +1490,15 @@ export class SummaryView extends BaseView {
       // 获取PDF内容以支持后续追问
       try {
         const { PDFExtractor } = await import("../pdfExtractor");
-        // 尊重用户的 PDF 处理模式选择（不再根据 Provider 强制联动）
-        const prefMode =
-          ((getPref as any)("pdfProcessMode") as string) || "base64";
-        const isBase64 = prefMode === "base64";
+        const { default: LLMService } = await import("../llmService");
+        const pdfMode = LLMService.getEffectivePdfProcessMode();
+        const isBase64 = pdfMode === "base64";
 
         let pdfContent = "";
         if (isBase64) {
           pdfContent = await PDFExtractor.extractBase64FromItem(item);
         } else {
-          pdfContent = await PDFExtractor.extractTextFromItem(item);
+          pdfContent = await PDFExtractor.extractTextFromItem(item, pdfMode);
         }
 
         if (pdfContent) {

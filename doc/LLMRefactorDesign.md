@@ -124,7 +124,8 @@ readonly capabilities = {
 
 `LLMService` 集中读取：
 
-- `pdfProcessMode`: `base64` / `text` / `mineru`
+- 全局 `pdfProcessMode`: `base64` / `text` / `mineru`
+- 端点级 `LLMEndpoint.pdfProcessMode`: `global` / `base64` / `text` / `mineru`，未覆盖时跟随全局
 - `pdfAttachmentMode`: `default` / `all`
 
 规则：

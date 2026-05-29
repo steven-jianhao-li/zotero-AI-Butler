@@ -141,7 +141,7 @@ await LLMService.generate({
 | `pdf-files`      | 多 PDF 输入，按 Provider 能力上传或降级 |
 | `legacy`         | 旧 `LLMClient` 兼容入口使用             |
 
-`content.policy` 支持 `auto`、`text`、`pdf-base64`、`mineru`。未指定时读取 `pdfProcessMode`；`auto` 作为兼容旧调用的别名，仍按 PDF Base64 处理，不再按 Provider 能力自动切换到文本。若用户配置为 `base64`，中间件必须准备 PDF Base64 并交给 Provider 发送，不得静默改成文本，也不得凭 Provider 名称提前拦截。
+`content.policy` 支持 `auto`、`text`、`pdf-base64`、`mineru`。未指定时优先读取当前 `LLMEndpoint.pdfProcessMode`，值为 `global` 时再读取全局 `pdfProcessMode`；`auto` 作为兼容旧调用的别名，仍按 PDF Base64 处理，不再按 Provider 能力自动切换到文本。若用户明确配置为 `base64`，中间件必须准备 PDF Base64 并交给 Provider 发送，不得静默改成文本，也不得凭 Provider 名称提前拦截。
 
 ### OpenAI Responses 解析约定
 

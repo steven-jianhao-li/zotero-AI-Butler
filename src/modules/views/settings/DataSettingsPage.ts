@@ -149,6 +149,10 @@ export class DataSettingsPage {
     // 采集 prefs.d.ts 中声明的键
     const keys = [
       "provider",
+      "llmEndpoints",
+      "llmRoutingStrategy",
+      "multiModelSummaryEnabled",
+      "multiModelSummaryEndpointIds",
       "openaiApiKey",
       "openaiApiUrl",
       "openaiApiModel",
@@ -171,6 +175,7 @@ export class DataSettingsPage {
       "autoScan",
       "scanInterval",
       "pdfProcessMode",
+      "pdfAttachmentMode",
       "theme",
       "fontSize",
       "autoScroll",

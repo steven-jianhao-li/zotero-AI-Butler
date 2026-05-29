@@ -27,7 +27,11 @@
 
 import { PDFExtractor } from "./pdfExtractor";
 import LLMService, { type LLMChatRequest } from "./llmService";
-import { LLMEndpointManager, type LLMEndpoint } from "./llmEndpointManager";
+import {
+  LLMEndpointManager,
+  type LLMEndpoint,
+  type LLMPdfProcessMode,
+} from "./llmEndpointManager";
 import {
   LLMNoteMetadataService,
   type LLMNoteMetadata,
@@ -147,8 +151,8 @@ export class NoteGenerator {
         }
       }
 
-      // 读取 PDF 处理模式和附件选择模式
-      const prefMode = (getPref("pdfProcessMode") as string) || "base64";
+      // 读取当前主模型的 PDF 处理模式和附件选择模式
+      const prefMode = LLMService.getEffectivePdfProcessMode();
       const pdfAttachmentMode =
         (getPref("pdfAttachmentMode" as any) as string) || "default";
       const summaryMode = (options?.summaryMode ||
@@ -215,16 +219,10 @@ export class NoteGenerator {
       }
 
       // 多轮总结会复用同一份 PDF 内容；单次总结交给 LLMService 统一解析，避免 MinerU 重复处理。
-      if (summaryMode !== "single") {
-        if (prefMode === "base64") {
-          pdfContent = await PDFExtractor.extractBase64FromItem(item);
-          isBase64 = true;
-        } else {
-          const fullText = await PDFExtractor.extractTextFromItem(item);
-          const cleanedText = PDFExtractor.cleanText(fullText);
-          pdfContent = PDFExtractor.truncateText(cleanedText);
-          isBase64 = false;
-        }
+      if (summaryMode !== "single" && !useMultiModelSummary) {
+        const extracted = await this.extractPdfContentForMode(item, prefMode);
+        pdfContent = extracted.content;
+        isBase64 = extracted.isBase64;
       }
 
       // 步骤 2: AI 模型总结生成
@@ -461,6 +459,25 @@ export class NoteGenerator {
     }
   }
 
+  private static async extractPdfContentForMode(
+    item: Zotero.Item,
+    mode: LLMPdfProcessMode,
+  ): Promise<{ content: string; isBase64: boolean }> {
+    if (mode === "base64") {
+      return {
+        content: await PDFExtractor.extractBase64FromItem(item),
+        isBase64: true,
+      };
+    }
+
+    const fullText = await PDFExtractor.extractTextFromItem(item, mode);
+    const cleanedText = PDFExtractor.cleanText(fullText);
+    return {
+      content: PDFExtractor.truncateText(cleanedText),
+      isBase64: false,
+    };
+  }
+
   private static async generateMultiModelSummaryContent(params: {
     item: Zotero.Item;
     itemTitle: string;
@@ -641,10 +658,11 @@ export class NoteGenerator {
     let response: LLMResponse | undefined;
 
     if (summaryMode === "single") {
+      const endpointPdfMode = LLMService.getEffectivePdfProcessMode(endpoint);
       const attachmentMode = this.resolveEndpointAttachmentMode(
         endpoint,
         pdfAttachmentMode,
-        prefMode,
+        endpointPdfMode,
       );
       response = await LLMService.generateWithEndpoint(endpoint.id, {
         task: "summary",
@@ -657,9 +675,14 @@ export class NoteGenerator {
       });
       content = response.text;
     } else {
+      const endpointPdfMode = LLMService.getEffectivePdfProcessMode(endpoint);
+      const extracted =
+        pdfContent && prefMode === endpointPdfMode
+          ? { content: pdfContent, isBase64 }
+          : await this.extractPdfContentForMode(item, endpointPdfMode);
       const multiRoundResult = await this.generateMultiRoundContent(
-        pdfContent,
-        isBase64,
+        extracted.content,
+        extracted.isBase64,
         itemTitle,
         summaryMode,
         undefined,
@@ -699,12 +722,11 @@ export class NoteGenerator {
   private static resolveEndpointAttachmentMode(
     endpoint: LLMEndpoint,
     pdfAttachmentMode: string,
-    prefMode: string,
+    pdfProcessMode: LLMPdfProcessMode,
   ): "default" | "all" {
     if (pdfAttachmentMode !== "all") return "default";
 
-    const mode = prefMode.trim().toLowerCase();
-    if (mode === "text" || mode === "mineru") return "all";
+    if (pdfProcessMode === "text" || pdfProcessMode === "mineru") return "all";
     return LLMService.endpointSupportsMultiFile(endpoint) ? "all" : "default";
   }
 

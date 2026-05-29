@@ -13,6 +13,7 @@ const prefKeys = [
   "multiModelSummaryEndpointIds",
   "maxApiSwitchCount",
   "reasoningEffort",
+  "pdfProcessMode",
   "provider",
   "openaiCompatApiUrl",
   "openaiCompatApiKey",
@@ -112,6 +113,25 @@ describe("LLMEndpointManager", function () {
 
     expect(endpoints[0].reasoningEffort).to.equal("high");
     expect(endpoints[1].reasoningEffort).to.equal("default");
+  });
+
+  it("normalizes endpoint PDF modes and resolves global fallback", function () {
+    Zotero.Prefs.set(prefName("pdfProcessMode"), "mineru", true);
+    LLMEndpointManager.saveEndpoints([
+      { ...makeEndpoint("a"), pdfProcessMode: "text" },
+      { ...makeEndpoint("b"), pdfProcessMode: "invalid" as any },
+    ]);
+
+    const endpoints = LLMEndpointManager.getEndpoints();
+
+    expect(endpoints[0].pdfProcessMode).to.equal("text");
+    expect(endpoints[1].pdfProcessMode).to.equal("global");
+    expect(
+      LLMEndpointManager.getEffectivePdfProcessMode(endpoints[0]),
+    ).to.equal("text");
+    expect(
+      LLMEndpointManager.getEffectivePdfProcessMode(endpoints[1]),
+    ).to.equal("mineru");
   });
 
   it("returns priority route order and skips disabled endpoints", function () {

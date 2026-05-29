@@ -29,6 +29,7 @@ import {
   DEFAULT_TABLE_TEMPLATE,
 } from "../../utils/prompts";
 import { getPref, setPref } from "../../utils/prefs";
+import { isLiteratureReviewCandidateItem } from "../literatureReviewCandidate";
 
 /**
  * 提示词预设接口
@@ -679,12 +680,8 @@ export class LiteratureReviewView extends BaseView {
     const items = await this.collectItemsFromCollectionTree(this.collection);
 
     for (const item of items) {
-      // 跳过笔记、附件
-      if (item.isNote() || item.isAttachment()) {
-        continue;
-      }
-      // 仅纳入期刊文章类型
-      if (!this.isJournalArticleItem(item)) {
+      // 仅纳入普通文献条目；具体类型不限，后续再按 PDF 附件过滤
+      if (!isLiteratureReviewCandidateItem(item)) {
         continue;
       }
 
@@ -711,11 +708,6 @@ export class LiteratureReviewView extends BaseView {
         });
       }
     }
-  }
-
-  private isJournalArticleItem(item: Zotero.Item): boolean {
-    const itemType = item.itemType || (item as any).getType?.() || "";
-    return itemType === "journalArticle";
   }
 
   /**

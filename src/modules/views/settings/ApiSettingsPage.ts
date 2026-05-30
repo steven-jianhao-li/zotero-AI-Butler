@@ -2716,6 +2716,8 @@ export class ApiSettingsPage {
         );
       }
 
+      LLMEndpointManager.syncLegacyPrimaryEndpointFromPrefs();
+
       ztoolkit.log("[API Settings] Settings saved successfully");
 
       new ztoolkit.ProgressWindow("API 配置", {

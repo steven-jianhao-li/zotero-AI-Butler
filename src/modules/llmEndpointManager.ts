@@ -84,6 +84,8 @@ const PROVIDER_TYPES = Object.keys(
   PROVIDER_DEFAULTS,
 ) as LLMEndpointProviderType[];
 
+const LEGACY_PRIMARY_ENDPOINT_ID = "endpoint-legacy-primary";
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -177,6 +179,17 @@ export class LLMEndpointManager {
 
   static providerAllowsEmptyApiKey(providerType: string): boolean {
     return safeProviderType(providerType) === "ollama";
+  }
+
+  static isEndpointUsable(
+    endpoint: Pick<LLMEndpoint, "apiUrl" | "apiKey" | "model" | "providerType">,
+  ): boolean {
+    return (
+      endpoint.apiUrl.trim().length > 0 &&
+      endpoint.model.trim().length > 0 &&
+      (endpoint.apiKey.trim().length > 0 ||
+        this.providerAllowsEmptyApiKey(endpoint.providerType))
+    );
   }
 
   static normalizePdfProcessMode(raw: unknown): LLMEndpointPdfProcessMode {
@@ -295,7 +308,11 @@ export class LLMEndpointManager {
   }
 
   static prepareRoute(): LLMEndpointRoute {
-    const enabled = this.getEnabledEndpoints();
+    let enabled = this.getEnabledEndpoints();
+    if (!enabled.some((endpoint) => this.isEndpointUsable(endpoint))) {
+      this.syncLegacyPrimaryEndpointFromPrefs();
+      enabled = this.getEnabledEndpoints();
+    }
     if (enabled.length === 0) {
       throw new Error("No enabled LLM endpoints are configured.");
     }
@@ -392,6 +409,37 @@ export class LLMEndpointManager {
     return missing;
   }
 
+  static syncLegacyPrimaryEndpointFromPrefs(): LLMEndpoint | null {
+    const stored = this.readStoredEndpoints();
+    const legacyEndpoint = this.createLegacyEndpoint();
+
+    if (stored.length === 0) {
+      this.saveEndpoints([legacyEndpoint]);
+      return legacyEndpoint;
+    }
+
+    const index = stored.findIndex(
+      (endpoint) => endpoint.id === LEGACY_PRIMARY_ENDPOINT_ID,
+    );
+    if (index < 0) return null;
+
+    const previous = stored[index];
+    const synced: LLMEndpoint = {
+      ...legacyEndpoint,
+      createdAt: previous.createdAt,
+      enabled: previous.enabled,
+      pdfProcessMode: previous.pdfProcessMode || "global",
+    };
+
+    if (this.endpointCoreEquals(previous, synced)) {
+      return previous;
+    }
+
+    stored[index] = synced;
+    this.saveEndpoints(stored);
+    return synced;
+  }
+
   private static readStoredEndpoints(): LLMEndpoint[] {
     return parseJsonArray(getPref("llmEndpoints")).map((item, index) =>
       normalizeEndpoint(item as Partial<LLMEndpoint>, index),
@@ -407,7 +455,7 @@ export class LLMEndpointManager {
     const defaults = this.providerDefaults(providerType);
     const timestamp = nowIso();
     return {
-      id: "endpoint-legacy-primary",
+      id: LEGACY_PRIMARY_ENDPOINT_ID,
       name: defaults.label,
       providerType,
       apiUrl: this.getLegacyApiUrl(providerType) || defaults.apiUrl,
@@ -483,6 +531,20 @@ export class LLMEndpointManager {
     return reasoningEffort === "default"
       ? defaults.reasoningEffort || "default"
       : reasoningEffort;
+  }
+
+  private static endpointCoreEquals(a: LLMEndpoint, b: LLMEndpoint): boolean {
+    return (
+      a.id === b.id &&
+      a.name === b.name &&
+      a.providerType === b.providerType &&
+      a.apiUrl === b.apiUrl &&
+      a.apiKey === b.apiKey &&
+      a.model === b.model &&
+      a.reasoningEffort === b.reasoningEffort &&
+      (a.pdfProcessMode || "global") === (b.pdfProcessMode || "global") &&
+      a.enabled === b.enabled
+    );
   }
 }
 

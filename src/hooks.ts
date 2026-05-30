@@ -1543,23 +1543,37 @@ async function handleChatWithAI() {
 async function handleGenerateSummary() {
   // 第一步:验证 API 配置
   // 新版本以用户配置的 endpoint 列表作为主路由来源。
-  const enabledEndpoints = LLMEndpointManager.getEnabledEndpoints();
-  const hasUsableEndpoint = enabledEndpoints.some(
-    (endpoint) =>
-      endpoint.apiUrl.trim() &&
-      endpoint.model.trim() &&
-      (endpoint.apiKey.trim() ||
-        LLMEndpointManager.providerAllowsEmptyApiKey(endpoint.providerType)),
+  let enabledEndpoints = LLMEndpointManager.getEnabledEndpoints();
+  let hasUsableEndpoint = enabledEndpoints.some((endpoint) =>
+    LLMEndpointManager.isEndpointUsable(endpoint),
   );
+  if (!hasUsableEndpoint) {
+    LLMEndpointManager.syncLegacyPrimaryEndpointFromPrefs();
+    enabledEndpoints = LLMEndpointManager.getEnabledEndpoints();
+    hasUsableEndpoint = enabledEndpoints.some((endpoint) =>
+      LLMEndpointManager.isEndpointUsable(endpoint),
+    );
+  }
 
   if (!hasUsableEndpoint) {
+    const endpointDetails =
+      enabledEndpoints.length > 0
+        ? enabledEndpoints
+            .map((endpoint) => {
+              const missing = LLMEndpointManager.validateEndpoint(endpoint);
+              return `${endpoint.name} (${LLMEndpointManager.providerLabel(
+                endpoint.providerType,
+              )}) 缺少: ${missing.join(", ") || "未知配置"}`;
+            })
+            .join("\n")
+        : "当前没有启用的 LLM Endpoint";
     // API 未配置,显示友好的错误提示
     new ztoolkit.ProgressWindow("AI Butler", {
       closeOnClick: true,
       closeTime: 5000, // 5秒后自动关闭
     })
       .createLine({
-        text: "请先在设置中配置至少一个启用的 LLM Endpoint",
+        text: `请先在设置中配置至少一个可用的 LLM Endpoint\n${endpointDetails}`,
         type: "error",
       })
       .show();

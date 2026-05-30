@@ -173,6 +173,9 @@ function updateSidebarNoteEditControls(
   const copyBtn = doc.getElementById(
     "ai-butler-copy-note-btn",
   ) as HTMLButtonElement | null;
+  const deleteBtn = doc.getElementById(
+    "ai-butler-delete-note-block-btn",
+  ) as HTMLButtonElement | null;
   const metadataSelector = doc.getElementById(
     "ai-butler-note-metadata-selector",
   ) as HTMLSelectElement | null;
@@ -191,6 +194,7 @@ function updateSidebarNoteEditControls(
     setButtonDisabled(cancelBtn, mode === "saving");
   }
   setButtonDisabled(copyBtn, mode !== "preview");
+  setButtonDisabled(deleteBtn, mode !== "preview");
 
   if (metadataSelector) {
     metadataSelector.disabled = isEditing;
@@ -1201,6 +1205,14 @@ function renderNoteSection(
     await startSidebarNoteEdit(doc, item, noteContent);
   });
   fontSizeControl.appendChild(editBtn);
+
+  const deleteBlockBtn = createNoteActionBtn("✕", "删除当前模型总结");
+  deleteBlockBtn.id = "ai-butler-delete-note-block-btn";
+  deleteBlockBtn.addEventListener("click", async (e: Event) => {
+    e.stopPropagation();
+    await deleteSidebarSummaryBlock(doc, item, noteContent);
+  });
+  fontSizeControl.appendChild(deleteBlockBtn);
 
   const saveBtn = createNoteActionBtn("保存", "保存侧边栏内的 AI 笔记修改", 42);
   saveBtn.id = "ai-butler-save-note-btn";
@@ -3028,13 +3040,14 @@ async function startSidebarNoteEdit(
     }
 
     const rawNoteHtml = resolvedNote.rawHtml;
-    const metadataBlocks = LLMNoteMetadataService.parseAll(rawNoteHtml);
+    const summaryBlocks =
+      LLMNoteMetadataService.parseSummaryBlocks(rawNoteHtml);
     const selectedBlockIndex =
-      metadataBlocks.length > 0
-        ? getSelectedMetadataBlockIndex(doc, metadataBlocks.length)
+      summaryBlocks.length > 0
+        ? getSelectedMetadataBlockIndex(doc, summaryBlocks.length)
         : -1;
     const selectedBlock =
-      selectedBlockIndex >= 0 ? metadataBlocks[selectedBlockIndex] : null;
+      selectedBlockIndex >= 0 ? summaryBlocks[selectedBlockIndex] : null;
     const editableHtml = LLMNoteMetadataService.stripSidebarMetadata(
       selectedBlock ? selectedBlock.content : rawNoteHtml,
     );
@@ -3111,7 +3124,8 @@ async function saveSidebarNoteEdit(
 
     const editedHtml = normalizeEditableNoteHtml(String(noteContent.innerHTML));
     if (editState.blockId) {
-      const latestBlocks = LLMNoteMetadataService.parseAll(latestHtml);
+      const latestBlocks =
+        LLMNoteMetadataService.parseSummaryBlocks(latestHtml);
       const expectedBlock = latestBlocks[editState.selectedBlockIndex];
       if (!expectedBlock || expectedBlock.blockId !== editState.blockId) {
         throw new Error("AI 笔记结构已变化，请刷新后再编辑。");
@@ -3119,7 +3133,7 @@ async function saveSidebarNoteEdit(
     }
 
     const nextHtml = editState.blockId
-      ? LLMNoteMetadataService.replaceBlockContent(
+      ? LLMNoteMetadataService.replaceSummaryBlockContent(
           latestHtml,
           editState.blockId,
           editedHtml,
@@ -3167,6 +3181,105 @@ function cancelSidebarNoteEdit(
   void loadNoteContent(doc, item, noteContent);
 }
 
+async function deleteSidebarSummaryBlock(
+  doc: Document,
+  item: Zotero.Item,
+  noteContent: HTMLElement,
+): Promise<void> {
+  if (isSidebarNoteEditing(item.id)) {
+    setSidebarNoteEditStatus(doc, "编辑中，不能删除模型总结。", "#d32f2f");
+    return;
+  }
+
+  try {
+    const resolvedNote = await resolveSidebarSummaryNote(item);
+    if (!resolvedNote) {
+      updateSidebarNoteEditControls(doc, "missing", "暂无可删除笔记。");
+      return;
+    }
+
+    const summaryBlocks = LLMNoteMetadataService.parseSummaryBlocks(
+      resolvedNote.rawHtml,
+    );
+    if (summaryBlocks.length === 0) {
+      updateSidebarNoteEditControls(doc, "missing", "暂无可删除总结。");
+      return;
+    }
+
+    const selectedBlockIndex = getSelectedMetadataBlockIndex(
+      doc,
+      summaryBlocks.length,
+    );
+    const selectedBlock = summaryBlocks[selectedBlockIndex];
+    const label =
+      LLMNoteMetadataService.formatSummaryBlockSelectorLabel(selectedBlock);
+    const ok = Services.prompt.confirm(
+      Zotero.getMainWindow() as any,
+      "删除模型总结",
+      `确定删除当前 AI 总结版本吗？\n\n${label}`,
+    );
+    if (!ok) return;
+
+    const latestNote = await Zotero.Items.getAsync(resolvedNote.note.id);
+    if (!latestNote) {
+      throw new Error("AI 笔记不存在或已被删除");
+    }
+
+    const latestHtml: string = (latestNote as any).getNote?.() || "";
+    const latestBlocks = LLMNoteMetadataService.parseSummaryBlocks(latestHtml);
+    const latestBlock = latestBlocks[selectedBlockIndex];
+    if (!latestBlock || latestBlock.blockId !== selectedBlock.blockId) {
+      throw new Error("AI 笔记结构已变化，请刷新后再删除。");
+    }
+
+    const nextHtml = LLMNoteMetadataService.removeSummaryBlock(
+      latestHtml,
+      selectedBlock.blockId,
+    );
+    if (!LLMNoteMetadataService.hasSummaryBlocks(nextHtml)) {
+      await (latestNote as any).eraseTx?.();
+      const selector = doc.getElementById(
+        "ai-butler-note-metadata-selector",
+      ) as HTMLSelectElement | null;
+      if (selector) {
+        selector.innerHTML = "";
+        selector.style.display = "none";
+        delete selector.dataset.selectedIndex;
+      }
+      noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+      await loadNoteContent(doc, item, noteContent);
+      setSidebarNoteEditStatus(doc, "已删除 AI 笔记", "#4caf50");
+      return;
+    }
+
+    (latestNote as any).setNote(nextHtml);
+    await (latestNote as any).saveTx();
+
+    const remainingCount =
+      LLMNoteMetadataService.parseSummaryBlocks(nextHtml).length;
+    const selector = doc.getElementById(
+      "ai-butler-note-metadata-selector",
+    ) as HTMLSelectElement | null;
+    if (selector) {
+      selector.dataset.selectedIndex = String(
+        Math.min(selectedBlockIndex, Math.max(0, remainingCount - 1)),
+      );
+    }
+
+    noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+    await loadNoteContent(doc, item, noteContent);
+    setSidebarNoteEditStatus(doc, "已删除当前总结", "#4caf50");
+  } catch (err: any) {
+    ztoolkit.log("[AI-Butler] 删除侧边栏总结失败:", err);
+    updateSidebarNoteEditControls(
+      doc,
+      "preview",
+      err?.message || "删除失败",
+      "#d32f2f",
+    );
+  }
+}
+
 /**
  * 异步加载笔记内容
  */
@@ -3206,34 +3319,34 @@ async function loadNoteContent(
 
     updateSidebarNoteEditControls(doc, "preview");
     const rawNoteHtml: string = resolvedNote.rawHtml;
-    const metadataBlocks = LLMNoteMetadataService.parseAll(rawNoteHtml);
-    let selectedBlockIndex = metadataBlocks.length - 1;
+    const summaryBlocks =
+      LLMNoteMetadataService.parseSummaryBlocks(rawNoteHtml);
+    let selectedBlockIndex = summaryBlocks.length - 1;
     const metadataSelector = doc.getElementById(
       "ai-butler-note-metadata-selector",
     ) as HTMLSelectElement | null;
-    if (metadataSelector && metadataBlocks.length > 0) {
+    if (metadataSelector && summaryBlocks.length > 0) {
       const requested = Number(metadataSelector.dataset.selectedIndex || "");
       if (
         Number.isInteger(requested) &&
         requested >= 0 &&
-        requested < metadataBlocks.length
+        requested < summaryBlocks.length
       ) {
         selectedBlockIndex = requested;
       }
       metadataSelector.innerHTML = "";
-      metadataBlocks.forEach((block, index) => {
+      summaryBlocks.forEach((block, index) => {
         const option = doc.createElement("option");
         option.value = String(index);
-        option.textContent = LLMNoteMetadataService.formatSelectorLabel(
-          block.metadata,
-        );
-        option.title = LLMNoteMetadataService.formatTooltip(block.metadata);
+        option.textContent =
+          LLMNoteMetadataService.formatSummaryBlockSelectorLabel(block);
+        option.title = LLMNoteMetadataService.formatSummaryBlockTooltip(block);
         metadataSelector.appendChild(option);
       });
       metadataSelector.value = String(selectedBlockIndex);
       metadataSelector.dataset.selectedIndex = String(selectedBlockIndex);
-      metadataSelector.title = LLMNoteMetadataService.formatTooltip(
-        metadataBlocks[selectedBlockIndex].metadata,
+      metadataSelector.title = LLMNoteMetadataService.formatSummaryBlockTooltip(
+        summaryBlocks[selectedBlockIndex],
       );
       metadataSelector.style.display = "inline-block";
       metadataSelector.onchange = () => {
@@ -3261,8 +3374,8 @@ async function loadNoteContent(
     }
 
     aiNoteContent =
-      metadataBlocks.length > 0
-        ? metadataBlocks[selectedBlockIndex].content
+      summaryBlocks.length > 0
+        ? summaryBlocks[selectedBlockIndex].content
         : rawNoteHtml;
     aiNoteContent = LLMNoteMetadataService.stripSidebarMetadata(aiNoteContent);
 
@@ -4102,8 +4215,18 @@ async function getNoteMarkdownContent(
       return null;
     }
 
-    const noteHtml: string = LLMNoteMetadataService.stripSidebarMetadata(
+    const doc = Zotero.getMainWindow().document;
+    const summaryBlocks = LLMNoteMetadataService.parseSummaryBlocks(
       resolvedNote.rawHtml,
+    );
+    const selectedBlockIndex =
+      summaryBlocks.length > 0
+        ? getSelectedMetadataBlockIndex(doc, summaryBlocks.length)
+        : -1;
+    const selectedBlock =
+      selectedBlockIndex >= 0 ? summaryBlocks[selectedBlockIndex] : null;
+    const noteHtml: string = LLMNoteMetadataService.stripSidebarMetadata(
+      selectedBlock ? selectedBlock.content : resolvedNote.rawHtml,
     );
     // 将 HTML 转换为 Markdown 文本
     return htmlToMarkdown(noteHtml);

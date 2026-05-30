@@ -15,9 +15,24 @@ const prefKeys = [
   "reasoningEffort",
   "pdfProcessMode",
   "provider",
+  "openaiApiUrl",
+  "openaiApiKey",
+  "openaiApiModel",
   "openaiCompatApiUrl",
   "openaiCompatApiKey",
   "openaiCompatModel",
+  "geminiApiUrl",
+  "geminiApiKey",
+  "geminiModel",
+  "anthropicApiUrl",
+  "anthropicApiKey",
+  "anthropicModel",
+  "openRouterApiUrl",
+  "openRouterApiKey",
+  "openRouterModel",
+  "volcanoArkApiUrl",
+  "volcanoArkApiKey",
+  "volcanoArkModel",
   "ollamaApiUrl",
   "ollamaApiKey",
   "ollamaModel",
@@ -96,6 +111,57 @@ describe("LLMEndpointManager", function () {
     expect(endpoints[0]).to.include({
       providerType: "openai",
       reasoningEffort: "medium",
+    });
+  });
+
+  it("syncs the migrated legacy endpoint from current provider prefs", function () {
+    LLMEndpointManager.saveEndpoints([
+      {
+        ...makeEndpoint("endpoint-legacy-primary"),
+        apiKey: "",
+        model: "",
+      },
+    ]);
+    Zotero.Prefs.set(prefName("provider"), "google", true);
+    Zotero.Prefs.set(
+      prefName("geminiApiUrl"),
+      "https://generativelanguage.googleapis.com",
+      true,
+    );
+    Zotero.Prefs.set(prefName("geminiApiKey"), "gemini-key", true);
+    Zotero.Prefs.set(prefName("geminiModel"), "gemini-test-model", true);
+
+    const synced = LLMEndpointManager.syncLegacyPrimaryEndpointFromPrefs();
+    const endpoints = LLMEndpointManager.getEndpoints();
+
+    expect(synced).not.to.equal(null);
+    expect(synced!).to.include({
+      id: "endpoint-legacy-primary",
+      providerType: "google",
+      apiKey: "gemini-key",
+      model: "gemini-test-model",
+      enabled: true,
+    });
+    expect(endpoints).to.have.length(1);
+    expect(LLMEndpointManager.isEndpointUsable(endpoints[0])).to.equal(true);
+  });
+
+  it("does not overwrite manually created endpoints during legacy sync", function () {
+    LLMEndpointManager.saveEndpoints([makeEndpoint("manual")]);
+    Zotero.Prefs.set(prefName("provider"), "google", true);
+    Zotero.Prefs.set(prefName("geminiApiKey"), "gemini-key", true);
+    Zotero.Prefs.set(prefName("geminiModel"), "gemini-test-model", true);
+
+    const synced = LLMEndpointManager.syncLegacyPrimaryEndpointFromPrefs();
+    const endpoints = LLMEndpointManager.getEndpoints();
+
+    expect(synced).to.equal(null);
+    expect(endpoints).to.have.length(1);
+    expect(endpoints[0]).to.include({
+      id: "manual",
+      providerType: "openai",
+      apiKey: "sk-manual",
+      model: "gpt-5",
     });
   });
 

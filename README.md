@@ -7,8 +7,11 @@
     <a href="https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github"><img src="https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github" alt="Using Zotero Plugin Template"></a>
     <a href="https://github.com/steven-jianhao-li/zotero-AI-Butler/stargazers"><img src="https://img.shields.io/github/stars/steven-jianhao-li/zotero-AI-Butler?style=social" alt="Stars"></a>
     <a href="https://github.com/steven-jianhao-li/zotero-AI-Butler/network/members"><img src="https://img.shields.io/github/forks/steven-jianhao-li/zotero-AI-Butler?style=social" alt="Forks"></a>
+    <a href="https://doi.org/10.5281/zenodo.20457937"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20457937-blue" alt="DOI"></a>
 </p>
 </div>
+
+> 如果本插件对您的研究有帮助，欢迎在论文中[引用](https://github.com/steven-jianhao-li/zotero-AI-Butler/edit/main/README.md#%E5%A6%82%E4%BD%95%E5%BC%95%E7%94%A8)或致谢！
 
 ## [点我查看 **AI Butler Wiki**——配置与使用文档](https://steven-jianhao-li.github.io/zotero-AI-Butler/)
 
@@ -312,6 +315,23 @@ AI管家支持自动生成论文思维导图，将长篇论文的层次结构可
 <a href="https://contrib.rocks/image?repo=steven-jianhao-li/zotero-AI-Butler">
   <img src="https://contrib.rocks/image?repo=steven-jianhao-li/zotero-AI-Butler" />
 </a>
+
+## 如何引用
+
+如果本插件对您的研究有帮助，欢迎在论文中引用或致谢！大家的支持是我前进的动力！
+
+**BibTeX：**
+
+```bibtex
+@software{li_zotero_ai_butler,
+  author    = {Li, Jianhao},
+  title     = {{Zotero-AI-Butler: An AI-Powered Zotero Plugin for Automated Paper Reading and Summarization}},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.20457937},
+  url       = {https://doi.org/10.5281/zenodo.20457937}
+}
+```
 
 ## 致谢
 

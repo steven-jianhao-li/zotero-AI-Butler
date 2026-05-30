@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "如果本插件对您的研究有帮助，请按如下方式引用。"
+title: "Zotero-AI-Butler: 大模型辅助文献阅读 Zotero 插件"
+authors:
+  - family-names: "Li"
+    given-names: "Jianhao"
+    orcid: "https://orcid.org/0009-0007-6939-6663"
+version: "3.7.0"
+date-released: "2026-05-30"
+doi: "10.5281/zenodo.20457937"
+url: "https://github.com/steven-jianhao-li/zotero-AI-Butler"
+license: AGPL-3.0

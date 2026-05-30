@@ -11,7 +11,7 @@
 </p>
 </div>
 
-> 如果本插件对您的研究有帮助，欢迎在论文中[引用](https://github.com/steven-jianhao-li/zotero-AI-Butler/edit/main/README.md#%E5%A6%82%E4%BD%95%E5%BC%95%E7%94%A8)或致谢！
+> 如果本插件对您的研究有帮助，欢迎在论文中[引用](https://github.com/steven-jianhao-li/zotero-AI-Butler#%E5%A6%82%E4%BD%95%E5%BC%95%E7%94%A8)或致谢！
 
 ## [点我查看 **AI Butler Wiki**——配置与使用文档](https://steven-jianhao-li.github.io/zotero-AI-Butler/)
 

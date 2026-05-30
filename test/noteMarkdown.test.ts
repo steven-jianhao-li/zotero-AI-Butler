@@ -1,9 +1,12 @@
 import { expect } from "chai";
 import {
   buildFollowUpChatPairNoteHtml,
+  markdownToDisplayHtml,
   markdownToZoteroNoteHtml,
   normalizeFollowUpChatNoteHtml,
+  parseFollowUpChatPairsFromNoteHtml,
 } from "../src/modules/noteMarkdown";
+import { buildQuickChatConversation } from "../src/modules/chatContext";
 
 describe("note Markdown rendering", function () {
   it("renders saved follow-up headings and formulas (#307, #264)", function () {
@@ -23,13 +26,50 @@ describe("note Markdown rendering", function () {
     expect(html).to.contain('<span class="math">$a &lt; b &amp; c$</span>');
   });
 
+  it("renders follow-up display Markdown formulas with KaTeX (#320)", function () {
+    const html = markdownToDisplayHtml(
+      [
+        "Mass energy: $E=mc^2$.",
+        "",
+        "$$a_b = c^2$$",
+        "",
+        "Inline alt: \\(x_i\\)",
+        "",
+        "\\[\\sum_i x_i\\]",
+      ].join("\n"),
+    );
+
+    expect(html).to.contain('class="katex-inline"');
+    expect(html).to.contain('class="katex-display"');
+    expect(html).to.contain("katex-html");
+    expect(html).not.to.contain('<span class="math">');
+  });
+
+  it("builds quick-chat context from the current dialog only", function () {
+    const dialogHistory = [
+      { role: "user" as const, content: "First question" },
+      { role: "assistant" as const, content: "First answer" },
+    ];
+
+    const conversation = buildQuickChatConversation(
+      dialogHistory,
+      "Follow up?",
+    );
+
+    expect(conversation).to.deep.equal([
+      { role: "user", content: "First question" },
+      { role: "assistant", content: "First answer" },
+      { role: "user", content: "Follow up?" },
+    ]);
+  });
+
   it("renders saved follow-up chats without fixed light backgrounds (#193)", function () {
     const html = buildFollowUpChatPairNoteHtml({
       pairId: "pair_193",
       userMessage: "Why is **social contagion** important?",
       assistantMessage: "Because $x < y$ can spread across peers.",
       savedAt: "2026/5/8 12:10:56",
-      sourceLabel: "来自快速提问",
+      sourceLabel: "来自快速追问",
     });
 
     expect(html).to.contain("AI_BUTLER_CHAT_PAIR_START id=pair_193");
@@ -39,6 +79,41 @@ describe("note Markdown rendering", function () {
     expect(html).to.contain("background:transparent");
     expect(html).not.to.contain("background-color:#e3f2fd");
     expect(html).not.to.contain("background-color:#f5f5f5");
+  });
+
+  it("restores saved follow-up chat metadata with JSON-like answer text", function () {
+    const html = buildFollowUpChatPairNoteHtml({
+      pairId: "pair_178",
+      userMessage: "How does {context} affect the next question?",
+      assistantMessage:
+        'It should preserve {"role":"assistant"} and arrows --> safely.',
+      savedAt: "2026/5/12 12:10:56",
+    });
+
+    const pairs = parseFollowUpChatPairsFromNoteHtml(html);
+
+    expect(pairs).to.deep.equal([
+      {
+        id: "pair_178",
+        user: "How does {context} affect the next question?",
+        assistant:
+          'It should preserve {"role":"assistant"} and arrows --> safely.',
+      },
+    ]);
+  });
+
+  it("parses legacy follow-up JSON comments that contain braces", function () {
+    const html = `<!-- AI_BUTLER_CHAT_JSON: {"id":"legacy_178","user":"Why {this}?","assistant":"Because {that}."} -->`;
+
+    const pairs = parseFollowUpChatPairsFromNoteHtml(html);
+
+    expect(pairs).to.deep.equal([
+      {
+        id: "legacy_178",
+        user: "Why {this}?",
+        assistant: "Because {that}.",
+      },
+    ]);
   });
 
   it("normalizes legacy follow-up chat blocks for dark notes (#193)", function () {

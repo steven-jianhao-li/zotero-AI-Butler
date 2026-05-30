@@ -23,7 +23,15 @@ import {
   type LLMNoteMetadata,
 } from "./llmNoteMetadata";
 import {
+  appendQuickChatTurn,
+  buildQuickChatConversation,
+  createChatAbortController,
+  isChatAbortError,
+  type ChatAbortControllerLike,
+} from "./chatContext";
+import {
   buildFollowUpChatPairNoteHtml,
+  markdownToDisplayHtml,
   normalizeFollowUpChatNoteHtml,
 } from "./noteMarkdown";
 import katex from "katex";
@@ -36,8 +44,12 @@ interface ChatState {
   itemId: number | null;
   pdfContent: string;
   isBase64: boolean;
-  conversationHistory: Array<{ role: string; content: string }>;
+  conversationHistory: Array<{
+    role: "system" | "user" | "assistant";
+    content: string;
+  }>;
   isChatting: boolean;
+  abortController: ChatAbortControllerLike | null;
   savedPairIds: Set<string>; // 已保存的对话对 ID，防止重复保存
 }
 
@@ -58,6 +70,7 @@ let currentChatState: ChatState = {
   isBase64: false,
   conversationHistory: [],
   isChatting: false,
+  abortController: null,
   savedPairIds: new Set(),
 };
 
@@ -160,6 +173,9 @@ function updateSidebarNoteEditControls(
   const copyBtn = doc.getElementById(
     "ai-butler-copy-note-btn",
   ) as HTMLButtonElement | null;
+  const deleteBtn = doc.getElementById(
+    "ai-butler-delete-note-block-btn",
+  ) as HTMLButtonElement | null;
   const metadataSelector = doc.getElementById(
     "ai-butler-note-metadata-selector",
   ) as HTMLSelectElement | null;
@@ -178,6 +194,7 @@ function updateSidebarNoteEditControls(
     setButtonDisabled(cancelBtn, mode === "saving");
   }
   setButtonDisabled(copyBtn, mode !== "preview");
+  setButtonDisabled(deleteBtn, mode !== "preview");
 
   if (metadataSelector) {
     metadataSelector.disabled = isEditing;
@@ -681,12 +698,14 @@ function renderItemPaneSection(
 
   // 重置聊天状态（如果切换了条目）
   if (currentChatState.itemId !== item.id) {
+    currentChatState.abortController?.abort("快速追问条目已切换");
     currentChatState = {
       itemId: item.id,
       pdfContent: "",
       isBase64: false,
       conversationHistory: [],
       isChatting: false,
+      abortController: null,
       savedPairIds: new Set(),
     };
   }
@@ -733,6 +752,7 @@ function createButton(
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
   `;
   btn.addEventListener("mouseenter", () => {
     if (isPrimary) {
@@ -745,6 +765,40 @@ function createButton(
     btn.style.background = isPrimary ? "#59c0bc" : "transparent";
   });
   return btn;
+}
+
+function createContextInfoIcon(doc: Document, tooltip: string): HTMLElement {
+  const icon = doc.createElement("span");
+  icon.textContent = "i";
+  icon.title = tooltip;
+  icon.setAttribute("aria-label", tooltip);
+  icon.style.cssText = `
+    width: 17px;
+    height: 17px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    color: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    flex: 0 0 auto;
+    align-self: center;
+    opacity: 0.85;
+  `;
+  return icon;
+}
+
+function appendContextInfoIconToButton(
+  doc: Document,
+  button: HTMLButtonElement,
+  tooltip: string,
+): void {
+  button.style.minWidth = "0";
+  button.appendChild(createContextInfoIcon(doc, tooltip));
 }
 
 /**
@@ -769,6 +823,11 @@ function renderActionButtons(
     getString("itempane-ai-open-chat"),
     true,
   );
+  appendContextInfoIconToButton(
+    doc,
+    fullChatBtn,
+    getString("itempane-ai-open-chat-tooltip"),
+  );
   fullChatBtn.addEventListener("click", async () => {
     try {
       await handleOpenAIChat(item.id);
@@ -777,11 +836,16 @@ function renderActionButtons(
     }
   });
 
-  // 快速提问按钮
+  // 快速追问按钮
   const quickChatBtn = createButton(
     doc,
     getString("itempane-ai-temp-chat"),
     false,
+  );
+  appendContextInfoIconToButton(
+    doc,
+    quickChatBtn,
+    getString("itempane-ai-temp-chat-tooltip"),
   );
   quickChatBtn.id = "ai-butler-quick-chat-btn";
   quickChatBtn.addEventListener("click", () => {
@@ -796,7 +860,7 @@ function renderActionButtons(
   // 刷新按钮
   const refreshBtn = doc.createElement("button");
   refreshBtn.id = "ai-butler-refresh-btn";
-  refreshBtn.title = "刷新当前显示的 AI 管家侧边栏内容";
+  refreshBtn.title = "重新渲染 AI 管家侧边栏";
   refreshBtn.textContent = "🔄";
   refreshBtn.style.cssText = `
     padding: 8px 12px;
@@ -819,62 +883,13 @@ function renderActionButtons(
     refreshBtn.style.background = "transparent";
   });
   refreshBtn.addEventListener("click", async () => {
-    // 显示刷新中状态
     refreshBtn.textContent = "⏳";
     refreshBtn.style.pointerEvents = "none";
     try {
-      // 刷新 AI 笔记
-      if (isSidebarModuleEnabled("note")) {
-        const noteContent = doc.getElementById(
-          "ai-butler-note-content",
-        ) as HTMLElement | null;
-        if (noteContent) {
-          if (isSidebarNoteEditing(item.id)) {
-            setSidebarNoteEditStatus(doc, "编辑中，已跳过刷新。");
-          } else {
-            noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-            await loadNoteContent(doc, item, noteContent);
-          }
-        }
-      }
-      // 刷新表格归纳
-      if (isSidebarModuleEnabled("table")) {
-        const tableContent = doc.getElementById(
-          "ai-butler-table-content",
-        ) as HTMLElement | null;
-        if (tableContent) {
-          tableContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-          await loadTableContent(item, tableContent);
-        }
-      }
-      // 刷新一图总结
-      if (isSidebarModuleEnabled("imageSummary")) {
-        const imageContainer = doc.getElementById(
-          "ai-butler-image-container",
-        ) as HTMLElement | null;
-        const imageBtnContainer = doc.getElementById(
-          "ai-butler-image-btn-container",
-        ) as HTMLElement | null;
-        if (imageContainer && imageBtnContainer) {
-          imageContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-          imageBtnContainer.innerHTML = "";
-          await loadImageSummary(doc, item, imageContainer, imageBtnContainer);
-        }
-      }
-      // 刷新思维导图
-      if (isSidebarModuleEnabled("mindmap")) {
-        const mindmapContainer = doc.getElementById(
-          "ai-butler-mindmap-container",
-        ) as HTMLElement | null;
-        if (mindmapContainer) {
-          mindmapContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-          await loadMindmapContent(doc, item, mindmapContainer);
-        }
-      }
+      await refreshCurrentItemPaneSection();
     } catch (err: any) {
-      ztoolkit.log("[AI-Butler] 刷新失败:", err);
+      ztoolkit.log("[AI-Butler] 重新渲染侧边栏失败:", err);
     } finally {
-      // 恢复按钮状态
       refreshBtn.textContent = "🔄";
       refreshBtn.style.pointerEvents = "auto";
     }
@@ -1190,6 +1205,14 @@ function renderNoteSection(
     await startSidebarNoteEdit(doc, item, noteContent);
   });
   fontSizeControl.appendChild(editBtn);
+
+  const deleteBlockBtn = createNoteActionBtn("✕", "删除当前模型总结");
+  deleteBlockBtn.id = "ai-butler-delete-note-block-btn";
+  deleteBlockBtn.addEventListener("click", async (e: Event) => {
+    e.stopPropagation();
+    await deleteSidebarSummaryBlock(doc, item, noteContent);
+  });
+  fontSizeControl.appendChild(deleteBlockBtn);
 
   const saveBtn = createNoteActionBtn("保存", "保存侧边栏内的 AI 笔记修改", 42);
   saveBtn.id = "ai-butler-save-note-btn";
@@ -2309,12 +2332,45 @@ async function loadMindmapContent(
  * 渲染聊天区域
 
  */
+async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
+  if (doc.getElementById("ai-butler-quick-chat-katex-style")) return;
+  try {
+    const { themeManager } = await import("./themeManager");
+    const katexCss = await themeManager.loadKatexCss();
+    const styleEl = doc.createElement("style");
+    styleEl.id = "ai-butler-quick-chat-katex-style";
+    styleEl.textContent = `${katexCss}
+#ai-butler-inline-chat .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+#ai-butler-inline-chat .katex-inline {
+  overflow-wrap: normal;
+  word-break: normal;
+}`;
+    const target = doc.head || doc.documentElement;
+    if (target) {
+      target.appendChild(styleEl);
+    }
+  } catch (err) {
+    ztoolkit.log("[AI-Butler] 快速追问 KaTeX 样式加载失败:", err);
+  }
+}
+
 function renderChatArea(
   body: HTMLElement,
   doc: Document,
   item: Zotero.Item,
   initiallyVisible = false,
 ): void {
+  currentChatState.abortController?.abort("快速追问界面已刷新");
+  currentChatState.conversationHistory = [];
+  currentChatState.isChatting = false;
+  currentChatState.abortController = null;
+  currentChatState.savedPairIds = new Set();
+  void ensureQuickChatKatexCss(doc);
+
   const chatArea = doc.createElement("div");
   chatArea.id = "ai-butler-inline-chat";
   chatArea.style.cssText = `
@@ -2329,13 +2385,21 @@ function renderChatArea(
 
   const chatHeader = doc.createElement("div");
   chatHeader.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 6px;
     padding: 8px 10px;
     background: rgba(89, 192, 188, 0.1);
     border-bottom: 1px solid rgba(89, 192, 188, 0.2);
     font-size: 12px;
     font-weight: 500;
   `;
-  chatHeader.textContent = "💬 快速提问";
+  const chatTitle = doc.createElement("span");
+  chatTitle.textContent = "💬 快速追问";
+  chatHeader.appendChild(chatTitle);
+  chatHeader.appendChild(
+    createContextInfoIcon(doc, getString("itempane-ai-temp-chat-tooltip")),
+  );
 
   // 消息显示区
   const messagesArea = doc.createElement("div");
@@ -2405,13 +2469,20 @@ function renderChatArea(
   };
 
   const loadPdfContentIfNeeded = async (): Promise<void> => {
+    if (currentChatState.pdfContent) {
+      if (!messagesArea.textContent?.trim()) {
+        messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">✅ 论文内容已加载，可以开始提问！</div>`;
+      }
+      return;
+    }
+
     // 如果尚未加载 PDF 内容，则加载
-    if (!currentChatState.pdfContent && item) {
+    if (item) {
       try {
         const { PDFExtractor } = await import("./pdfExtractor");
-        const prefMode =
-          (getPref("pdfProcessMode" as any) as string) || "base64";
-        const isBase64 = prefMode === "base64";
+        const { default: LLMService } = await import("./llmService");
+        const pdfMode = LLMService.getEffectivePdfProcessMode();
+        const isBase64 = pdfMode === "base64";
 
         messagesArea.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">📄 正在加载论文内容...</div>`;
 
@@ -2419,7 +2490,7 @@ function renderChatArea(
         if (isBase64) {
           pdfContent = await PDFExtractor.extractBase64FromItem(item);
         } else {
-          pdfContent = await PDFExtractor.extractTextFromItem(item);
+          pdfContent = await PDFExtractor.extractTextFromItem(item, pdfMode);
         }
 
         if (pdfContent) {
@@ -2430,7 +2501,7 @@ function renderChatArea(
           messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 无法加载论文内容，请确保该文献有 PDF 附件</div>`;
         }
       } catch (err: any) {
-        ztoolkit.log("[AI-Butler] 快速提问加载 PDF 失败:", err);
+        ztoolkit.log("[AI-Butler] 快速追问加载 PDF 失败:", err);
         messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 加载失败: ${err?.message || "未知错误"}</div>`;
       }
     }
@@ -2476,15 +2547,19 @@ function renderChatArea(
     void loadPdfContentIfNeeded();
   }
 
-  // 发送消息处理 - 快速提问（不保存历史，每次只发送论文+当前问题）
+  // 发送消息处理 - 快速追问（上下文为论文 + 当前对话框内历史）
   sendBtn.addEventListener("click", async () => {
     const question = inputBox.value.trim();
-    if (!question) return;
 
-    // 检查是否正在聊天中
     if (currentChatState.isChatting) {
+      sendBtn.textContent = "终止中...";
+      sendBtn.style.background = "#9e9e9e";
+      (sendBtn as HTMLButtonElement).disabled = true;
+      currentChatState.abortController?.abort("用户已终止快速追问");
       return;
     }
+
+    if (!question) return;
 
     // 检查是否有 PDF 内容
     if (!currentChatState.pdfContent) {
@@ -2494,9 +2569,10 @@ function renderChatArea(
 
     // 设置为正在聊天状态
     currentChatState.isChatting = true;
-    sendBtn.textContent = "发送中...";
-    sendBtn.style.background = "#9e9e9e";
-    (sendBtn as HTMLButtonElement).disabled = true;
+    currentChatState.abortController = createChatAbortController();
+    sendBtn.textContent = "终止";
+    sendBtn.style.background = "#f44336";
+    (sendBtn as HTMLButtonElement).disabled = false;
     (inputBox as HTMLTextAreaElement).disabled = true;
 
     // 生成唯一对话对 ID
@@ -2567,15 +2643,16 @@ function renderChatArea(
     // 滚动到底部
     messagesArea.scrollTop = messagesArea.scrollHeight;
 
+    let fullResponse = "";
+
     try {
       const { default: LLMService } = await import("./llmService");
 
-      // 快速提问的关键：每次只发送论文+当前问题，不累积历史
-      const conversationHistory: Array<{ role: "user"; content: string }> = [
-        { role: "user", content: question },
-      ];
+      const conversationHistory = buildQuickChatConversation(
+        currentChatState.conversationHistory,
+        question,
+      );
 
-      let fullResponse = "";
       let responseMetadata: LLMNoteMetadata | null = null;
       const response = await LLMService.chat({
         content: {
@@ -2585,10 +2662,13 @@ function renderChatArea(
           policy: currentChatState.isBase64 ? "pdf-base64" : "text",
         },
         conversation: conversationHistory,
+        transport: {
+          abortSignal: currentChatState.abortController?.signal,
+        },
         onProgress: (chunk: string) => {
           fullResponse += chunk;
           // 流式更新 AI 回复
-          aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${escapeHtmlForChat(fullResponse)}`;
+          aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${markdownToDisplayHtml(fullResponse)}`;
           // 滚动到底部
           messagesArea.scrollTop = messagesArea.scrollHeight;
         },
@@ -2597,7 +2677,13 @@ function renderChatArea(
       responseMetadata = LLMNoteMetadataService.fromResponse("chat", response);
 
       // 完成后最终更新
-      aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${escapeHtmlForChat(fullResponse)}`;
+      aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${markdownToDisplayHtml(fullResponse)}`;
+
+      currentChatState.conversationHistory = appendQuickChatTurn(
+        currentChatState.conversationHistory,
+        question,
+        fullResponse,
+      );
 
       // 显示保存按钮
       saveArea.style.display = "flex";
@@ -2627,18 +2713,25 @@ function renderChatArea(
           saveBtn.textContent = "✅ 已保存";
           saveBtn.style.background = "#4caf50";
         } catch (err: any) {
-          ztoolkit.log("[AI-Butler] 保存快速提问对话失败:", err);
+          ztoolkit.log("[AI-Butler] 保存快速追问对话失败:", err);
           saveBtn.textContent = "❌ 保存失败";
           saveBtn.style.background = "#f44336";
           (saveBtn as HTMLButtonElement).disabled = false;
         }
       });
     } catch (err: any) {
-      ztoolkit.log("[AI-Butler] 快速提问发送失败:", err);
+      if (isChatAbortError(err, currentChatState.abortController?.signal)) {
+        aiMsgDiv.innerHTML = fullResponse
+          ? `<strong>🤖 AI管家:</strong><br/>${markdownToDisplayHtml(fullResponse)}<div style="color: #777; font-size: 11px; margin-top: 6px;">已终止，本轮不会保存或加入上下文。</div>`
+          : `<strong>🤖 AI管家:</strong> <span style="color: #777;">已终止，未生成内容。</span>`;
+        return;
+      }
+      ztoolkit.log("[AI-Butler] 快速追问发送失败:", err);
       aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong> <span style="color: #f44336;">❌ 错误: ${err?.message || "发送失败"}</span>`;
     } finally {
       // 恢复状态
       currentChatState.isChatting = false;
+      currentChatState.abortController = null;
       sendBtn.textContent = "发送";
       sendBtn.style.background = "#59c0bc";
       (sendBtn as HTMLButtonElement).disabled = false;
@@ -2745,7 +2838,7 @@ async function saveChatPairToNote(
     pairId,
     userMessage,
     assistantMessage,
-    sourceLabel: "来自快速提问",
+    sourceLabel: "来自快速追问",
   });
   const block = metadata
     ? LLMNoteMetadataService.wrapHtml(blockContent, metadata)
@@ -2754,7 +2847,7 @@ async function saveChatPairToNote(
   noteHtml += block;
   (note as any).setNote(noteHtml);
   await (note as any).saveTx();
-  ztoolkit.log("[AI-Butler] 快速提问对话已保存到笔记");
+  ztoolkit.log("[AI-Butler] 快速追问对话已保存到笔记");
 }
 
 /**
@@ -2947,13 +3040,14 @@ async function startSidebarNoteEdit(
     }
 
     const rawNoteHtml = resolvedNote.rawHtml;
-    const metadataBlocks = LLMNoteMetadataService.parseAll(rawNoteHtml);
+    const summaryBlocks =
+      LLMNoteMetadataService.parseSummaryBlocks(rawNoteHtml);
     const selectedBlockIndex =
-      metadataBlocks.length > 0
-        ? getSelectedMetadataBlockIndex(doc, metadataBlocks.length)
+      summaryBlocks.length > 0
+        ? getSelectedMetadataBlockIndex(doc, summaryBlocks.length)
         : -1;
     const selectedBlock =
-      selectedBlockIndex >= 0 ? metadataBlocks[selectedBlockIndex] : null;
+      selectedBlockIndex >= 0 ? summaryBlocks[selectedBlockIndex] : null;
     const editableHtml = LLMNoteMetadataService.stripSidebarMetadata(
       selectedBlock ? selectedBlock.content : rawNoteHtml,
     );
@@ -3030,7 +3124,8 @@ async function saveSidebarNoteEdit(
 
     const editedHtml = normalizeEditableNoteHtml(String(noteContent.innerHTML));
     if (editState.blockId) {
-      const latestBlocks = LLMNoteMetadataService.parseAll(latestHtml);
+      const latestBlocks =
+        LLMNoteMetadataService.parseSummaryBlocks(latestHtml);
       const expectedBlock = latestBlocks[editState.selectedBlockIndex];
       if (!expectedBlock || expectedBlock.blockId !== editState.blockId) {
         throw new Error("AI 笔记结构已变化，请刷新后再编辑。");
@@ -3038,7 +3133,7 @@ async function saveSidebarNoteEdit(
     }
 
     const nextHtml = editState.blockId
-      ? LLMNoteMetadataService.replaceBlockContent(
+      ? LLMNoteMetadataService.replaceSummaryBlockContent(
           latestHtml,
           editState.blockId,
           editedHtml,
@@ -3086,6 +3181,105 @@ function cancelSidebarNoteEdit(
   void loadNoteContent(doc, item, noteContent);
 }
 
+async function deleteSidebarSummaryBlock(
+  doc: Document,
+  item: Zotero.Item,
+  noteContent: HTMLElement,
+): Promise<void> {
+  if (isSidebarNoteEditing(item.id)) {
+    setSidebarNoteEditStatus(doc, "编辑中，不能删除模型总结。", "#d32f2f");
+    return;
+  }
+
+  try {
+    const resolvedNote = await resolveSidebarSummaryNote(item);
+    if (!resolvedNote) {
+      updateSidebarNoteEditControls(doc, "missing", "暂无可删除笔记。");
+      return;
+    }
+
+    const summaryBlocks = LLMNoteMetadataService.parseSummaryBlocks(
+      resolvedNote.rawHtml,
+    );
+    if (summaryBlocks.length === 0) {
+      updateSidebarNoteEditControls(doc, "missing", "暂无可删除总结。");
+      return;
+    }
+
+    const selectedBlockIndex = getSelectedMetadataBlockIndex(
+      doc,
+      summaryBlocks.length,
+    );
+    const selectedBlock = summaryBlocks[selectedBlockIndex];
+    const label =
+      LLMNoteMetadataService.formatSummaryBlockSelectorLabel(selectedBlock);
+    const ok = Services.prompt.confirm(
+      Zotero.getMainWindow() as any,
+      "删除模型总结",
+      `确定删除当前 AI 总结版本吗？\n\n${label}`,
+    );
+    if (!ok) return;
+
+    const latestNote = await Zotero.Items.getAsync(resolvedNote.note.id);
+    if (!latestNote) {
+      throw new Error("AI 笔记不存在或已被删除");
+    }
+
+    const latestHtml: string = (latestNote as any).getNote?.() || "";
+    const latestBlocks = LLMNoteMetadataService.parseSummaryBlocks(latestHtml);
+    const latestBlock = latestBlocks[selectedBlockIndex];
+    if (!latestBlock || latestBlock.blockId !== selectedBlock.blockId) {
+      throw new Error("AI 笔记结构已变化，请刷新后再删除。");
+    }
+
+    const nextHtml = LLMNoteMetadataService.removeSummaryBlock(
+      latestHtml,
+      selectedBlock.blockId,
+    );
+    if (!LLMNoteMetadataService.hasSummaryBlocks(nextHtml)) {
+      await (latestNote as any).eraseTx?.();
+      const selector = doc.getElementById(
+        "ai-butler-note-metadata-selector",
+      ) as HTMLSelectElement | null;
+      if (selector) {
+        selector.innerHTML = "";
+        selector.style.display = "none";
+        delete selector.dataset.selectedIndex;
+      }
+      noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+      await loadNoteContent(doc, item, noteContent);
+      setSidebarNoteEditStatus(doc, "已删除 AI 笔记", "#4caf50");
+      return;
+    }
+
+    (latestNote as any).setNote(nextHtml);
+    await (latestNote as any).saveTx();
+
+    const remainingCount =
+      LLMNoteMetadataService.parseSummaryBlocks(nextHtml).length;
+    const selector = doc.getElementById(
+      "ai-butler-note-metadata-selector",
+    ) as HTMLSelectElement | null;
+    if (selector) {
+      selector.dataset.selectedIndex = String(
+        Math.min(selectedBlockIndex, Math.max(0, remainingCount - 1)),
+      );
+    }
+
+    noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+    await loadNoteContent(doc, item, noteContent);
+    setSidebarNoteEditStatus(doc, "已删除当前总结", "#4caf50");
+  } catch (err: any) {
+    ztoolkit.log("[AI-Butler] 删除侧边栏总结失败:", err);
+    updateSidebarNoteEditControls(
+      doc,
+      "preview",
+      err?.message || "删除失败",
+      "#d32f2f",
+    );
+  }
+}
+
 /**
  * 异步加载笔记内容
  */
@@ -3125,34 +3319,34 @@ async function loadNoteContent(
 
     updateSidebarNoteEditControls(doc, "preview");
     const rawNoteHtml: string = resolvedNote.rawHtml;
-    const metadataBlocks = LLMNoteMetadataService.parseAll(rawNoteHtml);
-    let selectedBlockIndex = metadataBlocks.length - 1;
+    const summaryBlocks =
+      LLMNoteMetadataService.parseSummaryBlocks(rawNoteHtml);
+    let selectedBlockIndex = summaryBlocks.length - 1;
     const metadataSelector = doc.getElementById(
       "ai-butler-note-metadata-selector",
     ) as HTMLSelectElement | null;
-    if (metadataSelector && metadataBlocks.length > 0) {
+    if (metadataSelector && summaryBlocks.length > 0) {
       const requested = Number(metadataSelector.dataset.selectedIndex || "");
       if (
         Number.isInteger(requested) &&
         requested >= 0 &&
-        requested < metadataBlocks.length
+        requested < summaryBlocks.length
       ) {
         selectedBlockIndex = requested;
       }
       metadataSelector.innerHTML = "";
-      metadataBlocks.forEach((block, index) => {
+      summaryBlocks.forEach((block, index) => {
         const option = doc.createElement("option");
         option.value = String(index);
-        option.textContent = LLMNoteMetadataService.formatSelectorLabel(
-          block.metadata,
-        );
-        option.title = LLMNoteMetadataService.formatTooltip(block.metadata);
+        option.textContent =
+          LLMNoteMetadataService.formatSummaryBlockSelectorLabel(block);
+        option.title = LLMNoteMetadataService.formatSummaryBlockTooltip(block);
         metadataSelector.appendChild(option);
       });
       metadataSelector.value = String(selectedBlockIndex);
       metadataSelector.dataset.selectedIndex = String(selectedBlockIndex);
-      metadataSelector.title = LLMNoteMetadataService.formatTooltip(
-        metadataBlocks[selectedBlockIndex].metadata,
+      metadataSelector.title = LLMNoteMetadataService.formatSummaryBlockTooltip(
+        summaryBlocks[selectedBlockIndex],
       );
       metadataSelector.style.display = "inline-block";
       metadataSelector.onchange = () => {
@@ -3180,8 +3374,8 @@ async function loadNoteContent(
     }
 
     aiNoteContent =
-      metadataBlocks.length > 0
-        ? metadataBlocks[selectedBlockIndex].content
+      summaryBlocks.length > 0
+        ? summaryBlocks[selectedBlockIndex].content
         : rawNoteHtml;
     aiNoteContent = LLMNoteMetadataService.stripSidebarMetadata(aiNoteContent);
 
@@ -4021,8 +4215,18 @@ async function getNoteMarkdownContent(
       return null;
     }
 
-    const noteHtml: string = LLMNoteMetadataService.stripSidebarMetadata(
+    const doc = Zotero.getMainWindow().document;
+    const summaryBlocks = LLMNoteMetadataService.parseSummaryBlocks(
       resolvedNote.rawHtml,
+    );
+    const selectedBlockIndex =
+      summaryBlocks.length > 0
+        ? getSelectedMetadataBlockIndex(doc, summaryBlocks.length)
+        : -1;
+    const selectedBlock =
+      selectedBlockIndex >= 0 ? summaryBlocks[selectedBlockIndex] : null;
+    const noteHtml: string = LLMNoteMetadataService.stripSidebarMetadata(
+      selectedBlock ? selectedBlock.content : resolvedNote.rawHtml,
     );
     // 将 HTML 转换为 Markdown 文本
     return htmlToMarkdown(noteHtml);

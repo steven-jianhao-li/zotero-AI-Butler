@@ -19,6 +19,7 @@ import { ImageClient, ImageGenerationError } from "./imageClient";
 import { ImageNoteGenerator } from "./imageNoteGenerator";
 import { NoteGenerator } from "./noteGenerator";
 import { getPref } from "../utils/prefs";
+import type { LLMPdfProcessMode } from "./llmEndpointManager";
 import {
   getDefaultImageSummaryPrompt,
   getDefaultImageGenerationPrompt,
@@ -82,6 +83,7 @@ export class ImageSummaryService {
 
       let pdfContent: string;
       let isBase64 = false;
+      const pdfMode = LLMService.getEffectivePdfProcessMode();
 
       // 检查是否使用已有 AI 笔记
       const useExistingNote =
@@ -103,13 +105,13 @@ export class ImageSummaryService {
         } else {
           // 没有已有笔记，回退到 PDF 提取
           ztoolkit.log("[AI-Butler] 未找到已有 AI 笔记，使用 PDF 提取");
-          pdfContent = await this.extractPdfContent(item);
-          isBase64 = this.isBase64Mode();
+          pdfContent = await this.extractPdfContent(item, pdfMode);
+          isBase64 = pdfMode === "base64";
         }
       } else {
         // 直接从 PDF 提取
-        pdfContent = await this.extractPdfContent(item);
-        isBase64 = this.isBase64Mode();
+        pdfContent = await this.extractPdfContent(item, pdfMode);
+        isBase64 = pdfMode === "base64";
       }
 
       // ========== 阶段 2: 生成视觉摘要 ==========
@@ -168,24 +170,17 @@ export class ImageSummaryService {
   /**
    * 提取 PDF 内容
    */
-  private static async extractPdfContent(item: Zotero.Item): Promise<string> {
-    const prefMode = (getPref("pdfProcessMode") as string) || "base64";
-
-    if (prefMode === "base64") {
+  private static async extractPdfContent(
+    item: Zotero.Item,
+    mode: LLMPdfProcessMode,
+  ): Promise<string> {
+    if (mode === "base64") {
       return await PDFExtractor.extractBase64FromItem(item);
     } else {
-      const fullText = await PDFExtractor.extractTextFromItem(item);
+      const fullText = await PDFExtractor.extractTextFromItem(item, mode);
       const cleanedText = PDFExtractor.cleanText(fullText);
       return PDFExtractor.truncateText(cleanedText);
     }
-  }
-
-  /**
-   * 判断是否为 Base64 模式
-   */
-  private static isBase64Mode(): boolean {
-    const prefMode = (getPref("pdfProcessMode") as string) || "base64";
-    return prefMode === "base64";
   }
 
   /**

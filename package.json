@@ -1,7 +1,7 @@
 {
   "name": "zotero-ai-butler",
   "type": "module",
-  "version": "3.6.1-beta.3",
+  "version": "3.7.0",
   "description": "Your personal AI butler, automatically and meticulously reads papers and summarizes notes.",
   "config": {
     "addonName": "zotero-ai-butler",
@@ -27,7 +27,9 @@
     "lint:fix": "prettier --write . && eslint . --fix",
     "release": "zotero-plugin release",
     "pretest": "node ./scripts/gen-env-setup.mjs",
-    "test": "zotero-plugin test",
+    "test": "zotero-plugin test --exit-on-finish",
+    "pretest:watch": "node ./scripts/gen-env-setup.mjs",
+    "test:watch": "zotero-plugin test",
     "scaffold:provider": "node ./scripts/create-provider.mjs",
     "update-deps": "npm update --save"
   },

@@ -502,7 +502,10 @@ export class TaskQueueManager {
    * @param item Zotero 文献条目
    * @returns 任务ID
    */
-  public async addImageSummaryTask(item: Zotero.Item): Promise<string> {
+  public async addImageSummaryTask(
+    item: Zotero.Item,
+    priority: boolean = true,
+  ): Promise<string> {
     const taskId = `img-task-${item.id}`;
 
     // 检查是否已存在
@@ -512,14 +515,19 @@ export class TaskQueueManager {
         existingTask,
         item,
         "imageSummary",
-        true,
+        priority,
         undefined,
         "等待开始",
       );
       if (shouldRun) {
-        this.executeImageSummaryTask(taskId).catch((e) => {
-          logTaskQueue(`一图总结任务执行失败: ${e}`);
-        });
+        if (!this.isRunning) {
+          this.start();
+        }
+        if (priority) {
+          this.executeImageSummaryTask(taskId).catch((e) => {
+            logTaskQueue(`一图总结任务执行失败: ${e}`);
+          });
+        }
       }
       return taskId;
     }
@@ -529,7 +537,7 @@ export class TaskQueueManager {
       id: taskId,
       itemId: item.id,
       title: item.getField("title") as string,
-      status: TaskStatus.PRIORITY, // 一图总结默认优先处理
+      status: priority ? TaskStatus.PRIORITY : TaskStatus.PENDING,
       progress: 0,
       createdAt: new Date(),
       retryCount: 0,
@@ -543,10 +551,15 @@ export class TaskQueueManager {
 
     logTaskQueue(`添加一图总结任务: ${task.title} (${taskId})`);
 
-    // 立即执行一图总结任务
-    this.executeImageSummaryTask(taskId).catch((e) => {
-      logTaskQueue(`一图总结任务执行失败: ${e}`);
-    });
+    if (!this.isRunning) {
+      this.start();
+    }
+
+    if (priority) {
+      this.executeImageSummaryTask(taskId).catch((e) => {
+        logTaskQueue(`一图总结任务执行失败: ${e}`);
+      });
+    }
 
     return taskId;
   }
@@ -658,7 +671,10 @@ export class TaskQueueManager {
    * @param item Zotero 文献条目
    * @returns 任务ID
    */
-  public async addMindmapTask(item: Zotero.Item): Promise<string> {
+  public async addMindmapTask(
+    item: Zotero.Item,
+    priority: boolean = true,
+  ): Promise<string> {
     const taskId = `mindmap-task-${item.id}`;
 
     // 检查是否已存在
@@ -668,14 +684,19 @@ export class TaskQueueManager {
         existingTask,
         item,
         "mindmap",
-        true,
+        priority,
         undefined,
         "等待开始",
       );
       if (shouldRun) {
-        this.executeMindmapTask(taskId).catch((e) => {
-          logTaskQueue(`思维导图任务执行失败: ${e}`);
-        });
+        if (!this.isRunning) {
+          this.start();
+        }
+        if (priority) {
+          this.executeMindmapTask(taskId).catch((e) => {
+            logTaskQueue(`思维导图任务执行失败: ${e}`);
+          });
+        }
       }
       return taskId;
     }
@@ -685,7 +706,7 @@ export class TaskQueueManager {
       id: taskId,
       itemId: item.id,
       title: item.getField("title") as string,
-      status: TaskStatus.PRIORITY, // 思维导图默认优先处理
+      status: priority ? TaskStatus.PRIORITY : TaskStatus.PENDING,
       progress: 0,
       createdAt: new Date(),
       retryCount: 0,
@@ -699,10 +720,15 @@ export class TaskQueueManager {
 
     logTaskQueue(`添加思维导图任务: ${task.title} (${taskId})`);
 
-    // 立即执行思维导图任务
-    this.executeMindmapTask(taskId).catch((e) => {
-      logTaskQueue(`思维导图任务执行失败: ${e}`);
-    });
+    if (!this.isRunning) {
+      this.start();
+    }
+
+    if (priority) {
+      this.executeMindmapTask(taskId).catch((e) => {
+        logTaskQueue(`思维导图任务执行失败: ${e}`);
+      });
+    }
 
     return taskId;
   }
@@ -808,7 +834,10 @@ export class TaskQueueManager {
   /**
    * 添加填表任务
    */
-  public async addTableFillTask(item: Zotero.Item): Promise<string> {
+  public async addTableFillTask(
+    item: Zotero.Item,
+    priority: boolean = true,
+  ): Promise<string> {
     const taskId = `table-task-${item.id}`;
 
     if (this.tasks.has(taskId)) {
@@ -817,14 +846,19 @@ export class TaskQueueManager {
         existingTask,
         item,
         "tableFill",
-        true,
+        priority,
         undefined,
         "等待开始",
       );
       if (shouldRun) {
-        this.executeTableFillTask(taskId).catch((e) => {
-          logTaskQueue(`填表任务执行失败: ${e}`);
-        });
+        if (!this.isRunning) {
+          this.start();
+        }
+        if (priority) {
+          this.executeTableFillTask(taskId).catch((e) => {
+            logTaskQueue(`填表任务执行失败: ${e}`);
+          });
+        }
       }
       return taskId;
     }
@@ -833,7 +867,7 @@ export class TaskQueueManager {
       id: taskId,
       itemId: item.id,
       title: item.getField("title") as string,
-      status: TaskStatus.PRIORITY,
+      status: priority ? TaskStatus.PRIORITY : TaskStatus.PENDING,
       progress: 0,
       createdAt: new Date(),
       retryCount: 0,
@@ -847,10 +881,15 @@ export class TaskQueueManager {
 
     logTaskQueue(`添加填表任务: ${task.title} (${taskId})`);
 
-    // 立即执行
-    this.executeTableFillTask(taskId).catch((e) => {
-      logTaskQueue(`填表任务执行失败: ${e}`);
-    });
+    if (!this.isRunning) {
+      this.start();
+    }
+
+    if (priority) {
+      this.executeTableFillTask(taskId).catch((e) => {
+        logTaskQueue(`填表任务执行失败: ${e}`);
+      });
+    }
 
     return taskId;
   }
@@ -1262,6 +1301,58 @@ export class TaskQueueManager {
    */
   public getTargetedQuestionTasks(): TaskItem[] {
     return this.getAllTasks().filter((t) => t.taskType === "targetedQuestion");
+  }
+
+  /**
+   * 清空指定文献和任务类型对应的队列记录。
+   *
+   * 用于批量删除 AI 管家笔记时同步移除旧任务，再按需要重新入普通队列。
+   */
+  public async clearTasksForItems(
+    itemIds: Iterable<number>,
+    taskTypes?: Iterable<TaskType>,
+  ): Promise<number> {
+    const itemIdSet = new Set(itemIds);
+    if (itemIdSet.size === 0) {
+      return 0;
+    }
+
+    const taskTypeSet = taskTypes ? new Set(taskTypes) : null;
+    let removedCount = 0;
+
+    for (const [taskId, task] of Array.from(this.tasks.entries())) {
+      if (!itemIdSet.has(task.itemId)) continue;
+
+      const taskType = task.taskType || "summary";
+      if (taskTypeSet && !taskTypeSet.has(taskType)) continue;
+
+      if (task.status === TaskStatus.PROCESSING && taskType === "summary") {
+        const controller = this.taskAbortControllers.get(taskId);
+        controller?.abort(LLM_REQUEST_ABORT_MESSAGE);
+      }
+
+      this.tasks.delete(taskId);
+      this.processingTasks.delete(taskId);
+      this.taskAbortControllers.delete(taskId);
+      this.abortingTasks.delete(taskId);
+      removedCount += 1;
+    }
+
+    if (removedCount > 0) {
+      await this.saveToStorage();
+      logTaskQueue(`清空指定文献队列任务: ${removedCount} 个`);
+
+      const hasPending = this.getAllTasks().some(
+        (task) =>
+          task.status === TaskStatus.PRIORITY ||
+          task.status === TaskStatus.PENDING,
+      );
+      if (!hasPending && this.processingTasks.size === 0) {
+        this.stop();
+      }
+    }
+
+    return removedCount;
   }
 
   /**

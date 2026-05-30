@@ -5,6 +5,8 @@ import type { LLMReasoningEffortSetting } from "./llmproviders/types";
 
 export type LLMEndpointProviderType = ProviderId;
 export type LLMRoutingStrategy = "priority" | "roundRobin";
+export type LLMPdfProcessMode = "base64" | "text" | "mineru";
+export type LLMEndpointPdfProcessMode = "global" | LLMPdfProcessMode;
 
 export interface LLMEndpoint {
   id: string;
@@ -14,6 +16,7 @@ export interface LLMEndpoint {
   apiKey: string;
   model: string;
   reasoningEffort?: LLMReasoningEffortSetting;
+  pdfProcessMode?: LLMEndpointPdfProcessMode;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -81,6 +84,8 @@ const PROVIDER_TYPES = Object.keys(
   PROVIDER_DEFAULTS,
 ) as LLMEndpointProviderType[];
 
+const LEGACY_PRIMARY_ENDPOINT_ID = "endpoint-legacy-primary";
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -99,6 +104,26 @@ function safeProviderType(raw: unknown): LLMEndpointProviderType {
     return value as LLMEndpointProviderType;
   }
   return "openai";
+}
+
+function normalizeGlobalPdfProcessMode(raw: unknown): LLMPdfProcessMode {
+  const value = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (value === "text" || value === "mineru") return value;
+  return "base64";
+}
+
+function normalizeEndpointPdfProcessMode(
+  raw: unknown,
+): LLMEndpointPdfProcessMode {
+  const value = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (value === "base64" || value === "text" || value === "mineru") {
+    return value;
+  }
+  return "global";
 }
 
 function parseJsonArray(raw: unknown): unknown[] {
@@ -130,6 +155,7 @@ function normalizeEndpoint(
       raw.reasoningEffort,
       defaults.reasoningEffort || "default",
     ),
+    pdfProcessMode: normalizeEndpointPdfProcessMode(raw.pdfProcessMode),
     enabled: raw.enabled !== false,
     createdAt,
     updatedAt: raw.updatedAt || createdAt,
@@ -155,6 +181,49 @@ export class LLMEndpointManager {
     return safeProviderType(providerType) === "ollama";
   }
 
+  static isEndpointUsable(
+    endpoint: Pick<LLMEndpoint, "apiUrl" | "apiKey" | "model" | "providerType">,
+  ): boolean {
+    return (
+      endpoint.apiUrl.trim().length > 0 &&
+      endpoint.model.trim().length > 0 &&
+      (endpoint.apiKey.trim().length > 0 ||
+        this.providerAllowsEmptyApiKey(endpoint.providerType))
+    );
+  }
+
+  static normalizePdfProcessMode(raw: unknown): LLMEndpointPdfProcessMode {
+    return normalizeEndpointPdfProcessMode(raw);
+  }
+
+  static getGlobalPdfProcessMode(): LLMPdfProcessMode {
+    return normalizeGlobalPdfProcessMode(getPref("pdfProcessMode" as any));
+  }
+
+  static getEffectivePdfProcessMode(
+    endpoint?: Pick<LLMEndpoint, "pdfProcessMode"> | null,
+  ): LLMPdfProcessMode {
+    const endpointMode = normalizeEndpointPdfProcessMode(
+      endpoint?.pdfProcessMode,
+    );
+    return endpointMode === "global"
+      ? this.getGlobalPdfProcessMode()
+      : endpointMode;
+  }
+
+  static pdfProcessModeLabel(mode: LLMEndpointPdfProcessMode): string {
+    switch (normalizeEndpointPdfProcessMode(mode)) {
+      case "base64":
+        return "Base64 文件输入";
+      case "text":
+        return "文本提取";
+      case "mineru":
+        return "MinerU";
+      default:
+        return "跟随全局默认";
+    }
+  }
+
   static createEndpoint(
     providerType: LLMEndpointProviderType = "openai",
   ): LLMEndpoint {
@@ -168,6 +237,7 @@ export class LLMEndpointManager {
       apiKey: "",
       model: defaults.model,
       reasoningEffort: defaults.reasoningEffort || "default",
+      pdfProcessMode: "global",
       enabled: true,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -238,7 +308,11 @@ export class LLMEndpointManager {
   }
 
   static prepareRoute(): LLMEndpointRoute {
-    const enabled = this.getEnabledEndpoints();
+    let enabled = this.getEnabledEndpoints();
+    if (!enabled.some((endpoint) => this.isEndpointUsable(endpoint))) {
+      this.syncLegacyPrimaryEndpointFromPrefs();
+      enabled = this.getEnabledEndpoints();
+    }
     if (enabled.length === 0) {
       throw new Error("No enabled LLM endpoints are configured.");
     }
@@ -335,6 +409,37 @@ export class LLMEndpointManager {
     return missing;
   }
 
+  static syncLegacyPrimaryEndpointFromPrefs(): LLMEndpoint | null {
+    const stored = this.readStoredEndpoints();
+    const legacyEndpoint = this.createLegacyEndpoint();
+
+    if (stored.length === 0) {
+      this.saveEndpoints([legacyEndpoint]);
+      return legacyEndpoint;
+    }
+
+    const index = stored.findIndex(
+      (endpoint) => endpoint.id === LEGACY_PRIMARY_ENDPOINT_ID,
+    );
+    if (index < 0) return null;
+
+    const previous = stored[index];
+    const synced: LLMEndpoint = {
+      ...legacyEndpoint,
+      createdAt: previous.createdAt,
+      enabled: previous.enabled,
+      pdfProcessMode: previous.pdfProcessMode || "global",
+    };
+
+    if (this.endpointCoreEquals(previous, synced)) {
+      return previous;
+    }
+
+    stored[index] = synced;
+    this.saveEndpoints(stored);
+    return synced;
+  }
+
   private static readStoredEndpoints(): LLMEndpoint[] {
     return parseJsonArray(getPref("llmEndpoints")).map((item, index) =>
       normalizeEndpoint(item as Partial<LLMEndpoint>, index),
@@ -350,13 +455,14 @@ export class LLMEndpointManager {
     const defaults = this.providerDefaults(providerType);
     const timestamp = nowIso();
     return {
-      id: "endpoint-legacy-primary",
+      id: LEGACY_PRIMARY_ENDPOINT_ID,
       name: defaults.label,
       providerType,
       apiUrl: this.getLegacyApiUrl(providerType) || defaults.apiUrl,
       apiKey: this.getLegacyApiKey(providerType),
       model: this.getLegacyModel(providerType) || defaults.model,
       reasoningEffort: this.getLegacyReasoningEffort(providerType),
+      pdfProcessMode: "global",
       enabled: true,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -425,6 +531,20 @@ export class LLMEndpointManager {
     return reasoningEffort === "default"
       ? defaults.reasoningEffort || "default"
       : reasoningEffort;
+  }
+
+  private static endpointCoreEquals(a: LLMEndpoint, b: LLMEndpoint): boolean {
+    return (
+      a.id === b.id &&
+      a.name === b.name &&
+      a.providerType === b.providerType &&
+      a.apiUrl === b.apiUrl &&
+      a.apiKey === b.apiKey &&
+      a.model === b.model &&
+      a.reasoningEffort === b.reasoningEffort &&
+      (a.pdfProcessMode || "global") === (b.pdfProcessMode || "global") &&
+      a.enabled === b.enabled
+    );
   }
 }
 

@@ -27,15 +27,22 @@ import { BaseView } from "./BaseView";
 import { MainWindow } from "./MainWindow";
 import { marked } from "marked";
 import { getPref } from "../../utils/prefs";
+import { getString } from "../../utils/locale";
 import { createStyledButton } from "./ui/components";
-import katex from "katex";
 import {
   LLMNoteMetadataService,
   type LLMNoteMetadata,
 } from "../llmNoteMetadata";
 import {
+  createChatAbortController,
+  isChatAbortError,
+  type ChatAbortControllerLike,
+} from "../chatContext";
+import {
   buildFollowUpChatPairNoteHtml,
+  markdownToDisplayHtml,
   normalizeFollowUpChatNoteHtml,
+  parseFollowUpChatPairsFromNoteHtml,
 } from "../noteMarkdown";
 
 /**
@@ -113,6 +120,9 @@ export class SummaryView extends BaseView {
 
   /** 是否正在处理追问 */
   private isChatting: boolean = false;
+
+  /** 当前追问请求的中断控制器 */
+  private chatAbortController: ChatAbortControllerLike | null = null;
 
   /** 已保存的追问对（仅限后续追问，不含首轮“提示词+总结”） */
   private chatPairs: Array<{ id: string; user: string; assistant: string }> =
@@ -351,11 +361,19 @@ export class SummaryView extends BaseView {
     });
 
     // 追问按钮 - 使用统一的按钮组件
-    const chatButton = createStyledButton("💬 后续追问", "#667eea", "medium");
+    const chatButton = createStyledButton("", "#667eea", "medium");
     chatButton.id = "ai-butler-chat-toggle-button";
     Object.assign(chatButton.style, {
       marginBottom: "12px",
+      minWidth: "0",
     });
+    const chatButtonText = this.createElement("span", {
+      textContent: "💬 完整追问",
+    });
+    chatButton.appendChild(chatButtonText);
+    chatButton.appendChild(
+      this.createContextInfoIcon(getString("itempane-ai-open-chat-tooltip")),
+    );
 
     chatButton.addEventListener("click", () => {
       const inputArea = container.querySelector(
@@ -364,10 +382,10 @@ export class SummaryView extends BaseView {
       if (inputArea) {
         if (inputArea.style.display === "none" || !inputArea.style.display) {
           inputArea.style.display = "flex";
-          chatButton.innerHTML = "🔽 收起追问";
+          chatButtonText.textContent = "🔽 收起完整追问";
         } else {
           inputArea.style.display = "none";
-          chatButton.innerHTML = "💬 后续追问";
+          chatButtonText.textContent = "💬 完整追问";
         }
       }
     });
@@ -439,13 +457,42 @@ export class SummaryView extends BaseView {
     return container;
   }
 
+  private createContextInfoIcon(tooltip: string): HTMLElement {
+    return this.createElement("span", {
+      textContent: "i",
+      attributes: {
+        title: tooltip,
+        "aria-label": tooltip,
+      },
+      styles: {
+        width: "18px",
+        height: "18px",
+        border: "1px solid currentColor",
+        borderRadius: "50%",
+        color: "inherit",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: "11px",
+        fontWeight: "700",
+        lineHeight: "1",
+        cursor: "help",
+        flex: "0 0 auto",
+        opacity: "0.85",
+      },
+    });
+  }
+
   /**
    * 处理追问发送
    * @private
    */
   private async handleChatSend(): Promise<void> {
     if (!this.chatInput || !this.chatSendButton) return;
-    if (this.isChatting) return;
+    if (this.isChatting) {
+      this.abortActiveChat();
+      return;
+    }
 
     const userMessage = this.chatInput.value.trim();
     if (!userMessage) {
@@ -464,16 +511,25 @@ export class SummaryView extends BaseView {
     }
 
     this.isChatting = true;
-    this.chatSendButton.disabled = true;
-    this.chatSendButton.innerHTML = "⏳ 发送中...";
-    this.chatSendButton.style.backgroundColor = "#9e9e9e";
+    this.chatAbortController = createChatAbortController();
+    this.chatSendButton.disabled = false;
+    this.chatSendButton.innerHTML = "⏹ 终止";
+    this.chatSendButton.style.backgroundColor = "#f44336";
+    this.chatSendButton.style.color = "#ffffff";
     this.chatInput.disabled = true;
 
-    // 添加用户消息到历史
-    this.conversationHistory.push({
-      role: "user",
-      content: userMessage,
-    });
+    const requestConversation = [
+      ...this.conversationHistory.map((message) => ({
+        role:
+          message.role === "assistant"
+            ? ("assistant" as const)
+            : message.role === "system"
+              ? ("system" as const)
+              : ("user" as const),
+        content: message.content,
+      })),
+      { role: "user" as const, content: userMessage },
+    ];
 
     // 显示用户消息（先单独渲染，后续会与助手回复一起包装成卡片）
     const userMessageElement = this.appendChatMessage("user", userMessage);
@@ -572,10 +628,11 @@ export class SummaryView extends BaseView {
       }
     }
 
+    let fullResponse = "";
+
     try {
       const { default: LLMService } = await import("../llmService");
 
-      let fullResponse = "";
       let responseMetadata: LLMNoteMetadata | null = null;
       const response = await LLMService.chat({
         content: {
@@ -584,15 +641,10 @@ export class SummaryView extends BaseView {
           isBase64: this.currentIsBase64,
           policy: this.currentIsBase64 ? "pdf-base64" : "text",
         },
-        conversation: this.conversationHistory.map((message) => ({
-          role:
-            message.role === "assistant"
-              ? "assistant"
-              : message.role === "system"
-                ? "system"
-                : "user",
-          content: message.content,
-        })),
+        conversation: requestConversation,
+        transport: {
+          abortSignal: this.chatAbortController?.signal,
+        },
         onProgress: (chunk: string) => {
           fullResponse += chunk;
           // 更新助手消息显示
@@ -621,6 +673,12 @@ export class SummaryView extends BaseView {
         }
       }
 
+      // 完成后再写入上下文；中断/失败不会污染后续追问。
+      this.conversationHistory.push({
+        role: "user",
+        content: userMessage,
+      });
+
       // 添加助手回复到历史
       this.conversationHistory.push({
         role: "assistant",
@@ -644,6 +702,21 @@ export class SummaryView extends BaseView {
         );
       }
     } catch (error: any) {
+      if (isChatAbortError(error, this.chatAbortController?.signal)) {
+        if (assistantMessageContainer) {
+          const contentDiv = assistantMessageContainer.querySelector(
+            ".chat-message-content",
+          ) as HTMLElement;
+          if (contentDiv) {
+            const stoppedHtml = fullResponse
+              ? `${SummaryView.convertMarkdownToHTMLCore(fullResponse)}<p style="color: #777; font-size: 12px;">已终止，本轮不会保存或加入上下文。</p>`
+              : `<p style="color: #777;">已终止，未生成内容。</p>`;
+            contentDiv.innerHTML = stoppedHtml;
+          }
+        }
+        return;
+      }
+
       // 显示错误
       if (assistantMessageContainer) {
         const contentDiv = assistantMessageContainer.querySelector(
@@ -655,6 +728,7 @@ export class SummaryView extends BaseView {
       }
     } finally {
       this.isChatting = false;
+      this.chatAbortController = null;
       if (this.chatSendButton) {
         this.chatSendButton.disabled = false;
         this.chatSendButton.innerHTML = "📤 发送";
@@ -666,6 +740,16 @@ export class SummaryView extends BaseView {
         this.chatInput.focus();
       }
     }
+  }
+
+  private abortActiveChat(): void {
+    if (!this.chatAbortController) return;
+    if (this.chatSendButton) {
+      this.chatSendButton.disabled = true;
+      this.chatSendButton.innerHTML = "⏳ 终止中...";
+      this.chatSendButton.style.backgroundColor = "#9e9e9e";
+    }
+    this.chatAbortController.abort("用户已终止追问");
   }
 
   /**
@@ -915,10 +999,51 @@ export class SummaryView extends BaseView {
     header.appendChild(titleEl);
     header.appendChild(previewEl);
 
-    // 内容主体（仅助手）
+    // 内容主体（仅助手）。默认折叠，展开时再渲染完整 Markdown/公式。
     const body = this.createElement("div", {
       className: "ai-butler-card-body",
     });
+    (body as HTMLElement).style.display = "none";
+
+    const assistantDiv = this.createElement("div", {
+      className: "ai-msg-assistant",
+      styles: {
+        marginBottom: "16px",
+        padding: "12px",
+        borderRadius: "8px",
+        borderLeft: "4px solid var(--ai-accent)",
+        minWidth: "0",
+        maxWidth: "100%",
+      },
+    });
+    assistantDiv.appendChild(
+      this.createElement("div", {
+        styles: {
+          fontWeight: "bold",
+          marginBottom: "8px",
+          color: "var(--ai-text)",
+        },
+        innerHTML: "🤖 AI管家",
+      }),
+    );
+    const contentDiv = this.createElement("div", {
+      className: "chat-message-content",
+      styles: {
+        fontSize: "14px",
+        lineHeight: "1.6",
+        overflowWrap: "anywhere",
+        wordBreak: "break-word",
+        minWidth: "0",
+        maxWidth: "100%",
+        userSelect: "text",
+        cursor: "text",
+      },
+      innerHTML: "<em>展开后渲染完整笔记...</em>",
+    });
+    assistantDiv.appendChild(contentDiv);
+    body.appendChild(assistantDiv);
+    let hasRenderedSummary = false;
+
     const collapseBtn = this.createElement("button", {
       styles: {
         position: "absolute",
@@ -930,7 +1055,7 @@ export class SummaryView extends BaseView {
         cursor: "pointer",
         fontSize: "14px",
       },
-      innerHTML: "▾",
+      innerHTML: "▸",
     }) as HTMLButtonElement;
     collapseBtn.title = "折叠/展开";
     collapseBtn.addEventListener("click", () => {
@@ -939,6 +1064,11 @@ export class SummaryView extends BaseView {
         collapseBtn.innerHTML = "▾";
         // 展开时隐藏摘要预览
         if (previewEl) previewEl.style.display = "none";
+        if (!hasRenderedSummary) {
+          contentDiv.innerHTML =
+            SummaryView.convertMarkdownToHTMLCore(aiSummary);
+          hasRenderedSummary = true;
+        }
       } else {
         (body as HTMLElement).style.display = "none";
         collapseBtn.innerHTML = "▸";
@@ -947,19 +1077,8 @@ export class SummaryView extends BaseView {
       }
     });
 
-    // 内容（仅助手）
-    const assistantDiv = this.appendChatMessage("assistant", "") as HTMLElement;
-    const contentDiv = assistantDiv.querySelector(
-      ".chat-message-content",
-    ) as HTMLElement | null;
-    if (contentDiv) {
-      contentDiv.innerHTML = SummaryView.convertMarkdownToHTMLCore(aiSummary);
-    }
-    body.appendChild(assistantDiv);
-
-    // 初始：展开状态，隐藏预览
-    (body as HTMLElement).style.display = "block";
-    if (previewEl) previewEl.style.display = "none";
+    // 初始：折叠状态，保留预览，避免打开追问时渲染大笔记造成卡顿。
+    if (previewEl) previewEl.style.display = "inline";
 
     card.appendChild(header);
     card.appendChild(collapseBtn);
@@ -1036,6 +1155,8 @@ export class SummaryView extends BaseView {
 
     // 初始化对话历史:第一轮是用户提示词和AI回复
     this.conversationHistory = [];
+    this.chatPairs = [];
+    this.pairIdCounter = 0;
 
     // 如果提供了AI总结内容,将其作为第一轮对话
     if (aiSummary && aiSummary.trim()) {
@@ -1064,10 +1185,15 @@ export class SummaryView extends BaseView {
    * 清除论文上下文
    */
   public clearPaperContext(): void {
+    this.chatAbortController?.abort("论文上下文已清除");
+    this.chatAbortController = null;
+    this.isChatting = false;
     this.currentItemId = null;
     this.currentPdfContent = "";
     this.currentIsBase64 = false;
     this.conversationHistory = [];
+    this.chatPairs = [];
+    this.pairIdCounter = 0;
 
     // 隐藏追问容器
     if (this.chatContainer) {
@@ -1162,15 +1288,15 @@ export class SummaryView extends BaseView {
       // 获取 PDF 内容以支持追问
       try {
         const { PDFExtractor } = await import("../pdfExtractor");
-        const prefMode =
-          ((getPref as any)("pdfProcessMode") as string) || "base64";
-        const isBase64 = prefMode === "base64";
+        const { default: LLMService } = await import("../llmService");
+        const pdfMode = LLMService.getEffectivePdfProcessMode();
+        const isBase64 = pdfMode === "base64";
 
         let pdfContent = "";
         if (isBase64) {
           pdfContent = await PDFExtractor.extractBase64FromItem(item);
         } else {
-          pdfContent = await PDFExtractor.extractTextFromItem(item);
+          pdfContent = await PDFExtractor.extractTextFromItem(item, pdfMode);
         }
 
         this.hideLoading();
@@ -1233,7 +1359,7 @@ export class SummaryView extends BaseView {
           ) as HTMLElement;
           if (inputArea && toggleBtn) {
             inputArea.style.display = "flex";
-            toggleBtn.innerHTML = "🔽 收起追问";
+            toggleBtn.innerHTML = "🔽 收起完整追问";
           }
 
           // 聚焦输入框
@@ -1364,16 +1490,15 @@ export class SummaryView extends BaseView {
       // 获取PDF内容以支持后续追问
       try {
         const { PDFExtractor } = await import("../pdfExtractor");
-        // 尊重用户的 PDF 处理模式选择（不再根据 Provider 强制联动）
-        const prefMode =
-          ((getPref as any)("pdfProcessMode") as string) || "base64";
-        const isBase64 = prefMode === "base64";
+        const { default: LLMService } = await import("../llmService");
+        const pdfMode = LLMService.getEffectivePdfProcessMode();
+        const isBase64 = pdfMode === "base64";
 
         let pdfContent = "";
         if (isBase64) {
           pdfContent = await PDFExtractor.extractBase64FromItem(item);
         } else {
-          pdfContent = await PDFExtractor.extractTextFromItem(item);
+          pdfContent = await PDFExtractor.extractTextFromItem(item, pdfMode);
         }
 
         if (pdfContent) {
@@ -1426,30 +1551,7 @@ export class SummaryView extends BaseView {
       const note = await this.findChatNote(item);
       if (!note) return;
       const html: string = (note as any).getNote?.() || "";
-      // 提取 JSON 标记
-      const regex = /<!--\s*AI_BUTLER_CHAT_JSON:\s*(\{[\s\S]*?\})\s*-->/g;
-      let m: RegExpExecArray | null;
-      const pairs: Array<{ id: string; user: string; assistant: string }> = [];
-      while ((m = regex.exec(html)) !== null) {
-        try {
-          const obj = JSON.parse(m[1]);
-          if (
-            obj &&
-            obj.id &&
-            obj.user !== undefined &&
-            obj.assistant !== undefined
-          ) {
-            pairs.push({
-              id: String(obj.id),
-              user: String(obj.user),
-              assistant: String(obj.assistant),
-            });
-          }
-        } catch (e) {
-          // 跳过解析失败的块
-          continue;
-        }
-      }
+      const pairs = parseFollowUpChatPairsFromNoteHtml(html);
 
       if (pairs.length === 0) return;
 
@@ -2348,107 +2450,7 @@ export class SummaryView extends BaseView {
    * ```
    */
   public static convertMarkdownToHTMLCore(markdown: string): string {
-    // ===== 步骤 1: 保护公式，避免被 marked 误处理 =====
-    const formulas: Array<{ content: string; isBlock: boolean }> = [];
-    let html = markdown;
-
-    // 转换并保护 LaTeX 块级公式: \[...\] → $$...$$
-    html = html.replace(/\\\[([\s\S]*?)\\\]/g, (_match, formula) => {
-      const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_BLOCK_${formulas.length}`;
-      formulas.push({ content: formula.trim(), isBlock: true });
-      return placeholder;
-    });
-
-    // 保护已有的 $$ $$ 块级公式
-    html = html.replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula) => {
-      const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_BLOCK_${formulas.length}`;
-      formulas.push({ content: formula.trim(), isBlock: true });
-      return placeholder;
-    });
-
-    // 转换并保护 LaTeX 行内公式: \(...\) → $...$
-    html = html.replace(/\\\((.*?)\\\)/g, (_match, formula) => {
-      const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_INLINE_${formulas.length}`;
-      formulas.push({ content: formula, isBlock: false });
-      return placeholder;
-    });
-
-    // 保护已有的 $ $ 行内公式
-    // eslint-disable-next-line no-useless-escape
-    html = html.replace(/\$([^\$\n]+?)\$/g, (_match, formula) => {
-      const placeholder = `ⒻⓄⓇⓂⓊⓁⒶ_INLINE_${formulas.length}`;
-      formulas.push({ content: formula, isBlock: false });
-      return placeholder;
-    });
-
-    // ===== 步骤 2: 使用 marked 转换 Markdown 为 HTML =====
-    try {
-      html = marked.parse(html) as string;
-    } catch (error) {
-      ztoolkit.log("[AI-Butler][SummaryView] Markdown 解析错误:", error);
-      // 如果解析失败，返回 HTML 转义的原文
-      html = `<p>${SummaryView.escapeHtml(html)}</p>`;
-    }
-
-    // ===== 步骤 3: 恢复并渲染所有公式（使用 KaTeX） =====
-    html = html.replace(
-      /ⒻⓄⓇⓂⓊⓁⒶ_(BLOCK|INLINE)_(\d+)/g,
-      (_match, _type, index) => {
-        const formulaData = formulas[parseInt(index)];
-        if (!formulaData) return _match;
-
-        const { content, isBlock } = formulaData;
-        try {
-          // 使用 KaTeX 渲染公式
-          const rendered = katex.renderToString(content, {
-            throwOnError: false,
-            displayMode: isBlock,
-            output: "html",
-            trust: true,
-            strict: false,
-          });
-
-          // 检查是否有渲染错误（KaTeX 会返回包含错误信息的 HTML）
-          if (rendered.includes("katex-error")) {
-            ztoolkit.log("[AI-Butler] KaTeX 渲染有问题，内容:", content);
-          }
-
-          if (isBlock) {
-            return `<div class="katex-display">${rendered}</div>`;
-          } else {
-            return `<span class="katex-inline">${rendered}</span>`;
-          }
-        } catch (e) {
-          // KaTeX 渲染失败，显示原始公式
-          ztoolkit.log("[AI-Butler] KaTeX 渲染失败:", e, "公式内容:", content);
-          if (isBlock) {
-            return `<pre class="math-fallback">$$${SummaryView.escapeHtml(content)}$$</pre>`;
-          } else {
-            return `<code class="math-fallback">$${SummaryView.escapeHtml(content)}$</code>`;
-          }
-        }
-      },
-    );
-
-    return html;
-  }
-
-  /**
-   * HTML 转义工具方法（静态）
-   *
-   * 防止 XSS 攻击和 HTML 注入
-   *
-   * @param text 待转义的文本
-   * @returns 转义后的文本
-   * @private
-   */
-  private static escapeHtml(text: string): string {
-    return text
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
+    return markdownToDisplayHtml(markdown);
   }
 
   /**
@@ -2502,6 +2504,9 @@ export class SummaryView extends BaseView {
    * @protected
    */
   protected onDestroy(): void {
+    this.chatAbortController?.abort("追问视图已关闭");
+    this.chatAbortController = null;
+
     // 清理计时器
     if (this.renderMathTimer) {
       clearTimeout(this.renderMathTimer);

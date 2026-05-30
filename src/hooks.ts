@@ -26,6 +26,14 @@ import { getString, initLocale, getLocaleID } from "./utils/locale";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
 import { TaskQueueManager } from "./modules/taskQueue";
+import {
+  CollectionAiNoteCleaner,
+  type CleanableAiNoteType,
+  type CollectionAiNoteCleanAction,
+  type CollectionAiNoteCleanPlan,
+  type CollectionAiNoteCleanScope,
+  type RegeneratableAiNoteType,
+} from "./modules/collectionAiNoteCleaner";
 import { MainWindow } from "./modules/views/MainWindow";
 import { AutoScanManager } from "./modules/autoScanManager";
 import {
@@ -254,6 +262,7 @@ function initializeDefaultPrefsOnStartup() {
     contextMenuItemOrder: DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF,
     sidebarModuleVisibility: DEFAULT_SIDEBAR_MODULE_VISIBILITY_PREF,
     sidebarModuleOrder: DEFAULT_SIDEBAR_MODULE_ORDER_PREF,
+    openTaskPanelOnSummon: false,
   };
 
   // 遍历所有配置项,确保每项都有有效值
@@ -327,6 +336,8 @@ const CONTEXT_MENU_DOM_IDS: Record<ContextMenuItemId, string> = {
   mindmap: "zotero-itemmenu-ai-butler-mindmap",
   fillTable: "zotero-itemmenu-ai-butler-fill-table",
   literatureReview: "zotero-collectionmenu-ai-butler-literature-review",
+  clearCollectionAiNotes:
+    "zotero-collectionmenu-ai-butler-clear-collection-ai-notes",
 };
 
 type ContextMenuScope = "item" | "collection";
@@ -383,6 +394,533 @@ function bindUICustomizationRefreshEvent(win: Window): void {
   win.addEventListener(UI_CUSTOMIZATION_CHANGED_EVENT, () => {
     refreshAIButlerContextMenuItems();
   });
+}
+
+function showAIButlerToast(
+  text: string,
+  type: "default" | "success" | "error" | "warning" = "default",
+  closeTime: number = 3000,
+): void {
+  new ztoolkit.ProgressWindow("AI Butler", {
+    closeOnClick: true,
+    closeTime,
+  })
+    .createLine({ text, type })
+    .show();
+}
+
+function createModalButton(
+  doc: Document,
+  label: string,
+  color: string,
+): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  Object.assign(button.style, {
+    minWidth: "92px",
+    border: `1px solid ${color}`,
+    borderRadius: "5px",
+    padding: "7px 12px",
+    background: color,
+    color: "#fff",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: "600",
+  });
+  return button;
+}
+
+function createModalShell(title: string): {
+  doc: Document;
+  win: Window;
+  overlay: HTMLElement;
+  body: HTMLElement;
+  actions: HTMLElement;
+  close: () => void;
+} {
+  const doc = Zotero.getMainWindow().document;
+  const win = doc.defaultView || Zotero.getMainWindow();
+  const overlay = doc.createElement("div");
+  Object.assign(overlay.style, {
+    position: "fixed",
+    inset: "0",
+    background: "rgba(0, 0, 0, 0.35)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: "2147483647",
+  });
+
+  const panel = doc.createElement("div");
+  Object.assign(panel.style, {
+    width: "600px",
+    maxWidth: "92vw",
+    maxHeight: "88vh",
+    overflow: "auto",
+    borderRadius: "8px",
+    background: "var(--ai-surface, #fff)",
+    color: "var(--ai-text, #222)",
+    boxShadow: "0 14px 40px rgba(0, 0, 0, 0.28)",
+    padding: "20px",
+    border: "1px solid rgba(128, 128, 128, 0.24)",
+  });
+  overlay.appendChild(panel);
+
+  const heading = doc.createElement("div");
+  heading.textContent = title;
+  Object.assign(heading.style, {
+    fontSize: "18px",
+    fontWeight: "700",
+    marginBottom: "14px",
+  });
+  panel.appendChild(heading);
+
+  const body = doc.createElement("div");
+  Object.assign(body.style, {
+    display: "grid",
+    gap: "12px",
+    fontSize: "13px",
+    lineHeight: "1.55",
+  });
+  panel.appendChild(body);
+
+  const actions = doc.createElement("div");
+  Object.assign(actions.style, {
+    display: "flex",
+    justifyContent: "flex-end",
+    flexWrap: "wrap",
+    gap: "10px",
+    marginTop: "18px",
+    paddingTop: "14px",
+    borderTop: "1px solid rgba(128, 128, 128, 0.18)",
+  });
+  panel.appendChild(actions);
+
+  const parent = doc.body || doc.documentElement;
+  if (!parent) {
+    throw new Error("无法创建确认对话框");
+  }
+  parent.appendChild(overlay);
+
+  return {
+    doc,
+    win,
+    overlay,
+    body,
+    actions,
+    close: () => overlay.remove(),
+  };
+}
+
+function truncateForDialog(value: string, maxLength: number = 42): string {
+  return value.length > maxLength
+    ? `${value.slice(0, maxLength - 3)}...`
+    : value;
+}
+
+function getPlanTotalNotes(plan: CollectionAiNoteCleanPlan): number {
+  return plan.notes.length;
+}
+
+function getRegenerationCounts(
+  plan: CollectionAiNoteCleanPlan,
+): Record<RegeneratableAiNoteType, number> {
+  const counts: Record<RegeneratableAiNoteType, number> = {
+    summary: 0,
+    imageSummary: 0,
+    mindmap: 0,
+    tableFill: 0,
+  };
+
+  for (const itemPlan of plan.itemPlans) {
+    for (const type of itemPlan.types) {
+      if (!isRegeneratableDialogType(type)) continue;
+      counts[type] += 1;
+    }
+  }
+
+  return counts;
+}
+
+function isRegeneratableDialogType(
+  type: CleanableAiNoteType,
+): type is RegeneratableAiNoteType {
+  return (
+    type === "summary" ||
+    type === "imageSummary" ||
+    type === "mindmap" ||
+    type === "tableFill"
+  );
+}
+
+function formatCleanScope(plan: CollectionAiNoteCleanPlan): string {
+  if (plan.scope === "summary") {
+    return "仅清空 AI 管家精读笔记";
+  }
+
+  return plan.includeChat
+    ? "清空AI管家所有笔记，并同时清空后续追问记录"
+    : "清空AI管家所有笔记（含精读笔记、一图总结、思维导图、填表)";
+}
+
+function formatPlanTypeCounts(plan: CollectionAiNoteCleanPlan): string {
+  const labels = CollectionAiNoteCleaner.TYPE_LABELS;
+  return (Object.keys(labels) as CleanableAiNoteType[])
+    .filter((type) => plan.counts[type] > 0)
+    .map((type) => `${plan.counts[type]} 条${labels[type]}`)
+    .join("、");
+}
+
+function formatRegenerationCounts(plan: CollectionAiNoteCleanPlan): string {
+  const counts = getRegenerationCounts(plan);
+  const parts = [
+    counts.summary > 0 ? `${counts.summary} 篇论文重新精读` : "",
+    counts.imageSummary > 0 ? `${counts.imageSummary} 个一图总结` : "",
+    counts.mindmap > 0 ? `${counts.mindmap} 个思维导图` : "",
+    counts.tableFill > 0 ? `${counts.tableFill} 个填表任务` : "",
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join("、") : "无可重新生成任务";
+}
+
+function formatNonRegeneratableCleanCounts(
+  plan: CollectionAiNoteCleanPlan,
+): string {
+  const chatCount = plan.counts.chat || 0;
+  return chatCount > 0 ? `${chatCount} 条后续追问记录不会重新生成。` : "";
+}
+
+function buildPlanExamples(plan: CollectionAiNoteCleanPlan): string[] {
+  const labels = CollectionAiNoteCleaner.TYPE_LABELS;
+  return plan.itemPlans.slice(0, 3).map((itemPlan) => {
+    const typeText = itemPlan.types.map((type) => labels[type]).join("、");
+    return `${truncateForDialog(itemPlan.itemTitle)}：${typeText}`;
+  });
+}
+
+function showCollectionCleanChoiceDialog(collectionName: string): Promise<{
+  scope: CollectionAiNoteCleanScope;
+  includeChat: boolean;
+  action: CollectionAiNoteCleanAction;
+} | null> {
+  return new Promise((resolve) => {
+    const { doc, overlay, body, actions, close } =
+      createModalShell("清空分类 AI 管家笔记");
+    let settled = false;
+    const finish = (
+      value: {
+        scope: CollectionAiNoteCleanScope;
+        includeChat: boolean;
+        action: CollectionAiNoteCleanAction;
+      } | null,
+    ) => {
+      if (settled) return;
+      settled = true;
+      close();
+      resolve(value);
+    };
+
+    const message = doc.createElement("div");
+    message.textContent = `将处理分类「${collectionName}」及其子分类中的文献。请选择清空范围和操作。`;
+    Object.assign(message.style, {
+      color: "var(--ai-text-muted, #555)",
+      lineHeight: "1.6",
+    });
+    body.appendChild(message);
+
+    const scopeWrap = doc.createElement("div");
+    Object.assign(scopeWrap.style, {
+      display: "grid",
+      gap: "10px",
+    });
+
+    const options: Array<{
+      value: CollectionAiNoteCleanScope;
+      label: string;
+      checked: boolean;
+    }> = [
+      {
+        value: "summary",
+        label: "只清空 AI 管家的精读笔记",
+        checked: true,
+      },
+      {
+        value: "all",
+        label: "清空AI管家所有笔记（含精读笔记、一图总结、思维导图、填表)",
+        checked: false,
+      },
+    ];
+    for (const option of options) {
+      const label = doc.createElement("label");
+      Object.assign(label.style, {
+        display: "grid",
+        gridTemplateColumns: "auto 1fr",
+        gap: "10px",
+        alignItems: "start",
+        padding: "11px 12px",
+        border: option.checked
+          ? "1px solid rgba(89, 192, 188, 0.68)"
+          : "1px solid rgba(128, 128, 128, 0.22)",
+        borderRadius: "7px",
+        background: option.checked
+          ? "rgba(89, 192, 188, 0.1)"
+          : "rgba(128, 128, 128, 0.04)",
+        cursor: "pointer",
+      });
+      const input = doc.createElement("input");
+      input.type = "radio";
+      input.name = "ai-butler-clean-scope";
+      input.value = option.value;
+      input.checked = option.checked;
+      Object.assign(input.style, {
+        marginTop: "2px",
+      });
+      label.appendChild(input);
+
+      const textWrap = doc.createElement("div");
+      const title = doc.createElement("div");
+      title.textContent = option.label;
+      Object.assign(title.style, {
+        fontWeight: "650",
+        color: "var(--ai-text, #222)",
+      });
+      const desc = doc.createElement("div");
+      desc.textContent =
+        option.value === "summary"
+          ? "只删除常规精读笔记，并清空对应总结任务。"
+          : "删除精读笔记、一图总结、思维导图、填表；后续追问记录需单独勾选。";
+      Object.assign(desc.style, {
+        marginTop: "3px",
+        fontSize: "12px",
+        color: "var(--ai-text-muted, #666)",
+        lineHeight: "1.45",
+      });
+      textWrap.appendChild(title);
+      textWrap.appendChild(desc);
+      label.appendChild(textWrap);
+      scopeWrap.appendChild(label);
+
+      input.addEventListener("change", () => {
+        updateChoiceLayout();
+      });
+    }
+    body.appendChild(scopeWrap);
+
+    const chatRow = doc.createElement("label");
+    Object.assign(chatRow.style, {
+      display: "none",
+      gridTemplateColumns: "auto 1fr",
+      gap: "10px",
+      alignItems: "start",
+      padding: "10px 12px",
+      borderRadius: "7px",
+      border: "1px dashed rgba(194, 65, 12, 0.42)",
+      background: "rgba(194, 65, 12, 0.07)",
+      cursor: "pointer",
+    });
+    const chatCheckbox = doc.createElement("input");
+    chatCheckbox.type = "checkbox";
+    chatCheckbox.id = "ai-butler-clean-chat-records";
+    chatCheckbox.checked = false;
+    Object.assign(chatCheckbox.style, {
+      marginTop: "2px",
+    });
+    const chatText = doc.createElement("div");
+    const chatTitle = doc.createElement("div");
+    chatTitle.textContent = "同时清空后续追问记录（无法重新生成）";
+    Object.assign(chatTitle.style, {
+      fontWeight: "650",
+      color: "var(--ai-text, #222)",
+    });
+    const chatDesc = doc.createElement("div");
+    chatDesc.textContent =
+      "后续追问是历史对话记录，清空后不会加入重新生成队列。";
+    Object.assign(chatDesc.style, {
+      marginTop: "3px",
+      fontSize: "12px",
+      color: "var(--ai-text-muted, #666)",
+      lineHeight: "1.45",
+    });
+    chatText.appendChild(chatTitle);
+    chatText.appendChild(chatDesc);
+    chatRow.appendChild(chatCheckbox);
+    chatRow.appendChild(chatText);
+    body.appendChild(chatRow);
+
+    const cancelBtn = createModalButton(doc, "取消", "#8a8f98");
+    const confirmBtn = createModalButton(doc, "确认", "#d97706");
+    const regenBtn = createModalButton(doc, "清空并重新生成", "#c2410c");
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+    actions.appendChild(regenBtn);
+
+    const getScope = (): CollectionAiNoteCleanScope => {
+      const selected = body.querySelector(
+        'input[name="ai-butler-clean-scope"]:checked',
+      ) as HTMLInputElement | null;
+      return selected?.value === "all" ? "all" : "summary";
+    };
+    const getChoice = (action: CollectionAiNoteCleanAction) => {
+      const scope = getScope();
+      return {
+        scope,
+        includeChat: scope === "all" && chatCheckbox.checked,
+        action,
+      };
+    };
+    const updateChoiceLayout = () => {
+      const scope = getScope();
+      chatRow.style.display = scope === "all" ? "grid" : "none";
+      const rows = scopeWrap.querySelectorAll("label");
+      rows.forEach((row: Element) => {
+        const input = row.querySelector("input") as HTMLInputElement | null;
+        Object.assign((row as HTMLElement).style, {
+          border:
+            input?.checked === true
+              ? "1px solid rgba(89, 192, 188, 0.68)"
+              : "1px solid rgba(128, 128, 128, 0.22)",
+          background:
+            input?.checked === true
+              ? "rgba(89, 192, 188, 0.1)"
+              : "rgba(128, 128, 128, 0.04)",
+        });
+      });
+    };
+
+    cancelBtn.addEventListener("click", () => finish(null));
+    confirmBtn.addEventListener("click", () => finish(getChoice("delete")));
+    regenBtn.addEventListener("click", () =>
+      finish(getChoice("deleteAndRegenerate")),
+    );
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) finish(null);
+    });
+    updateChoiceLayout();
+  });
+}
+
+function showDelayedConfirmDialog(params: {
+  title: string;
+  message: string;
+  details: string[];
+  confirmLabel: string;
+}): Promise<boolean> {
+  return new Promise((resolve) => {
+    const { doc, win, overlay, body, actions, close } = createModalShell(
+      params.title,
+    );
+    let settled = false;
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      close();
+      resolve(value);
+    };
+
+    const message = doc.createElement("div");
+    message.textContent = params.message;
+    Object.assign(message.style, { fontWeight: "600" });
+    body.appendChild(message);
+
+    const list = doc.createElement("ul");
+    Object.assign(list.style, {
+      margin: "0",
+      paddingLeft: "18px",
+      display: "grid",
+      gap: "5px",
+    });
+    for (const detail of params.details) {
+      const item = doc.createElement("li");
+      item.textContent = detail;
+      list.appendChild(item);
+    }
+    body.appendChild(list);
+
+    const warning = doc.createElement("div");
+    warning.textContent = "该操作不可逆，请确认已经理解后再继续。";
+    Object.assign(warning.style, {
+      padding: "9px 10px",
+      borderRadius: "6px",
+      background: "rgba(220, 38, 38, 0.1)",
+      color: "#b91c1c",
+      fontWeight: "600",
+    });
+    body.appendChild(warning);
+
+    const cancelBtn = createModalButton(doc, "取消", "#8a8f98");
+    const confirmBtn = createModalButton(
+      doc,
+      `${params.confirmLabel} (1)`,
+      "#dc2626",
+    );
+    confirmBtn.disabled = true;
+    Object.assign(confirmBtn.style, {
+      opacity: "0.58",
+      cursor: "not-allowed",
+    });
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+
+    win.setTimeout(() => {
+      if (settled) return;
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = params.confirmLabel;
+      Object.assign(confirmBtn.style, {
+        opacity: "1",
+        cursor: "pointer",
+      });
+    }, 1000);
+
+    cancelBtn.addEventListener("click", () => finish(false));
+    confirmBtn.addEventListener("click", () => {
+      if (!confirmBtn.disabled) finish(true);
+    });
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) finish(false);
+    });
+  });
+}
+
+function buildFinalConfirmDetails(
+  plan: CollectionAiNoteCleanPlan,
+  action: CollectionAiNoteCleanAction,
+): string[] {
+  const details = [
+    `范围：${formatCleanScope(plan)}。`,
+    `已扫描 ${plan.scannedItemCount} 篇文献，发现 ${getPlanTotalNotes(plan)} 条笔记：${formatPlanTypeCounts(plan)}。`,
+    "会同步清空这些文献对应类型的旧队列任务。",
+  ];
+  const nonRegeneratableText = formatNonRegeneratableCleanCounts(plan);
+  if (nonRegeneratableText) {
+    details.push(nonRegeneratableText);
+  }
+
+  if (action === "deleteAndRegenerate") {
+    details.push(`随后加入普通队列：${formatRegenerationCounts(plan)}。`);
+    details.push("重新生成可能产生较大的 token 和 API 调用消耗。");
+  }
+
+  const examples = buildPlanExamples(plan);
+  if (examples.length > 0) {
+    details.push(`示例：${examples.join("；")}。`);
+  }
+
+  return details;
+}
+
+async function maybeOpenTaskPanelAfterQueue(): Promise<void> {
+  if (getPref("openTaskPanelOnSummon") !== true) {
+    return;
+  }
+
+  const mainWin = MainWindow.getInstance();
+  await mainWin.open("tasks");
+  try {
+    mainWin.getTaskQueueView().refresh();
+  } catch (e) {
+    ztoolkit.log("[AI-Butler] 刷新任务队列视图失败:", e);
+  }
 }
 
 /**
@@ -550,6 +1088,19 @@ function registerContextMenuItem() {
           await handleLiteratureReview();
         },
         getVisibility: () => isContextMenuItemEnabled("literatureReview"),
+      },
+    },
+    clearCollectionAiNotes: {
+      scope: "collection",
+      options: {
+        tag: "menuitem",
+        id: CONTEXT_MENU_DOM_IDS.clearCollectionAiNotes,
+        label: getString("menuitem-clearCollectionAiNotes" as any),
+        icon: menuIcon,
+        commandListener: async () => {
+          await handleClearCollectionAiNotes();
+        },
+        getVisibility: () => isContextMenuItemEnabled("clearCollectionAiNotes"),
       },
     },
   };
@@ -949,8 +1500,8 @@ async function handleChatWithAI() {
     // 通过 SummaryView 加载该文献的笔记(会自动显示聊天界面)
     const summaryView = mainWin.getSummaryView();
     if (summaryView) {
-      // 调用 showSavedNoteForItem 需要传入条目ID
-      await (summaryView as any).showSavedNoteForItem(parentItemID);
+      // 使用统一聊天入口；它会加载已有总结和后续追问历史。
+      await (summaryView as any).loadItemForChat(parentItemID);
     }
   } catch (error: any) {
     ztoolkit.log("[AI-Butler] 打开聊天失败:", error);
@@ -992,23 +1543,37 @@ async function handleChatWithAI() {
 async function handleGenerateSummary() {
   // 第一步:验证 API 配置
   // 新版本以用户配置的 endpoint 列表作为主路由来源。
-  const enabledEndpoints = LLMEndpointManager.getEnabledEndpoints();
-  const hasUsableEndpoint = enabledEndpoints.some(
-    (endpoint) =>
-      endpoint.apiUrl.trim() &&
-      endpoint.model.trim() &&
-      (endpoint.apiKey.trim() ||
-        LLMEndpointManager.providerAllowsEmptyApiKey(endpoint.providerType)),
+  let enabledEndpoints = LLMEndpointManager.getEnabledEndpoints();
+  let hasUsableEndpoint = enabledEndpoints.some((endpoint) =>
+    LLMEndpointManager.isEndpointUsable(endpoint),
   );
+  if (!hasUsableEndpoint) {
+    LLMEndpointManager.syncLegacyPrimaryEndpointFromPrefs();
+    enabledEndpoints = LLMEndpointManager.getEnabledEndpoints();
+    hasUsableEndpoint = enabledEndpoints.some((endpoint) =>
+      LLMEndpointManager.isEndpointUsable(endpoint),
+    );
+  }
 
   if (!hasUsableEndpoint) {
+    const endpointDetails =
+      enabledEndpoints.length > 0
+        ? enabledEndpoints
+            .map((endpoint) => {
+              const missing = LLMEndpointManager.validateEndpoint(endpoint);
+              return `${endpoint.name} (${LLMEndpointManager.providerLabel(
+                endpoint.providerType,
+              )}) 缺少: ${missing.join(", ") || "未知配置"}`;
+            })
+            .join("\n")
+        : "当前没有启用的 LLM Endpoint";
     // API 未配置,显示友好的错误提示
     new ztoolkit.ProgressWindow("AI Butler", {
       closeOnClick: true,
       closeTime: 5000, // 5秒后自动关闭
     })
       .createLine({
-        text: "请先在设置中配置至少一个启用的 LLM Endpoint",
+        text: `请先在设置中配置至少一个可用的 LLM Endpoint\n${endpointDetails}`,
         type: "error",
       })
       .show();
@@ -1032,7 +1597,7 @@ async function handleGenerateSummary() {
     return;
   }
 
-  // 第三步:将条目加入任务队列(优先处理)并提示用户
+  // 第三步:单篇优先入队，多选按普通队列遵守批次设置
   const progressWin = new ztoolkit.ProgressWindow("AI Butler", {
     closeOnClick: true,
     closeTime: 4000,
@@ -1040,22 +1605,15 @@ async function handleGenerateSummary() {
 
   try {
     const manager = TaskQueueManager.getInstance();
-    await manager.addTasks(items, true); // 右键触发,默认优先处理
-
-    // 打开主窗口并切换到任务队列标签页（使用单例）
-    const mainWin = MainWindow.getInstance();
-    await mainWin.open("tasks");
-    // 立即刷新一次，确保用户看到刚入队的任务，避免“空白”误解
-    try {
-      mainWin.getTaskQueueView().refresh();
-    } catch (e) {
-      // 安全兜底，不影响后续流程
-      ztoolkit.log("[AI-Butler] 刷新任务队列视图失败:", e);
-    }
+    const priority = items.length === 1;
+    await manager.addTasks(items, priority);
+    await maybeOpenTaskPanelAfterQueue();
 
     progressWin
       .createLine({
-        text: `已加入队列: ${items.length} 篇文献，开始处理...`,
+        text: priority
+          ? "已加入优先队列: 1 篇文献，开始处理..."
+          : `已加入普通队列: ${items.length} 篇文献，将按批次设置处理`,
         type: "success",
       })
       .show();
@@ -1367,6 +1925,74 @@ async function handleLiteratureReview() {
 }
 
 /**
+ * 清空当前分类及子分类中的 AI 管家笔记，可选择按原类型重新入普通队列。
+ */
+async function handleClearCollectionAiNotes() {
+  try {
+    const zoteroPane = Zotero.getActiveZoteroPane();
+    const collection = zoteroPane.getSelectedCollection();
+
+    if (!collection) {
+      showAIButlerToast("请先选择一个分类", "error");
+      return;
+    }
+
+    const choice = await showCollectionCleanChoiceDialog(collection.name);
+    if (!choice) return;
+
+    showAIButlerToast("正在扫描分类中的 AI 管家笔记...", "default", 1800);
+    const plan = await CollectionAiNoteCleaner.inspectCollection(
+      collection,
+      choice.scope,
+      { includeChat: choice.includeChat },
+    );
+
+    if (plan.notes.length === 0) {
+      showAIButlerToast(
+        `未在「${collection.name}」中找到符合范围的 AI 管家笔记`,
+        "warning",
+        3500,
+      );
+      return;
+    }
+
+    const confirmed = await showDelayedConfirmDialog({
+      title:
+        choice.action === "deleteAndRegenerate"
+          ? "确认清空并重新生成"
+          : "确认清空 AI 管家笔记",
+      message:
+        choice.action === "deleteAndRegenerate"
+          ? "将先删除已记录的 AI 管家笔记，再按删除前的笔记类型加入普通队列。"
+          : "将删除已记录的 AI 管家笔记。",
+      details: buildFinalConfirmDetails(plan, choice.action),
+      confirmLabel:
+        choice.action === "deleteAndRegenerate"
+          ? "确认清空并重新生成"
+          : "确认清空",
+    });
+    if (!confirmed) return;
+
+    const result = await CollectionAiNoteCleaner.applyPlan(plan, choice.action);
+    const queuedText =
+      choice.action === "deleteAndRegenerate"
+        ? `，已加入普通队列：${formatRegenerationCounts(plan)}`
+        : "";
+    const failedText =
+      result.failedDeletes > 0 ? `，${result.failedDeletes} 条删除失败` : "";
+
+    showAIButlerToast(
+      `已删除 ${result.deletedNotes} 条笔记，清理 ${result.clearedTasks} 个旧队列任务${queuedText}${failedText}`,
+      result.failedDeletes > 0 ? "warning" : "success",
+      5200,
+    );
+  } catch (error: any) {
+    ztoolkit.log("[AI-Butler] 清空分类 AI 管家笔记失败:", error);
+    showAIButlerToast(`清空失败: ${error.message || error}`, "error", 5000);
+  }
+}
+
+/**
  * 处理填表请求
  *
  * 当用户在文献右键点击"AI管家填表"时触发
@@ -1454,10 +2080,11 @@ async function handleMultiRoundSummary(
   try {
     const { TaskQueueManager } = await import("./modules/taskQueue");
     const taskQueue = TaskQueueManager.getInstance();
+    const priority = items.length === 1;
 
     // 批量添加任务，带有特定选项
     for (const item of items) {
-      await taskQueue.addTask(item, true, {
+      await taskQueue.addTask(item, priority, {
         summaryMode: mode,
         forceOverwrite: true,
       });
@@ -1468,7 +2095,9 @@ async function handleMultiRoundSummary(
       closeTime: 3000,
     })
       .createLine({
-        text: `已将 ${items.length} 个重分析任务加入高优队列`,
+        text: priority
+          ? "已将 1 个重分析任务加入高优队列"
+          : `已将 ${items.length} 个重分析任务加入普通队列，将按批次设置处理`,
         type: "success",
       })
       .show();

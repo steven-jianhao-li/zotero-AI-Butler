@@ -55,6 +55,12 @@ export const CONTEXT_MENU_ITEMS = [
     description: "分类右键：打开文献综述配置",
     scope: "collection",
   },
+  {
+    id: "clearCollectionAiNotes",
+    label: "清空该分类 AI 管家笔记",
+    description: "分类右键：清空精读或全部可再生成的 AI 管家笔记",
+    scope: "collection",
+  },
 ] as const;
 
 export type ContextMenuItemId = (typeof CONTEXT_MENU_ITEMS)[number]["id"];
@@ -109,6 +115,7 @@ export const DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY: ContextMenuVisibility = {
   mindmap: true,
   fillTable: true,
   literatureReview: true,
+  clearCollectionAiNotes: true,
 };
 
 export const DEFAULT_SIDEBAR_MODULE_VISIBILITY: SidebarModuleVisibility = {
@@ -138,6 +145,7 @@ export const DEFAULT_CONTEXT_MENU_ITEM_ORDER: ContextMenuItemId[] = [
   "mindmap",
   "fillTable",
   "literatureReview",
+  "clearCollectionAiNotes",
 ];
 
 export const DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY_PREF = JSON.stringify(

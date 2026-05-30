@@ -222,7 +222,10 @@ export class PDFExtractor {
    * console.log(`提取了 ${fullText.length} 个字符`);
    * ```
    */
-  public static async extractTextFromItem(item: Zotero.Item): Promise<string> {
+  public static async extractTextFromItem(
+    item: Zotero.Item,
+    pdfProcessMode?: string,
+  ): Promise<string> {
     // 第一步:获取条目的所有附件 ID
     const attachments = item.getAttachments();
 
@@ -258,7 +261,13 @@ export class PDFExtractor {
     );
 
     // 第三步:从 PDF 附件中提取文本
-    const currentPdfMode = (getPref("pdfProcessMode") as string) || "base64";
+    const currentPdfMode = (
+      pdfProcessMode ||
+      (getPref("pdfProcessMode") as string) ||
+      "base64"
+    )
+      .trim()
+      .toLowerCase();
     const mineruApiKey = (getPref("mineruApiKey") as string) || "";
     // 若选择 MinerU API 模式且已配置 API Key，则使用 MinerU API 提取文本
     if (

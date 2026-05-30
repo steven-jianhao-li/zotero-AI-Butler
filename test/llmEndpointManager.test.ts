@@ -13,10 +13,26 @@ const prefKeys = [
   "multiModelSummaryEndpointIds",
   "maxApiSwitchCount",
   "reasoningEffort",
+  "pdfProcessMode",
   "provider",
+  "openaiApiUrl",
+  "openaiApiKey",
+  "openaiApiModel",
   "openaiCompatApiUrl",
   "openaiCompatApiKey",
   "openaiCompatModel",
+  "geminiApiUrl",
+  "geminiApiKey",
+  "geminiModel",
+  "anthropicApiUrl",
+  "anthropicApiKey",
+  "anthropicModel",
+  "openRouterApiUrl",
+  "openRouterApiKey",
+  "openRouterModel",
+  "volcanoArkApiUrl",
+  "volcanoArkApiKey",
+  "volcanoArkModel",
   "ollamaApiUrl",
   "ollamaApiKey",
   "ollamaModel",
@@ -98,6 +114,57 @@ describe("LLMEndpointManager", function () {
     });
   });
 
+  it("syncs the migrated legacy endpoint from current provider prefs", function () {
+    LLMEndpointManager.saveEndpoints([
+      {
+        ...makeEndpoint("endpoint-legacy-primary"),
+        apiKey: "",
+        model: "",
+      },
+    ]);
+    Zotero.Prefs.set(prefName("provider"), "google", true);
+    Zotero.Prefs.set(
+      prefName("geminiApiUrl"),
+      "https://generativelanguage.googleapis.com",
+      true,
+    );
+    Zotero.Prefs.set(prefName("geminiApiKey"), "gemini-key", true);
+    Zotero.Prefs.set(prefName("geminiModel"), "gemini-test-model", true);
+
+    const synced = LLMEndpointManager.syncLegacyPrimaryEndpointFromPrefs();
+    const endpoints = LLMEndpointManager.getEndpoints();
+
+    expect(synced).not.to.equal(null);
+    expect(synced!).to.include({
+      id: "endpoint-legacy-primary",
+      providerType: "google",
+      apiKey: "gemini-key",
+      model: "gemini-test-model",
+      enabled: true,
+    });
+    expect(endpoints).to.have.length(1);
+    expect(LLMEndpointManager.isEndpointUsable(endpoints[0])).to.equal(true);
+  });
+
+  it("does not overwrite manually created endpoints during legacy sync", function () {
+    LLMEndpointManager.saveEndpoints([makeEndpoint("manual")]);
+    Zotero.Prefs.set(prefName("provider"), "google", true);
+    Zotero.Prefs.set(prefName("geminiApiKey"), "gemini-key", true);
+    Zotero.Prefs.set(prefName("geminiModel"), "gemini-test-model", true);
+
+    const synced = LLMEndpointManager.syncLegacyPrimaryEndpointFromPrefs();
+    const endpoints = LLMEndpointManager.getEndpoints();
+
+    expect(synced).to.equal(null);
+    expect(endpoints).to.have.length(1);
+    expect(endpoints[0]).to.include({
+      id: "manual",
+      providerType: "openai",
+      apiKey: "sk-manual",
+      model: "gpt-5",
+    });
+  });
+
   it("normalizes stored reasoning effort values", function () {
     LLMEndpointManager.saveEndpoints([
       { ...makeEndpoint("a"), reasoningEffort: "high" },
@@ -112,6 +179,25 @@ describe("LLMEndpointManager", function () {
 
     expect(endpoints[0].reasoningEffort).to.equal("high");
     expect(endpoints[1].reasoningEffort).to.equal("default");
+  });
+
+  it("normalizes endpoint PDF modes and resolves global fallback", function () {
+    Zotero.Prefs.set(prefName("pdfProcessMode"), "mineru", true);
+    LLMEndpointManager.saveEndpoints([
+      { ...makeEndpoint("a"), pdfProcessMode: "text" },
+      { ...makeEndpoint("b"), pdfProcessMode: "invalid" as any },
+    ]);
+
+    const endpoints = LLMEndpointManager.getEndpoints();
+
+    expect(endpoints[0].pdfProcessMode).to.equal("text");
+    expect(endpoints[1].pdfProcessMode).to.equal("global");
+    expect(
+      LLMEndpointManager.getEffectivePdfProcessMode(endpoints[0]),
+    ).to.equal("text");
+    expect(
+      LLMEndpointManager.getEffectivePdfProcessMode(endpoints[1]),
+    ).to.equal("mineru");
   });
 
   it("returns priority route order and skips disabled endpoints", function () {

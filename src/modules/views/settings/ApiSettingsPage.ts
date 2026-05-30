@@ -828,14 +828,6 @@ export class ApiSettingsPage {
       ],
       pdfModeValue,
       (newVal) => {
-        // Toggle Mineru API Key visibility
-        const mineruSection = this.container.querySelector(
-          "#provider-mineru",
-        ) as HTMLElement;
-        if (mineruSection) {
-          mineruSection.style.display = newVal === "mineru" ? "block" : "none";
-        }
-
         // 当用户手动调整 PDF 模式，也给出一个轻量提示
         let msg = "";
         if (newVal === "base64")
@@ -864,15 +856,52 @@ export class ApiSettingsPage {
     );
     form.appendChild(
       this.createFormGroup(
-        "PDF 处理模式",
+        "全局 PDF 处理模式",
         pdfModeSelect,
-        "Base64:原生图片识别; 文本提取:Zotero默认提取; MinerU:调用API实现复杂公式/表格排版的高质量还原",
+        "默认 PDF 输入方式。模型平台详情中可以为单个模型单独覆盖，适合让支持多模态的模型使用 Base64，让本地或文本模型使用文本提取/MinerU。",
       ),
     );
 
-    // MinerU 专属配置区域
+    // MinerU 解析配置区域。端点级 PDF 模式也可能使用 MinerU，因此这里常驻显示。
     const sectionMineru = this.createElement("div", { id: "provider-mineru" });
-    sectionMineru.style.display = pdfModeValue === "mineru" ? "block" : "none";
+    Object.assign(sectionMineru.style, {
+      padding: "14px 16px",
+      border: "1px solid rgba(255, 152, 0, 0.35)",
+      borderRadius: "8px",
+      background: "rgba(255, 152, 0, 0.06)",
+      marginBottom: "24px",
+    });
+
+    const mineruHeader = this.createElement("div", {
+      styles: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "12px",
+        flexWrap: "wrap",
+        marginBottom: "12px",
+      },
+    });
+    mineruHeader.appendChild(
+      this.createElement("div", {
+        textContent: "MinerU 解析配置",
+        styles: {
+          fontSize: "14px",
+          fontWeight: "700",
+          color: "#e08a00",
+        },
+      }),
+    );
+    mineruHeader.appendChild(
+      this.createElement("div", {
+        textContent: "全局或单个模型选择 MinerU 时共用",
+        styles: {
+          fontSize: "12px",
+          color: "#8a6d3b",
+        },
+      }),
+    );
+    sectionMineru.appendChild(mineruHeader);
 
     const mineruInputWrapper = this.createPasswordInput(
       "mineruApiKey",
@@ -928,7 +957,7 @@ export class ApiSettingsPage {
       this.createFormGroup(
         "MinerU API Key *",
         mineruInputWrapper,
-        "【必填】请访问 https://mineru.net/ 申请 API Key",
+        "只要全局 PDF 处理模式或任一模型平台的 PDF 处理方式选择 MinerU，就需要填写。请访问 https://mineru.net/ 申请 API Key。",
       ),
     );
     form.appendChild(sectionMineru);
@@ -2686,6 +2715,8 @@ export class ApiSettingsPage {
           mineruModelVersion === "pipeline" ? "pipeline" : "vlm",
         );
       }
+
+      LLMEndpointManager.syncLegacyPrimaryEndpointFromPrefs();
 
       ztoolkit.log("[API Settings] Settings saved successfully");
 

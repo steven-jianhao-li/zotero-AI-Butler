@@ -149,6 +149,10 @@ export class DataSettingsPage {
     // 采集 prefs.d.ts 中声明的键
     const keys = [
       "provider",
+      "llmEndpoints",
+      "llmRoutingStrategy",
+      "multiModelSummaryEnabled",
+      "multiModelSummaryEndpointIds",
       "openaiApiKey",
       "openaiApiUrl",
       "openaiApiModel",
@@ -171,11 +175,13 @@ export class DataSettingsPage {
       "autoScan",
       "scanInterval",
       "pdfProcessMode",
+      "pdfAttachmentMode",
       "theme",
       "fontSize",
       "autoScroll",
       "windowWidth",
       "windowHeight",
+      "openTaskPanelOnSummon",
       "notePrefix",
       "noteStrategy",
     ];
@@ -285,6 +291,7 @@ export class DataSettingsPage {
     setPref("theme", "system");
     setPref("fontSize", "14");
     setPref("autoScroll", true as any);
+    setPref("openTaskPanelOnSummon" as any, false as any);
     setPref("windowWidth", "900");
     setPref("windowHeight", "650");
     setPref("maxRetries", "3");

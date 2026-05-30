@@ -52,6 +52,7 @@ export class LibraryScannerView extends BaseView {
   private treeContainer: HTMLElement | null = null;
   private selectedCountElement: HTMLElement | null = null;
   private taskQueueManager: TaskQueueManager;
+  private activeScanId: number = 0;
 
   /**
    * 构造函数
@@ -201,77 +202,126 @@ export class LibraryScannerView extends BaseView {
    * 视图显示时触发
    */
   public async show(): Promise<void> {
-    await super.show();
-    await this.scanLibrary();
-    this.updateUI();
+    super.show();
+
+    const scanId = ++this.activeScanId;
+    this.prepareScanUI();
+
+    try {
+      const startedAt = Date.now();
+      this.log(`[LibraryScanner] 开始扫描未分析文献 scanId=${scanId}`);
+
+      await this.scanLibrary(scanId);
+      if (!this.isCurrentScan(scanId)) return;
+
+      this.log(
+        `[LibraryScanner] 扫描完成 scanId=${scanId}, unprocessed=${this.totalUnprocessed}, elapsedMs=${Date.now() - startedAt}`,
+      );
+      this.updateUI();
+    } catch (error) {
+      if (!this.isCurrentScan(scanId)) return;
+      this.log(`[LibraryScanner] 扫描失败 scanId=${scanId}`, error);
+      this.showScanError(error);
+    }
   }
 
   /**
    * 扫描整个库
    */
-  private async scanLibrary(): Promise<void> {
+  private async scanLibrary(scanId: number): Promise<void> {
     this.treeRoot = [];
     this.totalUnprocessed = 0;
 
     // 获取所有库
-    const libraries = Zotero.Libraries.getAll();
+    const libraries = Zotero.Libraries.getAll().filter(
+      (library) => library.libraryType !== "feed",
+    );
+    this.log(`[LibraryScanner] 待扫描库数量: ${libraries.length}`);
 
     for (const library of libraries) {
-      // 跳过订阅库(只读)
-      if (library.libraryType === "feed") {
-        continue;
-      }
+      if (!this.isCurrentScan(scanId)) return;
 
-      const libraryNode: TreeNode = {
-        id: `lib-${library.libraryID}`,
-        type: "collection",
-        name: library.name,
-        children: [],
-        checked: false,
-        expanded: false, // 默认收起
-      };
+      try {
+        const libraryStartedAt = Date.now();
+        const libraryID = library.libraryID;
+        const libraryLabel = library.name || `Library ${libraryID}`;
+        this.setInfo(`正在扫描「${libraryLabel}」...`);
+        await this.yieldToUI();
 
-      // 扫描库中的所有收藏夹
-      const collections = Zotero.Collections.getByLibrary(library.libraryID);
-      for (const collection of collections) {
-        // 只处理顶层收藏夹
-        if (!collection.parentID) {
-          const node = await this.buildCollectionNode(collection);
-          if (node) {
-            node.parentNode = libraryNode;
-            libraryNode.children.push(node);
-          }
-        }
-      }
-
-      // 扫描库中未归类的条目
-      const unfiledItems = await this.getUnfiledItems(library.libraryID);
-      if (unfiledItems.length > 0) {
-        const unfiledNode: TreeNode = {
-          id: `unfiled-${library.libraryID}`,
+        const libraryNode: TreeNode = {
+          id: `lib-${libraryID}`,
           type: "collection",
-          name: "未分类文献",
+          name: library.name,
           children: [],
           checked: false,
           expanded: false, // 默认收起
-          parentNode: libraryNode,
         };
 
-        for (const item of unfiledItems) {
-          const itemNode = await this.buildItemNode(item);
-          if (itemNode) {
-            itemNode.parentNode = unfiledNode;
-            unfiledNode.children.push(itemNode);
+        // 扫描库中的所有收藏夹
+        const collections = Zotero.Collections.getByLibrary(libraryID);
+        const itemIDs = await this.getLibraryTopLevelItemIDs(libraryID);
+        this.log(
+          `[LibraryScanner] 扫描库: id=${libraryID}, name="${libraryLabel}", collections=${collections.length}, topLevelItemIDs=${itemIDs.length}`,
+        );
+
+        const unprocessedItems = await this.collectUnprocessedItems(
+          itemIDs,
+          libraryLabel,
+          scanId,
+        );
+        if (!this.isCurrentScan(scanId)) return;
+
+        this.totalUnprocessed += unprocessedItems.size;
+
+        for (const collection of collections) {
+          // 只处理顶层收藏夹
+          if (!collection.parentID) {
+            const node = this.buildCollectionNode(collection, unprocessedItems);
+            if (node) {
+              node.parentNode = libraryNode;
+              libraryNode.children.push(node);
+            }
           }
         }
 
-        if (unfiledNode.children.length > 0) {
-          libraryNode.children.push(unfiledNode);
-        }
-      }
+        // 扫描库中未归类的条目
+        const unfiledItems = this.getUnfiledItems(unprocessedItems);
+        if (unfiledItems.length > 0) {
+          const unfiledNode: TreeNode = {
+            id: `unfiled-${libraryID}`,
+            type: "collection",
+            name: "未分类文献",
+            children: [],
+            checked: false,
+            expanded: false, // 默认收起
+            parentNode: libraryNode,
+          };
 
-      if (libraryNode.children.length > 0) {
-        this.treeRoot.push(libraryNode);
+          for (const item of unfiledItems) {
+            const itemNode = this.buildItemNode(item);
+            if (itemNode) {
+              itemNode.parentNode = unfiledNode;
+              unfiledNode.children.push(itemNode);
+            }
+          }
+
+          if (unfiledNode.children.length > 0) {
+            libraryNode.children.push(unfiledNode);
+          }
+        }
+
+        if (libraryNode.children.length > 0) {
+          this.treeRoot.push(libraryNode);
+        }
+
+        this.log(
+          `[LibraryScanner] 库扫描完成: id=${libraryID}, unprocessed=${unprocessedItems.size}, unfiled=${unfiledItems.length}, elapsedMs=${Date.now() - libraryStartedAt}`,
+        );
+      } catch (error) {
+        this.log(
+          `[LibraryScanner] 扫描库失败，已跳过: id=${library.libraryID}, name="${library.name}"`,
+          error,
+        );
       }
     }
   }
@@ -279,9 +329,19 @@ export class LibraryScannerView extends BaseView {
   /**
    * 构建收藏夹节点(递归)
    */
-  private async buildCollectionNode(
+  private buildCollectionNode(
     collection: Zotero.Collection,
-  ): Promise<TreeNode | null> {
+    unprocessedItems: Map<number, Zotero.Item>,
+    visitedCollections: Set<number> = new Set(),
+  ): TreeNode | null {
+    if (visitedCollections.has(collection.id)) {
+      this.log(
+        `[LibraryScanner] 检测到重复收藏夹引用，已跳过: collectionID=${collection.id}, name="${collection.name}"`,
+      );
+      return null;
+    }
+    visitedCollections.add(collection.id);
+
     const node: TreeNode = {
       id: `col-${collection.id}`,
       type: "collection",
@@ -293,9 +353,13 @@ export class LibraryScannerView extends BaseView {
     };
 
     // 递归处理子收藏夹
-    const childCollections = Zotero.Collections.getByParent(collection.id);
+    const childCollections = this.getChildCollections(collection);
     for (const child of childCollections) {
-      const childNode = await this.buildCollectionNode(child);
+      const childNode = this.buildCollectionNode(
+        child,
+        unprocessedItems,
+        visitedCollections,
+      );
       if (childNode) {
         childNode.parentNode = node;
         node.children.push(childNode);
@@ -303,9 +367,12 @@ export class LibraryScannerView extends BaseView {
     }
 
     // 处理收藏夹中的条目
-    const items = collection.getChildItems();
-    for (const item of items) {
-      const itemNode = await this.buildItemNode(item);
+    const itemIDs = this.getCollectionChildItemIDs(collection);
+    for (const itemID of itemIDs) {
+      const unprocessedItem = unprocessedItems.get(itemID);
+      if (!unprocessedItem) continue;
+
+      const itemNode = this.buildItemNode(unprocessedItem);
       if (itemNode) {
         itemNode.parentNode = node;
         node.children.push(itemNode);
@@ -323,24 +390,16 @@ export class LibraryScannerView extends BaseView {
   /**
    * 构建条目节点
    */
-  private async buildItemNode(item: Zotero.Item): Promise<TreeNode | null> {
+  private buildItemNode(item: Zotero.Item): TreeNode | null {
     // 跳过笔记、附件
-    if (item.isNote() || item.isAttachment()) {
+    if (!this.shouldScanItem(item)) {
       return null;
     }
-
-    // 检查是否已有 AI 笔记
-    const hasNote = await this.hasExistingAINote(item);
-    if (hasNote) {
-      return null;
-    }
-
-    this.totalUnprocessed++;
 
     return {
       id: `item-${item.id}`,
       type: "item",
-      name: item.getField("title") as string,
+      name: this.getItemTitle(item),
       item,
       children: [],
       checked: false,
@@ -351,20 +410,21 @@ export class LibraryScannerView extends BaseView {
   /**
    * 获取未归类的条目
    */
-  private async getUnfiledItems(libraryID: number): Promise<Zotero.Item[]> {
-    const search = new Zotero.Search();
-    (search as any).libraryID = libraryID;
-    search.addCondition("unfiled", "true");
-    search.addCondition("itemType", "isNot", "attachment");
-    search.addCondition("itemType", "isNot", "note");
-
-    const ids = await search.search();
+  private getUnfiledItems(
+    unprocessedItems: Map<number, Zotero.Item>,
+  ): Zotero.Item[] {
     const items: Zotero.Item[] = [];
-
-    for (const id of ids) {
-      const item = await Zotero.Items.getAsync(id);
-      if (item && !item.isNote() && !item.isAttachment() && !item.parentID) {
-        items.push(item);
+    for (const item of unprocessedItems.values()) {
+      try {
+        const collectionIDs: number[] = (item as any).getCollections?.() || [];
+        if (collectionIDs.length === 0) {
+          items.push(item);
+        }
+      } catch (error) {
+        this.log(
+          `[LibraryScanner] 读取条目分类失败，跳过未分类分组: item=${this.getItemDebugID(item)}`,
+          error,
+        );
       }
     }
 
@@ -376,9 +436,11 @@ export class LibraryScannerView extends BaseView {
    */
   private async hasExistingAINote(item: Zotero.Item): Promise<boolean> {
     try {
-      const noteIDs = (item as any).getNotes?.() || [];
-      for (const nid of noteIDs) {
-        const n = await Zotero.Items.getAsync(nid);
+      const noteIDs: number[] = (item as any).getNotes?.() || [];
+      if (noteIDs.length === 0) return false;
+
+      const notes = await Zotero.Items.getAsync(noteIDs);
+      for (const n of notes) {
         if (!n) continue;
 
         const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
@@ -386,8 +448,249 @@ export class LibraryScannerView extends BaseView {
         if (isRegularSummaryNote(tags, noteHtml)) return true;
       }
       return false;
-    } catch {
+    } catch (error) {
+      this.log(
+        `[LibraryScanner] 检查 AI 笔记失败: item=${this.getItemDebugID(item)}, title="${this.getItemTitle(item)}"`,
+        error,
+      );
       return false;
+    }
+  }
+
+  private async collectUnprocessedItems(
+    itemIDs: number[],
+    libraryLabel: string,
+    scanId: number,
+  ): Promise<Map<number, Zotero.Item>> {
+    const result = new Map<number, Zotero.Item>();
+    let checkedCount = 0;
+    let withAINoteCount = 0;
+    let skippedCount = 0;
+
+    for (const itemID of itemIDs) {
+      if (!this.isCurrentScan(scanId)) return result;
+
+      checkedCount++;
+      if (checkedCount === 1 || checkedCount % 100 === 0) {
+        this.setInfo(
+          `正在扫描「${libraryLabel}」... ${checkedCount}/${itemIDs.length}`,
+        );
+        await this.yieldToUI();
+      }
+
+      const item = await this.getLoadedItem(itemID);
+      if (!item || !this.shouldScanItem(item)) {
+        skippedCount++;
+        continue;
+      }
+
+      const hasNote = await this.hasExistingAINote(item);
+      if (hasNote) {
+        withAINoteCount++;
+      } else {
+        result.set(itemID, item);
+      }
+    }
+
+    this.log(
+      `[LibraryScanner] 条目检查完成: library="${libraryLabel}", checked=${checkedCount}, skipped=${skippedCount}, withAINote=${withAINoteCount}, withoutAINote=${result.size}`,
+    );
+    return result;
+  }
+
+  private shouldScanItem(item: Zotero.Item): boolean {
+    try {
+      return !item.isNote() && !item.isAttachment() && !item.parentID;
+    } catch (error) {
+      this.log(
+        `[LibraryScanner] 条目基础信息不可用，跳过: item=${this.getItemDebugID(item)}`,
+        error,
+      );
+      return false;
+    }
+  }
+
+  private async getLibraryTopLevelItemIDs(
+    libraryID: number,
+  ): Promise<number[]> {
+    try {
+      return await Zotero.Items.getAll(libraryID, true, false, true);
+    } catch (error) {
+      this.log(
+        `[LibraryScanner] 获取库条目 ID 失败，跳过该库条目扫描: libraryID=${libraryID}`,
+        error,
+      );
+      return [];
+    }
+  }
+
+  private async getLoadedItem(itemID: number): Promise<Zotero.Item | null> {
+    let item: Zotero.Item | null = null;
+
+    try {
+      item = await Zotero.Items.getAsync(itemID);
+    } catch (error) {
+      this.log(`[LibraryScanner] 获取条目失败，跳过: itemID=${itemID}`, error);
+      return null;
+    }
+
+    if (!item) {
+      this.log(`[LibraryScanner] 条目不存在，跳过: itemID=${itemID}`);
+      return null;
+    }
+
+    try {
+      await item.loadAllData();
+      return item;
+    } catch (error) {
+      this.log(
+        `[LibraryScanner] 条目完整数据加载失败，跳过: itemID=${itemID}, item=${this.getItemDebugID(item)}`,
+        error,
+      );
+      return null;
+    }
+  }
+
+  private getChildCollections(
+    collection: Zotero.Collection,
+  ): Zotero.Collection[] {
+    try {
+      return Zotero.Collections.getByParent(collection.id) || [];
+    } catch (error) {
+      this.log(
+        `[LibraryScanner] 读取子分类失败，跳过: collectionID=${collection.id}, name="${collection.name}"`,
+        error,
+      );
+      return [];
+    }
+  }
+
+  private getCollectionChildItemIDs(collection: Zotero.Collection): number[] {
+    try {
+      return collection.getChildItems(true);
+    } catch (error) {
+      this.log(
+        `[LibraryScanner] 读取分类条目 ID 失败，跳过分类条目: collectionID=${collection.id}, name="${collection.name}"`,
+        error,
+      );
+      return [];
+    }
+  }
+
+  private getItemTitle(item: Zotero.Item): string {
+    const fallback = `未命名条目 ${this.getItemDebugID(item)}`;
+
+    try {
+      const displayTitle = item.getDisplayTitle?.();
+      if (displayTitle?.trim()) {
+        return displayTitle;
+      }
+    } catch {
+      // Fall back to the raw title field or item id below.
+    }
+
+    try {
+      const title = item.getField("title") as string;
+      if (title?.trim()) {
+        return title;
+      }
+    } catch (error) {
+      this.log(
+        `[LibraryScanner] 读取条目标题失败，使用占位标题: item=${this.getItemDebugID(item)}`,
+        error,
+      );
+    }
+
+    return fallback;
+  }
+
+  private getItemDebugID(item: Zotero.Item): string {
+    const libraryID = this.getSafeItemValue(item, "libraryID") || "?";
+    const key = this.getSafeItemValue(item, "key");
+    const id = this.getSafeItemValue(item, "id") || "?";
+    return key ? `${libraryID}/${key}` : `${libraryID}/#${id}`;
+  }
+
+  private getSafeItemValue(
+    item: Zotero.Item,
+    key: "id" | "key" | "libraryID",
+  ): string {
+    try {
+      const value = item[key];
+      return value === undefined || value === null ? "" : String(value);
+    } catch {
+      return "";
+    }
+  }
+
+  private prepareScanUI(): void {
+    this.treeRoot = [];
+    this.totalUnprocessed = 0;
+    this.selectedCount = 0;
+    this.setInfo("正在扫描 Zotero 库...");
+    if (this.treeContainer) {
+      this.treeContainer.innerHTML = "";
+    }
+    this.updateSelectedCount();
+  }
+
+  private showScanError(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    this.setInfo(`扫描失败: ${message}`);
+
+    if (this.treeContainer) {
+      this.treeContainer.innerHTML = "";
+      const errorMessage = this.createElement("div", {
+        styles: {
+          textAlign: "center",
+          padding: "40px",
+          color: "#b00020",
+          fontSize: "14px",
+          lineHeight: "1.6",
+        },
+        textContent:
+          "扫描过程中出现错误。请打开浏览器控制台，搜索 [LibraryScanner] 后反馈日志内容。",
+      });
+      this.treeContainer.appendChild(errorMessage);
+    }
+
+    this.updateSelectedCount();
+  }
+
+  private setInfo(message: string): void {
+    const infoElement = this.container?.querySelector("#scanner-info");
+    if (infoElement) {
+      infoElement.textContent = message;
+    }
+  }
+
+  private isCurrentScan(scanId: number): boolean {
+    return scanId === this.activeScanId;
+  }
+
+  private async yieldToUI(): Promise<void> {
+    await Zotero.Promise.delay(0);
+  }
+
+  private log(message: string, error?: unknown): void {
+    try {
+      if (error === undefined) {
+        ztoolkit.log(message);
+      } else {
+        ztoolkit.log(message, error);
+      }
+    } catch {
+      // Ignore logging failures.
+    }
+
+    try {
+      if (error === undefined) {
+        console.log(message);
+      } else {
+        console.error(message, error);
+      }
+    } catch {
+      // Ignore logging failures.
     }
   }
 
@@ -933,13 +1236,22 @@ export class LibraryScannerView extends BaseView {
   /**
    * 统计选中的条目数量
    */
-  private countSelectedItems(nodes: TreeNode[]): number {
+  private countSelectedItems(
+    nodes: TreeNode[],
+    seenItemIDs: Set<number> = new Set(),
+  ): number {
     let count = 0;
     for (const node of nodes) {
-      if (node.type === "item" && node.checked) {
+      if (
+        node.type === "item" &&
+        node.checked &&
+        node.item &&
+        !seenItemIDs.has(node.item.id)
+      ) {
+        seenItemIDs.add(node.item.id);
         count++;
       }
-      count += this.countSelectedItems(node.children);
+      count += this.countSelectedItems(node.children, seenItemIDs);
     }
     return count;
   }
@@ -976,13 +1288,22 @@ export class LibraryScannerView extends BaseView {
   /**
    * 收集所有选中的条目
    */
-  private collectSelectedItems(nodes: TreeNode[]): Zotero.Item[] {
+  private collectSelectedItems(
+    nodes: TreeNode[],
+    seenItemIDs: Set<number> = new Set(),
+  ): Zotero.Item[] {
     const items: Zotero.Item[] = [];
     for (const node of nodes) {
-      if (node.type === "item" && node.checked && node.item) {
+      if (
+        node.type === "item" &&
+        node.checked &&
+        node.item &&
+        !seenItemIDs.has(node.item.id)
+      ) {
+        seenItemIDs.add(node.item.id);
         items.push(node.item);
       }
-      items.push(...this.collectSelectedItems(node.children));
+      items.push(...this.collectSelectedItems(node.children, seenItemIDs));
     }
     return items;
   }

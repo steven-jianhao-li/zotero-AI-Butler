@@ -234,6 +234,7 @@ function initializeDefaultPrefs() {
     enableTableOnSingleNote: true,
     tableStrategy: "skip",
     tableFillConcurrency: 3,
+    openTaskPanelOnSummon: false,
     contextMenuCollapsed: DEFAULT_CONTEXT_MENU_COLLAPSED,
     contextMenuItemVisibility: DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY_PREF,
     contextMenuItemOrder: DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF,

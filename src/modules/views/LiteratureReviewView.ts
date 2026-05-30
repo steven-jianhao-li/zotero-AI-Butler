@@ -75,6 +75,7 @@ interface PdfNode {
   attachment: Zotero.Item;
   name: string;
   checked: boolean;
+  isDefault: boolean;
   checkboxElement?: HTMLInputElement;
 }
 
@@ -554,12 +555,20 @@ export class LiteratureReviewView extends BaseView {
       textContent: "选择要纳入综述的 PDF",
     });
 
-    // 全选/取消按钮
+    // 全选/仅默认/取消按钮
     const selectAllBtn = createStyledButton("全选", "#6366f1", "small");
     selectAllBtn.addEventListener("click", () => this.toggleAllNodes(true));
 
+    const selectDefaultBtn = createStyledButton(
+      "仅默认 PDF",
+      "#0f766e",
+      "small",
+    );
+    selectDefaultBtn.addEventListener("click", () =>
+      this.selectDefaultPdfNodes(),
+    );
+
     const deselectAllBtn = createStyledButton("取消全选", "#94a3b8", "small");
-    deselectAllBtn.style.marginLeft = "8px";
     deselectAllBtn.addEventListener("click", () => this.toggleAllNodes(false));
 
     const btnGroup = this.createElement("div", {
@@ -567,7 +576,7 @@ export class LiteratureReviewView extends BaseView {
         display: "flex",
         gap: "8px",
       },
-      children: [selectAllBtn, deselectAllBtn],
+      children: [selectAllBtn, selectDefaultBtn, deselectAllBtn],
     });
 
     selectionHeader.appendChild(selectionTitle);
@@ -719,6 +728,7 @@ export class LiteratureReviewView extends BaseView {
           attachment: att,
           name: (att.getField("title") as string) || `PDF ${idx + 1}`,
           checked: false,
+          isDefault: idx === 0,
         }));
 
         this.treeNodes.push({
@@ -778,7 +788,22 @@ export class LiteratureReviewView extends BaseView {
       }
     }
 
-    return pdfAttachments;
+    return pdfAttachments.sort((a, b) => {
+      const dateA = new Date(a.dateAdded).getTime();
+      const dateB = new Date(b.dateAdded).getTime();
+      const normalizedDateA = Number.isNaN(dateA)
+        ? Number.MAX_SAFE_INTEGER
+        : dateA;
+      const normalizedDateB = Number.isNaN(dateB)
+        ? Number.MAX_SAFE_INTEGER
+        : dateB;
+
+      if (normalizedDateA !== normalizedDateB) {
+        return normalizedDateA - normalizedDateB;
+      }
+
+      return a.id - b.id;
+    });
   }
 
   /**
@@ -918,6 +943,22 @@ export class LiteratureReviewView extends BaseView {
 
     nodeElement.appendChild(checkbox);
     nodeElement.appendChild(label);
+
+    if (hasMultiplePdfs) {
+      const selectDefaultBtn = createStyledButton("仅默认", "#0f766e", "small");
+      selectDefaultBtn.title = "仅选择该条目的默认 PDF（最早添加的附件）";
+      Object.assign(selectDefaultBtn.style, {
+        padding: "4px 8px",
+        fontSize: "11px",
+        marginLeft: "8px",
+        flexShrink: "0",
+      });
+      selectDefaultBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.selectDefaultPdfForNode(node);
+      });
+      nodeElement.appendChild(selectDefaultBtn);
+    }
 
     // 状态标识
     const tags: Array<{ tag: string }> = (node.item as any).getTags?.() || [];
@@ -1079,6 +1120,21 @@ export class LiteratureReviewView extends BaseView {
     pdfElement.appendChild(checkbox);
     pdfElement.appendChild(label);
 
+    if (pdfNode.isDefault) {
+      const defaultBadge = this.createElement("span", {
+        className: "ai-pill ai-pill--info",
+        styles: {
+          marginLeft: "8px",
+          padding: "1px 6px",
+          borderRadius: "3px",
+          fontSize: "10px",
+          flexShrink: "0",
+        },
+        textContent: "默认",
+      });
+      pdfElement.appendChild(defaultBadge);
+    }
+
     // 悬停效果
     pdfElement.addEventListener("mouseenter", () => {
       pdfElement.style.background = "var(--ai-hover)";
@@ -1165,6 +1221,48 @@ export class LiteratureReviewView extends BaseView {
         }
       }
     }
+    this.updateSelectedCount();
+  }
+
+  private getDefaultPdfNode(node: TreeNode): PdfNode | null {
+    return node.pdfNodes.find((pdfNode) => pdfNode.isDefault) || null;
+  }
+
+  private setPdfNodeChecked(pdfNode: PdfNode, checked: boolean): void {
+    pdfNode.checked = checked;
+    if (pdfNode.checkboxElement) {
+      pdfNode.checkboxElement.checked = checked;
+    }
+  }
+
+  /**
+   * 仅选择每个条目下的默认 PDF（最早添加的附件）
+   */
+  private selectDefaultPdfNodes(): void {
+    for (const node of this.treeNodes) {
+      const defaultPdfNode = this.getDefaultPdfNode(node);
+
+      for (const pdfNode of node.pdfNodes) {
+        this.setPdfNodeChecked(pdfNode, pdfNode === defaultPdfNode);
+      }
+
+      this.updateParentCheckState(node);
+    }
+
+    this.updateSelectedCount();
+  }
+
+  /**
+   * 仅选择单个条目下的默认 PDF
+   */
+  private selectDefaultPdfForNode(node: TreeNode): void {
+    const defaultPdfNode = this.getDefaultPdfNode(node);
+
+    for (const pdfNode of node.pdfNodes) {
+      this.setPdfNodeChecked(pdfNode, pdfNode === defaultPdfNode);
+    }
+
+    this.updateParentCheckState(node);
     this.updateSelectedCount();
   }
 

@@ -38,6 +38,34 @@ export function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
+function decodeHtmlCodePoint(raw: string, radix: 10 | 16): string {
+  const codePoint = parseInt(raw, radix);
+  if (!Number.isFinite(codePoint) || codePoint < 0 || codePoint > 0x10ffff) {
+    return "";
+  }
+  try {
+    return String.fromCodePoint(codePoint);
+  } catch {
+    return "";
+  }
+}
+
+export function decodeMathHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex: string) =>
+      decodeHtmlCodePoint(hex, 16),
+    )
+    .replace(/&#(\d+);/g, (_match, dec: string) =>
+      decodeHtmlCodePoint(dec, 10),
+    );
+}
+
 /**
  * Convert Markdown into the HTML dialect Zotero notes can render, including
  * Zotero-native math spans. Shared by summary notes and saved follow-up chats.
@@ -142,7 +170,8 @@ export function markdownToDisplayHtml(markdown: string): string {
     const formulaData = formulas[parseInt(index)];
     if (!formulaData) return _match;
 
-    const { content, isBlock } = formulaData;
+    const { isBlock } = formulaData;
+    const content = decodeMathHtmlEntities(formulaData.content);
     try {
       const rendered = katex.renderToString(content, {
         throwOnError: false,

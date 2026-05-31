@@ -31,6 +31,7 @@ import {
 } from "./chatContext";
 import {
   buildFollowUpChatPairNoteHtml,
+  decodeMathHtmlEntities,
   markdownToDisplayHtml,
   normalizeFollowUpChatNoteHtml,
 } from "./noteMarkdown";
@@ -3419,12 +3420,7 @@ async function loadNoteContent(
         /<span class="math">([\s\S]*?)<\/span>/g,
         (_match: string, innerContent: string) => {
           // content might be $x$ or $$x$$ or escaped HTML
-          const unescaped = innerContent
-            .replace(/&amp;/g, "&")
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/&quot;/g, '"')
-            .replace(/&#039;/g, "'");
+          const unescaped = decodeMathHtmlEntities(innerContent);
 
           const trimmed = unescaped.trim();
 
@@ -3490,13 +3486,16 @@ async function loadNoteContent(
         /\$\$([\s\S]*?)\$\$/g,
         (_match: string, formula: string) => {
           try {
-            const rendered = katex.renderToString(cleanLatex(formula.trim()), {
-              throwOnError: false,
-              displayMode: true,
-              output: "html",
-              trust: true,
-              strict: false,
-            });
+            const rendered = katex.renderToString(
+              cleanLatex(decodeMathHtmlEntities(formula.trim())),
+              {
+                throwOnError: false,
+                displayMode: true,
+                output: "html",
+                trust: true,
+                strict: false,
+              },
+            );
             return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;
           } catch {
             // Render failed, escape the formula for safe display
@@ -3520,13 +3519,16 @@ async function loadNoteContent(
         inlineRegex,
         (_match: string, formula: string) => {
           try {
-            const rendered = katex.renderToString(cleanLatex(formula.trim()), {
-              throwOnError: false,
-              displayMode: false,
-              output: "html",
-              trust: true,
-              strict: false,
-            });
+            const rendered = katex.renderToString(
+              cleanLatex(decodeMathHtmlEntities(formula.trim())),
+              {
+                throwOnError: false,
+                displayMode: false,
+                output: "html",
+                trust: true,
+                strict: false,
+              },
+            );
             // 检查渲染后HTML长度，超过阈值则转为块级可滚动公式
             if (rendered.length > INLINE_FORMULA_TO_BLOCK_THRESHOLD) {
               return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;

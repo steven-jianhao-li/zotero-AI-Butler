@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import {
   buildFollowUpChatPairNoteHtml,
+  decodeMathHtmlEntities,
   markdownToDisplayHtml,
   markdownToZoteroNoteHtml,
   normalizeFollowUpChatNoteHtml,
@@ -24,6 +25,18 @@ describe("note Markdown rendering", function () {
     const html = markdownToZoteroNoteHtml("Compare $a < b & c$ safely.");
 
     expect(html).to.contain('<span class="math">$a &lt; b &amp; c$</span>');
+  });
+
+  it("decodes escaped prime entities before KaTeX rendering", function () {
+    expect(decodeMathHtmlEntities("X&#39;_t + Y&#x27;_t + Z&apos;_t")).to.equal(
+      "X'_t + Y'_t + Z'_t",
+    );
+
+    const html = markdownToDisplayHtml("Prime formula: $X&#39;_t = A$");
+
+    expect(html).to.contain('class="katex-inline"');
+    expect(html).not.to.contain("katex-error");
+    expect(html).not.to.contain("&#39;");
   });
 
   it("renders follow-up display Markdown formulas with KaTeX (#320)", function () {

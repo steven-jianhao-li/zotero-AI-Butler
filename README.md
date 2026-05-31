@@ -11,6 +11,8 @@
 </p>
 </div>
 
+> 隐私声明：本项目为第三方开源Zotero插件，不提供任何的大模型代理服务。用户需自行申请并配置大模型API Key方可使用。本插件绝不收集、存储或上传您的任何个人数据、文献或API Key，所有的交互请求均直接从您的本地设备发送至您配置的大模型服务商处。
+
 > 如果本插件对您的研究有帮助，欢迎在论文中[引用](https://github.com/steven-jianhao-li/zotero-AI-Butler#%E5%A6%82%E4%BD%95%E5%BC%95%E7%94%A8)或致谢！
 
 ## [点我查看 **AI Butler Wiki**——配置与使用文档](https://steven-jianhao-li.github.io/zotero-AI-Butler/)

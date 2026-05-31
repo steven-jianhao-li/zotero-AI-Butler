@@ -244,14 +244,17 @@ export class LibraryScannerView extends BaseView {
       try {
         const libraryStartedAt = Date.now();
         const libraryID = library.libraryID;
-        const libraryLabel = library.name || `Library ${libraryID}`;
+        const libraryLabel = this.toSafeDOMText(
+          library.name,
+          `Library ${libraryID}`,
+        );
         this.setInfo(`正在扫描「${libraryLabel}」...`);
         await this.yieldToUI();
 
         const libraryNode: TreeNode = {
           id: `lib-${libraryID}`,
           type: "collection",
-          name: library.name,
+          name: libraryLabel,
           children: [],
           checked: false,
           expanded: false, // 默认收起
@@ -345,7 +348,7 @@ export class LibraryScannerView extends BaseView {
     const node: TreeNode = {
       id: `col-${collection.id}`,
       type: "collection",
-      name: collection.name,
+      name: this.toSafeDOMText(collection.name, `Collection ${collection.id}`),
       collection,
       children: [],
       checked: false,
@@ -500,7 +503,14 @@ export class LibraryScannerView extends BaseView {
 
   private shouldScanItem(item: Zotero.Item): boolean {
     try {
-      return !item.isNote() && !item.isAttachment() && !item.parentID;
+      const isRegularItem = (item as any).isRegularItem;
+      if (typeof isRegularItem === "function") {
+        return Boolean(isRegularItem.call(item)) && this.isTopLevelItem(item);
+      }
+
+      return (
+        !item.isNote() && !item.isAttachment() && this.isTopLevelItem(item)
+      );
     } catch (error) {
       this.log(
         `[LibraryScanner] 条目基础信息不可用，跳过: item=${this.getItemDebugID(item)}`,
@@ -539,9 +549,12 @@ export class LibraryScannerView extends BaseView {
       return null;
     }
 
+    if (!this.shouldScanItem(item)) {
+      return null;
+    }
+
     try {
       await item.loadAllData();
-      return item;
     } catch (error) {
       this.log(
         `[LibraryScanner] 条目完整数据加载失败，跳过: itemID=${itemID}, item=${this.getItemDebugID(item)}`,
@@ -549,6 +562,12 @@ export class LibraryScannerView extends BaseView {
       );
       return null;
     }
+
+    if (!this.shouldScanItem(item)) {
+      return null;
+    }
+
+    return item;
   }
 
   private getChildCollections(
@@ -583,7 +602,7 @@ export class LibraryScannerView extends BaseView {
     try {
       const displayTitle = item.getDisplayTitle?.();
       if (displayTitle?.trim()) {
-        return displayTitle;
+        return this.toSafeDOMText(displayTitle, fallback);
       }
     } catch {
       // Fall back to the raw title field or item id below.
@@ -592,7 +611,7 @@ export class LibraryScannerView extends BaseView {
     try {
       const title = item.getField("title") as string;
       if (title?.trim()) {
-        return title;
+        return this.toSafeDOMText(title, fallback);
       }
     } catch (error) {
       this.log(
@@ -623,6 +642,57 @@ export class LibraryScannerView extends BaseView {
     }
   }
 
+  private isTopLevelItem(item: Zotero.Item): boolean {
+    const isTopLevelItem = (item as any).isTopLevelItem;
+    if (typeof isTopLevelItem === "function") {
+      return Boolean(isTopLevelItem.call(item));
+    }
+
+    const parentItemID = (item as any).parentItemID;
+    const parentID = (item as any).parentID;
+    return !parentItemID && !parentID;
+  }
+
+  private toSafeDOMText(value: unknown, fallback = ""): string {
+    const raw =
+      value === undefined || value === null ? fallback : String(value);
+    let safe = "";
+
+    for (let i = 0; i < raw.length; i++) {
+      const code = raw.charCodeAt(i);
+
+      if (code >= 0xd800 && code <= 0xdbff) {
+        const next = raw.charCodeAt(i + 1);
+        if (next >= 0xdc00 && next <= 0xdfff) {
+          safe += raw[i] + raw[i + 1];
+          i++;
+        } else {
+          safe += " ";
+        }
+        continue;
+      }
+
+      if (code >= 0xdc00 && code <= 0xdfff) {
+        safe += " ";
+        continue;
+      }
+
+      if (
+        code === 0x9 ||
+        code === 0xa ||
+        code === 0xd ||
+        (code >= 0x20 && code <= 0xd7ff) ||
+        (code >= 0xe000 && code <= 0xfffd)
+      ) {
+        safe += raw[i];
+      } else {
+        safe += " ";
+      }
+    }
+
+    return safe.trim() ? safe : fallback;
+  }
+
   private prepareScanUI(): void {
     this.treeRoot = [];
     this.totalUnprocessed = 0;
@@ -636,20 +706,73 @@ export class LibraryScannerView extends BaseView {
 
   private showScanError(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
+    const errorDetails = this.formatErrorDetails(error);
     this.setInfo(`扫描失败: ${message}`);
 
     if (this.treeContainer) {
       this.treeContainer.innerHTML = "";
+      const copyButton = this.createElement("button", {
+        styles: {
+          padding: "7px 14px",
+          border: "1px solid #b00020",
+          borderRadius: "4px",
+          backgroundColor: "#fff",
+          color: "#b00020",
+          cursor: "pointer",
+          fontSize: "13px",
+          fontWeight: "600",
+          alignSelf: "flex-start",
+        },
+        textContent: "复制错误详情",
+      }) as HTMLButtonElement;
+
+      copyButton.addEventListener("click", () => {
+        void this.copyErrorDetails(errorDetails, copyButton);
+      });
+
       const errorMessage = this.createElement("div", {
         styles: {
-          textAlign: "center",
-          padding: "40px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "12px",
+          padding: "24px",
           color: "#b00020",
           fontSize: "14px",
           lineHeight: "1.6",
+          backgroundColor: "#fff",
+          border: "1px solid rgba(176, 0, 32, 0.25)",
+          borderRadius: "6px",
         },
-        textContent:
-          "扫描过程中出现错误。请打开浏览器控制台，搜索 [LibraryScanner] 后反馈日志内容。",
+        children: [
+          this.createElement("strong", {
+            styles: {
+              fontSize: "15px",
+            },
+            textContent: "扫描过程中出现错误",
+          }),
+          this.createElement("div", {
+            textContent: this.toSafeDOMText(message, "Unknown error"),
+          }),
+          copyButton,
+          this.createElement("pre", {
+            styles: {
+              margin: "0",
+              padding: "12px",
+              maxHeight: "360px",
+              overflow: "auto",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              userSelect: "text",
+              backgroundColor: "#fff5f6",
+              border: "1px solid rgba(176, 0, 32, 0.18)",
+              borderRadius: "4px",
+              color: "#4a1018",
+              fontSize: "12px",
+              lineHeight: "1.5",
+            },
+            textContent: this.toSafeDOMText(errorDetails),
+          }),
+        ],
       });
       this.treeContainer.appendChild(errorMessage);
     }
@@ -657,10 +780,117 @@ export class LibraryScannerView extends BaseView {
     this.updateSelectedCount();
   }
 
+  private formatErrorDetails(error: unknown): string {
+    const lines = [
+      "AI-Butler library scanner error",
+      `generatedAt: ${new Date().toISOString()}`,
+      `view: LibraryScannerView`,
+    ];
+
+    if (error instanceof Error) {
+      lines.push(`name: ${error.name || "Error"}`);
+      lines.push(`message: ${error.message || ""}`);
+      if (error.stack) {
+        lines.push("stack:");
+        lines.push(error.stack);
+      }
+
+      const cause = (error as Error & { cause?: unknown }).cause;
+      if (cause !== undefined) {
+        lines.push("cause:");
+        lines.push(this.formatUnknownError(cause));
+      }
+    } else {
+      lines.push(this.formatUnknownError(error));
+    }
+
+    return this.toSafeDOMText(lines.join("\n"));
+  }
+
+  private formatUnknownError(error: unknown): string {
+    if (error instanceof Error) {
+      return [error.name, error.message, error.stack]
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    if (typeof error === "string") {
+      return error;
+    }
+
+    try {
+      return JSON.stringify(error, null, 2) || String(error);
+    } catch {
+      return String(error);
+    }
+  }
+
+  private async copyErrorDetails(
+    text: string,
+    button?: HTMLButtonElement,
+  ): Promise<void> {
+    const doc =
+      this.container?.ownerDocument || Zotero.getMainWindow().document;
+    const win = doc.defaultView || Zotero.getMainWindow();
+    const clipboard = win.navigator?.clipboard;
+
+    try {
+      if (clipboard?.writeText) {
+        await clipboard.writeText(text);
+      } else {
+        throw new Error("clipboard api unavailable");
+      }
+    } catch {
+      try {
+        const host = doc.body || doc.documentElement;
+        if (!host) {
+          throw new Error("document host unavailable");
+        }
+
+        const textarea = doc.createElement("textarea");
+        textarea.value = text;
+        Object.assign(textarea.style, {
+          position: "fixed",
+          left: "-9999px",
+          top: "0",
+        });
+        host.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        doc.execCommand("copy");
+        textarea.remove();
+      } catch {
+        new ztoolkit.ProgressWindow("AI Butler", { closeTime: 2200 })
+          .createLine({
+            text: "复制失败，可手动选择错误文本",
+            type: "fail",
+          })
+          .show();
+        return;
+      }
+    }
+
+    if (button) {
+      const previousText = button.textContent || "复制错误详情";
+      button.textContent = "已复制";
+      button.disabled = true;
+      button.style.cursor = "default";
+      void Zotero.Promise.delay(1500).then(() => {
+        button.textContent = previousText;
+        button.disabled = false;
+        button.style.cursor = "pointer";
+      });
+    }
+
+    new ztoolkit.ProgressWindow("AI Butler", { closeTime: 1500 })
+      .createLine({ text: "已复制错误详情", type: "success" })
+      .show();
+  }
+
   private setInfo(message: string): void {
     const infoElement = this.container?.querySelector("#scanner-info");
     if (infoElement) {
-      infoElement.textContent = message;
+      infoElement.textContent = this.toSafeDOMText(message);
     }
   }
 
@@ -681,6 +911,17 @@ export class LibraryScannerView extends BaseView {
       }
     } catch {
       // Ignore logging failures.
+    }
+
+    if (error !== undefined) {
+      try {
+        Zotero.log(message, "error");
+        Zotero.logError(
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      } catch {
+        // Ignore Zotero error-console logging failures.
+      }
     }
 
     try {
@@ -1024,7 +1265,7 @@ export class LibraryScannerView extends BaseView {
         flex: "1",
         fontSize: "14px",
       },
-      textContent: `${icon} ${node.name}`,
+      textContent: this.toSafeDOMText(`${icon} ${node.name}`, icon),
     });
 
     // 子项数量

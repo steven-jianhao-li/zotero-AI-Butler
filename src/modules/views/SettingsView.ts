@@ -10,6 +10,7 @@
 
 import { BaseView } from "./BaseView";
 import { ApiSettingsPage } from "./settings/ApiSettingsPage";
+import { ModelPlatformSettingsPage } from "./settings/ModelPlatformSettingsPage";
 import { PromptsSettingsPage } from "./settings/PromptsSettingsPage";
 import { UiSettingsPage } from "./settings/UiSettingsPage";
 import { DataSettingsPage } from "./settings/DataSettingsPage";
@@ -26,6 +27,7 @@ import {
  * 设置分类类型
  */
 type SettingCategory =
+  | "modelPlatform"
   | "api"
   | "prompts"
   | "mindmap"
@@ -42,7 +44,7 @@ export class SettingsView extends BaseView {
   private settingsContainer: HTMLElement | null = null;
 
   /** 当前选中的设置分类 */
-  private currentCategory: SettingCategory = "api";
+  private currentCategory: SettingCategory = "modelPlatform";
 
   /** 子页面实例 */
   private pages: Map<SettingCategory, any> = new Map();
@@ -83,6 +85,7 @@ export class SettingsView extends BaseView {
     }
 
     const categories: Array<SettingsNavDescriptor<SettingCategory>> = [
+      { id: "modelPlatform", label: "🧩 模型平台" },
       { id: "api", label: "🔌 API 配置" },
       { id: "prompts", label: "📝 提示词模板" },
       { id: "mindmap", label: "🧠 思维导图" },
@@ -136,6 +139,9 @@ export class SettingsView extends BaseView {
 
     if (!page) {
       switch (category) {
+        case "modelPlatform":
+          page = new ModelPlatformSettingsPage(this.settingsContainer);
+          break;
         case "api":
           page = new ApiSettingsPage(this.settingsContainer);
           break;

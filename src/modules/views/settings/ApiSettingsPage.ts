@@ -14,7 +14,6 @@ import {
   createInput,
   createSelect,
 } from "../ui/components";
-import { EndpointSettingsPanel } from "../ui/EndpointSettingsPanel";
 import LLMClient from "../../llmClient";
 import type { LLMModelInfo, LLMOptions } from "../../llmproviders/types";
 import { ApiKeyManager, type ProviderId } from "../../apiKeyManager";
@@ -40,7 +39,7 @@ export class ApiSettingsPage {
 
     // 标题
     const title = this.createElement("h2", {
-      textContent: "🔌 模型平台配置",
+      textContent: "🔌 API 配置",
       styles: {
         color: "#59c0bc",
         marginBottom: "20px",
@@ -67,540 +66,540 @@ export class ApiSettingsPage {
       "📝 <strong>说明</strong>: 标有 <strong style='color: #d32f2f;'>*</strong> 的字段为必填项";
     this.container.appendChild(notice);
 
-    const endpointPanel = new EndpointSettingsPanel({
-      modalHost: this.container,
-      onChange: () => this.refreshEndpointPreviews(),
-    });
-    this.container.appendChild(endpointPanel.getElement());
-
     // 表单容器
     const form = this.createElement("div", {
       styles: {
         maxWidth: "800px",
       },
     });
-    const legacyProviderForm = this.createElement("div", {
-      styles: {
-        display: "none",
-      },
-    });
-
-    // API 提供商选择（使用自定义下拉，支持 onChange）
-    const providerValue = (getPref("provider") as string) || "openai";
-    const providerSelect = createSelect(
-      "provider",
-      [
-        { value: "openai", label: "OpenAI (Responses 新接口)" },
-        {
-          value: "openai-compat",
-          label: "OpenAI兼容 (旧 ChatCompletions / 第三方)",
+    if (this.shouldRenderLegacyProviderForm()) {
+      const legacyProviderForm = this.createElement("div", {
+        styles: {
+          display: "none",
         },
-        { value: "google", label: "Google Gemini" },
-        { value: "anthropic", label: "Anthropic Claude" },
-        { value: "openrouter", label: "OpenRouter" },
-        { value: "volcanoark", label: "火山方舟 (Volcano Ark)" },
-        { value: "ollama", label: "Ollama" },
-      ],
-      providerValue,
-      (newVal) => {
-        // 供应商切换时，动态刷新字段显示
-        renderProviderSections(newVal);
-        // 取消 Provider 与 PDF 模式的强制联动：用户自行选择 PDF 处理模式
-        // 若切换到 Gemini 且未填写，填充默认 URL 与模型
-        if (newVal === "google") {
-          const curUrl = (getPref("geminiApiUrl") as string) || "";
-          const urlInput = this.container.querySelector(
-            "#setting-geminiApiUrl",
-          ) as HTMLInputElement;
-          const modelInput = this.container.querySelector(
-            "#setting-geminiModel",
-          ) as HTMLInputElement;
-          if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
-            urlInput.value = "https://generativelanguage.googleapis.com";
-          }
-          if (
-            modelInput &&
-            (!modelInput.value || modelInput.value.trim() === "")
-          ) {
-            modelInput.value = "gemini-2.5-pro";
-          }
-        }
-        // 若切换到 Anthropic 且未填写，填充默认 URL 与模型
-        if (newVal === "anthropic") {
-          const curUrl = (getPref("anthropicApiUrl") as string) || "";
-          const urlInput = this.container.querySelector(
-            "#setting-anthropicApiUrl",
-          ) as HTMLInputElement;
-          const modelInput = this.container.querySelector(
-            "#setting-anthropicModel",
-          ) as HTMLInputElement;
-          if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
-            urlInput.value = "https://api.anthropic.com";
-          }
-          if (
-            modelInput &&
-            (!modelInput.value || modelInput.value.trim() === "")
-          ) {
-            modelInput.value = "claude-3-5-sonnet-20241022";
-          }
-        }
-        // 若切换到 OpenRouter 且未填写，填充默认
-        if (newVal === "openrouter") {
-          const curUrl = (getPref("openRouterApiUrl") as string) || "";
-          const urlInput = this.container.querySelector(
-            "#setting-openRouterApiUrl",
-          ) as HTMLInputElement;
-          const modelInput = this.container.querySelector(
-            "#setting-openRouterModel",
-          ) as HTMLInputElement;
-          if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
-            urlInput.value = "https://openrouter.ai/api/v1/chat/completions";
-          }
-          if (
-            modelInput &&
-            (!modelInput.value || modelInput.value.trim() === "")
-          ) {
-            modelInput.value = "google/gemma-3-27b-it";
-          }
-        }
-        // 若切换到火山方舟且未填写，填充默认
-        if (newVal === "volcanoark") {
-          const curUrl = (getPref("volcanoArkApiUrl") as string) || "";
-          const urlInput = this.container.querySelector(
-            "#setting-volcanoArkApiUrl",
-          ) as HTMLInputElement;
-          const modelInput = this.container.querySelector(
-            "#setting-volcanoArkModel",
-          ) as HTMLInputElement;
-          if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
-            urlInput.value =
-              "https://ark.cn-beijing.volces.com/api/v3/responses";
-          }
-          if (
-            modelInput &&
-            (!modelInput.value || modelInput.value.trim() === "")
-          ) {
-            modelInput.value = "doubao-seed-1-8-251228";
-          }
-        }
-        // 若切换到 Ollama 且未填写，填充本地默认
-        if (newVal === "ollama") {
-          const curUrl = (getPref("ollamaApiUrl") as string) || "";
-          const urlInput = this.container.querySelector(
-            "#setting-ollamaApiUrl",
-          ) as HTMLInputElement;
-          const modelInput = this.container.querySelector(
-            "#setting-ollamaModel",
-          ) as HTMLInputElement;
-          if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
-            urlInput.value = "http://localhost:11434";
-          }
-          if (
-            modelInput &&
-            (!modelInput.value || modelInput.value.trim() === "")
-          ) {
-            modelInput.value = "llama3.2";
-          }
-        }
-        this.refreshEndpointPreviews();
-      },
-    );
-    legacyProviderForm.appendChild(
-      this.createFormGroup(
-        "API 提供商",
-        providerSelect,
-        "选择您使用的 AI 模型提供商",
-      ),
-    );
+      });
 
-    // Provider 专属字段容器
-    const sectionOpenAI = this.createElement("div", { id: "provider-openai" });
-    const sectionOpenAICompat = this.createElement("div", {
-      id: "provider-openai-compat",
-    });
-    const sectionGemini = this.createElement("div", { id: "provider-gemini" });
-    const sectionAnthropic = this.createElement("div", {
-      id: "provider-anthropic",
-    });
-    const sectionOpenRouter = this.createElement("div", {
-      id: "provider-openrouter",
-    });
-    const sectionVolcanoArk = this.createElement("div", {
-      id: "provider-volcanoark",
-    });
-    const sectionOllama = this.createElement("div", {
-      id: "provider-ollama",
-    });
-
-    // OpenAI 字段（Responses 新接口）
-    sectionOpenAI.appendChild(
-      this.createEndpointFormGroup(
-        "API 地址 *",
-        "openaiApiUrl",
-        getPref("openaiApiUrl") as string,
-        "https://api.openai.com/v1/responses",
-        {
-          officialEndpoint: "https://api.openai.com/v1/responses",
-          previewKind: "openaiResponses",
+      // API 提供商选择（使用自定义下拉，支持 onChange）
+      const providerValue = (getPref("provider") as string) || "openai";
+      const providerSelect = createSelect(
+        "provider",
+        [
+          { value: "openai", label: "OpenAI (Responses 新接口)" },
+          {
+            value: "openai-compat",
+            label: "OpenAI兼容 (旧 ChatCompletions / 第三方)",
+          },
+          { value: "google", label: "Google Gemini" },
+          { value: "anthropic", label: "Anthropic Claude" },
+          { value: "openrouter", label: "OpenRouter" },
+          { value: "volcanoark", label: "火山方舟 (Volcano Ark)" },
+          { value: "ollama", label: "Ollama" },
+        ],
+        providerValue,
+        (newVal) => {
+          // 供应商切换时，动态刷新字段显示
+          renderProviderSections(newVal);
+          // 取消 Provider 与 PDF 模式的强制联动：用户自行选择 PDF 处理模式
+          // 若切换到 Gemini 且未填写，填充默认 URL 与模型
+          if (newVal === "google") {
+            const curUrl = (getPref("geminiApiUrl") as string) || "";
+            const urlInput = this.container.querySelector(
+              "#setting-geminiApiUrl",
+            ) as HTMLInputElement;
+            const modelInput = this.container.querySelector(
+              "#setting-geminiModel",
+            ) as HTMLInputElement;
+            if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
+              urlInput.value = "https://generativelanguage.googleapis.com";
+            }
+            if (
+              modelInput &&
+              (!modelInput.value || modelInput.value.trim() === "")
+            ) {
+              modelInput.value = "gemini-2.5-pro";
+            }
+          }
+          // 若切换到 Anthropic 且未填写，填充默认 URL 与模型
+          if (newVal === "anthropic") {
+            const curUrl = (getPref("anthropicApiUrl") as string) || "";
+            const urlInput = this.container.querySelector(
+              "#setting-anthropicApiUrl",
+            ) as HTMLInputElement;
+            const modelInput = this.container.querySelector(
+              "#setting-anthropicModel",
+            ) as HTMLInputElement;
+            if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
+              urlInput.value = "https://api.anthropic.com";
+            }
+            if (
+              modelInput &&
+              (!modelInput.value || modelInput.value.trim() === "")
+            ) {
+              modelInput.value = "claude-3-5-sonnet-20241022";
+            }
+          }
+          // 若切换到 OpenRouter 且未填写，填充默认
+          if (newVal === "openrouter") {
+            const curUrl = (getPref("openRouterApiUrl") as string) || "";
+            const urlInput = this.container.querySelector(
+              "#setting-openRouterApiUrl",
+            ) as HTMLInputElement;
+            const modelInput = this.container.querySelector(
+              "#setting-openRouterModel",
+            ) as HTMLInputElement;
+            if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
+              urlInput.value = "https://openrouter.ai/api/v1/chat/completions";
+            }
+            if (
+              modelInput &&
+              (!modelInput.value || modelInput.value.trim() === "")
+            ) {
+              modelInput.value = "google/gemma-3-27b-it";
+            }
+          }
+          // 若切换到火山方舟且未填写，填充默认
+          if (newVal === "volcanoark") {
+            const curUrl = (getPref("volcanoArkApiUrl") as string) || "";
+            const urlInput = this.container.querySelector(
+              "#setting-volcanoArkApiUrl",
+            ) as HTMLInputElement;
+            const modelInput = this.container.querySelector(
+              "#setting-volcanoArkModel",
+            ) as HTMLInputElement;
+            if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
+              urlInput.value =
+                "https://ark.cn-beijing.volces.com/api/v3/responses";
+            }
+            if (
+              modelInput &&
+              (!modelInput.value || modelInput.value.trim() === "")
+            ) {
+              modelInput.value = "doubao-seed-1-8-251228";
+            }
+          }
+          // 若切换到 Ollama 且未填写，填充本地默认
+          if (newVal === "ollama") {
+            const curUrl = (getPref("ollamaApiUrl") as string) || "";
+            const urlInput = this.container.querySelector(
+              "#setting-ollamaApiUrl",
+            ) as HTMLInputElement;
+            const modelInput = this.container.querySelector(
+              "#setting-ollamaModel",
+            ) as HTMLInputElement;
+            if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
+              urlInput.value = "http://localhost:11434";
+            }
+            if (
+              modelInput &&
+              (!modelInput.value || modelInput.value.trim() === "")
+            ) {
+              modelInput.value = "llama3.2";
+            }
+          }
+          this.refreshEndpointPreviews();
         },
-      ),
-    );
-    sectionOpenAI.appendChild(
-      this.createFormGroup(
-        "API 密钥 *",
-        this.createPasswordInput(
-          "openaiApiKey",
-          getPref("openaiApiKey") as string,
-          "sk-...",
+      );
+      legacyProviderForm.appendChild(
+        this.createFormGroup(
+          "API 提供商",
+          providerSelect,
+          "选择您使用的 AI 模型提供商",
+        ),
+      );
+
+      // Provider 专属字段容器
+      const sectionOpenAI = this.createElement("div", {
+        id: "provider-openai",
+      });
+      const sectionOpenAICompat = this.createElement("div", {
+        id: "provider-openai-compat",
+      });
+      const sectionGemini = this.createElement("div", {
+        id: "provider-gemini",
+      });
+      const sectionAnthropic = this.createElement("div", {
+        id: "provider-anthropic",
+      });
+      const sectionOpenRouter = this.createElement("div", {
+        id: "provider-openrouter",
+      });
+      const sectionVolcanoArk = this.createElement("div", {
+        id: "provider-volcanoark",
+      });
+      const sectionOllama = this.createElement("div", {
+        id: "provider-ollama",
+      });
+
+      // OpenAI 字段（Responses 新接口）
+      sectionOpenAI.appendChild(
+        this.createEndpointFormGroup(
+          "API 地址 *",
+          "openaiApiUrl",
+          getPref("openaiApiUrl") as string,
+          "https://api.openai.com/v1/responses",
+          {
+            officialEndpoint: "https://api.openai.com/v1/responses",
+            previewKind: "openaiResponses",
+          },
+        ),
+      );
+      sectionOpenAI.appendChild(
+        this.createFormGroup(
+          "API 密钥 *",
+          this.createPasswordInput(
+            "openaiApiKey",
+            getPref("openaiApiKey") as string,
+            "sk-...",
+            "openai",
+          ),
+          "【必填】您的 API 密钥,将安全存储在本地。点击 + 添加更多密钥启用轮换。",
           "openai",
         ),
-        "【必填】您的 API 密钥,将安全存储在本地。点击 + 添加更多密钥启用轮换。",
-        "openai",
-      ),
-    );
-    sectionOpenAI.appendChild(
-      this.createModelFormGroup(
-        "模型 *",
-        "openai",
-        "openaiApiModel",
-        getPref("openaiApiModel") as string,
-        "gpt-5",
-        "【必填】要使用的模型名称",
-      ),
-    );
+      );
+      sectionOpenAI.appendChild(
+        this.createModelFormGroup(
+          "模型 *",
+          "openai",
+          "openaiApiModel",
+          getPref("openaiApiModel") as string,
+          "gpt-5",
+          "【必填】要使用的模型名称",
+        ),
+      );
 
-    // OpenAI 新接口说明
-    const openaiNote = this.createElement("div", {
-      innerHTML:
-        "ℹ️ <strong>说明</strong>：当前配置使用 OpenAI 官方新接口 <code>/v1/responses</code>（多模态统一）。如果你需要兼容第三方旧的 Chat Completions 服务（如 SiliconFlow 代理），请选择上方下拉中的 <strong>OpenAI兼容</strong> 提供商。",
-      styles: {
-        padding: "10px 12px",
-        backgroundColor: "#e8f5e9",
-        border: "1px solid #a5d6a7",
-        borderRadius: "6px",
-        color: "#2e7d32",
-        fontSize: "13px",
-        marginBottom: "16px",
-      },
-    });
-    sectionOpenAI.appendChild(openaiNote);
-
-    // OpenAI 兼容（旧 Chat Completions / 第三方）字段
-    sectionOpenAICompat.appendChild(
-      this.createEndpointFormGroup(
-        "兼容 API 地址 *",
-        "openaiCompatApiUrl",
-        (getPref("openaiCompatApiUrl") as string) ||
-          "https://api.openai.com/v1/chat/completions",
-        "https://api.openai.com/v1/chat/completions",
-        {
-          officialEndpoint: "https://api.openai.com/v1/chat/completions",
-          previewKind: "chatCompletions",
+      // OpenAI 新接口说明
+      const openaiNote = this.createElement("div", {
+        innerHTML:
+          "ℹ️ <strong>说明</strong>：当前配置使用 OpenAI 官方新接口 <code>/v1/responses</code>（多模态统一）。如果你需要兼容第三方旧的 Chat Completions 服务（如 SiliconFlow 代理），请选择上方下拉中的 <strong>OpenAI兼容</strong> 提供商。",
+        styles: {
+          padding: "10px 12px",
+          backgroundColor: "#e8f5e9",
+          border: "1px solid #a5d6a7",
+          borderRadius: "6px",
+          color: "#2e7d32",
+          fontSize: "13px",
+          marginBottom: "16px",
         },
-      ),
-    );
-    sectionOpenAICompat.appendChild(
-      this.createFormGroup(
-        "兼容 API 密钥 *",
-        this.createPasswordInput(
-          "openaiCompatApiKey",
-          (getPref("openaiCompatApiKey") as string) ||
-            (getPref("openaiApiKey") as string),
-          "sk-...",
+      });
+      sectionOpenAI.appendChild(openaiNote);
+
+      // OpenAI 兼容（旧 Chat Completions / 第三方）字段
+      sectionOpenAICompat.appendChild(
+        this.createEndpointFormGroup(
+          "兼容 API 地址 *",
+          "openaiCompatApiUrl",
+          (getPref("openaiCompatApiUrl") as string) ||
+            "https://api.openai.com/v1/chat/completions",
+          "https://api.openai.com/v1/chat/completions",
+          {
+            officialEndpoint: "https://api.openai.com/v1/chat/completions",
+            previewKind: "chatCompletions",
+          },
+        ),
+      );
+      sectionOpenAICompat.appendChild(
+        this.createFormGroup(
+          "兼容 API 密钥 *",
+          this.createPasswordInput(
+            "openaiCompatApiKey",
+            (getPref("openaiCompatApiKey") as string) ||
+              (getPref("openaiApiKey") as string),
+            "sk-...",
+            "openai-compat",
+          ),
+          "【必填】对应第三方服务的密钥。点击 + 添加更多密钥启用轮换。",
           "openai-compat",
         ),
-        "【必填】对应第三方服务的密钥。点击 + 添加更多密钥启用轮换。",
-        "openai-compat",
-      ),
-    );
-    sectionOpenAICompat.appendChild(
-      this.createModelFormGroup(
-        "兼容模型 *",
-        "openai-compat",
-        "openaiCompatModel",
-        (getPref("openaiCompatModel") as string) ||
-          (getPref("openaiApiModel") as string) ||
+      );
+      sectionOpenAICompat.appendChild(
+        this.createModelFormGroup(
+          "兼容模型 *",
+          "openai-compat",
+          "openaiCompatModel",
+          (getPref("openaiCompatModel") as string) ||
+            (getPref("openaiApiModel") as string) ||
+            "gpt-3.5-turbo",
           "gpt-3.5-turbo",
-        "gpt-3.5-turbo",
-        "【必填】第三方提供的模型名称，如 Qwen/QwQ-32B、deepseek-ai/DeepSeek-V3 等",
-      ),
-    );
-    const openaiCompatNote = this.createElement("div", {
-      innerHTML:
-        '⚠️ <strong>用途</strong>：用于兼容旧的 <code>/v1/chat/completions</code> 格式，适配第三方聚合/代理服务（SiliconFlow、OpenAI 兼容网关等）。<br/>若使用官方 OpenAI，请选择 <strong>OpenAI (Responses 新接口)</strong>。<br/>若第三方不支持PDF Base64多模态处理方式，请在 PDF 处理配置中改为"文本提取"模式。',
-      styles: {
-        padding: "10px 12px",
-        backgroundColor: "#fff8e1",
-        border: "1px solid #ffe082",
-        borderRadius: "6px",
-        color: "#795548",
-        fontSize: "13px",
-        marginBottom: "16px",
-      },
-    });
-    sectionOpenAICompat.appendChild(openaiCompatNote);
-
-    // Gemini 字段
-    sectionGemini.appendChild(
-      this.createEndpointFormGroup(
-        "API 基础地址 *",
-        "geminiApiUrl",
-        getPref("geminiApiUrl") as string,
-        "https://generativelanguage.googleapis.com",
-        {
-          officialEndpoint: "https://generativelanguage.googleapis.com",
-          previewKind: "geminiStream",
-          modelInputId: "geminiModel",
+          "【必填】第三方提供的模型名称，如 Qwen/QwQ-32B、deepseek-ai/DeepSeek-V3 等",
+        ),
+      );
+      const openaiCompatNote = this.createElement("div", {
+        innerHTML:
+          '⚠️ <strong>用途</strong>：用于兼容旧的 <code>/v1/chat/completions</code> 格式，适配第三方聚合/代理服务（SiliconFlow、OpenAI 兼容网关等）。<br/>若使用官方 OpenAI，请选择 <strong>OpenAI (Responses 新接口)</strong>。<br/>若第三方不支持PDF Base64多模态处理方式，请在 PDF 处理配置中改为"文本提取"模式。',
+        styles: {
+          padding: "10px 12px",
+          backgroundColor: "#fff8e1",
+          border: "1px solid #ffe082",
+          borderRadius: "6px",
+          color: "#795548",
+          fontSize: "13px",
+          marginBottom: "16px",
         },
-      ),
-    );
-    sectionGemini.appendChild(
-      this.createFormGroup(
-        "API 密钥 *",
-        this.createPasswordInput(
-          "geminiApiKey",
-          getPref("geminiApiKey") as string,
-          "sk-...",
+      });
+      sectionOpenAICompat.appendChild(openaiCompatNote);
+
+      // Gemini 字段
+      sectionGemini.appendChild(
+        this.createEndpointFormGroup(
+          "API 基础地址 *",
+          "geminiApiUrl",
+          getPref("geminiApiUrl") as string,
+          "https://generativelanguage.googleapis.com",
+          {
+            officialEndpoint: "https://generativelanguage.googleapis.com",
+            previewKind: "geminiStream",
+            modelInputId: "geminiModel",
+          },
+        ),
+      );
+      sectionGemini.appendChild(
+        this.createFormGroup(
+          "API 密钥 *",
+          this.createPasswordInput(
+            "geminiApiKey",
+            getPref("geminiApiKey") as string,
+            "sk-...",
+            "google",
+          ),
+          "【必填】您的 Gemini API Key。点击 + 添加更多密钥启用轮换。",
           "google",
         ),
-        "【必填】您的 Gemini API Key。点击 + 添加更多密钥启用轮换。",
-        "google",
-      ),
-    );
-    sectionGemini.appendChild(
-      this.createModelFormGroup(
-        "模型 *",
-        "google",
-        "geminiModel",
-        getPref("geminiModel") as string,
-        "gemini-2.5-pro",
-        "【必填】Gemini 模型名称, 如 gemini-2.5-pro",
-      ),
-    );
+      );
+      sectionGemini.appendChild(
+        this.createModelFormGroup(
+          "模型 *",
+          "google",
+          "geminiModel",
+          getPref("geminiModel") as string,
+          "gemini-2.5-pro",
+          "【必填】Gemini 模型名称, 如 gemini-2.5-pro",
+        ),
+      );
 
-    // Anthropic 字段
-    sectionAnthropic.appendChild(
-      this.createEndpointFormGroup(
-        "API 基础地址 *",
-        "anthropicApiUrl",
-        getPref("anthropicApiUrl") as string,
-        "https://api.anthropic.com",
-        {
-          officialEndpoint: "https://api.anthropic.com",
-          previewKind: "anthropicMessages",
-        },
-      ),
-    );
-    sectionAnthropic.appendChild(
-      this.createFormGroup(
-        "API 密钥 *",
-        this.createPasswordInput(
-          "anthropicApiKey",
-          getPref("anthropicApiKey") as string,
-          "sk-ant-...",
+      // Anthropic 字段
+      sectionAnthropic.appendChild(
+        this.createEndpointFormGroup(
+          "API 基础地址 *",
+          "anthropicApiUrl",
+          getPref("anthropicApiUrl") as string,
+          "https://api.anthropic.com",
+          {
+            officialEndpoint: "https://api.anthropic.com",
+            previewKind: "anthropicMessages",
+          },
+        ),
+      );
+      sectionAnthropic.appendChild(
+        this.createFormGroup(
+          "API 密钥 *",
+          this.createPasswordInput(
+            "anthropicApiKey",
+            getPref("anthropicApiKey") as string,
+            "sk-ant-...",
+            "anthropic",
+          ),
+          "【必填】您的 Anthropic API Key。点击 + 添加更多密钥启用轮换。",
           "anthropic",
         ),
-        "【必填】您的 Anthropic API Key。点击 + 添加更多密钥启用轮换。",
-        "anthropic",
-      ),
-    );
-    sectionAnthropic.appendChild(
-      this.createModelFormGroup(
-        "模型 *",
-        "anthropic",
-        "anthropicModel",
-        getPref("anthropicModel") as string,
-        "claude-3-5-sonnet-20241022",
-        "【必填】Claude 模型名称, 如 claude-3-5-sonnet-20241022",
-      ),
-    );
+      );
+      sectionAnthropic.appendChild(
+        this.createModelFormGroup(
+          "模型 *",
+          "anthropic",
+          "anthropicModel",
+          getPref("anthropicModel") as string,
+          "claude-3-5-sonnet-20241022",
+          "【必填】Claude 模型名称, 如 claude-3-5-sonnet-20241022",
+        ),
+      );
 
-    // OpenRouter 字段
-    sectionOpenRouter.appendChild(
-      this.createEndpointFormGroup(
-        "API 基础地址 *",
-        "openRouterApiUrl",
-        getPref("openRouterApiUrl") as string,
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          officialEndpoint: "https://openrouter.ai/api/v1/chat/completions",
-          previewKind: "chatCompletions",
-        },
-      ),
-    );
-    sectionOpenRouter.appendChild(
-      this.createFormGroup(
-        "API 密钥 *",
-        this.createPasswordInput(
-          "openRouterApiKey",
-          getPref("openRouterApiKey") as string,
-          "sk-or-...",
+      // OpenRouter 字段
+      sectionOpenRouter.appendChild(
+        this.createEndpointFormGroup(
+          "API 基础地址 *",
+          "openRouterApiUrl",
+          getPref("openRouterApiUrl") as string,
+          "https://openrouter.ai/api/v1/chat/completions",
+          {
+            officialEndpoint: "https://openrouter.ai/api/v1/chat/completions",
+            previewKind: "chatCompletions",
+          },
+        ),
+      );
+      sectionOpenRouter.appendChild(
+        this.createFormGroup(
+          "API 密钥 *",
+          this.createPasswordInput(
+            "openRouterApiKey",
+            getPref("openRouterApiKey") as string,
+            "sk-or-...",
+            "openrouter",
+          ),
+          "【必填】您的 OpenRouter API Key。点击 + 添加更多密钥启用轮换。",
           "openrouter",
         ),
-        "【必填】您的 OpenRouter API Key。点击 + 添加更多密钥启用轮换。",
-        "openrouter",
-      ),
-    );
-    sectionOpenRouter.appendChild(
-      this.createModelFormGroup(
-        "模型 *",
-        "openrouter",
-        "openRouterModel",
-        getPref("openRouterModel") as string,
-        "google/gemma-3-27b-it",
-        "【必填】OpenRouter 模型名称, 如 google/gemma-3-27b-it",
-      ),
-    );
+      );
+      sectionOpenRouter.appendChild(
+        this.createModelFormGroup(
+          "模型 *",
+          "openrouter",
+          "openRouterModel",
+          getPref("openRouterModel") as string,
+          "google/gemma-3-27b-it",
+          "【必填】OpenRouter 模型名称, 如 google/gemma-3-27b-it",
+        ),
+      );
 
-    // 火山方舟字段
-    sectionVolcanoArk.appendChild(
-      this.createEndpointFormGroup(
-        "API 地址 *",
-        "volcanoArkApiUrl",
-        getPref("volcanoArkApiUrl") as string,
-        "https://ark.cn-beijing.volces.com/api/v3/responses",
-        {
-          officialEndpoint:
-            "https://ark.cn-beijing.volces.com/api/v3/responses",
-          previewKind: "volcanoResponses",
-        },
-      ),
-    );
-    sectionVolcanoArk.appendChild(
-      this.createFormGroup(
-        "API 密钥 *",
-        this.createPasswordInput(
-          "volcanoArkApiKey",
-          getPref("volcanoArkApiKey") as string,
-          "ark-...",
+      // 火山方舟字段
+      sectionVolcanoArk.appendChild(
+        this.createEndpointFormGroup(
+          "API 地址 *",
+          "volcanoArkApiUrl",
+          getPref("volcanoArkApiUrl") as string,
+          "https://ark.cn-beijing.volces.com/api/v3/responses",
+          {
+            officialEndpoint:
+              "https://ark.cn-beijing.volces.com/api/v3/responses",
+            previewKind: "volcanoResponses",
+          },
+        ),
+      );
+      sectionVolcanoArk.appendChild(
+        this.createFormGroup(
+          "API 密钥 *",
+          this.createPasswordInput(
+            "volcanoArkApiKey",
+            getPref("volcanoArkApiKey") as string,
+            "ark-...",
+            "volcanoark",
+          ),
+          "【必填】您的火山方舟 API Key。点击 + 添加更多密钥启用轮换。",
           "volcanoark",
         ),
-        "【必填】您的火山方舟 API Key。点击 + 添加更多密钥启用轮换。",
-        "volcanoark",
-      ),
-    );
-    sectionVolcanoArk.appendChild(
-      this.createModelFormGroup(
-        "模型 *",
-        "volcanoark",
-        "volcanoArkModel",
-        getPref("volcanoArkModel") as string,
-        "doubao-seed-1-8-251228",
-        "【必填】豆包大模型名称, 如 doubao-seed-1-8-251228",
-      ),
-    );
-    // 火山方舟说明
-    const volcanoArkNote = this.createElement("div", {
-      innerHTML:
-        "ℹ️ <strong>说明</strong>：火山方舟提供每日 200 万 tokens 免费额度，支持多模态理解。<br/>推荐模型：<code>doubao-seed-1-8-251228</code>、<code>doubao-seed-1-6-250615</code>",
-      styles: {
-        padding: "10px 12px",
-        backgroundColor: "#e8f5e9",
-        border: "1px solid #a5d6a7",
-        borderRadius: "6px",
-        color: "#2e7d32",
-        fontSize: "13px",
-        marginBottom: "16px",
-      },
-    });
-    sectionVolcanoArk.appendChild(volcanoArkNote);
-
-    // Ollama 字段
-    sectionOllama.appendChild(
-      this.createEndpointFormGroup(
-        "API 基础地址 *",
-        "ollamaApiUrl",
-        getPref("ollamaApiUrl") as string,
-        "http://localhost:11434",
-        {
-          officialEndpoint: "http://localhost:11434/api/chat",
-          previewKind: "ollamaChat",
+      );
+      sectionVolcanoArk.appendChild(
+        this.createModelFormGroup(
+          "模型 *",
+          "volcanoark",
+          "volcanoArkModel",
+          getPref("volcanoArkModel") as string,
+          "doubao-seed-1-8-251228",
+          "【必填】豆包大模型名称, 如 doubao-seed-1-8-251228",
+        ),
+      );
+      // 火山方舟说明
+      const volcanoArkNote = this.createElement("div", {
+        innerHTML:
+          "ℹ️ <strong>说明</strong>：火山方舟提供每日 200 万 tokens 免费额度，支持多模态理解。<br/>推荐模型：<code>doubao-seed-1-8-251228</code>、<code>doubao-seed-1-6-250615</code>",
+        styles: {
+          padding: "10px 12px",
+          backgroundColor: "#e8f5e9",
+          border: "1px solid #a5d6a7",
+          borderRadius: "6px",
+          color: "#2e7d32",
+          fontSize: "13px",
+          marginBottom: "16px",
         },
-      ),
-    );
-    sectionOllama.appendChild(
-      this.createFormGroup(
-        "API 密钥",
-        this.createPasswordInput(
-          "ollamaApiKey",
-          getPref("ollamaApiKey") as string,
-          "可留空",
+      });
+      sectionVolcanoArk.appendChild(volcanoArkNote);
+
+      // Ollama 字段
+      sectionOllama.appendChild(
+        this.createEndpointFormGroup(
+          "API 基础地址 *",
+          "ollamaApiUrl",
+          getPref("ollamaApiUrl") as string,
+          "http://localhost:11434",
+          {
+            officialEndpoint: "http://localhost:11434/api/chat",
+            previewKind: "ollamaChat",
+          },
+        ),
+      );
+      sectionOllama.appendChild(
+        this.createFormGroup(
+          "API 密钥",
+          this.createPasswordInput(
+            "ollamaApiKey",
+            getPref("ollamaApiKey") as string,
+            "可留空",
+            "ollama",
+          ),
+          "Ollama 本地服务通常无需 API 密钥；如果你的服务设置了鉴权，可填写 Bearer token。",
           "ollama",
         ),
-        "Ollama 本地服务通常无需 API 密钥；如果你的服务设置了鉴权，可填写 Bearer token。",
-        "ollama",
-      ),
-    );
-    sectionOllama.appendChild(
-      this.createModelFormGroup(
-        "模型 *",
-        "ollama",
-        "ollamaModel",
-        getPref("ollamaModel") as string,
-        "llama3.2",
-        "【必填】本地 Ollama 模型名称, 如 llama3.2、qwen2.5:7b、deepseek-r1:8b",
-      ),
-    );
-    const ollamaNote = this.createElement("div", {
-      innerHTML:
-        "<strong>说明</strong>：Ollama 使用原生 <code>/api/chat</code> 接口，默认地址为 <code>http://localhost:11434</code>。Ollama 不支持直接上传 PDF Base64；请在 PDF 处理配置中选择“文本提取”或“MinerU”。",
-      styles: {
-        padding: "10px 12px",
-        backgroundColor: "#e8f5e9",
-        border: "1px solid #a5d6a7",
-        borderRadius: "6px",
-        color: "#2e7d32",
-        fontSize: "13px",
-        marginBottom: "16px",
-      },
-    });
-    sectionOllama.appendChild(ollamaNote);
+      );
+      sectionOllama.appendChild(
+        this.createModelFormGroup(
+          "模型 *",
+          "ollama",
+          "ollamaModel",
+          getPref("ollamaModel") as string,
+          "llama3.2",
+          "【必填】本地 Ollama 模型名称, 如 llama3.2、qwen2.5:7b、deepseek-r1:8b",
+        ),
+      );
+      const ollamaNote = this.createElement("div", {
+        innerHTML:
+          "<strong>说明</strong>：Ollama 使用原生 <code>/api/chat</code> 接口，默认地址为 <code>http://localhost:11434</code>。Ollama 不支持直接上传 PDF Base64；请在 PDF 处理配置中选择“文本提取”或“MinerU”。",
+        styles: {
+          padding: "10px 12px",
+          backgroundColor: "#e8f5e9",
+          border: "1px solid #a5d6a7",
+          borderRadius: "6px",
+          color: "#2e7d32",
+          fontSize: "13px",
+          marginBottom: "16px",
+        },
+      });
+      sectionOllama.appendChild(ollamaNote);
 
-    legacyProviderForm.appendChild(sectionOpenAI);
-    legacyProviderForm.appendChild(sectionOpenAICompat);
-    legacyProviderForm.appendChild(sectionGemini);
-    legacyProviderForm.appendChild(sectionAnthropic);
-    legacyProviderForm.appendChild(sectionOpenRouter);
-    legacyProviderForm.appendChild(sectionVolcanoArk);
-    legacyProviderForm.appendChild(sectionOllama);
+      legacyProviderForm.appendChild(sectionOpenAI);
+      legacyProviderForm.appendChild(sectionOpenAICompat);
+      legacyProviderForm.appendChild(sectionGemini);
+      legacyProviderForm.appendChild(sectionAnthropic);
+      legacyProviderForm.appendChild(sectionOpenRouter);
+      legacyProviderForm.appendChild(sectionVolcanoArk);
+      legacyProviderForm.appendChild(sectionOllama);
 
-    const renderProviderSections = (prov: string) => {
-      const isGemini = prov === "google";
-      const isAnthropic = prov === "anthropic";
-      const isOpenRouter = prov === "openrouter";
-      const isOpenAICompat = prov === "openai-compat";
-      const isVolcanoArk = prov === "volcanoark";
-      const isOllama = prov === "ollama";
-      (sectionOpenAI as HTMLElement).style.display =
-        isGemini ||
-        isAnthropic ||
-        isOpenAICompat ||
-        isOpenRouter ||
-        isVolcanoArk ||
-        isOllama
-          ? "none"
-          : "block";
-      (sectionOpenAICompat as HTMLElement).style.display = isOpenAICompat
-        ? "block"
-        : "none";
-      (sectionGemini as HTMLElement).style.display = isGemini
-        ? "block"
-        : "none";
-      (sectionAnthropic as HTMLElement).style.display = isAnthropic
-        ? "block"
-        : "none";
-      (sectionOpenRouter as HTMLElement).style.display = isOpenRouter
-        ? "block"
-        : "none";
-      (sectionVolcanoArk as HTMLElement).style.display = isVolcanoArk
-        ? "block"
-        : "none";
-      (sectionOllama as HTMLElement).style.display = isOllama
-        ? "block"
-        : "none";
-    };
-    renderProviderSections(providerValue);
-    form.appendChild(legacyProviderForm);
+      const renderProviderSections = (prov: string) => {
+        const isGemini = prov === "google";
+        const isAnthropic = prov === "anthropic";
+        const isOpenRouter = prov === "openrouter";
+        const isOpenAICompat = prov === "openai-compat";
+        const isVolcanoArk = prov === "volcanoark";
+        const isOllama = prov === "ollama";
+        (sectionOpenAI as HTMLElement).style.display =
+          isGemini ||
+          isAnthropic ||
+          isOpenAICompat ||
+          isOpenRouter ||
+          isVolcanoArk ||
+          isOllama
+            ? "none"
+            : "block";
+        (sectionOpenAICompat as HTMLElement).style.display = isOpenAICompat
+          ? "block"
+          : "none";
+        (sectionGemini as HTMLElement).style.display = isGemini
+          ? "block"
+          : "none";
+        (sectionAnthropic as HTMLElement).style.display = isAnthropic
+          ? "block"
+          : "none";
+        (sectionOpenRouter as HTMLElement).style.display = isOpenRouter
+          ? "block"
+          : "none";
+        (sectionVolcanoArk as HTMLElement).style.display = isVolcanoArk
+          ? "block"
+          : "none";
+        (sectionOllama as HTMLElement).style.display = isOllama
+          ? "block"
+          : "none";
+      };
+      renderProviderSections(providerValue);
+      form.appendChild(legacyProviderForm);
+    }
 
     // Temperature 参数（可选启用）
     const tempContainer = this.createElement("div", {
@@ -858,7 +857,7 @@ export class ApiSettingsPage {
       this.createFormGroup(
         "全局 PDF 处理模式",
         pdfModeSelect,
-        "默认 PDF 输入方式。模型平台详情中可以为单个模型单独覆盖，适合让支持多模态的模型使用 Base64，让本地或文本模型使用文本提取/MinerU。",
+        "默认 PDF 输入方式。“模型平台”页面的单个模型详情中可以单独覆盖，适合让支持多模态的模型使用 Base64，让本地或文本模型使用文本提取/MinerU。",
       ),
     );
 
@@ -957,7 +956,7 @@ export class ApiSettingsPage {
       this.createFormGroup(
         "MinerU API Key *",
         mineruInputWrapper,
-        "只要全局 PDF 处理模式或任一模型平台的 PDF 处理方式选择 MinerU，就需要填写。请访问 https://mineru.net/ 申请 API Key。",
+        "只要全局 PDF 处理模式或“模型平台”页面任一模型的 PDF 处理方式选择 MinerU，就需要填写。请访问 https://mineru.net/ 申请 API Key。",
       ),
     );
     form.appendChild(sectionMineru);
@@ -1073,6 +1072,10 @@ export class ApiSettingsPage {
     form.appendChild(buttonGroup);
 
     this.container.appendChild(form);
+  }
+
+  private shouldRenderLegacyProviderForm(): boolean {
+    return false;
   }
 
   /**
@@ -2386,6 +2389,89 @@ export class ApiSettingsPage {
    */
   private async saveSettings(): Promise<void> {
     try {
+      const inputValue = (id: string, fallback: string) => {
+        const input = this.container.querySelector(
+          `#setting-${id}`,
+        ) as HTMLInputElement | null;
+        const value = input?.value?.trim();
+        return value || fallback;
+      };
+      const checkboxValue = (id: string, fallback: boolean) => {
+        const input = this.container.querySelector(
+          `#setting-${id}`,
+        ) as HTMLInputElement | null;
+        return input ? input.checked : fallback;
+      };
+      const selectValue = (id: string, fallback: string) => {
+        const select = this.container.querySelector(
+          `#setting-${id}`,
+        ) as HTMLElement | null;
+        if (select && (select as any).getValue) {
+          return String((select as any).getValue() || fallback);
+        }
+        return fallback;
+      };
+
+      setPref("temperature", inputValue("temperature", "0.7"));
+      setPref("maxTokens", inputValue("maxTokens", "4096"));
+      setPref("topP", inputValue("topP", "1.0"));
+      setPref(
+        "enableTemperature",
+        checkboxValue("enableTemperature", true) as any,
+      );
+      setPref("enableMaxTokens", checkboxValue("enableMaxTokens", true) as any);
+      setPref("enableTopP", checkboxValue("enableTopP", true) as any);
+      setPref("stream", checkboxValue("stream", true));
+      setPref("requestTimeout", inputValue("requestTimeout", "300000"));
+      setPref("batchSize", inputValue("batchSize", "1"));
+      setPref("batchInterval", inputValue("batchInterval", "60"));
+      setPref("scanInterval", inputValue("scanInterval", "300"));
+      setPref("pdfProcessMode", selectValue("pdfProcessMode", "base64"));
+
+      setPref(
+        "enablePdfSizeLimit" as any,
+        checkboxValue("enablePdfSizeLimit", false),
+      );
+      setPref("maxPdfSizeMB" as any, inputValue("maxPdfSizeMB", "50"));
+      setPref(
+        "pdfAttachmentMode" as any,
+        selectValue("pdfAttachmentMode", "default"),
+      );
+      setPref(
+        "mineruModelVersion",
+        selectValue("mineruModelVersion", "vlm") === "pipeline"
+          ? "pipeline"
+          : "vlm",
+      );
+      const mineruKeyEl = this.container.querySelector(
+        "#setting-mineruApiKey",
+      ) as HTMLInputElement | null;
+      if (mineruKeyEl) {
+        setPref("mineruApiKey" as any, mineruKeyEl.value.trim());
+      }
+
+      ztoolkit.log("[API Settings] Global API settings saved successfully");
+
+      new ztoolkit.ProgressWindow("API 配置", {
+        closeTime: 2000,
+      })
+        .createLine({ text: "✅ 设置已保存", type: "success" })
+        .show();
+    } catch (error: any) {
+      ztoolkit.log(`[API Settings] Save error: ${error}`);
+      new ztoolkit.ProgressWindow("API 配置", {
+        closeTime: 3000,
+      })
+        .createLine({ text: `❌ 保存失败: ${error.message}`, type: "fail" })
+        .show();
+    }
+  }
+
+  /**
+   * 旧版 provider 表单保存逻辑。旧表单不再挂载，仅保留用于兼容调试。
+   */
+  private async saveLegacyProviderSettings(): Promise<void> {
+    try {
       // 🔧 修复: 在 container 内查找元素,而不是在主窗口 document 中
       ztoolkit.log("[API Settings] Starting save...");
 
@@ -3069,6 +3155,45 @@ export class ApiSettingsPage {
    * 重置设置
    */
   private resetSettings(): void {
+    const confirmed = Services.prompt.confirm(
+      Zotero.getMainWindow() as any,
+      "重置 API 配置",
+      "确定要重置 API 全局配置为默认值吗？模型平台、供应商密钥和路由设置不会被重置。",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPref("temperature", "0.7");
+    setPref("maxTokens", "8192");
+    setPref("topP", "1.0");
+    setPref("enableTemperature", true as any);
+    setPref("enableMaxTokens", true as any);
+    setPref("enableTopP", true as any);
+    setPref("stream", true);
+    setPref("requestTimeout", "300000");
+    setPref("batchSize", "1");
+    setPref("batchInterval", "60");
+    setPref("scanInterval", "300");
+    setPref("pdfProcessMode", "base64");
+    setPref("mineruApiKey" as any, "");
+    setPref("mineruModelVersion", "vlm");
+    setPref("enablePdfSizeLimit" as any, false);
+    setPref("maxPdfSizeMB" as any, "50");
+    setPref("pdfAttachmentMode" as any, "default");
+
+    this.render();
+
+    new ztoolkit.ProgressWindow("API 配置")
+      .createLine({ text: "已重置 API 全局配置", type: "success" })
+      .show();
+  }
+
+  /**
+   * 旧版全量重置逻辑。当前 API 配置页不再重置模型平台。
+   */
+  private resetLegacySettings(): void {
     const confirmed = Services.prompt.confirm(
       Zotero.getMainWindow() as any,
       "重置设置",

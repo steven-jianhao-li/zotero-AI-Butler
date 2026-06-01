@@ -18,6 +18,7 @@ import {
 type EndpointPanelOptions = {
   modalHost?: HTMLElement;
   onChange?: () => void;
+  showTitle?: boolean;
 };
 
 type DraftEndpoint = {
@@ -138,22 +139,27 @@ export class EndpointSettingsPanel {
       flexWrap: "wrap",
     });
 
-    const titleWrap = document.createElement("div");
-    const title = document.createElement("h3");
-    title.textContent = "模型平台";
-    Object.assign(title.style, {
-      margin: "0 0 4px 0",
-      color: "#59c0bc",
-      fontSize: "18px",
-      borderBottom: "2px solid #59c0bc",
-      paddingBottom: "8px",
-    });
-    titleWrap.appendChild(title);
-    titleWrap.appendChild(
-      smallMuted(
-        "添加并管理一个或多个大模型供应商。供应商类型、API 地址、API 密钥和模型均由这里的模型平台配置接管。",
-      ),
-    );
+    if (this.options.showTitle !== false) {
+      const titleWrap = document.createElement("div");
+      const title = document.createElement("h3");
+      title.textContent = "模型平台";
+      Object.assign(title.style, {
+        margin: "0 0 4px 0",
+        color: "#59c0bc",
+        fontSize: "18px",
+        borderBottom: "2px solid #59c0bc",
+        paddingBottom: "8px",
+      });
+      titleWrap.appendChild(title);
+      titleWrap.appendChild(
+        smallMuted(
+          "添加并管理一个或多个大模型供应商。供应商类型、API 地址、API 密钥和模型均由这里的模型平台配置接管。",
+        ),
+      );
+      header.appendChild(titleWrap);
+    } else {
+      header.style.justifyContent = "flex-end";
+    }
 
     const addButton = createStyledButton(
       "添加大模型供应商",
@@ -162,7 +168,6 @@ export class EndpointSettingsPanel {
     );
     addButton.addEventListener("click", () => this.openAddEndpointDialog());
 
-    header.appendChild(titleWrap);
     header.appendChild(addButton);
     this.root.appendChild(header);
 
@@ -965,7 +970,7 @@ export class EndpointSettingsPanel {
       hint.style.color = "#f57c00";
     } else if (value === "global") {
       hint.textContent =
-        "当前模型未单独覆盖，会随下方全局 PDF 处理模式一起变化。";
+        "当前模型未单独覆盖，会随“API 配置”中的全局 PDF 处理模式一起变化。";
     } else {
       hint.textContent = "该模型会使用这里指定的 PDF 处理方式。";
     }

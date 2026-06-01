@@ -15,8 +15,8 @@
 
 1. 在任意论文条目上右键 → **"AI 管家仪表盘"**
 2. 进入 **"快捷设置"** 选项卡
-3. 选择您的 AI 平台（例如 Google Gemini）
-4. 填入 API 密钥，点击 **"测试连接"** 确认可用
+3. 进入 **模型平台** 页面，添加或展开您的 AI 平台（例如 Google Gemini）
+4. 填入 API 密钥和模型名称，点击 **"测试连接"** 确认可用
 
 > 💡 **提示**：详细的 API 配置方法请参阅 [API 配置指南](api-configuration.md)
 
@@ -24,7 +24,7 @@ Google Gemini 官方 API 配置示例：
 
 ![Google Gemini 官方 API 配置示例](images/quick-start-google-gemini-api-config.png)
 
-5. 使用 **"🔍 测试连接"** 按钮测试连接是否成功。
+5. 在对应模型详情中使用 **"测试连接"** 按钮测试连接是否成功。
 
 Google Gemini 官方 API 测试连接成功示例：
 ![Google Gemini 官方 API 测试连接成功示例](images/quick-start-google-gemini-api-test.png)

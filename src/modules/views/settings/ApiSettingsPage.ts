@@ -84,11 +84,11 @@ export class ApiSettingsPage {
       const providerSelect = createSelect(
         "provider",
         [
-          { value: "openai", label: "OpenAI (Responses 新接口)" },
           {
             value: "openai-compat",
             label: "OpenAI兼容 (旧 ChatCompletions / 第三方)",
           },
+          { value: "openai", label: "OpenAI (Responses 新接口)" },
           { value: "google", label: "Google Gemini" },
           { value: "anthropic", label: "Anthropic Claude" },
           { value: "openrouter", label: "OpenRouter" },

@@ -36,17 +36,17 @@ export interface ProviderDefaults {
 }
 
 const PROVIDER_DEFAULTS: Record<LLMEndpointProviderType, ProviderDefaults> = {
-  openai: {
-    label: "OpenAI (Responses 新接口)",
-    apiUrl: "https://api.openai.com/v1/responses",
-    model: "gpt-5",
-    reasoningEffort: "medium",
-  },
   "openai-compat": {
     label: "OpenAI 兼容 (Chat Completions)",
     apiUrl: "https://api.openai.com/v1/chat/completions",
     model: "gpt-3.5-turbo",
     reasoningEffort: "default",
+  },
+  openai: {
+    label: "OpenAI (Responses 新接口)",
+    apiUrl: "https://api.openai.com/v1/responses",
+    model: "gpt-5",
+    reasoningEffort: "medium",
   },
   google: {
     label: "Google Gemini",

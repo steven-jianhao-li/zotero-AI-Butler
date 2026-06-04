@@ -2654,7 +2654,32 @@ function renderChatArea(
     align-self: flex-end;
   `;
 
+  const stopBtn = doc.createElement("button");
+  stopBtn.textContent = "\u7ec8\u6b62";
+  stopBtn.title = "\u7ec8\u6b62\u5f53\u524d\u5feb\u901f\u8ffd\u95ee";
+  stopBtn.style.cssText = `
+    display: none;
+    padding: 6px 12px;
+    background: #f44336;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    align-self: flex-end;
+  `;
+  stopBtn.addEventListener("click", () => {
+    if (!currentChatState.isChatting) return;
+    stopBtn.textContent = "\u7ec8\u6b62\u4e2d...";
+    stopBtn.style.background = "#9e9e9e";
+    (stopBtn as HTMLButtonElement).disabled = true;
+    currentChatState.abortController?.abort(
+      "\u7528\u6237\u5df2\u7ec8\u6b62\u5feb\u901f\u8ffd\u95ee",
+    );
+  });
+
   inputArea.appendChild(inputBox);
+  inputArea.appendChild(stopBtn);
   inputArea.appendChild(sendBtn);
   chatArea.appendChild(chatHeader);
   chatArea.appendChild(messagesArea);
@@ -2754,14 +2779,7 @@ function renderChatArea(
   // 发送消息处理 - 快速追问（上下文为论文 + 当前对话框内历史）
   sendBtn.addEventListener("click", async () => {
     const question = inputBox.value.trim();
-
-    if (currentChatState.isChatting) {
-      sendBtn.textContent = "终止中...";
-      sendBtn.style.background = "#9e9e9e";
-      (sendBtn as HTMLButtonElement).disabled = true;
-      currentChatState.abortController?.abort("用户已终止快速追问");
-      return;
-    }
+    if (currentChatState.isChatting) return;
 
     if (!question) return;
 
@@ -2774,10 +2792,14 @@ function renderChatArea(
     // 设置为正在聊天状态
     currentChatState.isChatting = true;
     currentChatState.abortController = createChatAbortController();
-    sendBtn.textContent = "终止";
-    sendBtn.style.background = "#f44336";
-    (sendBtn as HTMLButtonElement).disabled = false;
-    (inputBox as HTMLTextAreaElement).disabled = true;
+    sendBtn.textContent = "\u751f\u6210\u4e2d";
+    sendBtn.style.background = "#9e9e9e";
+    (sendBtn as HTMLButtonElement).disabled = true;
+    stopBtn.textContent = "\u7ec8\u6b62";
+    stopBtn.style.background = "#f44336";
+    (stopBtn as HTMLButtonElement).disabled = false;
+    stopBtn.style.display = "block";
+    (inputBox as HTMLTextAreaElement).disabled = false;
 
     // 生成唯一对话对 ID
     quickChatPairIdCounter++;
@@ -2970,9 +2992,11 @@ function renderChatArea(
       // 恢复状态
       currentChatState.isChatting = false;
       currentChatState.abortController = null;
-      sendBtn.textContent = "发送";
+      sendBtn.textContent = "\u53d1\u9001";
       sendBtn.style.background = "#59c0bc";
       (sendBtn as HTMLButtonElement).disabled = false;
+      stopBtn.style.display = "none";
+      (stopBtn as HTMLButtonElement).disabled = false;
       (inputBox as HTMLTextAreaElement).disabled = false;
       inputBox.focus();
     }
@@ -2981,6 +3005,7 @@ function renderChatArea(
   // Enter 发送，Shift+Enter 换行
   inputBox.addEventListener("keydown", (e: KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
+      if (currentChatState.isChatting) return;
       e.preventDefault();
       sendBtn.click();
     }

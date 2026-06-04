@@ -32,9 +32,9 @@ import {
 import {
   buildFollowUpChatPairNoteHtml,
   decodeMathHtmlEntities,
-  markdownToDisplayHtml,
   normalizeFollowUpChatNoteHtml,
 } from "./noteMarkdown";
+import { SummaryView } from "./views/SummaryView";
 import katex from "katex";
 // 注意: 不在主进程中直接 import 思维导图库（如 markmap-view、simple-mind-map）
 // 这些库在加载时会访问 document/window，而 Zotero Background 进程没有 DOM 环境
@@ -2341,6 +2341,63 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
     const styleEl = doc.createElement("style");
     styleEl.id = "ai-butler-quick-chat-katex-style";
     styleEl.textContent = `${katexCss}
+#ai-butler-inline-chat,
+#ai-butler-inline-chat * {
+  box-sizing: border-box;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant * {
+  max-width: 100%;
+  text-align: left;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant p {
+  margin: 0.35em 0;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h1,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h2,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h3,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h4,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h5,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h6 {
+  margin: 0.65em 0 0.35em;
+  padding: 0;
+  line-height: 1.35;
+  font-weight: 700;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h1 { font-size: 1.2em; }
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h2 { font-size: 1.12em; }
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h3 { font-size: 1.05em; }
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant ul,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant ol {
+  margin: 0.35em 0 0.5em 1.35em;
+  padding: 0;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant li {
+  margin: 0.2em 0;
+  padding-left: 0.15em;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant li > p {
+  margin: 0.15em 0;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant blockquote {
+  margin: 0.5em 0;
+  padding-left: 0.75em;
+  border-left: 3px solid rgba(89, 192, 188, 0.45);
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant pre,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant code,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .math-fallback {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
 #ai-butler-inline-chat .katex-display {
   max-width: 100%;
   overflow-x: auto;
@@ -2605,6 +2662,7 @@ function renderChatArea(
 
     // 创建 AI 回复区域
     const aiMsgDiv = doc.createElement("div");
+    aiMsgDiv.className = "ai-butler-quick-chat-assistant";
     aiMsgDiv.style.cssText = `
       margin-bottom: 8px;
       padding: 8px;
@@ -2669,7 +2727,7 @@ function renderChatArea(
         onProgress: (chunk: string) => {
           fullResponse += chunk;
           // 流式更新 AI 回复
-          aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${markdownToDisplayHtml(fullResponse)}`;
+          updateQuickChatAssistantMessage(aiMsgDiv, fullResponse);
           // 滚动到底部
           messagesArea.scrollTop = messagesArea.scrollHeight;
         },
@@ -2678,7 +2736,7 @@ function renderChatArea(
       responseMetadata = LLMNoteMetadataService.fromResponse("chat", response);
 
       // 完成后最终更新
-      aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong><br/>${markdownToDisplayHtml(fullResponse)}`;
+      updateQuickChatAssistantMessage(aiMsgDiv, fullResponse);
 
       currentChatState.conversationHistory = appendQuickChatTurn(
         currentChatState.conversationHistory,
@@ -2722,9 +2780,15 @@ function renderChatArea(
       });
     } catch (err: any) {
       if (isChatAbortError(err, currentChatState.abortController?.signal)) {
-        aiMsgDiv.innerHTML = fullResponse
-          ? `<strong>🤖 AI管家:</strong><br/>${markdownToDisplayHtml(fullResponse)}<div style="color: #777; font-size: 11px; margin-top: 6px;">已终止，本轮不会保存或加入上下文。</div>`
-          : `<strong>🤖 AI管家:</strong> <span style="color: #777;">已终止，未生成内容。</span>`;
+        if (fullResponse) {
+          updateQuickChatAssistantMessage(
+            aiMsgDiv,
+            fullResponse,
+            `<div style="color: #777; font-size: 11px; margin-top: 6px;">已终止，本轮不会保存或加入上下文。</div>`,
+          );
+        } else {
+          aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong> <span style="color: #777;">已终止，未生成内容。</span>`;
+        }
         return;
       }
       ztoolkit.log("[AI-Butler] 快速追问发送失败:", err);
@@ -2754,13 +2818,98 @@ function renderChatArea(
  * 转义 HTML 字符（用于聊天显示）
  */
 function escapeHtmlForChat(text: string): string {
-  return text
+  return sanitizeQuickChatDomString(text)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;")
     .replace(/\n/g, "<br/>");
+}
+
+function sanitizeQuickChatDomString(text: string): string {
+  return String(text ?? "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "")
+    .replace(/[\uFDD0-\uFDEF\uFFFE\uFFFF]/g, "")
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "�")
+    .replace(
+      /(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+      (_match, prefix) => `${prefix}�`,
+    );
+}
+
+function normalizeQuickChatXhtml(html: string): string {
+  return html
+    .replace(/&nbsp;/gi, "&#160;")
+    .replace(
+      /<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)\b([^>]*)>/gi,
+      (match, tagName: string, attributes: string) => {
+        if (match.endsWith("/>")) return match;
+        return `<${tagName}${attributes.replace(/\s*\/?\s*$/, "")}/>`;
+      },
+    );
+}
+
+function normalizeQuickChatMarkdownStructure(markdown: string): string {
+  return String(markdown ?? "")
+    .replace(/\r\n?/g, "\n")
+    .replace(
+      /(^|\n)(\d+)\.\s+\*\*([^*\n]{2,80})\*\*\s*:?\s*(?=\n|$)/g,
+      (_match, prefix: string, index: string, title: string) =>
+        `${prefix}\n### ${index}. ${title.trim()}\n`,
+    )
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function renderQuickChatMarkdown(markdown: string): string {
+  const safeMarkdown = sanitizeQuickChatDomString(
+    normalizeQuickChatMarkdownStructure(markdown),
+  );
+  try {
+    return normalizeQuickChatXhtml(
+      sanitizeQuickChatDomString(
+        SummaryView.convertMarkdownToHTMLCore(safeMarkdown),
+      ),
+    );
+  } catch (error) {
+    ztoolkit.log("[AI-Butler] 快速追问渲染失败，已降级为纯文本:", error);
+    return `<p>${escapeHtmlForChat(safeMarkdown)}</p>`;
+  }
+}
+
+function buildQuickChatAssistantHtml(
+  markdown: string,
+  suffixHtml = "",
+): string {
+  return `<strong>🤖 AI管家:</strong><br/>${renderQuickChatMarkdown(markdown)}${suffixHtml}`;
+}
+
+function updateQuickChatAssistantMessage(
+  container: HTMLElement,
+  markdown: string,
+  suffixHtml = "",
+): void {
+  try {
+    container.innerHTML = buildQuickChatAssistantHtml(markdown, suffixHtml);
+  } catch (error) {
+    ztoolkit.log(
+      "[AI-Butler] 快速追问写入渲染结果失败，尝试清洗后重试:",
+      error,
+    );
+    try {
+      container.innerHTML = buildQuickChatAssistantHtml(
+        sanitizeQuickChatDomString(markdown),
+        sanitizeQuickChatDomString(suffixHtml),
+      );
+    } catch (retryError) {
+      ztoolkit.log(
+        "[AI-Butler] 快速追问清洗后仍写入失败，已降级为纯文本:",
+        retryError,
+      );
+      container.textContent = `🤖 AI管家:\n${sanitizeQuickChatDomString(markdown)}`;
+    }
+  }
 }
 
 /**

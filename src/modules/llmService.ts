@@ -859,7 +859,9 @@ export class LLMService {
     if (input.kind === "legacy") {
       return {
         mode: "single",
-        content: input.content,
+        content: input.isBase64
+          ? input.content
+          : this.normalizeText(input.content),
         isBase64: input.isBase64,
         warnings,
       };

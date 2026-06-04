@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ================================================================
  * 条目面板侧边栏区块模块
  * ================================================================
@@ -2774,6 +2774,8 @@ function renderChatArea(
       border: 1px solid rgba(128, 128, 128, 0.2);
       border-radius: 8px;
       background: transparent;
+      user-select: text;
+      cursor: text;
     `;
     pairWrapper.setAttribute("data-pair-id", pairId);
 
@@ -2785,6 +2787,8 @@ function renderChatArea(
       background: rgba(89, 192, 188, 0.1);
       border-radius: 6px;
       border-left: 3px solid #59c0bc;
+      user-select: text;
+      cursor: text;
     `;
     userMsgDiv.innerHTML = `<strong>👤 您:</strong> ${escapeHtmlForChat(question)}`;
     pairWrapper.appendChild(userMsgDiv);
@@ -2798,6 +2802,8 @@ function renderChatArea(
       background: rgba(128, 128, 128, 0.05);
       border-radius: 6px;
       border-left: 3px solid #667eea;
+      user-select: text;
+      cursor: text;
     `;
     aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong> <em style="color: #999;">思考中...</em>`;
     pairWrapper.appendChild(aiMsgDiv);
@@ -2820,6 +2826,29 @@ function renderChatArea(
       cursor: pointer;
       font-size: 11px;
     `;
+    const copyBtn = doc.createElement("button");
+    copyBtn.textContent = "📋 复制回答";
+    copyBtn.style.cssText = `
+      padding: 4px 10px;
+      background: #59c0bc;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      margin-right: 6px;
+    `;
+    copyBtn.addEventListener("click", async () => {
+      const copied = await copyQuickChatText(doc, fullResponse || "");
+      const originalText = copyBtn.textContent || "📋 复制回答";
+      copyBtn.textContent = copied ? "✅ 已复制" : "❌ 复制失败";
+      copyBtn.style.background = copied ? "#4caf50" : "#f44336";
+      setTimeout(() => {
+        copyBtn.textContent = originalText;
+        copyBtn.style.background = "#59c0bc";
+      }, 1500);
+    });
+    saveArea.appendChild(copyBtn);
     saveArea.appendChild(saveBtn);
     pairWrapper.appendChild(saveArea);
 
@@ -3038,6 +3067,46 @@ function updateQuickChatAssistantMessage(
       );
       container.textContent = `🤖 AI管家:\n${sanitizeQuickChatDomString(markdown)}`;
     }
+  }
+}
+
+async function copyQuickChatText(
+  doc: Document,
+  text: string,
+): Promise<boolean> {
+  const safeText = sanitizeQuickChatDomString(text).trim();
+  if (!safeText) return false;
+
+  const win = doc.defaultView as any;
+  try {
+    if (win?.navigator?.clipboard?.writeText) {
+      await win.navigator.clipboard.writeText(safeText);
+      return true;
+    }
+  } catch (error) {
+    ztoolkit.log("[AI-Butler] 快速追问 Clipboard API 复制失败:", error);
+  }
+
+  try {
+    const textarea = doc.createElement("textarea");
+    textarea.value = safeText;
+    textarea.setAttribute("readonly", "readonly");
+    textarea.style.cssText = `
+      position: fixed;
+      left: -9999px;
+      top: 0;
+      opacity: 0;
+    `;
+    const copyHost = doc.body || doc.documentElement;
+    if (!copyHost) return false;
+    copyHost.appendChild(textarea);
+    textarea.select();
+    const copied = Boolean((doc as any).execCommand?.("copy"));
+    textarea.remove();
+    return copied;
+  } catch (error) {
+    ztoolkit.log("[AI-Butler] 快速追问 fallback 复制失败:", error);
+    return false;
   }
 }
 

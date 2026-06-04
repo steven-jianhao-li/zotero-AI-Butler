@@ -2347,11 +2347,18 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
 }
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant,
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant * {
+  min-width: 0;
   max-width: 100%;
   text-align: left;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant p {
   margin: 0.35em 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant h1,
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant h2,
@@ -2397,6 +2404,18 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
   max-width: 100%;
   overflow-x: auto;
   border-collapse: collapse;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-display,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant pre,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant table {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-inline {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 #ai-butler-inline-chat .katex-display {
   max-width: 100%;
@@ -2841,6 +2860,13 @@ function renderChatArea(
       background: rgba(128, 128, 128, 0.05);
       border-radius: 6px;
       border-left: 3px solid #667eea;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      overflow-x: hidden;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      white-space: normal;
       user-select: text;
       cursor: text;
     `;

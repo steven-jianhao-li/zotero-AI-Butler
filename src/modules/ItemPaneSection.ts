@@ -2366,14 +2366,46 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant h4,
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant h5,
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant h6 {
-  margin: 0.65em 0 0.35em;
-  padding: 0;
+  position: relative;
+  margin: 0.9em 0 0.55em;
   line-height: 1.35;
   font-weight: 700;
+  color: inherit;
 }
-#ai-butler-inline-chat .ai-butler-quick-chat-assistant h1 { font-size: 1.2em; }
-#ai-butler-inline-chat .ai-butler-quick-chat-assistant h2 { font-size: 1.12em; }
-#ai-butler-inline-chat .ai-butler-quick-chat-assistant h3 { font-size: 1.05em; }
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h1 {
+  font-size: 1.2em;
+  text-align: center;
+  padding-bottom: 0.25em;
+  color: var(--main-10, inherit);
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h1::after {
+  content: "";
+  display: block;
+  margin: 0.2em auto 0;
+  width: 72px;
+  border-bottom: 2px solid #f22f27;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h2 {
+  font-size: 1.12em;
+  padding-bottom: 0.18em;
+  border-bottom: 1px solid #f22f27;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h2::before {
+  content: "# ";
+  color: #f22f27;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h3 {
+  font-size: 1.05em;
+  padding-left: 9px;
+  border-left: 5px solid #f22f27;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant h4 {
+  display: inline-block;
+  font-size: 1em;
+  padding: 0.1em 0.45em;
+  border: 1px solid #f22f27;
+  border-top: 4px solid #f22f27;
+}
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant ul,
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant ol {
   margin: 0.35em 0 0.5em 1.35em;
@@ -3081,6 +3113,11 @@ function normalizeQuickChatMarkdownStructure(markdown: string): string {
       /(^|\n)(\d+)\.\s+\*\*([^*\n]{2,80})\*\*\s*:?\s*(?=\n|$)/g,
       (_match, prefix: string, index: string, title: string) =>
         `${prefix}\n### ${index}. ${title.trim()}\n`,
+    )
+    .replace(
+      /(^|\n)\*\*([^*\n]{2,80})\*\*\s*:?\s*(?=\n|$)/g,
+      (_match, prefix: string, title: string) =>
+        `${prefix}\n### ${title.trim()}\n`,
     )
     .replace(/\n{3,}/g, "\n\n")
     .trim();

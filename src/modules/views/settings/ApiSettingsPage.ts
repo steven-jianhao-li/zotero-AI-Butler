@@ -80,7 +80,7 @@ export class ApiSettingsPage {
       });
 
       // API 提供商选择（使用自定义下拉，支持 onChange）
-      const providerValue = (getPref("provider") as string) || "openai";
+      const providerValue = (getPref("provider") as string) || "openai-compat";
       const providerSelect = createSelect(
         "provider",
         [
@@ -2826,7 +2826,7 @@ export class ApiSettingsPage {
    */
   private async testApiConnection(): Promise<void> {
     // 获取当前提供商和密钥
-    const provider = (getPref("provider") as string) || "openai";
+    const provider = (getPref("provider") as string) || "openai-compat";
     const keyManagerId = this.mapToKeyManagerId(provider);
     const allKeys = ApiKeyManager.getAllKeys(keyManagerId);
 
@@ -3116,7 +3116,7 @@ export class ApiSettingsPage {
    * 更新密钥状态指示器
    */
   private updateKeyStatusIndicator(keyIndex: number, isValid: boolean): void {
-    const provider = (getPref("provider") as string) || "openai";
+    const provider = (getPref("provider") as string) || "openai-compat";
     const keyManagerId = this.mapToKeyManagerId(provider);
     const statusSelector = `[data-key-status="${keyManagerId}-${keyIndex}"]`;
     const statusIcon = this.container.querySelector(
@@ -3205,7 +3205,7 @@ export class ApiSettingsPage {
     }
 
     // 重置为默认值
-    setPref("provider", "openai");
+    setPref("provider", "openai-compat");
     // OpenAI 默认（已改为新接口）
     setPref("openaiApiUrl", "https://api.openai.com/v1/responses");
     setPref("openaiApiKey", "");

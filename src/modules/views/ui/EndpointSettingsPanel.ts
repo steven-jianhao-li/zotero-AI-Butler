@@ -1175,7 +1175,7 @@ export class EndpointSettingsPanel {
 
     const draft: DraftEndpoint = {
       name: "",
-      providerType: "openai",
+      providerType: "openai-compat",
     };
 
     const nameInput = createInput(

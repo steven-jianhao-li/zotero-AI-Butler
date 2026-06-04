@@ -225,7 +225,7 @@ export class LLMEndpointManager {
   }
 
   static createEndpoint(
-    providerType: LLMEndpointProviderType = "openai",
+    providerType: LLMEndpointProviderType = "openai-compat",
   ): LLMEndpoint {
     const defaults = this.providerDefaults(providerType);
     const timestamp = nowIso();
@@ -451,7 +451,9 @@ export class LLMEndpointManager {
   }
 
   private static createLegacyEndpoint(): LLMEndpoint {
-    const providerType = safeProviderType(getPref("provider") || "openai");
+    const providerType = safeProviderType(
+      getPref("provider") || "openai-compat",
+    );
     const defaults = this.providerDefaults(providerType);
     const timestamp = nowIso();
     return {

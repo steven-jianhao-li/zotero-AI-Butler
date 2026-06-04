@@ -2459,15 +2459,144 @@ function renderChatArea(
     createContextInfoIcon(doc, getString("itempane-ai-temp-chat-tooltip")),
   );
 
+  let currentQuickChatFontSize = parseInt(
+    (getPref("sidebarQuickChatFontSize" as any) as string) || "12",
+    10,
+  );
+  if (
+    isNaN(currentQuickChatFontSize) ||
+    currentQuickChatFontSize < 10 ||
+    currentQuickChatFontSize > 20
+  ) {
+    currentQuickChatFontSize = 12;
+  }
+
+  const DEFAULT_QUICK_CHAT_HEIGHT = 200;
+  let currentQuickChatHeight = parseInt(
+    (getPref("sidebarQuickChatHeight" as any) as string) ||
+      String(DEFAULT_QUICK_CHAT_HEIGHT),
+    10,
+  );
+  if (isNaN(currentQuickChatHeight) || currentQuickChatHeight < 100) {
+    currentQuickChatHeight = DEFAULT_QUICK_CHAT_HEIGHT;
+  }
+
+  const chatControls = doc.createElement("div");
+  chatControls.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+  `;
+  chatControls.addEventListener("click", (event: Event) => {
+    event.stopPropagation();
+  });
+
+  const quickFontLabel = doc.createElement("span");
+  quickFontLabel.textContent = `${currentQuickChatFontSize}px`;
+  quickFontLabel.style.cssText = `
+    min-width: 28px;
+    color: inherit;
+    opacity: 0.75;
+    font-size: 10px;
+    text-align: center;
+  `;
+
+  const createQuickControlButton = (text: string, title: string) => {
+    const button = doc.createElement("button");
+    button.textContent = text;
+    button.title = title;
+    button.style.cssText = `
+      width: 20px;
+      height: 20px;
+      border: 1px solid currentColor;
+      border-radius: 3px;
+      background: transparent;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      color: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.75;
+    `;
+    button.addEventListener("mouseenter", () => {
+      if (button.disabled) return;
+      button.style.opacity = "1";
+      button.style.background = "rgba(128, 128, 128, 0.2)";
+    });
+    button.addEventListener("mouseleave", () => {
+      button.style.opacity = button.disabled ? "0.45" : "0.75";
+      button.style.background = "transparent";
+    });
+    return button;
+  };
+
+  const decreaseFontBtn = createQuickControlButton("−", "减小快速追问字号");
+  const increaseFontBtn = createQuickControlButton("+", "增大快速追问字号");
+  const decreaseHeightBtn = createQuickControlButton("⇡", "降低快速追问高度");
+  const increaseHeightBtn = createQuickControlButton("⇣", "增加快速追问高度");
+  const resetHeightBtn = createQuickControlButton("↕", "恢复快速追问默认高度");
+
+  chatControls.appendChild(decreaseFontBtn);
+  chatControls.appendChild(quickFontLabel);
+  chatControls.appendChild(increaseFontBtn);
+  chatControls.appendChild(decreaseHeightBtn);
+  chatControls.appendChild(increaseHeightBtn);
+  chatControls.appendChild(resetHeightBtn);
+  chatHeader.appendChild(chatControls);
+
   // 消息显示区
   const messagesArea = doc.createElement("div");
   messagesArea.style.cssText = `
-    max-height: 200px;
+    height: ${currentQuickChatHeight}px;
+    min-height: 100px;
+    max-height: 520px;
     overflow-y: auto;
+    overflow-x: hidden;
+    resize: vertical;
     padding: 8px;
-    font-size: 12px;
+    font-size: ${currentQuickChatFontSize}px;
     line-height: 1.5;
+    user-select: text;
+    cursor: text;
   `;
+
+  const applyQuickChatFontSize = (nextSize: number): void => {
+    currentQuickChatFontSize = Math.max(10, Math.min(20, nextSize));
+    quickFontLabel.textContent = `${currentQuickChatFontSize}px`;
+    messagesArea.style.fontSize = `${currentQuickChatFontSize}px`;
+    setPref(
+      "sidebarQuickChatFontSize" as any,
+      String(currentQuickChatFontSize) as any,
+    );
+  };
+
+  const applyQuickChatHeight = (nextHeight: number): void => {
+    currentQuickChatHeight = Math.max(100, Math.min(520, nextHeight));
+    messagesArea.style.height = `${currentQuickChatHeight}px`;
+    setPref(
+      "sidebarQuickChatHeight" as any,
+      String(currentQuickChatHeight) as any,
+    );
+  };
+
+  decreaseFontBtn.addEventListener("click", () => {
+    applyQuickChatFontSize(currentQuickChatFontSize - 1);
+  });
+  increaseFontBtn.addEventListener("click", () => {
+    applyQuickChatFontSize(currentQuickChatFontSize + 1);
+  });
+  decreaseHeightBtn.addEventListener("click", () => {
+    applyQuickChatHeight(currentQuickChatHeight - 40);
+  });
+  increaseHeightBtn.addEventListener("click", () => {
+    applyQuickChatHeight(currentQuickChatHeight + 40);
+  });
+  resetHeightBtn.addEventListener("click", () => {
+    applyQuickChatHeight(DEFAULT_QUICK_CHAT_HEIGHT);
+  });
 
   // 输入区域
   const inputArea = doc.createElement("div");

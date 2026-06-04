@@ -2599,6 +2599,23 @@ function renderChatArea(
   });
 
   // 输入区域
+  const isQuickChatAtBottom = (): boolean =>
+    messagesArea.scrollHeight -
+      messagesArea.scrollTop -
+      messagesArea.clientHeight <
+    8;
+  let quickChatPinnedToBottom = true;
+  messagesArea.addEventListener("scroll", () => {
+    quickChatPinnedToBottom = isQuickChatAtBottom();
+  });
+  const scrollQuickChatToBottomIfPinned = (
+    wasPinned = quickChatPinnedToBottom,
+  ): void => {
+    if (!wasPinned) return;
+    messagesArea.scrollTop = messagesArea.scrollHeight;
+    quickChatPinnedToBottom = true;
+  };
+
   const inputArea = doc.createElement("div");
   inputArea.style.cssText = `
     display: flex;
@@ -2852,14 +2869,12 @@ function renderChatArea(
     saveArea.appendChild(saveBtn);
     pairWrapper.appendChild(saveArea);
 
+    const shouldFollowNewPair = quickChatPinnedToBottom;
     messagesArea.appendChild(pairWrapper);
+    scrollQuickChatToBottomIfPinned(shouldFollowNewPair);
 
     // 清空输入框
     inputBox.value = "";
-
-    // 滚动到底部
-    messagesArea.scrollTop = messagesArea.scrollHeight;
-
     let fullResponse = "";
 
     try {
@@ -2884,10 +2899,10 @@ function renderChatArea(
         },
         onProgress: (chunk: string) => {
           fullResponse += chunk;
-          // 流式更新 AI 回复
+          const shouldFollowStream = quickChatPinnedToBottom;
+          // Update streaming AI response
           updateQuickChatAssistantMessage(aiMsgDiv, fullResponse);
-          // 滚动到底部
-          messagesArea.scrollTop = messagesArea.scrollHeight;
+          scrollQuickChatToBottomIfPinned(shouldFollowStream);
         },
       });
       fullResponse = response.text;

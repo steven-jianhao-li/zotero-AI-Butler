@@ -40,6 +40,7 @@ export class PromptsSettingsPage {
   private sampleTitle!: HTMLInputElement;
   private sampleAuthors!: HTMLInputElement;
   private sampleYear!: HTMLInputElement;
+  private editingMultiRoundPromptId: string | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -700,20 +701,29 @@ export class PromptsSettingsPage {
     }
 
     prompts.forEach((prompt, index) => {
-      const item = Zotero.getMainWindow().document.createElement("div");
+      const doc = Zotero.getMainWindow().document;
+      const isEditing = this.editingMultiRoundPromptId === prompt.id;
+      const item = doc.createElement("div");
       Object.assign(item.style, {
-        display: "flex",
-        alignItems: "center",
         padding: "8px",
-        marginBottom: "4px",
+        marginBottom: "8px",
         background: "var(--ai-card-bg)",
-        borderRadius: "4px",
-        border: "1px solid var(--ai-input-border)",
+        borderRadius: "8px",
+        border: isEditing
+          ? "1px solid #59c0bc"
+          : "1px solid var(--ai-input-border)",
         minWidth: "0", // 防止flex子元素撑开容器
         overflow: "hidden", // 确保内容不溢出
       });
 
-      const orderBadge = Zotero.getMainWindow().document.createElement("span");
+      const header = doc.createElement("div");
+      Object.assign(header.style, {
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+      });
+
+      const orderBadge = doc.createElement("span");
       orderBadge.textContent = `${index + 1}`;
       Object.assign(orderBadge.style, {
         background: "#59c0bc",
@@ -727,16 +737,17 @@ export class PromptsSettingsPage {
         marginRight: "10px",
         fontSize: "12px",
         fontWeight: "bold",
+        flex: "0 0 auto",
       });
-      item.appendChild(orderBadge);
+      header.appendChild(orderBadge);
 
-      const info = Zotero.getMainWindow().document.createElement("div");
+      const info = doc.createElement("div");
       Object.assign(info.style, {
         flex: "1",
         overflow: "hidden",
       });
 
-      const title = Zotero.getMainWindow().document.createElement("div");
+      const title = doc.createElement("div");
       title.textContent = prompt.title;
       Object.assign(title.style, {
         fontWeight: "bold",
@@ -745,7 +756,7 @@ export class PromptsSettingsPage {
       });
       info.appendChild(title);
 
-      const preview = Zotero.getMainWindow().document.createElement("div");
+      const preview = doc.createElement("div");
       preview.textContent =
         prompt.prompt.substring(0, 50) +
         (prompt.prompt.length > 50 ? "..." : "");
@@ -758,26 +769,30 @@ export class PromptsSettingsPage {
       });
       info.appendChild(preview);
 
-      item.appendChild(info);
+      header.appendChild(info);
 
       // 编辑按钮
-      const btnEdit = Zotero.getMainWindow().document.createElement("button");
-      btnEdit.textContent = "✏️";
-      btnEdit.title = "编辑";
+      const btnEdit = doc.createElement("button");
+      btnEdit.textContent = isEditing ? "收起" : "编辑";
+      btnEdit.title = isEditing ? "收起编辑器" : "编辑";
       Object.assign(btnEdit.style, {
-        border: "none",
-        background: "transparent",
+        border: "1px solid #59c0bc",
+        borderRadius: "4px",
+        background: isEditing ? "#59c0bc" : "transparent",
+        color: isEditing ? "white" : "#59c0bc",
         cursor: "pointer",
-        fontSize: "16px",
+        fontSize: "12px",
         padding: "4px 8px",
+        whiteSpace: "nowrap",
       });
-      btnEdit.addEventListener("click", () =>
-        this.editMultiRoundPrompt(prompt.id),
-      );
-      item.appendChild(btnEdit);
+      btnEdit.addEventListener("click", () => {
+        this.editingMultiRoundPromptId = isEditing ? null : prompt.id;
+        this.renderMultiRoundPromptsList(container, prompts);
+      });
+      header.appendChild(btnEdit);
 
       // 删除按钮
-      const btnDelete = Zotero.getMainWindow().document.createElement("button");
+      const btnDelete = doc.createElement("button");
       btnDelete.textContent = "🗑️";
       btnDelete.title = "删除";
       Object.assign(btnDelete.style, {
@@ -790,192 +805,309 @@ export class PromptsSettingsPage {
       btnDelete.addEventListener("click", () =>
         this.deleteMultiRoundPrompt(prompt.id),
       );
-      item.appendChild(btnDelete);
+      header.appendChild(btnDelete);
+
+      item.appendChild(header);
+
+      if (isEditing) {
+        const editor = this.createMultiRoundPromptEditor(prompt, container);
+        item.appendChild(editor);
+      }
 
       container.appendChild(item);
     });
   }
 
   /**
+   * 创建多轮提示词内联编辑器
+   */
+  private createMultiRoundPromptEditor(
+    prompt: MultiRoundPromptItem,
+    listContainer: HTMLElement,
+  ): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const editor = doc.createElement("div");
+    Object.assign(editor.style, {
+      marginTop: "10px",
+      paddingTop: "10px",
+      borderTop: "1px solid var(--ai-input-border)",
+    });
+
+    const titleInput = createInput(
+      `multi-round-title-${prompt.id}`,
+      "text",
+      prompt.title,
+      "例如：研究背景与问题",
+    );
+    const promptTextarea = createTextarea(
+      `multi-round-prompt-${prompt.id}`,
+      prompt.prompt,
+      5,
+      "输入这一轮要问 AI 的提示词...",
+    );
+
+    editor.appendChild(createFormGroup("标题", titleInput));
+    editor.appendChild(createFormGroup("提示词", promptTextarea));
+
+    const actions = doc.createElement("div");
+    Object.assign(actions.style, {
+      display: "flex",
+      gap: "8px",
+      justifyContent: "flex-end",
+    });
+
+    const btnCancel = createStyledButton("取消", "#9e9e9e", "small");
+    btnCancel.addEventListener("click", () => {
+      this.editingMultiRoundPromptId = null;
+      const prompts = this.getMultiRoundPrompts();
+      this.renderMultiRoundPromptsList(listContainer, prompts);
+    });
+
+    const btnSave = createStyledButton("保存", "#4caf50", "small");
+    btnSave.addEventListener("click", () => {
+      const title = titleInput.value.trim();
+      const promptText = promptTextarea.value.trim();
+
+      if (!title || !promptText) {
+        new ztoolkit.ProgressWindow("提示词")
+          .createLine({ text: "标题和提示词都不能为空", type: "fail" })
+          .show();
+        return;
+      }
+
+      const prompts = this.getMultiRoundPrompts();
+      const index = prompts.findIndex((item) => item.id === prompt.id);
+      const savedPrompt: MultiRoundPromptItem = {
+        ...(index === -1 ? prompt : prompts[index]),
+        title,
+        prompt: promptText,
+      };
+      if (index === -1) {
+        prompts.push(savedPrompt);
+      } else {
+        prompts[index] = savedPrompt;
+      }
+      setPref("multiRoundPrompts" as any, JSON.stringify(prompts) as any);
+      this.editingMultiRoundPromptId = null;
+      this.renderMultiRoundPromptsList(listContainer, prompts);
+
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: `✅ 已保存: ${title}`, type: "success" })
+        .show();
+    });
+
+    actions.appendChild(btnCancel);
+    actions.appendChild(btnSave);
+    editor.appendChild(actions);
+
+    return editor;
+  }
+
+  /**
+   * 获取当前多轮提示词配置
+   */
+  private getMultiRoundPrompts(): MultiRoundPromptItem[] {
+    const promptsJson = (getPref("multiRoundPrompts" as any) as string) || "[]";
+    return parseMultiRoundPrompts(promptsJson);
+  }
+
+  /**
+   * 显示设置页内确认弹窗
+   */
+  private showInlineConfirm(options: {
+    title: string;
+    message: string;
+    confirmText: string;
+    confirmColor?: string;
+    onConfirm: () => void;
+  }): void {
+    const doc = Zotero.getMainWindow().document;
+    this.container
+      .querySelectorAll(".ai-butler-inline-confirm")
+      .forEach((node: Element) => node.remove());
+
+    const overlay = doc.createElement("div");
+    overlay.className = "ai-butler-inline-confirm";
+    Object.assign(overlay.style, {
+      position: "fixed",
+      inset: "0",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "24px",
+      background: "rgba(0, 0, 0, 0.12)",
+      zIndex: "2147483647",
+      boxSizing: "border-box",
+    });
+
+    const dialog = doc.createElement("div");
+    Object.assign(dialog.style, {
+      width: "min(420px, 100%)",
+      padding: "20px",
+      borderRadius: "12px",
+      background: "#ffffff",
+      border: "1px solid #e5e7eb",
+      boxShadow: "0 18px 60px rgba(0, 0, 0, 0.18)",
+      color: "#1f2937",
+    });
+    overlay.appendChild(dialog);
+
+    const title = doc.createElement("div");
+    title.textContent = options.title;
+    Object.assign(title.style, {
+      fontSize: "16px",
+      fontWeight: "700",
+      marginBottom: "10px",
+      color: "#1f2937",
+    });
+    dialog.appendChild(title);
+
+    const message = doc.createElement("div");
+    message.textContent = options.message;
+    Object.assign(message.style, {
+      fontSize: "13px",
+      lineHeight: "1.6",
+      marginBottom: "18px",
+      color: "#4b5563",
+      wordBreak: "break-word",
+    });
+    dialog.appendChild(message);
+
+    const actions = doc.createElement("div");
+    Object.assign(actions.style, {
+      display: "flex",
+      justifyContent: "flex-end",
+      gap: "8px",
+    });
+    dialog.appendChild(actions);
+
+    const close = () => overlay.remove();
+    const btnCancel = createStyledButton("取消", "#9e9e9e", "small");
+    btnCancel.addEventListener("click", close);
+
+    const btnConfirm = createStyledButton(
+      options.confirmText,
+      options.confirmColor || "#e53935",
+      "small",
+    );
+    btnConfirm.addEventListener("click", () => {
+      close();
+      options.onConfirm();
+    });
+
+    actions.appendChild(btnCancel);
+    actions.appendChild(btnConfirm);
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) {
+        close();
+      }
+    });
+    dialog.addEventListener("click", (event) => event.stopPropagation());
+
+    this.container.appendChild(overlay);
+  }
+
+  /**
    * 添加新的多轮提示词
    */
   private addMultiRoundPrompt(): void {
-    const win = Zotero.getMainWindow() as any;
-
-    // 输入标题
-    const titleObj = { value: "" } as any;
-    const ok1 = Services.prompt.prompt(
-      win,
-      "添加多轮提示词",
-      "请输入提示词标题:",
-      titleObj,
-      "",
-      { value: false },
-    );
-    if (!ok1 || !titleObj.value?.trim()) return;
-
-    // 输入内容
-    const promptObj = { value: "" } as any;
-    const ok2 = Services.prompt.prompt(
-      win,
-      "添加多轮提示词",
-      "请输入提示词内容:",
-      promptObj,
-      "",
-      { value: false },
-    );
-    if (!ok2 || !promptObj.value?.trim()) return;
-
-    const promptsJson = (getPref("multiRoundPrompts" as any) as string) || "[]";
-    const prompts = parseMultiRoundPrompts(promptsJson);
+    const prompts = this.getMultiRoundPrompts();
 
     const newPrompt: MultiRoundPromptItem = {
       id: `round_${Date.now()}`,
-      title: titleObj.value.trim(),
-      prompt: promptObj.value.trim(),
+      title: `第 ${prompts.length + 1} 轮`,
+      prompt: "",
       order: prompts.length + 1,
     };
 
-    prompts.push(newPrompt);
-    setPref("multiRoundPrompts" as any, JSON.stringify(prompts) as any);
+    this.editingMultiRoundPromptId = newPrompt.id;
 
     // 刷新列表
     const list = this.container.querySelector(
       "#multi-round-prompts-list",
     ) as HTMLElement;
     if (list) {
-      this.renderMultiRoundPromptsList(list, prompts);
+      this.renderMultiRoundPromptsList(list, [...prompts, newPrompt]);
     }
-
-    new ztoolkit.ProgressWindow("提示词")
-      .createLine({ text: `✅ 已添加: ${newPrompt.title}`, type: "success" })
-      .show();
-  }
-
-  /**
-   * 编辑多轮提示词
-   */
-  private editMultiRoundPrompt(id: string): void {
-    const win = Zotero.getMainWindow() as any;
-    const promptsJson = (getPref("multiRoundPrompts" as any) as string) || "[]";
-    const prompts = parseMultiRoundPrompts(promptsJson);
-    const index = prompts.findIndex((p) => p.id === id);
-
-    if (index === -1) return;
-
-    const current = prompts[index];
-
-    // 编辑标题
-    const titleObj = { value: current.title } as any;
-    const ok1 = Services.prompt.prompt(
-      win,
-      "编辑提示词",
-      "标题:",
-      titleObj,
-      "",
-      { value: false },
-    );
-    if (!ok1) return;
-
-    // 编辑内容
-    const promptObj = { value: current.prompt } as any;
-    const ok2 = Services.prompt.prompt(
-      win,
-      "编辑提示词",
-      "内容:",
-      promptObj,
-      "",
-      { value: false },
-    );
-    if (!ok2) return;
-
-    prompts[index] = {
-      ...current,
-      title: titleObj.value?.trim() || current.title,
-      prompt: promptObj.value?.trim() || current.prompt,
-    };
-
-    setPref("multiRoundPrompts" as any, JSON.stringify(prompts) as any);
-
-    const list = this.container.querySelector(
-      "#multi-round-prompts-list",
-    ) as HTMLElement;
-    if (list) {
-      this.renderMultiRoundPromptsList(list, prompts);
-    }
-
-    new ztoolkit.ProgressWindow("提示词")
-      .createLine({
-        text: `✅ 已更新: ${prompts[index].title}`,
-        type: "success",
-      })
-      .show();
   }
 
   /**
    * 删除多轮提示词
    */
   private deleteMultiRoundPrompt(id: string): void {
-    const win = Zotero.getMainWindow() as any;
     const promptsJson = (getPref("multiRoundPrompts" as any) as string) || "[]";
     const prompts = parseMultiRoundPrompts(promptsJson);
     const index = prompts.findIndex((p) => p.id === id);
 
-    if (index === -1) return;
-
-    const ok = Services.prompt.confirm(
-      win,
-      "删除提示词",
-      `确定删除「${prompts[index].title}」吗?`,
-    );
-    if (!ok) return;
-
-    prompts.splice(index, 1);
-    // 重新排序
-    prompts.forEach((p, i) => (p.order = i + 1));
-
-    setPref("multiRoundPrompts" as any, JSON.stringify(prompts) as any);
-
-    const list = this.container.querySelector(
-      "#multi-round-prompts-list",
-    ) as HTMLElement;
-    if (list) {
-      this.renderMultiRoundPromptsList(list, prompts);
+    if (index === -1) {
+      this.editingMultiRoundPromptId = null;
+      const list = this.container.querySelector(
+        "#multi-round-prompts-list",
+      ) as HTMLElement;
+      if (list) {
+        this.renderMultiRoundPromptsList(list, prompts);
+      }
+      return;
     }
 
-    new ztoolkit.ProgressWindow("提示词")
-      .createLine({ text: "✅ 已删除", type: "success" })
-      .show();
+    const title = prompts[index].title;
+    this.showInlineConfirm({
+      title: "删除多轮提示词？",
+      message: `将删除「${title}」。此操作会立即保存，但不会影响已经生成的笔记。`,
+      confirmText: "删除",
+      onConfirm: () => {
+        prompts.splice(index, 1);
+        // 重新排序
+        prompts.forEach((p, i) => (p.order = i + 1));
+
+        setPref("multiRoundPrompts" as any, JSON.stringify(prompts) as any);
+        this.editingMultiRoundPromptId = null;
+
+        const list = this.container.querySelector(
+          "#multi-round-prompts-list",
+        ) as HTMLElement;
+        if (list) {
+          this.renderMultiRoundPromptsList(list, prompts);
+        }
+
+        new ztoolkit.ProgressWindow("提示词")
+          .createLine({ text: "✅ 已删除", type: "success" })
+          .show();
+      },
+    });
   }
 
   /**
    * 恢复默认的多轮提示词
    */
   private resetMultiRoundPrompts(): void {
-    const ok = Services.prompt.confirm(
-      Zotero.getMainWindow() as any,
-      "恢复默认",
-      "确定将多轮提示词恢复为默认设置吗?",
-    );
-    if (!ok) return;
+    this.showInlineConfirm({
+      title: "恢复默认多轮提示词？",
+      message: "当前多轮提示词和最终总结提示词会被默认配置覆盖。",
+      confirmText: "恢复默认",
+      confirmColor: "#ff9800",
+      onConfirm: () => {
+        const defaults = getDefaultMultiRoundPrompts();
+        setPref("multiRoundPrompts" as any, JSON.stringify(defaults) as any);
+        setPref(
+          "multiRoundFinalPrompt" as any,
+          getDefaultMultiRoundFinalPrompt() as any,
+        );
+        this.editingMultiRoundPromptId = null;
 
-    const defaults = getDefaultMultiRoundPrompts();
-    setPref("multiRoundPrompts" as any, JSON.stringify(defaults) as any);
-    setPref(
-      "multiRoundFinalPrompt" as any,
-      getDefaultMultiRoundFinalPrompt() as any,
-    );
+        const list = this.container.querySelector(
+          "#multi-round-prompts-list",
+        ) as HTMLElement;
+        if (list) {
+          this.renderMultiRoundPromptsList(list, defaults);
+        }
 
-    const list = this.container.querySelector(
-      "#multi-round-prompts-list",
-    ) as HTMLElement;
-    if (list) {
-      this.renderMultiRoundPromptsList(list, defaults);
-    }
-
-    new ztoolkit.ProgressWindow("提示词")
-      .createLine({ text: "✅ 已恢复默认多轮提示词", type: "success" })
-      .show();
+        new ztoolkit.ProgressWindow("提示词")
+          .createLine({ text: "✅ 已恢复默认多轮提示词", type: "success" })
+          .show();
+      },
+    });
   }
 
   // =========== 文献综述表格设置 ===========

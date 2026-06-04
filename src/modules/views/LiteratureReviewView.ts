@@ -30,6 +30,7 @@ import {
 } from "../../utils/prompts";
 import { getPref, setPref } from "../../utils/prefs";
 import { isLiteratureReviewCandidateItem } from "../literatureReviewCandidate";
+import { isTableFeatureEnabled } from "../uiCustomization";
 
 /**
  * 提示词预设接口
@@ -1836,6 +1837,16 @@ export class LiteratureReviewView extends BaseView {
    * 处理逐篇填表
    */
   private async handleFillTables(): Promise<void> {
+    if (!isTableFeatureEnabled()) {
+      new ztoolkit.ProgressWindow("AI Butler", {
+        closeOnClick: true,
+        closeTime: 3000,
+      })
+        .createLine({ text: "表格功能已在设置中关闭", type: "default" })
+        .show();
+      return;
+    }
+
     if (!this.collection) return;
 
     const selectedPdfs = this.collectSelectedPdfAttachments();

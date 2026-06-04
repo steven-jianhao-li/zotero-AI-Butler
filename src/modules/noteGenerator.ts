@@ -52,6 +52,7 @@ import {
   type SummaryMode,
 } from "../utils/prompts";
 import { isRegularSummaryNote } from "./aiNoteClassifier";
+import { isTableFeatureEnabled } from "./uiCustomization";
 
 type MultiModelSummaryResult = {
   endpoint: LLMEndpoint;
@@ -369,7 +370,7 @@ export class NoteGenerator {
       // 异步并行填表（不阻塞笔记返回）
       const enableTable =
         (getPref("enableTableOnSingleNote" as any) as boolean) ?? true;
-      if (enableTable) {
+      if (enableTable && isTableFeatureEnabled()) {
         // 延迟导入以避免循环依赖
         import("./literatureReviewService")
           .then(({ LiteratureReviewService }) => {

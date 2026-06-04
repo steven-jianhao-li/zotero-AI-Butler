@@ -15,6 +15,7 @@ import { getString, getLocaleID } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
 import {
   getSidebarModuleOrder,
+  isTableFeatureEnabled,
   isSidebarModuleEnabled,
   type SidebarModuleId,
 } from "./uiCustomization";
@@ -1430,6 +1431,8 @@ function renderTableSection(
   doc: Document,
   item: Zotero.Item,
 ): void {
+  if (!isTableFeatureEnabled()) return;
+
   const tableSection = doc.createElement("div");
   tableSection.className = "ai-butler-table-section";
   tableSection.style.cssText = `

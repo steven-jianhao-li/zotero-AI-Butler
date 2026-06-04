@@ -104,6 +104,7 @@ pref("__prefsPrefix__.windowWidth", "900");
 pref("__prefsPrefix__.windowHeight", "700");
 pref("__prefsPrefix__.saveChatHistory", true);
 pref("__prefsPrefix__.openTaskPanelOnSummon", false);
+pref("__prefsPrefix__.enableTableFeature", true);
 pref("__prefsPrefix__.contextMenuCollapsed", false);
 pref(
   "__prefsPrefix__.contextMenuItemVisibility",

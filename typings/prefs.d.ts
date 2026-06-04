@@ -71,6 +71,7 @@ declare namespace _ZoteroTypes {
       "windowHeight": string;
       "saveChatHistory": boolean;
       "openTaskPanelOnSummon": boolean;
+      "enableTableFeature": boolean;
       "contextMenuCollapsed": boolean;
       "contextMenuItemVisibility": string;
       "contextMenuItemOrder": string;

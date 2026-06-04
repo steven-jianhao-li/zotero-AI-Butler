@@ -251,7 +251,12 @@ export function getContextMenuItemVisibility(): ContextMenuVisibility {
 }
 
 export function isContextMenuItemEnabled(id: ContextMenuItemId): boolean {
+  if (id === "fillTable" && !isTableFeatureEnabled()) return false;
   return getContextMenuItemVisibility()[id];
+}
+
+export function isTableFeatureEnabled(): boolean {
+  return getPref("enableTableFeature") !== false;
 }
 
 export function setContextMenuItemVisibility(
@@ -299,6 +304,7 @@ export function getSidebarModuleVisibility(): SidebarModuleVisibility {
 }
 
 export function isSidebarModuleEnabled(id: SidebarModuleId): boolean {
+  if (id === "table" && !isTableFeatureEnabled()) return false;
   return getSidebarModuleVisibility()[id];
 }
 

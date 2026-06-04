@@ -46,6 +46,7 @@ import {
   getContextMenuItemOrder,
   isContextMenuCollapsed,
   isContextMenuItemEnabled,
+  isTableFeatureEnabled,
   type ContextMenuItemId,
 } from "./modules/uiCustomization";
 import { config } from "../package.json";
@@ -1999,6 +2000,16 @@ async function handleClearCollectionAiNotes() {
  * 为选中文献的 PDF 附件进行填表
  */
 async function handleFillTable() {
+  if (!isTableFeatureEnabled()) {
+    new ztoolkit.ProgressWindow("AI Butler", {
+      closeOnClick: true,
+      closeTime: 3000,
+    })
+      .createLine({ text: "表格功能已在设置中关闭", type: "default" })
+      .show();
+    return;
+  }
+
   const items = Zotero.getActiveZoteroPane().getSelectedItems();
   if (!items || items.length === 0) {
     new ztoolkit.ProgressWindow("AI Butler", {

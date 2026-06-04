@@ -34,6 +34,7 @@ import {
   isAbortError,
 } from "./llmproviders/shared/requestAbort";
 import { TaskArtifacts, type FixedTaskArtifactType } from "./taskArtifacts";
+import { isTableFeatureEnabled } from "./uiCustomization";
 
 function logTaskQueue(...args: Parameters<ZToolkit["log"]>): void {
   try {
@@ -838,6 +839,10 @@ export class TaskQueueManager {
     item: Zotero.Item,
     priority: boolean = true,
   ): Promise<string> {
+    if (!isTableFeatureEnabled()) {
+      throw new Error("表格功能已在设置中关闭");
+    }
+
     const taskId = `table-task-${item.id}`;
 
     if (this.tasks.has(taskId)) {
@@ -900,6 +905,17 @@ export class TaskQueueManager {
   private async executeTableFillTask(taskId: string): Promise<void> {
     const task = this.tasks.get(taskId);
     if (!task || task.taskType !== "tableFill") return;
+
+    if (!isTableFeatureEnabled()) {
+      task.status = TaskStatus.FAILED;
+      task.error = "表格功能已在设置中关闭";
+      task.errorDetails = task.error;
+      task.workflowStage = "已关闭";
+      task.completedAt = new Date();
+      this.notifyComplete(taskId, false, task.error);
+      await this.saveToStorage();
+      return;
+    }
 
     if (
       task.status === TaskStatus.PROCESSING ||

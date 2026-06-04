@@ -3084,14 +3084,40 @@ function escapeHtmlForChat(text: string): string {
 }
 
 function sanitizeQuickChatDomString(text: string): string {
-  return String(text ?? "")
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "")
-    .replace(/[\uFDD0-\uFDEF\uFFFE\uFFFF]/g, "")
-    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "�")
-    .replace(
-      /(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
-      (_match, prefix) => `${prefix}�`,
-    );
+  let result = "";
+  const input = String(text ?? "");
+  for (let index = 0; index < input.length; index++) {
+    const code = input.charCodeAt(index);
+    const isUnsafeControl =
+      code <= 8 ||
+      (code >= 11 && code <= 12) ||
+      (code >= 14 && code <= 31) ||
+      (code >= 127 && code <= 159);
+    if (isUnsafeControl) continue;
+
+    const isUnicodeNonCharacter =
+      (code >= 0xfdd0 && code <= 0xfdef) || code === 0xfffe || code === 0xffff;
+    if (isUnicodeNonCharacter) continue;
+
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = input.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        result += input[index] + input[index + 1];
+        index += 1;
+      } else {
+        result += "\uFFFD";
+      }
+      continue;
+    }
+
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      result += "\uFFFD";
+      continue;
+    }
+
+    result += input[index];
+  }
+  return result;
 }
 
 function normalizeQuickChatXhtml(html: string): string {

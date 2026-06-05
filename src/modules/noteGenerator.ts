@@ -51,8 +51,8 @@ import {
   type MultiRoundPromptItem,
   type SummaryMode,
 } from "../utils/prompts";
-import { isRegularSummaryNote } from "./aiNoteClassifier";
 import { isTableFeatureEnabled } from "./uiCustomization";
+import { AiNoteService, type AiNoteKind } from "./aiNoteService";
 
 type MultiModelSummaryResult = {
   endpoint: LLMEndpoint;
@@ -121,11 +121,26 @@ export class NoteGenerator {
       const policy = (
         (getPref("noteStrategy" as any) as string) || "skip"
       ).toLowerCase();
-      const existing = await this.findExistingNote(item);
+      const summaryMode = (options?.summaryMode ||
+        (getPref("summaryMode" as any) as string) ||
+        "single") as SummaryMode;
+      const multiModelEndpoints =
+        LLMEndpointManager.isMultiModelSummaryEnabled()
+          ? LLMEndpointManager.getMultiModelSummaryEndpoints()
+          : [];
+      const useMultiModelSummary = multiModelEndpoints.length > 0;
+      const noteKind: AiNoteKind =
+        summaryMode === "single" && !useMultiModelSummary
+          ? "summary"
+          : "deepRead";
+      const existing = await AiNoteService.findNote(item, noteKind);
       // 如果不是强制覆盖，且已存在笔记，则检查策略
       if (existing && !options?.forceOverwrite) {
         if (policy === "skip") {
-          progressCallback?.("已存在AI笔记，跳过", 100);
+          progressCallback?.(
+            `已存在${AiNoteService.getTitle(noteKind)}，跳过`,
+            100,
+          );
           return {
             note: existing as Zotero.Item,
             content: ((existing as any).getNote?.() as string) || "",
@@ -156,14 +171,6 @@ export class NoteGenerator {
       const prefMode = LLMService.getEffectivePdfProcessMode();
       const pdfAttachmentMode =
         (getPref("pdfAttachmentMode" as any) as string) || "default";
-      const summaryMode = (options?.summaryMode ||
-        (getPref("summaryMode" as any) as string) ||
-        "single") as SummaryMode;
-      const multiModelEndpoints =
-        LLMEndpointManager.isMultiModelSummaryEnabled()
-          ? LLMEndpointManager.getMultiModelSummaryEndpoints()
-          : [];
-      const useMultiModelSummary = multiModelEndpoints.length > 0;
       if (
         LLMEndpointManager.isMultiModelSummaryEnabled() &&
         multiModelEndpoints.length === 0
@@ -328,7 +335,7 @@ export class NoteGenerator {
       // 步骤 3: 创建/更新笔记
       // 通知进度回调开始创建笔记 (80% 完成)
       throwIfAborted(options?.abortSignal);
-      progressCallback?.("正在创建笔记...", 80);
+      progressCallback?.(`正在创建${AiNoteService.getTitle(noteKind)}...`, 80);
 
       // 检查内容是否为空，防止创建空笔记
       if (!fullContent || !fullContent.trim()) {
@@ -338,26 +345,22 @@ export class NoteGenerator {
       // 格式化笔记内容,添加标题和样式
       let noteContent =
         noteContentOverride ||
-        this.formatNoteContent(itemTitle, fullContent, "AI 管家");
+        this.formatNoteContent(
+          itemTitle,
+          fullContent,
+          AiNoteService.getTitle(noteKind),
+        );
       if (!noteContentOverride && llmMetadata) {
         noteContent = LLMNoteMetadataService.wrapHtml(noteContent, llmMetadata);
       }
 
-      if (existing) {
-        // 覆盖或追加到已有笔记
-        const oldHtml = (existing as any).getNote?.() || "";
-        let finalHtml = noteContent;
-        if (policy === "append") {
-          finalHtml = `${oldHtml}\n<hr/>\n${noteContent}`;
-        }
-        (existing as any).setNote?.(finalHtml);
-        await (existing as any).saveTx?.();
-        note = existing;
-      } else {
-        // 创建新笔记
-        note = await this.createNote(item, noteContent);
-        await note.saveTx();
-      }
+      note = await AiNoteService.saveGeneratedNote({
+        item,
+        kind: noteKind,
+        html: noteContent,
+        existing,
+        policy,
+      });
 
       // 如果有输出窗口,标记当前条目完成
       if (outputWindow) {
@@ -438,23 +441,7 @@ export class NoteGenerator {
     item: Zotero.Item,
   ): Promise<Zotero.Item | null> {
     try {
-      const noteIDs = (item as any).getNotes?.() || [];
-      let target: any = null;
-      for (const nid of noteIDs) {
-        const n = await Zotero.Items.getAsync(nid);
-        if (!n) continue;
-        const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-        const noteHtml: string = (n as any).getNote?.() || "";
-        if (isRegularSummaryNote(tags, noteHtml)) {
-          if (!target) target = n;
-          else {
-            const a = (target as any).dateModified || 0;
-            const b = (n as any).dateModified || 0;
-            if (b > a) target = n;
-          }
-        }
-      }
-      return target;
+      return await AiNoteService.findNote(item, "summary");
     } catch {
       return null;
     }
@@ -978,8 +965,8 @@ export class NoteGenerator {
     // 设置笔记内容
     note.setNote(initialContent);
 
-    // 添加 AI 生成标签,便于用户筛选和识别
-    note.addTag("AI-Generated");
+    // 添加 AI 总结标签,便于用户筛选和识别
+    note.addTag(AiNoteService.getTag("summary"));
 
     // 保存到数据库
     await note.saveTx();

@@ -123,6 +123,7 @@ export enum TaskStatus {
  */
 export type TaskType =
   | "summary"
+  | "deepRead"
   | "imageSummary"
   | "mindmap"
   | "tableFill"
@@ -164,6 +165,24 @@ export interface TaskItem {
   targetedNoteTitle?: string;
   targetedSelectedTableEntries?: string[];
   targetedAppendedTableEntries?: string[];
+}
+
+export function getSummaryTaskId(itemId: number): string {
+  return `summary-task-${itemId}`;
+}
+
+export function getDeepReadTaskId(itemId: number): string {
+  return `deepread-task-${itemId}`;
+}
+
+export function getLegacySummaryTaskId(itemId: number): string {
+  return `task-${itemId}`;
+}
+
+export function getEffectiveTaskType(
+  task: Pick<TaskItem, "taskType">,
+): TaskType {
+  return task.taskType || "summary";
 }
 
 /**
@@ -304,7 +323,7 @@ export class TaskQueueManager {
       logTaskQueue(`任务已完成但需要重新生成，重新入队: ${task.id}`);
       this.resetTaskForEnqueue(task, priority, options, workflowStage);
       await this.saveToStorage();
-      if (artifactType === "summary") {
+      if (artifactType === "summary" || artifactType === "deepRead") {
         this.notifySummaryTaskEnqueued(task);
       }
       return true;
@@ -314,7 +333,7 @@ export class TaskQueueManager {
       logTaskQueue(`失败任务重新入队: ${task.id}`);
       this.resetTaskForEnqueue(task, priority, options, workflowStage);
       await this.saveToStorage();
-      if (artifactType === "summary") {
+      if (artifactType === "summary" || artifactType === "deepRead") {
         this.notifySummaryTaskEnqueued(task);
       }
       return true;
@@ -367,7 +386,7 @@ export class TaskQueueManager {
     artifactType: FixedTaskArtifactType,
     options?: TaskItem["options"],
   ): boolean {
-    if (artifactType === "summary") {
+    if (artifactType === "summary" || artifactType === "deepRead") {
       if (options?.forceOverwrite) {
         return true;
       }
@@ -432,7 +451,19 @@ export class TaskQueueManager {
     priority: boolean = false,
     options?: { summaryMode?: string; forceOverwrite?: boolean },
   ): Promise<string> {
-    const taskId = `task-${item.id}`;
+    if (options?.summaryMode && options.summaryMode !== "single") {
+      return this.addDeepReadTask(item, priority, options);
+    }
+
+    const taskId = getSummaryTaskId(item.id);
+    const legacyTaskId = getLegacySummaryTaskId(item.id);
+    if (!this.tasks.has(taskId) && this.tasks.has(legacyTaskId)) {
+      const legacyTask = this.tasks.get(legacyTaskId)!;
+      this.tasks.delete(legacyTaskId);
+      legacyTask.id = taskId;
+      legacyTask.taskType = "summary";
+      this.tasks.set(taskId, legacyTask);
+    }
 
     // 检查是否已存在
     if (this.tasks.has(taskId)) {
@@ -469,6 +500,8 @@ export class TaskQueueManager {
       createdAt: new Date(),
       retryCount: 0,
       maxRetries: parseInt(getPref("maxRetries") as string) || 3,
+      taskType: "summary",
+      workflowStage: "等待 AI 总结",
       options,
     };
 
@@ -487,6 +520,68 @@ export class TaskQueueManager {
     if (priority) {
       this.executeTask(taskId).catch((e) => {
         logTaskQueue(`优先任务立即执行失败: ${e}`);
+      });
+    }
+
+    return taskId;
+  }
+
+  public async addDeepReadTask(
+    item: Zotero.Item,
+    priority: boolean = false,
+    options?: { summaryMode?: string; forceOverwrite?: boolean },
+  ): Promise<string> {
+    const taskId = getDeepReadTaskId(item.id);
+    const deepReadOptions = {
+      ...(options || {}),
+      summaryMode: options?.summaryMode || "multi_summarize",
+    };
+
+    if (this.tasks.has(taskId)) {
+      const existingTask = this.tasks.get(taskId)!;
+      const shouldRun = await this.requeueExistingFixedTask(
+        existingTask,
+        item,
+        "deepRead",
+        priority,
+        deepReadOptions,
+        "等待 AI 精读",
+      );
+      if (!shouldRun) return taskId;
+
+      if (!this.isRunning) this.start();
+      if (priority) {
+        this.executeTask(taskId).catch((e) => {
+          logTaskQueue(`AI 精读优先任务立即执行失败: ${e}`);
+        });
+      }
+      return taskId;
+    }
+
+    const task: TaskItem = {
+      id: taskId,
+      itemId: item.id,
+      title: item.getField("title") as string,
+      status: priority ? TaskStatus.PRIORITY : TaskStatus.PENDING,
+      progress: 0,
+      createdAt: new Date(),
+      retryCount: 0,
+      maxRetries: parseInt(getPref("maxRetries") as string) || 3,
+      taskType: "deepRead",
+      workflowStage: "等待 AI 精读",
+      options: deepReadOptions,
+    };
+
+    this.tasks.set(taskId, task);
+    await this.saveToStorage();
+    this.notifySummaryTaskEnqueued(task);
+
+    logTaskQueue(`添加 AI 精读任务: ${task.title} (${taskId})`);
+
+    if (!this.isRunning) this.start();
+    if (priority) {
+      this.executeTask(taskId).catch((e) => {
+        logTaskQueue(`AI 精读优先任务立即执行失败: ${e}`);
       });
     }
 
@@ -1359,7 +1454,10 @@ export class TaskQueueManager {
       const taskType = task.taskType || "summary";
       if (taskTypeSet && !taskTypeSet.has(taskType)) continue;
 
-      if (task.status === TaskStatus.PROCESSING && taskType === "summary") {
+      if (
+        task.status === TaskStatus.PROCESSING &&
+        (taskType === "summary" || taskType === "deepRead")
+      ) {
         const controller = this.taskAbortControllers.get(taskId);
         controller?.abort(LLM_REQUEST_ABORT_MESSAGE);
       }
@@ -1506,7 +1604,7 @@ export class TaskQueueManager {
   }
 
   /**
-   * 终止正在执行的论文总结任务
+   * 终止正在执行的 AI 总结 / AI 精读任务
    *
    * @param taskId 任务ID
    */
@@ -1517,8 +1615,8 @@ export class TaskQueueManager {
     }
 
     const taskType = task.taskType || "summary";
-    if (taskType !== "summary") {
-      throw new Error("当前只支持终止论文总结任务");
+    if (taskType !== "summary" && taskType !== "deepRead") {
+      throw new Error("当前只支持终止 AI 总结/AI 精读任务");
     }
 
     this.abortingTasks.add(taskId);
@@ -1789,7 +1887,11 @@ export class TaskQueueManager {
     }
 
     // 非普通总结任务转交到各自执行器，避免误走默认总结流程
-    if (task.taskType && task.taskType !== "summary") {
+    if (
+      task.taskType &&
+      task.taskType !== "summary" &&
+      task.taskType !== "deepRead"
+    ) {
       if (task.taskType === "imageSummary") {
         await this.executeImageSummaryTask(taskId);
         return false;
@@ -1834,7 +1936,13 @@ export class TaskQueueManager {
     const abortController = createTaskAbortController();
     this.taskAbortControllers.set(taskId, abortController);
     await this.saveToStorage();
-    this.notifyProgress(taskId, task.progress, "AI summary started");
+    const isDeepReadTask = task.taskType === "deepRead";
+    task.workflowStage = isDeepReadTask ? "正在 AI 精读" : "正在 AI 总结";
+    this.notifyProgress(
+      taskId,
+      task.progress,
+      isDeepReadTask ? "AI deep read started" : "AI summary started",
+    );
 
     logTaskQueue(`开始执行任务: ${task.title} (${taskId})`);
 

@@ -232,6 +232,7 @@ function initializeDefaultPrefs() {
     tableFillPrompt: getDefaultTableFillPrompt(),
     tableReviewPrompt: getDefaultTableReviewPrompt(),
     enableTableOnSingleNote: true,
+    enableTableFeature: true,
     tableStrategy: "skip",
     tableFillConcurrency: 3,
     openTaskPanelOnSummon: false,

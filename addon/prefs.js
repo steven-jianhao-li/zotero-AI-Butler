@@ -6,7 +6,7 @@
  */
 
 // ==================== API 配置 ====================
-pref("__prefsPrefix__.provider", "openai");
+pref("__prefsPrefix__.provider", "openai-compat");
 pref("__prefsPrefix__.openaiApiKey", "");
 pref("__prefsPrefix__.openaiApiUrl", "https://api.openai.com/v1/responses");
 pref("__prefsPrefix__.openaiApiModel", "gpt-3.5-turbo");
@@ -104,6 +104,7 @@ pref("__prefsPrefix__.windowWidth", "900");
 pref("__prefsPrefix__.windowHeight", "700");
 pref("__prefsPrefix__.saveChatHistory", true);
 pref("__prefsPrefix__.openTaskPanelOnSummon", false);
+pref("__prefsPrefix__.enableTableFeature", true);
 pref("__prefsPrefix__.contextMenuCollapsed", false);
 pref(
   "__prefsPrefix__.contextMenuItemVisibility",

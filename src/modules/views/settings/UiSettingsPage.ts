@@ -117,6 +117,19 @@ export class UiSettingsPage {
     );
 
     // 笔记管理策略
+    const enableTableFeature = getPref("enableTableFeature") ?? true;
+    const enableTableFeatureBox = createCheckbox(
+      "enableTableFeature",
+      !!enableTableFeature,
+    );
+    form.appendChild(
+      createFormGroup(
+        "启用表格功能",
+        enableTableFeatureBox,
+        "关闭后将隐藏填表右键菜单和侧边栏表格归纳，并阻止新建填表任务。",
+      ),
+    );
+
     const policy = (
       (getPref("noteStrategy" as any) as string) || "skip"
     ).toString();
@@ -233,6 +246,9 @@ export class UiSettingsPage {
             "#setting-openTaskPanelOnSummon",
           ) as HTMLInputElement
         )?.checked ?? false;
+      const enableTableFeatureVal =
+        (form.querySelector("#setting-enableTableFeature") as HTMLInputElement)
+          ?.checked ?? true;
       const policyVal = (policySelect as any).getValue
         ? (policySelect as any).getValue()
         : policy;
@@ -250,6 +266,7 @@ export class UiSettingsPage {
         "openTaskPanelOnSummon" as any,
         !!openTaskPanelOnSummonVal as any,
       );
+      setPref("enableTableFeature", !!enableTableFeatureVal);
       setPref("noteStrategy" as any, policyVal);
       setPref("tableStrategy" as any, tablePolicyVal);
       setPref("markdownTheme" as any, themeVal);
@@ -280,6 +297,7 @@ export class UiSettingsPage {
       setPref("autoScan", true as any);
       setPref("saveChatHistory", true as any);
       setPref("openTaskPanelOnSummon" as any, false as any);
+      setPref("enableTableFeature", true);
       setPref("noteStrategy" as any, "skip");
       setPref("tableStrategy" as any, "skip");
       resetUICustomizationPrefs();

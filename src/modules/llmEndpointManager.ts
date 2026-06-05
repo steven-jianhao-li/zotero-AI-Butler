@@ -36,17 +36,17 @@ export interface ProviderDefaults {
 }
 
 const PROVIDER_DEFAULTS: Record<LLMEndpointProviderType, ProviderDefaults> = {
-  openai: {
-    label: "OpenAI (Responses 新接口)",
-    apiUrl: "https://api.openai.com/v1/responses",
-    model: "gpt-5",
-    reasoningEffort: "medium",
-  },
   "openai-compat": {
     label: "OpenAI 兼容 (Chat Completions)",
     apiUrl: "https://api.openai.com/v1/chat/completions",
     model: "gpt-3.5-turbo",
     reasoningEffort: "default",
+  },
+  openai: {
+    label: "OpenAI (Responses 新接口)",
+    apiUrl: "https://api.openai.com/v1/responses",
+    model: "gpt-5",
+    reasoningEffort: "medium",
   },
   google: {
     label: "Google Gemini",
@@ -225,7 +225,7 @@ export class LLMEndpointManager {
   }
 
   static createEndpoint(
-    providerType: LLMEndpointProviderType = "openai",
+    providerType: LLMEndpointProviderType = "openai-compat",
   ): LLMEndpoint {
     const defaults = this.providerDefaults(providerType);
     const timestamp = nowIso();
@@ -451,7 +451,9 @@ export class LLMEndpointManager {
   }
 
   private static createLegacyEndpoint(): LLMEndpoint {
-    const providerType = safeProviderType(getPref("provider") || "openai");
+    const providerType = safeProviderType(
+      getPref("provider") || "openai-compat",
+    );
     const defaults = this.providerDefaults(providerType);
     const timestamp = nowIso();
     return {

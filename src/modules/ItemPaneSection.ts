@@ -15,6 +15,7 @@ import { getString, getLocaleID } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
 import {
   getSidebarModuleOrder,
+  isTableFeatureEnabled,
   isSidebarModuleEnabled,
   type SidebarModuleId,
 } from "./uiCustomization";
@@ -63,6 +64,7 @@ let quickChatPairIdCounter = 0;
  * 调整此值可控制何时触发转换，详见 doc/DevelopmentGuide.md
  */
 const INLINE_FORMULA_TO_BLOCK_THRESHOLD = 2000;
+const SIDEBAR_HEADING_TO_BLOCKQUOTE_TEXT_THRESHOLD = 36;
 
 // 当前聊天状态
 let currentChatState: ChatState = {
@@ -115,6 +117,7 @@ let sidebarNoteEditState: SidebarNoteEditState | null = null;
 const pendingSidebarRefreshTargets = new Set<SidebarAutoRefreshTarget>();
 const quickChatToggleListeners = new WeakMap<HTMLElement, EventListener>();
 const sidebarNoteEditEventCleanups = new WeakMap<HTMLElement, () => void>();
+const SIDEBAR_SUMMARY_SELECTION_PREF = "sidebarSelectedSummaryBlockIds" as any;
 
 function setSidebarContext(doc: Document, item: Zotero.Item | null): void {
   sidebarContext = item
@@ -180,6 +183,9 @@ function updateSidebarNoteEditControls(
   const metadataSelector = doc.getElementById(
     "ai-butler-note-metadata-selector",
   ) as HTMLSelectElement | null;
+  const metadataButton = doc.getElementById(
+    "ai-butler-note-metadata-button",
+  ) as HTMLButtonElement | null;
 
   const isEditing = mode === "editing" || mode === "saving";
   if (editBtn) {
@@ -199,8 +205,14 @@ function updateSidebarNoteEditControls(
 
   if (metadataSelector) {
     metadataSelector.disabled = isEditing;
-    metadataSelector.style.opacity = isEditing ? "0.45" : "1";
-    metadataSelector.style.cursor = isEditing ? "not-allowed" : "pointer";
+  }
+  if (metadataButton) {
+    metadataButton.disabled = isEditing;
+    metadataButton.style.opacity = isEditing ? "0.45" : "1";
+    metadataButton.style.cursor = isEditing ? "not-allowed" : "pointer";
+  }
+  if (isEditing) {
+    hideSidebarMetadataMenu(doc);
   }
 
   setSidebarNoteEditStatus(doc, message, messageColor);
@@ -918,7 +930,7 @@ function renderNoteSection(
     margin-bottom: 12px;
     border: 1px solid #e0e0e0;
     border-radius: 6px;
-    overflow: hidden;
+    overflow: visible;
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
@@ -939,7 +951,7 @@ function renderNoteSection(
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
-    overflow: hidden;
+    overflow: visible;
   `;
 
   const noteTitle = doc.createElement("span");
@@ -950,27 +962,69 @@ function renderNoteSection(
     display: flex;
     align-items: center;
     gap: 6px;
+    min-width: 0;
   `;
   noteTitle.innerHTML = `📄 <span>AI 笔记</span>`;
 
+  const metadataPicker = doc.createElement("span");
+  metadataPicker.id = "ai-butler-note-metadata-picker";
+  metadataPicker.style.cssText = `
+    display: none;
+    flex-shrink: 0;
+  `;
+  metadataPicker.addEventListener("click", (e: Event) => e.stopPropagation());
+
   const metadataSelector = doc.createElement("select");
   metadataSelector.id = "ai-butler-note-metadata-selector";
-  metadataSelector.style.cssText = `
-    display: none;
-    max-width: 240px;
-    min-width: 96px;
-    padding: 1px 12px 1px 4px;
-    border: 1px solid rgba(128, 128, 128, 0.45);
-    border-radius: 4px;
-    background: transparent;
+  metadataSelector.style.display = "none";
+
+  const metadataButton = doc.createElement("button");
+  metadataButton.id = "ai-butler-note-metadata-button";
+  metadataButton.type = "button";
+  metadataButton.style.cssText = `
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 22px;
+    max-width: 92px;
+    padding: 0 8px;
+    border: 1px solid rgba(128, 128, 128, 0.35);
+    border-radius: 999px;
+    background: rgba(128, 128, 128, 0.08);
     color: inherit;
-    font-size: 12px;
-    font-weight: 400;
-    line-height: 1.2;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
     cursor: pointer;
+    overflow: hidden;
+    white-space: nowrap;
   `;
-  metadataSelector.addEventListener("click", (e: Event) => e.stopPropagation());
-  noteTitle.appendChild(metadataSelector);
+
+  const metadataMenu = doc.createElement("div");
+  metadataMenu.id = "ai-butler-note-metadata-menu";
+  metadataMenu.style.cssText = `
+    display: none;
+    margin: 6px 8px 0;
+    max-height: 240px;
+    overflow-y: auto;
+    padding: 6px;
+    border: 1px solid rgba(128, 128, 128, 0.22);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+    color: inherit;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  `;
+
+  metadataButton.addEventListener("click", (e: Event) => {
+    e.stopPropagation();
+    if (metadataButton.disabled) return;
+    metadataMenu.style.display =
+      metadataMenu.style.display === "none" ? "block" : "none";
+  });
+
+  metadataPicker.appendChild(metadataSelector);
+  metadataPicker.appendChild(metadataButton);
+  noteTitle.appendChild(metadataPicker);
 
   // 字体大小控制
   const fontSizeControl = doc.createElement("div");
@@ -1364,6 +1418,7 @@ function renderNoteSection(
   });
 
   noteSection.appendChild(noteHeader);
+  noteSection.appendChild(metadataMenu);
   noteSection.appendChild(noteContentWrapper);
   noteSection.appendChild(resizeHandle);
   body.appendChild(noteSection);
@@ -1430,6 +1485,8 @@ function renderTableSection(
   doc: Document,
   item: Zotero.Item,
 ): void {
+  if (!isTableFeatureEnabled()) return;
+
   const tableSection = doc.createElement("div");
   tableSection.className = "ai-butler-table-section";
   tableSection.style.cssText = `
@@ -3084,14 +3141,40 @@ function escapeHtmlForChat(text: string): string {
 }
 
 function sanitizeQuickChatDomString(text: string): string {
-  return String(text ?? "")
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "")
-    .replace(/[\uFDD0-\uFDEF\uFFFE\uFFFF]/g, "")
-    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "�")
-    .replace(
-      /(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
-      (_match, prefix) => `${prefix}�`,
-    );
+  let result = "";
+  const input = String(text ?? "");
+  for (let index = 0; index < input.length; index++) {
+    const code = input.charCodeAt(index);
+    const isUnsafeControl =
+      code <= 8 ||
+      (code >= 11 && code <= 12) ||
+      (code >= 14 && code <= 31) ||
+      (code >= 127 && code <= 159);
+    if (isUnsafeControl) continue;
+
+    const isUnicodeNonCharacter =
+      (code >= 0xfdd0 && code <= 0xfdef) || code === 0xfffe || code === 0xffff;
+    if (isUnicodeNonCharacter) continue;
+
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = input.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        result += input[index] + input[index + 1];
+        index += 1;
+      } else {
+        result += "\uFFFD";
+      }
+      continue;
+    }
+
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      result += "\uFFFD";
+      continue;
+    }
+
+    result += input[index];
+  }
+  return result;
 }
 
 function normalizeQuickChatXhtml(html: string): string {
@@ -3472,8 +3555,222 @@ function getSelectedMetadataBlockIndex(
   return Math.max(0, blockCount - 1);
 }
 
+function hideSidebarMetadataMenu(doc: Document): void {
+  const menu = doc.getElementById(
+    "ai-butler-note-metadata-menu",
+  ) as HTMLElement | null;
+  if (menu) menu.style.display = "none";
+}
+
+function hideSidebarMetadataPicker(doc: Document): void {
+  const picker = doc.getElementById(
+    "ai-butler-note-metadata-picker",
+  ) as HTMLElement | null;
+  const selector = doc.getElementById(
+    "ai-butler-note-metadata-selector",
+  ) as HTMLSelectElement | null;
+  const menu = doc.getElementById(
+    "ai-butler-note-metadata-menu",
+  ) as HTMLElement | null;
+  if (selector) {
+    selector.innerHTML = "";
+    selector.onchange = null;
+    delete selector.dataset.selectedIndex;
+  }
+  if (menu) {
+    menu.innerHTML = "";
+    menu.style.display = "none";
+  }
+  if (picker) picker.style.display = "none";
+}
+
+function getSummaryBlockShortLabel(
+  block: ReturnType<typeof LLMNoteMetadataService.parseSummaryBlocks>[number],
+): string {
+  if (!block.metadata) return "\u672a\u8bb0\u5f55\u6a21\u578b";
+  const provider = block.metadata.providerName || "Unknown";
+  const model = block.metadata.modelId || "unknown";
+  return `${provider} / ${model}`;
+}
+
+function updateSidebarMetadataButtonLabel(
+  doc: Document,
+  selectedIndex: number,
+  total: number,
+  block: ReturnType<typeof LLMNoteMetadataService.parseSummaryBlocks>[number],
+): void {
+  const button = doc.getElementById(
+    "ai-butler-note-metadata-button",
+  ) as HTMLButtonElement | null;
+  if (!button) return;
+
+  button.textContent = `\u7b14\u8bb0 ${selectedIndex + 1}/${total} \u25be`;
+  button.title = getSummaryBlockShortLabel(block);
+}
+
 function normalizeEditableNoteHtml(html: string): string {
   return html.trim();
+}
+
+function hasRenderableSidebarHtml(html: string): boolean {
+  return (
+    html
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<!--[^]*?-->/g, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;|&#160;/gi, " ")
+      .replace(/\s+/g, "")
+      .trim().length > 0
+  );
+}
+
+function getDisplaySummaryBlocks(
+  blocks: ReturnType<typeof LLMNoteMetadataService.parseSummaryBlocks>,
+): ReturnType<typeof LLMNoteMetadataService.parseSummaryBlocks> {
+  return blocks.filter(
+    (block) =>
+      block.kind === "metadata" || hasRenderableSidebarHtml(block.content),
+  );
+}
+
+function getSidebarSummarySelectionKey(itemId: number, noteId: number): string {
+  return `${itemId}:${noteId}`;
+}
+
+function readSidebarSummarySelectionMap(): Record<string, string> {
+  try {
+    const raw = String(getPref(SIDEBAR_SUMMARY_SELECTION_PREF) || "{}");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function getSavedSidebarSummaryBlockId(
+  itemId: number,
+  noteId: number,
+): string | null {
+  return (
+    readSidebarSummarySelectionMap()[
+      getSidebarSummarySelectionKey(itemId, noteId)
+    ] || null
+  );
+}
+
+function saveSidebarSummaryBlockSelection(
+  itemId: number,
+  noteId: number,
+  blockId: string,
+): void {
+  try {
+    const selections = readSidebarSummarySelectionMap();
+    selections[getSidebarSummarySelectionKey(itemId, noteId)] = blockId;
+    setPref(SIDEBAR_SUMMARY_SELECTION_PREF, JSON.stringify(selections) as any);
+  } catch (err) {
+    ztoolkit.log("[AI-Butler] Failed to save sidebar model selection:", err);
+  }
+}
+
+function resolveDefaultSummaryBlockIndex(
+  blocks: ReturnType<typeof LLMNoteMetadataService.parseSummaryBlocks>,
+  savedBlockId: string | null,
+): number {
+  if (savedBlockId) {
+    const savedIndex = blocks.findIndex(
+      (block) => block.blockId === savedBlockId,
+    );
+    if (savedIndex >= 0) return savedIndex;
+  }
+
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    if (blocks[i].kind === "metadata") return i;
+  }
+
+  return Math.max(0, blocks.length - 1);
+}
+
+function repairHtmlFragmentWithHtmlParser(doc: Document, html: string): string {
+  try {
+    const mainWin: any =
+      Zotero && (Zotero as any).getMainWindow
+        ? (Zotero as any).getMainWindow()
+        : (globalThis as any);
+    const implementation: any =
+      mainWin?.document?.implementation || doc.implementation;
+    const createHTMLDocument: any = implementation?.createHTMLDocument;
+    if (typeof createHTMLDocument !== "function") return html;
+
+    const htmlDoc: Document = createHTMLDocument.call(implementation, "");
+    const container = htmlDoc.createElement("div");
+    container.innerHTML = html;
+    return container.innerHTML;
+  } catch (err) {
+    ztoolkit.log("[AI-Butler] 修复侧边栏 HTML 片段失败:", err);
+    return html;
+  }
+}
+
+function normalizeHtmlFragmentForXhtml(doc: Document, html: string): string {
+  const repaired = repairHtmlFragmentWithHtmlParser(doc, html);
+  return repaired
+    .replace(/<hr\s*(?:([^>/]*))?>/gi, "<hr $1/>")
+    .replace(/<br\s*(?:([^>/]*))?>/gi, "<br $1/>")
+    .replace(/<img\s+([^>]*)(?<!\/)>/gi, "<img $1/>")
+    .replace(/<input\s+([^>]*)(?<!\/)>/gi, "<input $1/>")
+    .replace(/<meta\s+([^>]*)(?<!\/)>/gi, "<meta $1/>")
+    .replace(/<link\s+([^>]*)(?<!\/)>/gi, "<link $1/>")
+    .replace(/\s+\/>/g, "/>")
+    .replace(/&nbsp;/gi, "&#160;")
+    .replace(new RegExp("<(?=[^a-zA-Z/?!])", "g"), "&lt;");
+}
+
+function getVisibleTextLength(text: string): number {
+  return Array.from(text.replace(/\s+/g, "").trim()).length;
+}
+
+function demoteLongSidebarHeadingsToBlockquote(
+  doc: Document,
+  html: string,
+): string {
+  try {
+    const mainWin: any =
+      Zotero && (Zotero as any).getMainWindow
+        ? (Zotero as any).getMainWindow()
+        : (globalThis as any);
+    const implementation: any =
+      mainWin?.document?.implementation || doc.implementation;
+    const createHTMLDocument: any = implementation?.createHTMLDocument;
+    if (typeof createHTMLDocument !== "function") return html;
+
+    const htmlDoc: Document = createHTMLDocument.call(implementation, "");
+    const container = htmlDoc.createElement("div");
+    container.innerHTML = html;
+
+    container.querySelectorAll("h1, h2").forEach((heading: Element) => {
+      const headingText = heading.textContent || "";
+      if (
+        getVisibleTextLength(headingText) <=
+        SIDEBAR_HEADING_TO_BLOCKQUOTE_TEXT_THRESHOLD
+      ) {
+        return;
+      }
+
+      const blockquote = htmlDoc.createElement("blockquote");
+      const paragraph = htmlDoc.createElement("p");
+      while (heading.firstChild) {
+        paragraph.appendChild(heading.firstChild);
+      }
+      blockquote.appendChild(paragraph);
+      heading.replaceWith(blockquote);
+    });
+
+    return container.innerHTML;
+  } catch (err) {
+    ztoolkit.log("[AI-Butler] 降级侧边栏长一级标题失败:", err);
+    return html;
+  }
 }
 
 async function startSidebarNoteEdit(
@@ -3491,8 +3788,9 @@ async function startSidebarNoteEdit(
     }
 
     const rawNoteHtml = resolvedNote.rawHtml;
-    const summaryBlocks =
-      LLMNoteMetadataService.parseSummaryBlocks(rawNoteHtml);
+    const summaryBlocks = getDisplaySummaryBlocks(
+      LLMNoteMetadataService.parseSummaryBlocks(rawNoteHtml),
+    );
     const selectedBlockIndex =
       summaryBlocks.length > 0
         ? getSelectedMetadataBlockIndex(doc, summaryBlocks.length)
@@ -3575,10 +3873,13 @@ async function saveSidebarNoteEdit(
 
     const editedHtml = normalizeEditableNoteHtml(String(noteContent.innerHTML));
     if (editState.blockId) {
-      const latestBlocks =
-        LLMNoteMetadataService.parseSummaryBlocks(latestHtml);
-      const expectedBlock = latestBlocks[editState.selectedBlockIndex];
-      if (!expectedBlock || expectedBlock.blockId !== editState.blockId) {
+      const latestBlocks = getDisplaySummaryBlocks(
+        LLMNoteMetadataService.parseSummaryBlocks(latestHtml),
+      );
+      const expectedBlock = latestBlocks.find(
+        (block) => block.blockId === editState.blockId,
+      );
+      if (!expectedBlock) {
         throw new Error("AI 笔记结构已变化，请刷新后再编辑。");
       }
     }
@@ -3649,8 +3950,8 @@ async function deleteSidebarSummaryBlock(
       return;
     }
 
-    const summaryBlocks = LLMNoteMetadataService.parseSummaryBlocks(
-      resolvedNote.rawHtml,
+    const summaryBlocks = getDisplaySummaryBlocks(
+      LLMNoteMetadataService.parseSummaryBlocks(resolvedNote.rawHtml),
     );
     if (summaryBlocks.length === 0) {
       updateSidebarNoteEditControls(doc, "missing", "暂无可删除总结。");
@@ -3677,9 +3978,13 @@ async function deleteSidebarSummaryBlock(
     }
 
     const latestHtml: string = (latestNote as any).getNote?.() || "";
-    const latestBlocks = LLMNoteMetadataService.parseSummaryBlocks(latestHtml);
-    const latestBlock = latestBlocks[selectedBlockIndex];
-    if (!latestBlock || latestBlock.blockId !== selectedBlock.blockId) {
+    const latestBlocks = getDisplaySummaryBlocks(
+      LLMNoteMetadataService.parseSummaryBlocks(latestHtml),
+    );
+    const latestBlock = latestBlocks.find(
+      (block) => block.blockId === selectedBlock.blockId,
+    );
+    if (!latestBlock) {
       throw new Error("AI 笔记结构已变化，请刷新后再删除。");
     }
 
@@ -3689,14 +3994,7 @@ async function deleteSidebarSummaryBlock(
     );
     if (!LLMNoteMetadataService.hasSummaryBlocks(nextHtml)) {
       await (latestNote as any).eraseTx?.();
-      const selector = doc.getElementById(
-        "ai-butler-note-metadata-selector",
-      ) as HTMLSelectElement | null;
-      if (selector) {
-        selector.innerHTML = "";
-        selector.style.display = "none";
-        delete selector.dataset.selectedIndex;
-      }
+      hideSidebarMetadataPicker(doc);
       noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
       await loadNoteContent(doc, item, noteContent);
       setSidebarNoteEditStatus(doc, "已删除 AI 笔记", "#4caf50");
@@ -3706,8 +4004,9 @@ async function deleteSidebarSummaryBlock(
     (latestNote as any).setNote(nextHtml);
     await (latestNote as any).saveTx();
 
-    const remainingCount =
-      LLMNoteMetadataService.parseSummaryBlocks(nextHtml).length;
+    const remainingCount = getDisplaySummaryBlocks(
+      LLMNoteMetadataService.parseSummaryBlocks(nextHtml),
+    ).length;
     const selector = doc.getElementById(
       "ai-butler-note-metadata-selector",
     ) as HTMLSelectElement | null;
@@ -3750,14 +4049,7 @@ async function loadNoteContent(
     const resolvedNote = await resolveSidebarSummaryNote(item);
 
     if (!resolvedNote) {
-      const metadataSelector = doc.getElementById(
-        "ai-butler-note-metadata-selector",
-      ) as HTMLSelectElement | null;
-      if (metadataSelector) {
-        metadataSelector.innerHTML = "";
-        metadataSelector.style.display = "none";
-        metadataSelector.onchange = null;
-      }
+      hideSidebarMetadataPicker(doc);
       noteContent.innerHTML = `
         <div style="text-align: center; color: #9e9e9e; padding: 16px;">
           <div style="font-size: 24px; margin-bottom: 8px;">📝</div>
@@ -3770,13 +4062,23 @@ async function loadNoteContent(
 
     updateSidebarNoteEditControls(doc, "preview");
     const rawNoteHtml: string = resolvedNote.rawHtml;
-    const summaryBlocks =
-      LLMNoteMetadataService.parseSummaryBlocks(rawNoteHtml);
-    let selectedBlockIndex = summaryBlocks.length - 1;
+    const summaryBlocks = getDisplaySummaryBlocks(
+      LLMNoteMetadataService.parseSummaryBlocks(rawNoteHtml),
+    );
+    let selectedBlockIndex = resolveDefaultSummaryBlockIndex(
+      summaryBlocks,
+      getSavedSidebarSummaryBlockId(item.id, resolvedNote.note.id),
+    );
     const metadataSelector = doc.getElementById(
       "ai-butler-note-metadata-selector",
     ) as HTMLSelectElement | null;
     if (metadataSelector && summaryBlocks.length > 0) {
+      const metadataPicker = doc.getElementById(
+        "ai-butler-note-metadata-picker",
+      ) as HTMLElement | null;
+      const metadataMenu = doc.getElementById(
+        "ai-butler-note-metadata-menu",
+      ) as HTMLElement | null;
       const requested = Number(metadataSelector.dataset.selectedIndex || "");
       if (
         Number.isInteger(requested) &&
@@ -3785,43 +4087,126 @@ async function loadNoteContent(
       ) {
         selectedBlockIndex = requested;
       }
+
       metadataSelector.innerHTML = "";
+      metadataSelector.onchange = null;
+      if (metadataMenu) {
+        metadataMenu.innerHTML = "";
+      }
+
+      const selectSummaryBlock = (index: number) => {
+        if (isSidebarNoteEditing(item.id)) {
+          metadataSelector.value =
+            metadataSelector.dataset.selectedIndex || metadataSelector.value;
+          setSidebarNoteEditStatus(
+            doc,
+            "\u7f16\u8f91\u4e2d\uff0c\u4e0d\u80fd\u5207\u6362\u6a21\u578b\u3002",
+          );
+          return;
+        }
+        const selected = summaryBlocks[index];
+        if (!selected) return;
+        metadataSelector.value = String(index);
+        metadataSelector.dataset.selectedIndex = String(index);
+        saveSidebarSummaryBlockSelection(
+          item.id,
+          resolvedNote.note.id,
+          selected.blockId,
+        );
+        hideSidebarMetadataMenu(doc);
+        updateSidebarMetadataButtonLabel(
+          doc,
+          index,
+          summaryBlocks.length,
+          selected,
+        );
+        const contentEl = doc.getElementById(
+          "ai-butler-note-content",
+        ) as HTMLElement | null;
+        if (contentEl) {
+          contentEl.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">\u6b63\u5728\u5207\u6362\u6a21\u578b...</div>`;
+          void loadNoteContent(doc, item, contentEl);
+        }
+      };
+
       summaryBlocks.forEach((block, index) => {
+        const label =
+          LLMNoteMetadataService.formatSummaryBlockSelectorLabel(block);
+        const tooltip = LLMNoteMetadataService.formatSummaryBlockTooltip(block);
         const option = doc.createElement("option");
         option.value = String(index);
-        option.textContent =
-          LLMNoteMetadataService.formatSummaryBlockSelectorLabel(block);
-        option.title = LLMNoteMetadataService.formatSummaryBlockTooltip(block);
+        option.textContent = label;
+        option.title = tooltip;
         metadataSelector.appendChild(option);
+
+        if (metadataMenu) {
+          const itemButton = doc.createElement("button");
+          itemButton.type = "button";
+          itemButton.title = tooltip;
+          itemButton.style.cssText = `
+            display: grid;
+            grid-template-columns: auto 1fr;
+            column-gap: 8px;
+            align-items: center;
+            width: 100%;
+            padding: 6px 8px;
+            border: 0;
+            border-radius: 6px;
+            background: ${index === selectedBlockIndex ? "rgba(89, 192, 188, 0.14)" : "transparent"};
+            color: inherit;
+            cursor: pointer;
+            font-size: 12px;
+            line-height: 1.35;
+            text-align: left;
+          `;
+
+          const countLine = doc.createElement("span");
+          countLine.textContent = `${index + 1}/${summaryBlocks.length}`;
+          countLine.style.cssText = `
+            min-width: 32px;
+            font-weight: 700;
+            color: #59c0bc;
+          `;
+          const labelLine = doc.createElement("span");
+          labelLine.textContent = label;
+          labelLine.style.cssText = `
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            opacity: 0.82;
+          `;
+          itemButton.appendChild(countLine);
+          itemButton.appendChild(labelLine);
+          itemButton.addEventListener("click", (event: Event) => {
+            event.stopPropagation();
+            selectSummaryBlock(index);
+          });
+          metadataMenu.appendChild(itemButton);
+        }
       });
+
       metadataSelector.value = String(selectedBlockIndex);
       metadataSelector.dataset.selectedIndex = String(selectedBlockIndex);
       metadataSelector.title = LLMNoteMetadataService.formatSummaryBlockTooltip(
         summaryBlocks[selectedBlockIndex],
       );
-      metadataSelector.style.display = "inline-block";
-      metadataSelector.onchange = () => {
-        if (isSidebarNoteEditing(item.id)) {
-          metadataSelector.value =
-            metadataSelector.dataset.selectedIndex || metadataSelector.value;
-          setSidebarNoteEditStatus(doc, "编辑中，不能切换模型。");
-          return;
-        }
-        metadataSelector.dataset.selectedIndex = metadataSelector.value;
-        const contentEl = doc.getElementById(
-          "ai-butler-note-content",
-        ) as HTMLElement | null;
-        if (contentEl) {
-          contentEl.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在切换模型...</div>`;
-          void loadNoteContent(doc, item, contentEl);
-        }
-      };
-    } else if (metadataSelector) {
-      metadataSelector.innerHTML = "";
-      metadataSelector.style.display = "none";
-      metadataSelector.onchange = null;
-      delete metadataSelector.dataset.selectedIndex;
-      metadataSelector.title = "";
+      if (metadataPicker) {
+        metadataPicker.style.display = "inline-block";
+      }
+      updateSidebarMetadataButtonLabel(
+        doc,
+        selectedBlockIndex,
+        summaryBlocks.length,
+        summaryBlocks[selectedBlockIndex],
+      );
+      saveSidebarSummaryBlockSelection(
+        item.id,
+        resolvedNote.note.id,
+        summaryBlocks[selectedBlockIndex].blockId,
+      );
+    } else {
+      hideSidebarMetadataPicker(doc);
     }
 
     aiNoteContent =
@@ -3998,23 +4383,18 @@ async function loadNoteContent(
       return result;
     };
 
-    // Render LaTeX first (before XML validation)
-    const latexRenderedContent = renderLatexFormulas(aiNoteContent);
+    const adjustedHeadingContent = demoteLongSidebarHeadingsToBlockquote(
+      doc,
+      aiNoteContent,
+    );
 
-    // Sanitize HTML for XHTML compatibility
-    // 1. Convert void elements to self-closing
-    const sanitizedContent = latexRenderedContent
-      .replace(/<hr\s*(?:([^>/]*))?>/gi, "<hr $1/>")
-      .replace(/<br\s*(?:([^>/]*))?>/gi, "<br $1/>")
-      .replace(/<img\s+([^>]*)(?<!\/)>/gi, "<img $1/>")
-      .replace(/<input\s+([^>]*)(?<!\/)>/gi, "<input $1/>")
-      .replace(/<meta\s+([^>]*)(?<!\/)>/gi, "<meta $1/>")
-      .replace(/<link\s+([^>]*)(?<!\/)>/gi, "<link $1/>")
-      .replace(/\s+\/>/g, "/>")
-      // 2. Escape < symbols that are not part of tags (e.g. math operators: A < B, p < 0)
-      // Matches < followed by something that is NOT a letter, /, !, or ?
-      // This allows <div... but matches < 0 or <1
-      .replace(new RegExp("<(?=[^a-zA-Z/?!])", "g"), "&lt;");
+    // Render LaTeX first (before XML validation)
+    const latexRenderedContent = renderLatexFormulas(adjustedHeadingContent);
+
+    const sanitizedContent = normalizeHtmlFragmentForXhtml(
+      doc,
+      latexRenderedContent,
+    );
 
     // 3. Validate with DOMParser
     const parser = new DOMParser();

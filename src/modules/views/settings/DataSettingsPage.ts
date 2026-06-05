@@ -276,7 +276,7 @@ export class DataSettingsPage {
 
     // 恢复常用项
     setPref("summaryPrompt", getDefaultSummaryPrompt());
-    setPref("provider", "openai");
+    setPref("provider", "openai-compat");
     setPref("openaiApiUrl", "https://api.openai.com/v1/responses");
     setPref("openaiApiKey", "");
     setPref("openaiApiModel", "gpt-5");

@@ -331,13 +331,15 @@ function renderStatusCell(
   const parsed = parseStatusData(data);
   const cell = doc.createElement("span");
   cell.className = `cell ${column.className}`;
-  if (parsed.status === "idle") {
+  if (parsed.status === "idle" && !parsed.tooltip) {
     cell.title = "";
     return cell;
   }
 
   cell.title = parsed.tooltip;
-  cell.setAttribute("aria-label", parsed.tooltip);
+  if (parsed.tooltip) {
+    cell.setAttribute("aria-label", parsed.tooltip);
+  }
   cell.style.display = "flex";
   cell.style.alignItems = "center";
   cell.style.justifyContent = "center";
@@ -391,7 +393,9 @@ function applyCircleStyle(
     return;
   }
 
-  circle.style.display = "none";
+  circle.style.background = "transparent";
+  circle.style.border = "1px solid rgba(95, 99, 104, 0.42)";
+  circle.style.boxShadow = "none";
 }
 
 function parseStatusData(data: string): LibraryStatusColumnData {

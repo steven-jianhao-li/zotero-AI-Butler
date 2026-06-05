@@ -43,4 +43,16 @@ describe("AI note classifier", function () {
       "deepRead",
     );
   });
+
+  it("recognizes deep-read notes by heading and excludes them from summaries", function () {
+    const deepReadHtml = "<h2>AI \u7cbe\u8bfb - Paper</h2><p>Detail</p>";
+    const legacyDeepReadHtml =
+      "<h2>AI \u7ba1\u5bb6 - \u7cbe\u8bfb - Paper</h2><p>Detail</p>";
+
+    expect(isDeepReadNote([], deepReadHtml)).to.equal(true);
+    expect(isDeepReadNote([], legacyDeepReadHtml)).to.equal(true);
+    expect(isRegularSummaryNote([], deepReadHtml)).to.equal(false);
+    expect(isRegularSummaryNote([], legacyDeepReadHtml)).to.equal(false);
+    expect(classifyAiButlerNote([], deepReadHtml)).to.equal("deepRead");
+  });
 });

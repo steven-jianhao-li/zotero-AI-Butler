@@ -9,6 +9,8 @@ const MINDMAP_NOTE_TAG = "AI-Mindmap";
 const IMAGE_NOTE_TAGS = ["AI-Image-Summary", "AI-ImageSummary"];
 
 const AI_BUTLER_SUMMARY_HEADING_RE = /<h2>\s*AI\s*管家\s*-\s*(?!后续追问)/;
+const AI_BUTLER_DEEP_READ_HEADING_RE =
+  /<h2>\s*AI\s*(?:\u7cbe\u8bfb|\u7ba1\u5bb6\s*-\s*\u7cbe\u8bfb)\s*-/;
 const AI_BUTLER_CHAT_HEADING_RE =
   /<h2>\s*AI\s*管家\s*-\s*后续追问(?:\s*-|\s*笔记|[\s<])/;
 const AI_BUTLER_MINDMAP_HEADING_RE = /AI\s*管家思维导图\s*-/;
@@ -53,7 +55,9 @@ export function isRegularSummaryNote(
     AI_BUTLER_IMAGE_HEADING_RE.test(noteHtml);
   const isReviewNote =
     hasNoteTag(tags, "AI-Review") || AI_BUTLER_REVIEW_HEADING_RE.test(noteHtml);
-  const isDeepRead = hasNoteTag(tags, DEEP_READ_NOTE_TAG);
+  const isDeepRead =
+    hasNoteTag(tags, DEEP_READ_NOTE_TAG) ||
+    AI_BUTLER_DEEP_READ_HEADING_RE.test(noteHtml);
 
   if (
     isDeepRead ||
@@ -73,8 +77,11 @@ export function isRegularSummaryNote(
   );
 }
 
-export function isDeepReadNote(tags: NoteTag[], _noteHtml: string): boolean {
-  return hasNoteTag(tags, DEEP_READ_NOTE_TAG);
+export function isDeepReadNote(tags: NoteTag[], noteHtml: string): boolean {
+  return (
+    hasNoteTag(tags, DEEP_READ_NOTE_TAG) ||
+    AI_BUTLER_DEEP_READ_HEADING_RE.test(noteHtml)
+  );
 }
 
 export function isLegacySummaryNote(

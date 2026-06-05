@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 提示词管理页
  *
  * @file PromptsSettingsPage.ts
@@ -29,9 +29,11 @@ import {
 } from "../ui/components";
 
 type PresetMap = Record<string, string>;
+type PromptSettingsKind = "summary" | "deepRead" | "table" | "all";
 
 export class PromptsSettingsPage {
   private container: HTMLElement;
+  private pageKind: PromptSettingsKind;
 
   // UI refs
   private presetSelect!: HTMLElement; // 自定义下拉框
@@ -42,8 +44,39 @@ export class PromptsSettingsPage {
   private sampleYear!: HTMLInputElement;
   private editingMultiRoundPromptId: string | null = null;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, pageKind: PromptSettingsKind = "all") {
     this.container = container;
+    this.pageKind = pageKind;
+  }
+
+  private shouldRender(kind: Exclude<PromptSettingsKind, "all">): boolean {
+    return this.pageKind === "all" || this.pageKind === kind;
+  }
+
+  private getPageTitle(): string {
+    switch (this.pageKind) {
+      case "summary":
+        return "\u{1f4dd} AI \u603b\u7ed3\u63d0\u793a\u8bcd";
+      case "deepRead":
+        return "\u{1f4da} AI \u7cbe\u8bfb\u63d0\u793a\u8bcd";
+      case "table":
+        return "\u{1f4ca} \u8868\u683c\u603b\u7ed3\u63d0\u793a\u8bcd";
+      default:
+        return "\u{1f4dd} \u63d0\u793a\u8bcd\u6a21\u677f";
+    }
+  }
+
+  private getPageNotice(): string {
+    switch (this.pageKind) {
+      case "summary":
+        return "AI \u603b\u7ed3\u7528\u4e8e\u628a\u6587\u7ae0\u8bfb\u8584\u3002\u672c\u9875\u53ea\u7ba1\u7406\u5355\u8f6e\u603b\u7ed3\u63d0\u793a\u8bcd\u3001\u9884\u8bbe\u6a21\u677f\u3001\u53d8\u91cf\u9884\u89c8\u3001\u4fdd\u5b58\u548c\u6062\u590d\u9ed8\u8ba4\u3002";
+      case "deepRead":
+        return "AI \u7cbe\u8bfb\u7528\u4e8e\u628a\u8bba\u6587\u8bfb\u539a\u3002\u672c\u9875\u53ea\u7ba1\u7406\u591a\u8f6e\u7cbe\u8bfb\u6a21\u5f0f\u3001\u6bcf\u8f6e\u63d0\u793a\u8bcd\u3001\u6700\u7ec8\u603b\u7ed3\u63d0\u793a\u8bcd\u548c\u4e2d\u95f4\u8fc7\u7a0b\u4fdd\u5b58\u3002";
+      case "table":
+        return "\u8868\u683c\u603b\u7ed3\u7528\u4e8e\u7ed3\u6784\u5316\u9605\u8bfb\u548c\u6587\u732e\u7efc\u8ff0\u3002\u672c\u9875\u53ea\u7ba1\u7406\u8868\u683c\u6a21\u677f\u3001\u9010\u7bc7\u586b\u8868\u63d0\u793a\u8bcd\u548c\u6c47\u603b\u7efc\u8ff0\u63d0\u793a\u8bcd\u3002";
+      default:
+        return "\u63d0\u793a: \u652f\u6301\u9884\u8bbe\u6a21\u677f\u3001\u81ea\u5b9a\u4e49\u7f16\u8f91\u4e0e\u53d8\u91cf\u63d2\u503c\u9884\u89c8\u3002\u53ef\u7528\u53d8\u91cf: <code>${title}</code>\u3001<code>${authors}</code>\u3001<code>${year}</code>\u3002";
+    }
   }
 
   public render(): void {
@@ -59,7 +92,7 @@ export class PromptsSettingsPage {
 
     // 标题
     const title = Zotero.getMainWindow().document.createElement("h2");
-    title.textContent = "📝 提示词模板";
+    title.textContent = this.getPageTitle();
     Object.assign(title.style, {
       color: "#59c0bc",
       marginBottom: "20px",
@@ -69,48 +102,18 @@ export class PromptsSettingsPage {
     });
     contentWrapper.appendChild(title);
 
-    contentWrapper.appendChild(
-      createNotice(
-        "提示: 支持预设模板、自定义编辑与变量插值预览。可用变量: <code>${title}</code>、<code>${authors}</code>、<code>${year}</code>。",
-        "info",
-      ),
-    );
+    contentWrapper.appendChild(createNotice(this.getPageNotice(), "info"));
 
-    // =========== 总结模式选择区域 ===========
+    // =========== AI 精读提示词设置 ===========
     const modeSection = Zotero.getMainWindow().document.createElement("div");
     Object.assign(modeSection.style, {
       marginBottom: "24px",
-      padding: "16px",
-      background: "var(--ai-input-bg)",
-      borderRadius: "8px",
-      border: "1px solid var(--ai-input-border)",
     });
 
-    const modeTitle = Zotero.getMainWindow().document.createElement("h3");
-    modeTitle.textContent = "🔄 总结模式";
-    Object.assign(modeTitle.style, {
-      color: "#59c0bc",
-      marginBottom: "12px",
-      fontSize: "16px",
-    });
-    modeSection.appendChild(modeTitle);
-
-    // 模式说明
-    modeSection.appendChild(
-      createNotice(
-        "选择 AI 总结论文的方式：<br/>" +
-          "• <b>AI 总结</b>: 单次对话完成总结（Token消耗最少，笔记简洁）<br/>" +
-          "• <b>AI 精读-多轮拼接</b>: 多轮对话后拼接所有内容（Token消耗较多，笔记最详细）<br/>" +
-          "• <b>AI 精读-多轮总结</b>: 多轮对话后 AI 汇总（Token消耗最多，笔记详细且篇幅适中）",
-        "info",
-      ),
-    );
-
-    // 模式选择
     const currentMode = ((getPref("summaryMode" as any) as string) ||
       "single") as SummaryMode;
     const modeOptions = [
-      { value: "single", label: "📝 AI 总结 (默认)" },
+      { value: "single", label: "不启用 AI 精读（仅 AI 总结）" },
       { value: "multi_concat", label: "📚 AI 精读-多轮拼接" },
       { value: "multi_summarize", label: "✨ AI 精读-多轮总结" },
     ];
@@ -131,7 +134,7 @@ export class PromptsSettingsPage {
       },
     );
     modeSection.appendChild(
-      createFormGroup("选择模式", modeSelect, "更改后立即生效"),
+      createFormGroup("AI 精读模式", modeSelect, "更改后立即生效"),
     );
 
     // 多轮设置容器（根据模式显示/隐藏）
@@ -144,14 +147,54 @@ export class PromptsSettingsPage {
     });
 
     // 多轮提示词编辑区
+    const multiRoundHeader =
+      Zotero.getMainWindow().document.createElement("div");
+    Object.assign(multiRoundHeader.style, {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "12px",
+      marginBottom: "10px",
+    });
+
     const multiRoundTitle = Zotero.getMainWindow().document.createElement("h4");
-    multiRoundTitle.textContent = "📋 AI 精读提示词设置";
+    multiRoundTitle.textContent =
+      "\u{1f4cb} AI \u7cbe\u8bfb\u63d0\u793a\u8bcd\u8bbe\u7f6e";
     Object.assign(multiRoundTitle.style, {
       color: "#59c0bc",
-      marginBottom: "12px",
+      margin: "0",
       fontSize: "14px",
+      whiteSpace: "nowrap",
     });
-    multiRoundContainer.appendChild(multiRoundTitle);
+    multiRoundHeader.appendChild(multiRoundTitle);
+
+    const promptsToolbar = Zotero.getMainWindow().document.createElement("div");
+    Object.assign(promptsToolbar.style, {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "flex-end",
+      gap: "8px",
+      flex: "1",
+    });
+
+    const btnAddPrompt = createStyledButton(
+      "+ \u6dfb\u52a0\u8f6e\u6b21",
+      "#4caf50",
+      "small",
+    );
+    btnAddPrompt.addEventListener("click", () => this.addMultiRoundPrompt());
+    const btnResetPrompts = createStyledButton(
+      "\u6062\u590d\u9ed8\u8ba4",
+      "#9e9e9e",
+      "small",
+    );
+    btnResetPrompts.addEventListener("click", () =>
+      this.resetMultiRoundPrompts(),
+    );
+    promptsToolbar.appendChild(btnAddPrompt);
+    promptsToolbar.appendChild(btnResetPrompts);
+    multiRoundHeader.appendChild(promptsToolbar);
+    multiRoundContainer.appendChild(multiRoundHeader);
 
     // 当前多轮提示词列表
     const promptsJson = (getPref("multiRoundPrompts" as any) as string) || "[]";
@@ -160,8 +203,6 @@ export class PromptsSettingsPage {
     const promptsList = Zotero.getMainWindow().document.createElement("div");
     promptsList.id = "multi-round-prompts-list";
     Object.assign(promptsList.style, {
-      maxHeight: "200px",
-      overflowY: "auto",
       marginBottom: "12px",
     });
 
@@ -169,23 +210,6 @@ export class PromptsSettingsPage {
     multiRoundContainer.appendChild(promptsList);
 
     // 多轮提示词操作按钮
-    const promptsBtnRow = Zotero.getMainWindow().document.createElement("div");
-    Object.assign(promptsBtnRow.style, {
-      display: "flex",
-      gap: "8px",
-      marginBottom: "12px",
-    });
-
-    const btnAddPrompt = createStyledButton("➕ 添加提示词", "#4caf50");
-    btnAddPrompt.addEventListener("click", () => this.addMultiRoundPrompt());
-    const btnResetPrompts = createStyledButton("🔄 恢复默认", "#9e9e9e");
-    btnResetPrompts.addEventListener("click", () =>
-      this.resetMultiRoundPrompts(),
-    );
-
-    promptsBtnRow.appendChild(btnAddPrompt);
-    promptsBtnRow.appendChild(btnResetPrompts);
-    multiRoundContainer.appendChild(promptsBtnRow);
 
     // 最终总结提示词（仅多轮总结模式显示）
     const finalPromptContainer =
@@ -259,19 +283,25 @@ export class PromptsSettingsPage {
 
     multiRoundContainer.appendChild(finalPromptContainer);
     modeSection.appendChild(multiRoundContainer);
-    contentWrapper.appendChild(modeSection);
 
     // =========== AI 总结提示词设置 ===========
-    // 左右布局
+    const summarySection = Zotero.getMainWindow().document.createElement("div");
+    Object.assign(summarySection.style, {
+      marginBottom: "24px",
+    });
+    if (this.shouldRender("summary")) {
+      contentWrapper.appendChild(summarySection);
+    }
+
     const layout = Zotero.getMainWindow().document.createElement("div");
     layout.id = "single-round-settings";
     Object.assign(layout.style, {
-      display: currentMode === "single" ? "grid" : "none",
+      display: "grid",
       gridTemplateColumns: "minmax(280px, 340px) 1fr",
       gap: "20px",
       alignItems: "start",
     });
-    contentWrapper.appendChild(layout);
+    summarySection.appendChild(layout);
 
     // 左侧: 模板选择与示例变量
     const left = Zotero.getMainWindow().document.createElement("div");
@@ -417,11 +447,19 @@ export class PromptsSettingsPage {
       ),
     );
 
-    // 初次渲染时也做一次预览
-    this.updatePreview();
+    // Render preview only on the AI summary prompt page
+    if (this.shouldRender("summary")) {
+      this.updatePreview();
+    }
 
-    // =========== 表格总结提示词设置 ===========
-    this.renderTableSettings(contentWrapper);
+    if (this.shouldRender("deepRead")) {
+      contentWrapper.appendChild(modeSection);
+    }
+
+    // =========== Table summary prompt settings ===========
+    if (this.shouldRender("table")) {
+      this.renderTableSettings(contentWrapper);
+    }
   }
 
   // ===== helpers =====
@@ -662,20 +700,12 @@ export class PromptsSettingsPage {
     const finalPromptContainer = this.container.querySelector(
       "#final-prompt-container",
     ) as HTMLElement;
-    const singleRoundSettings = this.container.querySelector(
-      "#single-round-settings",
-    ) as HTMLElement;
-
     if (multiRoundSettings) {
       multiRoundSettings.style.display = mode === "single" ? "none" : "block";
     }
     if (finalPromptContainer) {
       finalPromptContainer.style.display =
         mode === "multi_summarize" ? "block" : "none";
-    }
-    // 单次对话模式下显示预设模板区域，多轮模式下隐藏
-    if (singleRoundSettings) {
-      singleRoundSettings.style.display = mode === "single" ? "grid" : "none";
     }
   }
 
@@ -686,128 +716,145 @@ export class PromptsSettingsPage {
     container: HTMLElement,
     prompts: MultiRoundPromptItem[],
   ): void {
+    const doc = Zotero.getMainWindow().document;
     container.innerHTML = "";
 
     if (prompts.length === 0) {
-      const empty = Zotero.getMainWindow().document.createElement("div");
-      empty.textContent = "暂无多轮提示词，请添加或恢复默认";
+      const empty = doc.createElement("div");
+      empty.textContent =
+        "\u6682\u65e0\u591a\u8f6e\u63d0\u793a\u8bcd\uff0c\u8bf7\u6dfb\u52a0\u6216\u6062\u590d\u9ed8\u8ba4";
       Object.assign(empty.style, {
         color: "var(--ai-text-secondary)",
-        padding: "12px",
+        padding: "18px 12px",
         textAlign: "center",
+        border: "1px dashed var(--ai-input-border)",
+        borderRadius: "8px",
       });
       container.appendChild(empty);
       return;
     }
 
     prompts.forEach((prompt, index) => {
-      const doc = Zotero.getMainWindow().document;
       const isEditing = this.editingMultiRoundPromptId === prompt.id;
       const item = doc.createElement("div");
       Object.assign(item.style, {
-        padding: "8px",
         marginBottom: "8px",
-        background: "var(--ai-card-bg)",
+        padding: isEditing ? "10px 12px 12px" : "8px 10px",
+        background: isEditing ? "rgba(89, 192, 188, 0.06)" : "transparent",
         borderRadius: "8px",
         border: isEditing
           ? "1px solid #59c0bc"
           : "1px solid var(--ai-input-border)",
-        minWidth: "0", // 防止flex子元素撑开容器
-        overflow: "hidden", // 确保内容不溢出
+        minWidth: "0",
       });
 
-      const header = doc.createElement("div");
-      Object.assign(header.style, {
-        display: "flex",
+      const row = doc.createElement("div");
+      Object.assign(row.style, {
+        display: "grid",
+        gridTemplateColumns:
+          "28px minmax(76px, 120px) minmax(0, 1fr) auto auto",
         alignItems: "center",
-        gap: "10px",
+        columnGap: "10px",
+        minWidth: "0",
       });
 
       const orderBadge = doc.createElement("span");
-      orderBadge.textContent = `${index + 1}`;
+      orderBadge.textContent = String(index + 1);
       Object.assign(orderBadge.style, {
         background: "#59c0bc",
         color: "white",
-        borderRadius: "50%",
+        borderRadius: "999px",
         width: "24px",
         height: "24px",
-        display: "flex",
+        display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        marginRight: "10px",
         fontSize: "12px",
-        fontWeight: "bold",
-        flex: "0 0 auto",
+        fontWeight: "700",
       });
-      header.appendChild(orderBadge);
-
-      const info = doc.createElement("div");
-      Object.assign(info.style, {
-        flex: "1",
-        overflow: "hidden",
-      });
+      row.appendChild(orderBadge);
 
       const title = doc.createElement("div");
       title.textContent = prompt.title;
       Object.assign(title.style, {
-        fontWeight: "bold",
         color: "var(--ai-text-primary)",
-        marginBottom: "2px",
+        fontSize: "13px",
+        fontWeight: "700",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
       });
-      info.appendChild(title);
+      row.appendChild(title);
 
       const preview = doc.createElement("div");
       preview.textContent =
-        prompt.prompt.substring(0, 50) +
-        (prompt.prompt.length > 50 ? "..." : "");
+        prompt.prompt ||
+        "\uff08\u5c1a\u672a\u586b\u5199\u63d0\u793a\u8bcd\uff09";
       Object.assign(preview.style, {
-        fontSize: "12px",
         color: "var(--ai-text-secondary)",
-        whiteSpace: "nowrap",
+        fontSize: "12px",
+        lineHeight: "1.5",
+        minWidth: "0",
         overflow: "hidden",
         textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        opacity: prompt.prompt ? "0.9" : "0.58",
       });
-      info.appendChild(preview);
+      row.appendChild(preview);
 
-      header.appendChild(info);
-
-      // 编辑按钮
       const btnEdit = doc.createElement("button");
-      btnEdit.textContent = isEditing ? "收起" : "编辑";
-      btnEdit.title = isEditing ? "收起编辑器" : "编辑";
+      btnEdit.textContent = isEditing ? "\u6536\u8d77" : "\u7f16\u8f91";
+      btnEdit.title = isEditing
+        ? "\u6536\u8d77\u7f16\u8f91\u5668"
+        : "\u7f16\u8f91";
       Object.assign(btnEdit.style, {
         border: "1px solid #59c0bc",
-        borderRadius: "4px",
+        borderRadius: "6px",
         background: isEditing ? "#59c0bc" : "transparent",
         color: isEditing ? "white" : "#59c0bc",
         cursor: "pointer",
         fontSize: "12px",
-        padding: "4px 8px",
+        padding: "4px 10px",
+        minWidth: "52px",
         whiteSpace: "nowrap",
       });
       btnEdit.addEventListener("click", () => {
         this.editingMultiRoundPromptId = isEditing ? null : prompt.id;
         this.renderMultiRoundPromptsList(container, prompts);
       });
-      header.appendChild(btnEdit);
+      row.appendChild(btnEdit);
 
-      // 删除按钮
       const btnDelete = doc.createElement("button");
       btnDelete.textContent = "🗑️";
-      btnDelete.title = "删除";
+      btnDelete.title = "\u5220\u9664";
+      const applyDeleteIdleStyle = () => {
+        btnDelete.style.border = "1px solid rgba(128, 128, 128, 0.28)";
+        btnDelete.style.background = "rgba(128, 128, 128, 0.04)";
+        btnDelete.style.color = "var(--ai-text-secondary)";
+        btnDelete.style.opacity = "0.82";
+      };
       Object.assign(btnDelete.style, {
-        border: "none",
-        background: "transparent",
+        borderRadius: "6px",
         cursor: "pointer",
-        fontSize: "16px",
-        padding: "4px 8px",
+        fontSize: "13px",
+        padding: "4px 7px",
+        transition:
+          "border-color 0.15s ease, background 0.15s ease, color 0.15s ease",
       });
+      applyDeleteIdleStyle();
+      btnDelete.addEventListener("mouseenter", () => {
+        btnDelete.style.border = "1px solid rgba(244, 67, 54, 0.45)";
+        btnDelete.style.background = "rgba(244, 67, 54, 0.08)";
+        btnDelete.style.color = "#f44336";
+        btnDelete.style.opacity = "1";
+      });
+      btnDelete.addEventListener("mouseleave", applyDeleteIdleStyle);
       btnDelete.addEventListener("click", () =>
         this.deleteMultiRoundPrompt(prompt.id),
       );
-      header.appendChild(btnDelete);
+      row.appendChild(btnDelete);
 
-      item.appendChild(header);
+      item.appendChild(row);
 
       if (isEditing) {
         const editor = this.createMultiRoundPromptEditor(prompt, container);
@@ -828,9 +875,11 @@ export class PromptsSettingsPage {
     const doc = Zotero.getMainWindow().document;
     const editor = doc.createElement("div");
     Object.assign(editor.style, {
-      marginTop: "10px",
-      paddingTop: "10px",
+      marginTop: "14px",
+      padding: "16px 16px 12px",
       borderTop: "1px solid var(--ai-input-border)",
+      borderRadius: "8px",
+      background: "rgba(89, 192, 188, 0.06)",
     });
 
     const titleInput = createInput(
@@ -842,7 +891,7 @@ export class PromptsSettingsPage {
     const promptTextarea = createTextarea(
       `multi-round-prompt-${prompt.id}`,
       prompt.prompt,
-      5,
+      8,
       "输入这一轮要问 AI 的提示词...",
     );
 
@@ -852,8 +901,9 @@ export class PromptsSettingsPage {
     const actions = doc.createElement("div");
     Object.assign(actions.style, {
       display: "flex",
-      gap: "8px",
+      gap: "10px",
       justifyContent: "flex-end",
+      marginTop: "4px",
     });
 
     const btnCancel = createStyledButton("取消", "#9e9e9e", "small");
@@ -1110,29 +1160,16 @@ export class PromptsSettingsPage {
     });
   }
 
-  // =========== 文献综述表格设置 ===========
+  // =========== 表格总结提示词设置 ===========
 
   /**
-   * 渲染文献综述表格设置区域
+   * 渲染表格总结提示词设置区域
    */
   private renderTableSettings(contentWrapper: HTMLElement): void {
     const doc = Zotero.getMainWindow().document;
 
-    contentWrapper.appendChild(createSectionTitle("📊 文献综述表格设置"));
-
-    contentWrapper.appendChild(
-      createNotice(
-        "配置文献综述的表格模板和提示词。综述流程：先逐篇论文按模板填表，再汇总表格生成综述。",
-        "info",
-      ),
-    );
-
     const tableSection = doc.createElement("div");
     Object.assign(tableSection.style, {
-      padding: "16px",
-      background: "var(--ai-input-bg)",
-      borderRadius: "8px",
-      border: "1px solid var(--ai-input-border)",
       marginBottom: "24px",
     });
 

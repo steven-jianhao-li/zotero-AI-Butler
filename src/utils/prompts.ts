@@ -250,9 +250,9 @@ export const DEFAULT_MULTI_ROUND_PROMPTS: MultiRoundPromptItem[] = [
 ];
 
 /**
- * 默认的多轮对话最终总结提示词
+ * 默认的 AI 精读最终总结提示词
  */
-export const DEFAULT_MULTI_ROUND_FINAL_PROMPT = `基于以上多轮对话的内容，请为我生成一份完整、结构化的论文总结笔记。要求：
+export const DEFAULT_MULTI_ROUND_FINAL_PROMPT = `基于以上多轮精读对话的内容，请为我生成一份完整、结构化的 AI 精读最终总结。要求：
 1. 开头用一段话概括论文的核心内容
 2. 分章节整理各部分的关键信息
 3. 突出论文的创新点和贡献

@@ -117,8 +117,7 @@ export class UiSettingsPage {
     );
 
     // 笔记管理策略
-    const enableTableFeature =
-      getPref("enableTableFeature") ?? true;
+    const enableTableFeature = getPref("enableTableFeature") ?? true;
     const enableTableFeatureBox = createCheckbox(
       "enableTableFeature",
       !!enableTableFeature,

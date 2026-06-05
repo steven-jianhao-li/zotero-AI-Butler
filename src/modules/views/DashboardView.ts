@@ -27,19 +27,13 @@ import { BaseView } from "./BaseView";
 import { TaskQueueManager, QueueStats, TaskStatus } from "../taskQueue";
 import { MainWindow } from "./MainWindow";
 import { AutoScanManager } from "../autoScanManager";
-import { LLMEndpointManager, type LLMEndpoint } from "../llmEndpointManager";
-import { getPref, setPref } from "../../utils/prefs";
+import { setPref } from "../../utils/prefs";
 import { createCard, createStyledButton } from "./ui/components";
-
-const DEEPSEEK_PRESET_ENDPOINT_ID = "endpoint-preset-deepseek";
-const DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions";
-const DEEPSEEK_MODEL = "deepseek-chat";
-
-interface DeepSeekPresetChange {
-  label: string;
-  before: string;
-  after: string;
-}
+import {
+  setupPresets,
+  type SetupPreset,
+  type SetupPresetValues,
+} from "../setupPresets";
 
 /**
  * 管家状态枚举
@@ -113,6 +107,9 @@ export class DashboardView extends BaseView {
 
   /** 完成回调取消函数 */
   private unsubscribeComplete: (() => void) | null = null;
+
+  /** 当前选中的初始化预设 */
+  private selectedSetupPresetId: string = setupPresets[0]?.id || "";
 
   /**
    * 构造函数
@@ -793,9 +790,10 @@ export class DashboardView extends BaseView {
     close: () => void,
   ): void {
     modal.innerHTML = "";
+    const selectedPreset = this.getSelectedSetupPreset();
     const nextButton = createStyledButton("下一步", "#00a67e", "medium");
     nextButton.addEventListener("click", () =>
-      this.renderDeepSeekGuideStep(modal, close),
+      this.renderSetupPresetGuideStep(modal, close, selectedPreset),
     );
 
     const cancelButton = createStyledButton("取消", "#9e9e9e", "medium");
@@ -805,24 +803,33 @@ export class DashboardView extends BaseView {
       this.createWizardShell(
         "🧭 一键初始化配置",
         "选择一个适合新安装插件的预设，按教程填入 API Key 后即可自动完成常用设置。",
-        [
-          this.createPresetCard(
-            "DeepSeek",
-            "适合国内网络环境，价格低，作为 OpenAI 兼容接口接入。",
-          ),
-        ],
+        setupPresets.map((preset) => {
+          const card = this.createPresetCard(
+            preset,
+            preset.id === selectedPreset.id,
+          );
+          card.addEventListener("click", () => {
+            this.selectedSetupPresetId = preset.id;
+            this.renderPresetSelectionStep(modal, close);
+          });
+          return card;
+        }),
         [cancelButton, nextButton],
         close,
       ),
     );
   }
 
-  private renderDeepSeekGuideStep(modal: HTMLElement, close: () => void): void {
+  private renderSetupPresetGuideStep(
+    modal: HTMLElement,
+    close: () => void,
+    preset: SetupPreset,
+  ): void {
     modal.innerHTML = "";
     const keyInput = this.createElement("input", {
       attributes: {
         type: "password",
-        placeholder: "粘贴 DeepSeek API Key，例如 sk-...",
+        placeholder: preset.apiKeyPlaceholder,
         autocomplete: "off",
       },
       styles: {
@@ -856,27 +863,7 @@ export class DashboardView extends BaseView {
     showKeyRow.appendChild(docText("显示密钥"));
 
     const content = this.createElement("div", {
-      children: [
-        this.createGuideList([
-          {
-            title: "打开 DeepSeek 开放平台",
-            detail: "登录后进入用量页，确认账户有可用余额。",
-            url: "https://platform.deepseek.com/usage",
-          },
-          {
-            title: "创建 API Key",
-            detail:
-              "进入 API Keys 页面，新建密钥并立刻复制；密钥通常只展示一次。",
-            url: "https://platform.deepseek.com/api_keys",
-          },
-          {
-            title: "粘贴 API Key",
-            detail: "把刚复制的密钥粘贴到下方输入框，然后继续下一步。",
-          },
-        ]),
-        keyInput,
-        showKeyRow,
-      ],
+      children: [this.createGuideList(preset.guideSteps), keyInput, showKeyRow],
     });
 
     const backButton = createStyledButton("上一步", "#607d8b", "medium");
@@ -889,17 +876,17 @@ export class DashboardView extends BaseView {
       if (!apiKey) {
         keyInput.focus();
         new ztoolkit.ProgressWindow("一键初始化配置", { closeTime: 2200 })
-          .createLine({ text: "请先填写 DeepSeek API Key", type: "fail" })
+          .createLine({ text: `请先填写 ${preset.name} API Key`, type: "fail" })
           .show();
         return;
       }
-      this.renderDeepSeekConfirmStep(modal, close, apiKey);
+      this.renderSetupPresetConfirmStep(modal, close, preset, { apiKey });
     });
 
     modal.appendChild(
       this.createWizardShell(
-        "DeepSeek 配置教程",
-        "只需要完成充值/创建密钥/粘贴密钥这几步，剩下的插件设置会自动处理。",
+        preset.guideTitle,
+        preset.guideSubtitle,
         [content],
         [backButton, nextButton],
         close,
@@ -911,13 +898,14 @@ export class DashboardView extends BaseView {
     }
   }
 
-  private renderDeepSeekConfirmStep(
+  private renderSetupPresetConfirmStep(
     modal: HTMLElement,
     close: () => void,
-    apiKey: string,
+    preset: SetupPreset,
+    values: SetupPresetValues,
   ): void {
     modal.innerHTML = "";
-    const changes = this.getDeepSeekPresetChanges(apiKey);
+    const changes = preset.getChanges(values);
     const list = this.createElement("div", {
       styles: {
         border: "1px solid rgba(89, 192, 188, 0.25)",
@@ -948,8 +936,7 @@ export class DashboardView extends BaseView {
     });
 
     const warning = this.createElement("div", {
-      textContent:
-        "确认后会立即保存这些设置，并启动自动扫描。原有其它模型端点会保留在 DeepSeek 后面。",
+      textContent: `确认后会立即保存这些设置，并启动自动扫描。原有其它模型端点会保留在 ${preset.name} 后面。`,
       styles: {
         marginTop: "14px",
         padding: "12px 14px",
@@ -964,25 +951,27 @@ export class DashboardView extends BaseView {
 
     const backButton = createStyledButton("上一步", "#607d8b", "medium");
     backButton.addEventListener("click", () =>
-      this.renderDeepSeekGuideStep(modal, close),
+      this.renderSetupPresetGuideStep(modal, close, preset),
     );
     const applyButton = createStyledButton("确认并应用", "#00a67e", "medium");
     applyButton.addEventListener("click", () => {
-      this.applyDeepSeekPreset(apiKey);
+      preset.apply(values);
+      new ztoolkit.ProgressWindow("一键初始化配置", { closeTime: 3000 })
+        .createLine({ text: preset.successMessage, type: "success" })
+        .show();
       close();
     });
 
     modal.appendChild(
       this.createWizardShell(
         "保存并应用配置",
-        "请检查即将修改的配置清单。确认后，插件会切换到 DeepSeek 新手推荐配置。",
+        `请检查即将修改的配置清单。确认后，插件会切换到 ${preset.name} 新手推荐配置。`,
         [list, warning],
         [backButton, applyButton],
         close,
       ),
     );
   }
-
   private createWizardShell(
     title: string,
     subtitle: string,
@@ -1065,17 +1054,23 @@ export class DashboardView extends BaseView {
     return shell;
   }
 
-  private createPresetCard(title: string, description: string): HTMLElement {
+  private createPresetCard(
+    preset: SetupPreset,
+    selected: boolean,
+  ): HTMLElement {
     return this.createElement("div", {
       styles: {
         padding: "18px",
-        border: "2px solid #00a67e",
+        border: `${selected ? 2 : 1}px solid ${selected ? "#00a67e" : "rgba(89, 192, 188, 0.25)"}`,
         borderRadius: "12px",
-        backgroundColor: "rgba(0, 166, 126, 0.08)",
+        backgroundColor: selected
+          ? "rgba(0, 166, 126, 0.08)"
+          : "rgba(89, 192, 188, 0.04)",
+        cursor: "pointer",
       },
       children: [
         this.createElement("div", {
-          textContent: `✅ ${title}`,
+          textContent: `${selected ? "✅" : "○"} ${preset.title}`,
           styles: {
             fontSize: "18px",
             fontWeight: "700",
@@ -1083,7 +1078,7 @@ export class DashboardView extends BaseView {
           },
         }),
         this.createElement("div", {
-          textContent: description,
+          textContent: preset.description,
           styles: {
             color: "var(--ai-text-muted, #666)",
             fontSize: "14px",
@@ -1093,7 +1088,6 @@ export class DashboardView extends BaseView {
       ],
     });
   }
-
   private createGuideList(
     items: Array<{ title: string; detail: string; url?: string }>,
   ): HTMLElement {
@@ -1212,109 +1206,12 @@ export class DashboardView extends BaseView {
     });
   }
 
-  private getDeepSeekPresetChanges(apiKey: string): DeepSeekPresetChange[] {
-    const endpoints = LLMEndpointManager.getEndpoints();
-    const currentTop = endpoints[0]?.name || "未配置";
-    const maskedKey = this.maskApiKey(apiKey);
-    return [
-      {
-        label: "模型平台",
-        before: String(getPref("provider") || "未配置"),
-        after: "OpenAI 兼容 / DeepSeek",
-      },
-      {
-        label: "DeepSeek API 地址",
-        before: String(getPref("openaiCompatApiUrl") || "空"),
-        after: DEEPSEEK_API_URL,
-      },
-      {
-        label: "DeepSeek 模型",
-        before: String(getPref("openaiCompatModel") || "空"),
-        after: DEEPSEEK_MODEL,
-      },
-      { label: "API Key", before: "本地已有值会被替换", after: maskedKey },
-      { label: "端点优先级", before: currentTop, after: "DeepSeek 排在第一位" },
-      {
-        label: "PDF 处理",
-        before: String(getPref("pdfProcessMode") || "base64"),
-        after: "文本提取",
-      },
-      {
-        label: "自动扫描",
-        before: getPref("autoScan") ? "已开启" : "已关闭",
-        after: "开启",
-      },
-      {
-        label: "追问保存",
-        before: getPref("saveChatHistory") ? "已开启" : "已关闭",
-        after: "开启",
-      },
-      {
-        label: "温度参数",
-        before: getPref("enableTemperature") ? "发送" : "不发送",
-        after: "不发送",
-      },
-      {
-        label: "Max Tokens 参数",
-        before: getPref("enableMaxTokens") ? "发送" : "不发送",
-        after: "不发送",
-      },
-      {
-        label: "Top P 参数",
-        before: getPref("enableTopP") ? "发送" : "不发送",
-        after: "不发送",
-      },
-    ];
-  }
-
-  private applyDeepSeekPreset(apiKey: string): void {
-    const trimmedKey = apiKey.trim();
-    const timestamp = new Date().toISOString();
-    const deepSeekEndpoint: LLMEndpoint = {
-      id: DEEPSEEK_PRESET_ENDPOINT_ID,
-      name: "DeepSeek",
-      providerType: "openai-compat",
-      apiUrl: DEEPSEEK_API_URL,
-      apiKey: trimmedKey,
-      model: DEEPSEEK_MODEL,
-      reasoningEffort: "default",
-      pdfProcessMode: "text",
-      enabled: true,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    };
-    const endpoints = LLMEndpointManager.getEndpoints().filter(
-      (endpoint) => endpoint.id !== DEEPSEEK_PRESET_ENDPOINT_ID,
+  private getSelectedSetupPreset(): SetupPreset {
+    return (
+      setupPresets.find((preset) => preset.id === this.selectedSetupPresetId) ||
+      setupPresets[0]
     );
-
-    setPref("provider", "openai-compat");
-    setPref("openaiCompatApiUrl", DEEPSEEK_API_URL);
-    setPref("openaiCompatApiKey", trimmedKey);
-    setPref("openaiCompatModel", DEEPSEEK_MODEL);
-    setPref("llmRoutingStrategy", "priority");
-    setPref("pdfProcessMode", "text");
-    setPref("autoScan", true);
-    setPref("saveChatHistory", true as any);
-    setPref("enableTemperature", false as any);
-    setPref("enableMaxTokens", false as any);
-    setPref("enableTopP", false as any);
-    LLMEndpointManager.saveEndpoints([deepSeekEndpoint, ...endpoints]);
-    AutoScanManager.getInstance().start();
-
-    new ztoolkit.ProgressWindow("一键初始化配置", { closeTime: 3000 })
-      .createLine({
-        text: "✅ DeepSeek 配置已应用，可以开始使用了",
-        type: "success",
-      })
-      .show();
   }
-
-  private maskApiKey(apiKey: string): string {
-    const trimmed = apiKey.trim();
-    if (trimmed.length <= 10) return "已填写";
-    return `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`;
-  }
-
   /**
    * 获取主窗口实例
    *

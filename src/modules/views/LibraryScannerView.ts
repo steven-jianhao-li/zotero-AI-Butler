@@ -18,9 +18,19 @@
  */
 
 import { BaseView } from "./BaseView";
-import { isRegularSummaryNote } from "../aiNoteClassifier";
+import { AiNoteService, type AiNoteKind } from "../aiNoteService";
 import { TaskQueueManager } from "../taskQueue";
 import { MainWindow } from "./MainWindow";
+
+export function getLibraryScannerTargetLabel(target: AiNoteKind): string {
+  return target === "summary" ? "AI 总结" : "AI 精读";
+}
+
+export function getLibraryScannerTaskType(
+  target: AiNoteKind,
+): "summary" | "deepRead" {
+  return target === "summary" ? "summary" : "deepRead";
+}
 
 /**
  * 树节点接口
@@ -53,6 +63,7 @@ export class LibraryScannerView extends BaseView {
   private selectedCountElement: HTMLElement | null = null;
   private taskQueueManager: TaskQueueManager;
   private activeScanId: number = 0;
+  private scanTarget: AiNoteKind = "summary";
 
   /**
    * 构造函数
@@ -60,6 +71,16 @@ export class LibraryScannerView extends BaseView {
   constructor() {
     super("library-scanner-view");
     this.taskQueueManager = TaskQueueManager.getInstance();
+  }
+
+  public setScanTarget(target: AiNoteKind): void {
+    if (this.scanTarget === target) return;
+    this.scanTarget = target;
+    this.activeScanId++;
+  }
+
+  private getScanTargetLabel(): string {
+    return getLibraryScannerTargetLabel(this.scanTarget);
   }
 
   /**
@@ -92,7 +113,7 @@ export class LibraryScannerView extends BaseView {
             margin: "0 0 10px 0",
             fontSize: "18px",
           },
-          innerHTML: "📚 库扫描结果",
+          innerHTML: `📚 缺 ${this.getScanTargetLabel()} 文献`,
         }),
         this.createElement("p", {
           id: "scanner-info",
@@ -209,7 +230,9 @@ export class LibraryScannerView extends BaseView {
 
     try {
       const startedAt = Date.now();
-      this.log(`[LibraryScanner] 开始扫描未分析文献 scanId=${scanId}`);
+      this.log(
+        `[LibraryScanner] 开始扫描缺 ${this.getScanTargetLabel()} 文献 scanId=${scanId}`,
+      );
 
       await this.scanLibrary(scanId);
       if (!this.isCurrentScan(scanId)) return;
@@ -435,25 +458,14 @@ export class LibraryScannerView extends BaseView {
   }
 
   /**
-   * 检查条目是否已有 AI 笔记
+   * 检查条目是否已有当前目标 AI 笔记
    */
   private async hasExistingAINote(item: Zotero.Item): Promise<boolean> {
     try {
-      const noteIDs: number[] = (item as any).getNotes?.() || [];
-      if (noteIDs.length === 0) return false;
-
-      const notes = await Zotero.Items.getAsync(noteIDs);
-      for (const n of notes) {
-        if (!n) continue;
-
-        const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-        const noteHtml: string = (n as any).getNote?.() || "";
-        if (isRegularSummaryNote(tags, noteHtml)) return true;
-      }
-      return false;
+      return await AiNoteService.hasNote(item, this.scanTarget);
     } catch (error) {
       this.log(
-        `[LibraryScanner] 检查 AI 笔记失败: item=${this.getItemDebugID(item)}, title="${this.getItemTitle(item)}"`,
+        `[LibraryScanner] 检查 ${this.getScanTargetLabel()} 失败: item=${this.getItemDebugID(item)}, title="${this.getItemTitle(item)}"`,
         error,
       );
       return false;
@@ -697,7 +709,11 @@ export class LibraryScannerView extends BaseView {
     this.treeRoot = [];
     this.totalUnprocessed = 0;
     this.selectedCount = 0;
-    this.setInfo("正在扫描 Zotero 库...");
+    const title = this.container?.querySelector("h2");
+    if (title) {
+      title.innerHTML = `📚 缺 ${this.getScanTargetLabel()} 文献`;
+    }
+    this.setInfo(`正在扫描缺 ${this.getScanTargetLabel()} 的 Zotero 文献...`);
     if (this.treeContainer) {
       this.treeContainer.innerHTML = "";
     }
@@ -943,9 +959,9 @@ export class LibraryScannerView extends BaseView {
     const infoElement = this.container?.querySelector("#scanner-info");
     if (infoElement) {
       if (this.totalUnprocessed === 0) {
-        infoElement.innerHTML = "🎉 所有文献都已分析完成!";
+        infoElement.innerHTML = `🎉 所有文献都已有 ${this.getScanTargetLabel()}!`;
       } else {
-        infoElement.innerHTML = `发现 <strong>${this.totalUnprocessed}</strong> 篇文献未进行 AI 分析`;
+        infoElement.innerHTML = `发现 <strong>${this.totalUnprocessed}</strong> 篇文献缺 ${this.getScanTargetLabel()}`;
       }
     }
 
@@ -960,7 +976,7 @@ export class LibraryScannerView extends BaseView {
             color: "#999",
             fontSize: "16px",
           },
-          innerHTML: "🎉<br><br>所有文献都已分析完成!",
+          innerHTML: `🎉<br><br>所有文献都已有 ${this.getScanTargetLabel()}!`,
         });
         this.treeContainer.appendChild(emptyMessage);
       } else {
@@ -1027,7 +1043,7 @@ export class LibraryScannerView extends BaseView {
         fontWeight: "600",
         color: "#fff",
       },
-      innerHTML: `📚 全选/全不选 (共 ${this.totalUnprocessed} 篇未分析)`,
+      innerHTML: `📚 全选/全不选 (共 ${this.totalUnprocessed} 篇缺 ${this.getScanTargetLabel()})`,
     });
 
     content.appendChild(checkbox);
@@ -1510,14 +1526,20 @@ export class LibraryScannerView extends BaseView {
       return;
     }
 
-    // 批量添加到队列
+    // 批量添加到对应队列
     for (const item of selectedItems) {
-      this.taskQueueManager.addTask(item, false);
+      if (this.scanTarget === "summary") {
+        this.taskQueueManager.addTask(item, false, { summaryMode: "single" });
+      } else {
+        this.taskQueueManager.addDeepReadTask(item, false, {
+          summaryMode: "multi_concat",
+        });
+      }
     }
 
     new ztoolkit.ProgressWindow("AI 管家")
       .createLine({
-        text: `✅ 已将 ${selectedItems.length} 篇文献添加到队列`,
+        text: `✅ 已将 ${selectedItems.length} 篇文献添加到 ${this.getScanTargetLabel()} 队列`,
         type: "success",
       })
       .show();

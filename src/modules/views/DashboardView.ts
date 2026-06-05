@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ================================================================
  * 仪表盘视图
  * ================================================================
@@ -375,7 +375,8 @@ export class DashboardView extends BaseView {
     });
 
     const actions = [
-      { icon: "🔍", label: "扫描未分析论文", color: "#2196f3" },
+      { icon: "🔍", label: "扫描未总结论文", color: "#2196f3" },
+      { icon: "📚", label: "扫描未精读论文", color: "#3f51b5" },
       { icon: "🚀", label: "开始自动扫描", color: "#4caf50" },
       { icon: "⏸️", label: "暂停自动扫描", color: "#ff9800" },
       { icon: "📋", label: "查看任务队列", color: "#9c27b0" },
@@ -690,9 +691,12 @@ export class DashboardView extends BaseView {
         this.showDeepSeekSetupWizard();
         break;
 
-      case "扫描未分析论文":
-        // 切换到库扫描视图
-        MainWindow.getInstance().switchTab("scanner");
+      case "扫描未总结论文":
+        MainWindow.getInstance().openLibraryScanner("summary");
+        break;
+
+      case "扫描未精读论文":
+        MainWindow.getInstance().openLibraryScanner("deepRead");
         break;
 
       case "开始自动扫描":

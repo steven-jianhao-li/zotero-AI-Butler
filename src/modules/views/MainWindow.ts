@@ -35,6 +35,7 @@ import { SettingsView } from "./SettingsView";
 import { LibraryScannerView } from "./LibraryScannerView";
 import { LiteratureReviewView } from "./LiteratureReviewView";
 import { BaseView } from "./BaseView";
+import type { AiNoteKind } from "../aiNoteService";
 import {
   createMainWindowScaffold,
   type MainTabDescriptor,
@@ -610,6 +611,11 @@ export class MainWindow {
       // 视图未实现,显示占位符
       this.showPlaceholder(tabId);
     }
+  }
+
+  public openLibraryScanner(target: AiNoteKind): void {
+    this.libraryScannerView.setScanTarget(target);
+    this.switchTab("scanner", true);
   }
 
   /**

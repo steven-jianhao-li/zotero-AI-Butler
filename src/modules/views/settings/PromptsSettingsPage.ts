@@ -172,6 +172,16 @@ export class PromptsSettingsPage {
     multiRoundContainer.appendChild(this.renderMultiRoundPromptActions());
     modeSection.appendChild(multiRoundContainer);
 
+    if (this.pageKind === "deepRead") {
+      contentWrapper.appendChild(modeSection);
+      return;
+    }
+
+    if (this.pageKind === "table") {
+      this.renderTableSettings(contentWrapper);
+      return;
+    }
+
     // =========== AI 总结提示词设置 ===========
     const summarySection = Zotero.getMainWindow().document.createElement("div");
     Object.assign(summarySection.style, {
@@ -340,12 +350,12 @@ export class PromptsSettingsPage {
       this.updatePreview();
     }
 
-    if (this.shouldRender("deepRead")) {
+    if (this.pageKind === "all") {
       contentWrapper.appendChild(modeSection);
     }
 
     // =========== Table summary prompt settings ===========
-    if (this.shouldRender("table")) {
+    if (this.pageKind === "all") {
       this.renderTableSettings(contentWrapper);
     }
   }

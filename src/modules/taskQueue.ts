@@ -304,6 +304,9 @@ export class TaskQueueManager {
       logTaskQueue(`任务已完成但需要重新生成，重新入队: ${task.id}`);
       this.resetTaskForEnqueue(task, priority, options, workflowStage);
       await this.saveToStorage();
+      if (artifactType === "summary") {
+        this.notifySummaryTaskEnqueued(task);
+      }
       return true;
     }
 
@@ -311,6 +314,9 @@ export class TaskQueueManager {
       logTaskQueue(`失败任务重新入队: ${task.id}`);
       this.resetTaskForEnqueue(task, priority, options, workflowStage);
       await this.saveToStorage();
+      if (artifactType === "summary") {
+        this.notifySummaryTaskEnqueued(task);
+      }
       return true;
     }
 
@@ -402,6 +408,16 @@ export class TaskQueueManager {
     }
   }
 
+  private notifySummaryTaskEnqueued(task: TaskItem): void {
+    if (task.taskType && task.taskType !== "summary") {
+      return;
+    }
+    if (!this.progressCallbacks) {
+      return;
+    }
+    this.notifyProgress(task.id, task.progress, "AI summary queued");
+  }
+
   // ==================== 任务管理 ====================
 
   /**
@@ -458,6 +474,7 @@ export class TaskQueueManager {
 
     this.tasks.set(taskId, task);
     await this.saveToStorage();
+    this.notifySummaryTaskEnqueued(task);
 
     logTaskQueue(`添加任务: ${task.title} (${taskId})`);
 
@@ -1817,6 +1834,7 @@ export class TaskQueueManager {
     const abortController = createTaskAbortController();
     this.taskAbortControllers.set(taskId, abortController);
     await this.saveToStorage();
+    this.notifyProgress(taskId, task.progress, "AI summary started");
 
     logTaskQueue(`开始执行任务: ${task.title} (${taskId})`);
 

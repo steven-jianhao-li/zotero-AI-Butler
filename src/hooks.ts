@@ -27,6 +27,10 @@ import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
 import { TaskQueueManager } from "./modules/taskQueue";
 import {
+  registerLibraryStatusColumn,
+  unregisterLibraryStatusColumn,
+} from "./modules/libraryStatusColumn";
+import {
   CollectionAiNoteCleaner,
   type CleanableAiNoteType,
   type CollectionAiNoteCleanAction,
@@ -105,6 +109,9 @@ async function onStartup() {
   // 注册条目面板自定义区块
   // 用户可以在浏览文献库时快速访问 AI 追问功能
   registerItemPaneSection();
+
+  // 注册文献库 AI 精读状态列
+  registerLibraryStatusColumn();
 
   // 启动自动扫描管理器
   const autoScanManager = AutoScanManager.getInstance();
@@ -1680,6 +1687,9 @@ async function onMainWindowUnload(win: Window): Promise<void> {
  * - 需要重启 Zotero 才能重新加载插件
  */
 function onShutdown(): void {
+  // 注销文献库 AI 精读状态列和相关监听
+  unregisterLibraryStatusColumn();
+
   // 注销所有UI组件
   ztoolkit.unregisterAll();
 

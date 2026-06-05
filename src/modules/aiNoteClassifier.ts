@@ -1,6 +1,8 @@
 export type NoteTag = { tag: string };
 
-const SUMMARY_NOTE_TAG = "AI-Generated";
+export const LEGACY_SUMMARY_NOTE_TAG = "AI-Generated";
+export const SUMMARY_NOTE_TAG = "AI-Summary";
+export const DEEP_READ_NOTE_TAG = "AI-DeepRead";
 const TABLE_NOTE_TAG = "AI-Table";
 const CHAT_NOTE_TAG = "AI-Butler-Chat";
 const MINDMAP_NOTE_TAG = "AI-Mindmap";
@@ -16,6 +18,7 @@ const AI_BUTLER_REVIEW_HEADING_RE = /AI\s*管家.*(?:文献综述|综述)/;
 
 export type AiButlerNoteType =
   | "summary"
+  | "deepRead"
   | "imageSummary"
   | "mindmap"
   | "tableFill"
@@ -27,7 +30,10 @@ export function hasNoteTag(tags: NoteTag[], tag: string): boolean {
 }
 
 export function isFollowUpChatNote(tags: NoteTag[], noteHtml: string): boolean {
-  const hasSummaryTag = hasNoteTag(tags, SUMMARY_NOTE_TAG);
+  const hasSummaryTag =
+    hasNoteTag(tags, LEGACY_SUMMARY_NOTE_TAG) ||
+    hasNoteTag(tags, SUMMARY_NOTE_TAG) ||
+    hasNoteTag(tags, DEEP_READ_NOTE_TAG);
   return (
     hasNoteTag(tags, CHAT_NOTE_TAG) ||
     (!hasSummaryTag && AI_BUTLER_CHAT_HEADING_RE.test(noteHtml))
@@ -47,8 +53,10 @@ export function isRegularSummaryNote(
     AI_BUTLER_IMAGE_HEADING_RE.test(noteHtml);
   const isReviewNote =
     hasNoteTag(tags, "AI-Review") || AI_BUTLER_REVIEW_HEADING_RE.test(noteHtml);
+  const isDeepRead = hasNoteTag(tags, DEEP_READ_NOTE_TAG);
 
   if (
+    isDeepRead ||
     isTableNote ||
     isMindmapNote ||
     isImageNote ||
@@ -60,7 +68,24 @@ export function isRegularSummaryNote(
 
   return (
     hasNoteTag(tags, SUMMARY_NOTE_TAG) ||
+    hasNoteTag(tags, LEGACY_SUMMARY_NOTE_TAG) ||
     AI_BUTLER_SUMMARY_HEADING_RE.test(noteHtml)
+  );
+}
+
+export function isDeepReadNote(tags: NoteTag[], _noteHtml: string): boolean {
+  return hasNoteTag(tags, DEEP_READ_NOTE_TAG);
+}
+
+export function isLegacySummaryNote(
+  tags: NoteTag[],
+  noteHtml: string,
+): boolean {
+  return (
+    hasNoteTag(tags, LEGACY_SUMMARY_NOTE_TAG) &&
+    !hasNoteTag(tags, SUMMARY_NOTE_TAG) &&
+    !hasNoteTag(tags, DEEP_READ_NOTE_TAG) &&
+    isRegularSummaryNote(tags, noteHtml)
   );
 }
 
@@ -70,6 +95,9 @@ export function classifyAiButlerNote(
 ): AiButlerNoteType | null {
   if (isFollowUpChatNote(tags, noteHtml)) {
     return "chat";
+  }
+  if (isDeepReadNote(tags, noteHtml)) {
+    return "deepRead";
   }
   if (isRegularSummaryNote(tags, noteHtml)) {
     return "summary";

@@ -51,6 +51,7 @@ declare namespace _ZoteroTypes {
       "multiRoundPrompts": string;
       "multiRoundFinalPrompt": string;
       "multiSummarySaveIntermediate": boolean;
+      "legacyAiNoteRenamePromptState": string;
       "maxRetries": string;
       "batchSize": string;
       "batchInterval": string;

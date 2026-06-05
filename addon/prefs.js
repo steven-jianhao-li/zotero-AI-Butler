@@ -78,6 +78,8 @@ pref(
 );
 // 多轮总结模式下是否保存中间对话内容到笔记（仅对 multi_summarize 生效）
 pref("__prefsPrefix__.multiSummarySaveIntermediate", false);
+// Legacy AI note compatibility prompt state for AI总结 / AI精读 split.
+pref("__prefsPrefix__.legacyAiNoteRenamePromptState", "");
 
 // ==================== 任务队列配置 ====================
 pref("__prefsPrefix__.maxRetries", "3");

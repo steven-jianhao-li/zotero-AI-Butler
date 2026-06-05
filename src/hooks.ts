@@ -56,6 +56,7 @@ import {
 import { config } from "../package.json";
 import { getPref, setPref } from "./utils/prefs";
 import { LLMEndpointManager } from "./modules/llmEndpointManager";
+import { promptLegacyAiNoteRenameIfNeeded } from "./modules/legacyAiNoteMigration";
 import {
   getDefaultSummaryPrompt,
   PROMPT_VERSION,

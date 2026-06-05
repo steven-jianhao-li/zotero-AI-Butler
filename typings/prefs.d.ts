@@ -50,6 +50,7 @@ declare namespace _ZoteroTypes {
       "summaryMode": string;
       "multiRoundPrompts": string;
       "multiRoundFinalPrompt": string;
+      "multiRoundPromptTemplates": string;
       "multiSummarySaveIntermediate": boolean;
       "legacyAiNoteRenamePromptState": string;
       "maxRetries": string;

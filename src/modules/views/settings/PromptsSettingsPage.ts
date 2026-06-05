@@ -4,7 +4,7 @@
  * @file PromptsSettingsPage.ts
  */
 
-import { getPref, setPref, clearPref } from "../../../utils/prefs";
+import { getPref, setPref } from "../../../utils/prefs";
 import {
   getDefaultSummaryPrompt,
   getDefaultTableTemplate,
@@ -13,7 +13,14 @@ import {
   PROMPT_VERSION,
   parseMultiRoundPrompts,
   getDefaultMultiRoundPrompts,
+  getDefaultMultiRoundFinalPrompt,
+  getBuiltinMultiRoundPromptTemplates,
+  parseMultiRoundPromptTemplates,
+  mergeMultiRoundPromptTemplates,
+  parseMultiRoundPromptTemplateExport,
+  serializeMultiRoundPromptTemplate,
   type MultiRoundPromptItem,
+  type MultiRoundPromptTemplate,
 } from "../../../utils/prompts";
 import {
   createFormGroup,
@@ -28,6 +35,7 @@ import {
 
 type PresetMap = Record<string, string>;
 type PromptSettingsKind = "summary" | "deepRead" | "table" | "all";
+const CURRENT_MULTI_ROUND_TEMPLATE_ID = "__current_multi_round_template__";
 
 export class PromptsSettingsPage {
   private container: HTMLElement;
@@ -41,6 +49,7 @@ export class PromptsSettingsPage {
   private sampleAuthors!: HTMLInputElement;
   private sampleYear!: HTMLInputElement;
   private editingMultiRoundPromptId: string | null = null;
+  private multiRoundTemplateSelect!: HTMLElement;
 
   constructor(container: HTMLElement, pageKind: PromptSettingsKind = "all") {
     this.container = container;
@@ -56,7 +65,7 @@ export class PromptsSettingsPage {
       case "summary":
         return "\u{1f4dd} AI \u603b\u7ed3\u63d0\u793a\u8bcd";
       case "deepRead":
-        return "\u{1f4da} AI \u7cbe\u8bfb\u63d0\u793a\u8bcd";
+        return "📚 AI精读多轮提示词模板";
       case "table":
         return "\u{1f4ca} \u8868\u683c\u603b\u7ed3\u63d0\u793a\u8bcd";
       default:
@@ -69,7 +78,7 @@ export class PromptsSettingsPage {
       case "summary":
         return "AI \u603b\u7ed3\u7528\u4e8e\u628a\u6587\u7ae0\u8bfb\u8584\u3002\u672c\u9875\u53ea\u7ba1\u7406\u5355\u8f6e\u603b\u7ed3\u63d0\u793a\u8bcd\u3001\u9884\u8bbe\u6a21\u677f\u3001\u53d8\u91cf\u9884\u89c8\u3001\u4fdd\u5b58\u548c\u6062\u590d\u9ed8\u8ba4\u3002";
       case "deepRead":
-        return "AI \u7cbe\u8bfb\u7528\u4e8e\u628a\u8bba\u6587\u8bfb\u539a\u3002\u672c\u9875\u53ea\u7ba1\u7406\u591a\u8f6e\u7cbe\u8bfb\u6a21\u5f0f\u3001\u6bcf\u8f6e\u63d0\u793a\u8bcd\u3001\u6700\u7ec8\u603b\u7ed3\u63d0\u793a\u8bcd\u548c\u4e2d\u95f4\u8fc7\u7a0b\u4fdd\u5b58\u3002";
+        return "AI 精读目标是把论文读厚：按多轮提示词依次追问论文，并把每一轮回答完整沉淀到 AI 精读笔记。<br>下面的模板是一组可复用的多轮提示词；每一轮的“标题”用于标识本轮阅读主题，“提示词”是实际发给 AI 的问题。";
       case "table":
         return "\u8868\u683c\u603b\u7ed3\u7528\u4e8e\u7ed3\u6784\u5316\u9605\u8bfb\u548c\u6587\u732e\u7efc\u8ff0\u3002\u672c\u9875\u53ea\u7ba1\u7406\u8868\u683c\u6a21\u677f\u3001\u9010\u7bc7\u586b\u8868\u63d0\u793a\u8bcd\u548c\u6c47\u603b\u7efc\u8ff0\u63d0\u793a\u8bcd\u3002";
       default:
@@ -108,11 +117,14 @@ export class PromptsSettingsPage {
       marginBottom: "24px",
     });
 
-    const deepReadNotice = createNotice(
-      "AI 精读固定使用多轮拼接：按轮次提示词依次阅读论文，并把所有轮次内容完整沉淀到 AI 精读笔记。",
-      "info",
-    );
-    modeSection.appendChild(deepReadNotice);
+    if (this.pageKind === "all") {
+      modeSection.appendChild(
+        createNotice(
+          "AI 精读目标是把论文读厚：按多轮提示词依次追问论文，并把每一轮回答完整沉淀到 AI 精读笔记。<br>下面的模板是一组可复用的多轮提示词；每一轮的“标题”用于标识本轮阅读主题，“提示词”是实际发给 AI 的问题。",
+          "info",
+        ),
+      );
+    }
 
     const multiRoundContainer =
       Zotero.getMainWindow().document.createElement("div");
@@ -127,13 +139,11 @@ export class PromptsSettingsPage {
     Object.assign(multiRoundHeader.style, {
       display: "flex",
       alignItems: "center",
-      justifyContent: "space-between",
-      gap: "12px",
       marginBottom: "10px",
     });
 
     const multiRoundTitle = Zotero.getMainWindow().document.createElement("h4");
-    multiRoundTitle.textContent = "📋 AI 精读轮次提示词设置";
+    multiRoundTitle.textContent = "📋 AI 精读多轮提示词模板";
     Object.assign(multiRoundTitle.style, {
       color: "#59c0bc",
       margin: "0",
@@ -142,28 +152,14 @@ export class PromptsSettingsPage {
     });
     multiRoundHeader.appendChild(multiRoundTitle);
 
-    const promptsToolbar = Zotero.getMainWindow().document.createElement("div");
-    Object.assign(promptsToolbar.style, {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "flex-end",
-      gap: "8px",
-      flex: "1",
-    });
-
-    const btnAddPrompt = createStyledButton("+ 添加轮次", "#4caf50", "small");
-    btnAddPrompt.addEventListener("click", () => this.addMultiRoundPrompt());
-    const btnResetPrompts = createStyledButton("恢复默认", "#9e9e9e", "small");
-    btnResetPrompts.addEventListener("click", () =>
-      this.resetMultiRoundPrompts(),
-    );
-    promptsToolbar.appendChild(btnAddPrompt);
-    promptsToolbar.appendChild(btnResetPrompts);
-    multiRoundHeader.appendChild(promptsToolbar);
     multiRoundContainer.appendChild(multiRoundHeader);
 
     const promptsJson = (getPref("multiRoundPrompts" as any) as string) || "[]";
     const prompts = parseMultiRoundPrompts(promptsJson);
+
+    multiRoundContainer.appendChild(
+      this.renderMultiRoundTemplateControls(prompts),
+    );
 
     const promptsList = Zotero.getMainWindow().document.createElement("div");
     promptsList.id = "multi-round-prompts-list";
@@ -173,6 +169,7 @@ export class PromptsSettingsPage {
 
     this.renderMultiRoundPromptsList(promptsList, prompts);
     multiRoundContainer.appendChild(promptsList);
+    multiRoundContainer.appendChild(this.renderMultiRoundPromptActions());
     modeSection.appendChild(multiRoundContainer);
 
     // =========== AI 总结提示词设置 ===========
@@ -581,6 +578,429 @@ export class PromptsSettingsPage {
 
   // =========== 多轮提示词相关方法 ===========
 
+  private renderMultiRoundTemplateControls(
+    currentPrompts: MultiRoundPromptItem[],
+  ): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const templates = this.getMultiRoundPromptTemplates();
+    const selectedTemplateId = this.detectMultiRoundTemplateId(
+      currentPrompts,
+      templates,
+    );
+    const templateOptions =
+      selectedTemplateId === CURRENT_MULTI_ROUND_TEMPLATE_ID
+        ? [
+            {
+              value: CURRENT_MULTI_ROUND_TEMPLATE_ID,
+              label: "当前配置（未保存为模板）",
+            },
+            ...templates.map((template) => ({
+              value: template.id,
+              label: template.name,
+            })),
+          ]
+        : templates.map((template) => ({
+            value: template.id,
+            label: template.name,
+          }));
+
+    const container = doc.createElement("div");
+    Object.assign(container.style, {
+      marginBottom: "12px",
+    });
+
+    this.multiRoundTemplateSelect = createSelect(
+      "multi-round-template",
+      templateOptions,
+      selectedTemplateId,
+    );
+    container.appendChild(
+      createFormGroup(
+        "提示词模板",
+        this.multiRoundTemplateSelect,
+        "选择模板后点击应用，会覆盖当前 AI 精读轮次提示词。",
+      ),
+    );
+
+    const actions = doc.createElement("div");
+    Object.assign(actions.style, {
+      display: "flex",
+      gap: "10px",
+      justifyContent: "flex-start",
+      marginTop: "-12px",
+      marginBottom: "12px",
+      flexWrap: "wrap",
+    });
+
+    const btnApplyTemplate = createStyledButton("应用模板", "#2196f3", "small");
+    btnApplyTemplate.addEventListener("click", () =>
+      this.applyMultiRoundPromptTemplate(),
+    );
+    actions.appendChild(btnApplyTemplate);
+    container.appendChild(actions);
+
+    return container;
+  }
+
+  private renderMultiRoundPromptActions(): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const actions = doc.createElement("div");
+    Object.assign(actions.style, {
+      display: "flex",
+      gap: "10px",
+      justifyContent: "flex-start",
+      marginTop: "12px",
+      marginBottom: "16px",
+      flexWrap: "wrap",
+    });
+
+    const btnAddPrompt = createStyledButton("+ 添加轮次", "#4caf50", "small");
+    btnAddPrompt.addEventListener("click", () => this.addMultiRoundPrompt());
+    const btnResetPrompts = createStyledButton("恢复默认", "#9e9e9e", "small");
+    btnResetPrompts.addEventListener("click", () =>
+      this.resetMultiRoundPrompts(),
+    );
+    const btnSaveTemplate = createStyledButton("新建模板", "#4caf50", "small");
+    btnSaveTemplate.addEventListener("click", () =>
+      this.createMultiRoundPromptTemplate(),
+    );
+    const btnExportTemplate = createStyledButton(
+      "导出模板",
+      "#2196f3",
+      "small",
+    );
+    btnExportTemplate.addEventListener("click", () =>
+      this.exportCurrentMultiRoundTemplate(),
+    );
+    const btnImportTemplate = createStyledButton(
+      "导入模板",
+      "#673ab7",
+      "small",
+    );
+    btnImportTemplate.addEventListener("click", () =>
+      this.importMultiRoundPromptTemplate(),
+    );
+
+    actions.appendChild(btnAddPrompt);
+    actions.appendChild(btnResetPrompts);
+    actions.appendChild(btnSaveTemplate);
+    actions.appendChild(btnExportTemplate);
+    actions.appendChild(btnImportTemplate);
+    return actions;
+  }
+
+  private getMultiRoundPromptTemplates(): MultiRoundPromptTemplate[] {
+    const customTemplatesJson =
+      (getPref("multiRoundPromptTemplates") as string) || "[]";
+    return mergeMultiRoundPromptTemplates(
+      getBuiltinMultiRoundPromptTemplates(),
+      parseMultiRoundPromptTemplates(customTemplatesJson),
+    );
+  }
+
+  private detectMultiRoundTemplateId(
+    currentPrompts: MultiRoundPromptItem[],
+    templates: MultiRoundPromptTemplate[],
+  ): string {
+    const matched = templates.find((template) =>
+      this.areMultiRoundPromptsEqual(currentPrompts, template.prompts),
+    );
+    return matched?.id || CURRENT_MULTI_ROUND_TEMPLATE_ID;
+  }
+
+  private areMultiRoundPromptsEqual(
+    left: MultiRoundPromptItem[],
+    right: MultiRoundPromptItem[],
+  ): boolean {
+    if (left.length !== right.length) {
+      return false;
+    }
+    return left.every((prompt, index) => {
+      const other = right[index];
+      return (
+        prompt.title.trim() === other.title.trim() &&
+        prompt.prompt.trim() === other.prompt.trim()
+      );
+    });
+  }
+
+  private applyMultiRoundPromptTemplate(): void {
+    const templateId = (this.multiRoundTemplateSelect as any)?.getValue?.();
+    if (templateId === CURRENT_MULTI_ROUND_TEMPLATE_ID) {
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: "当前配置尚未保存为模板", type: "default" })
+        .show();
+      return;
+    }
+    const template = this.getMultiRoundPromptTemplates().find(
+      (item) => item.id === templateId,
+    );
+    if (!template) {
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: "模板不存在", type: "fail" })
+        .show();
+      return;
+    }
+
+    this.showInlineConfirm({
+      title: "应用提示词模板？",
+      message: `将使用「${template.name}」覆盖当前 AI 精读轮次提示词。`,
+      confirmText: "应用模板",
+      confirmColor: "#2196f3",
+      onConfirm: () => {
+        this.saveMultiRoundPrompts(template.prompts);
+        if (template.finalPrompt) {
+          setPref("multiRoundFinalPrompt", template.finalPrompt);
+        }
+        this.editingMultiRoundPromptId = null;
+        this.render();
+        new ztoolkit.ProgressWindow("提示词")
+          .createLine({
+            text: `✅ 已应用模板: ${template.name}`,
+            type: "success",
+          })
+          .show();
+      },
+    });
+  }
+
+  private exportCurrentMultiRoundTemplate(): void {
+    const prompts = this.getMultiRoundPrompts();
+    const selectedTemplateId = (
+      this.multiRoundTemplateSelect as any
+    )?.getValue?.();
+    const selectedTemplate = this.getMultiRoundPromptTemplates().find(
+      (item) => item.id === selectedTemplateId,
+    );
+    const currentFinalPrompt =
+      (getPref("multiRoundFinalPrompt") as string) ||
+      selectedTemplate?.finalPrompt ||
+      getDefaultMultiRoundFinalPrompt();
+    const template: MultiRoundPromptTemplate = {
+      id: selectedTemplate?.id || `template-${Date.now()}`,
+      name: selectedTemplate?.name || "当前 AI 精读模板",
+      description:
+        selectedTemplate?.description || "从当前 AI 精读轮次提示词导出。",
+      version: selectedTemplate?.version || 1,
+      prompts,
+      finalPrompt: currentFinalPrompt,
+    };
+
+    this.showJsonDialog({
+      title: "导出 AI 精读提示词模板",
+      value: serializeMultiRoundPromptTemplate(template),
+      readOnly: true,
+    });
+  }
+
+  private importMultiRoundPromptTemplate(): void {
+    this.showJsonDialog({
+      title: "导入 AI 精读提示词模板",
+      value: "",
+      placeholder: "粘贴导出的提示词模板 JSON...",
+      confirmText: "导入模板",
+      onConfirm: (json) => {
+        try {
+          const imported = parseMultiRoundPromptTemplateExport(json);
+          const customTemplates = parseMultiRoundPromptTemplates(
+            (getPref("multiRoundPromptTemplates") as string) || "[]",
+          );
+          const nextTemplates = this.upsertMultiRoundPromptTemplate(
+            customTemplates,
+            imported,
+          );
+          setPref(
+            "multiRoundPromptTemplates",
+            JSON.stringify(nextTemplates) as any,
+          );
+          this.render();
+          setTimeout(() => {
+            (this.multiRoundTemplateSelect as any)?.setValue?.(imported.id);
+          }, 0);
+          new ztoolkit.ProgressWindow("提示词")
+            .createLine({
+              text: `✅ 已导入模板: ${imported.name}`,
+              type: "success",
+            })
+            .show();
+          return true;
+        } catch (error: any) {
+          new ztoolkit.ProgressWindow("提示词")
+            .createLine({
+              text: `❌ 导入失败: ${error.message || String(error)}`,
+              type: "fail",
+            })
+            .show();
+          return false;
+        }
+      },
+    });
+  }
+
+  private createMultiRoundPromptTemplate(): void {
+    const prompts = this.getMultiRoundPrompts();
+    if (!prompts.length) {
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: "请先添加至少一轮提示词", type: "fail" })
+        .show();
+      return;
+    }
+
+    this.showTemplateMetadataDialog({
+      title: "新建 AI 精读提示词模板",
+      onConfirm: (name, description) => {
+        const template: MultiRoundPromptTemplate = {
+          id: `custom-${Date.now()}`,
+          name,
+          description,
+          version: 1,
+          prompts,
+          finalPrompt:
+            (getPref("multiRoundFinalPrompt") as string) ||
+            getDefaultMultiRoundFinalPrompt(),
+        };
+        const customTemplates = parseMultiRoundPromptTemplates(
+          (getPref("multiRoundPromptTemplates") as string) || "[]",
+        );
+        const nextTemplates = this.upsertMultiRoundPromptTemplate(
+          customTemplates,
+          template,
+        );
+        setPref("multiRoundPromptTemplates", JSON.stringify(nextTemplates));
+        this.render();
+        setTimeout(() => {
+          (this.multiRoundTemplateSelect as any)?.setValue?.(template.id);
+        }, 0);
+        new ztoolkit.ProgressWindow("提示词")
+          .createLine({ text: `✅ 已新建模板: ${name}`, type: "success" })
+          .show();
+      },
+    });
+  }
+
+  private upsertMultiRoundPromptTemplate(
+    templates: MultiRoundPromptTemplate[],
+    imported: MultiRoundPromptTemplate,
+  ): MultiRoundPromptTemplate[] {
+    const builtinTemplateIds = new Set(
+      getBuiltinMultiRoundPromptTemplates().map((template) => template.id),
+    );
+    const templateToSave = builtinTemplateIds.has(imported.id)
+      ? { ...imported, id: `custom-${Date.now()}` }
+      : imported;
+    const next = [...templates];
+    const index = next.findIndex(
+      (template) => template.id === templateToSave.id,
+    );
+    if (index === -1) {
+      next.push(templateToSave);
+    } else {
+      next[index] = templateToSave;
+    }
+    return next;
+  }
+
+  private saveMultiRoundPrompts(prompts: MultiRoundPromptItem[]): void {
+    const normalized = prompts.map((prompt, index) => ({
+      ...prompt,
+      order: index + 1,
+    }));
+    setPref("multiRoundPrompts" as any, JSON.stringify(normalized) as any);
+  }
+
+  private showTemplateMetadataDialog(options: {
+    title: string;
+    onConfirm: (name: string, description: string) => void;
+  }): void {
+    const { body, actions, close } = this.createPageDialog(options.title);
+
+    const nameInput = createInput(
+      "multi-round-template-name",
+      "text",
+      "",
+      "例如：系统论文精读模板",
+    );
+    const descriptionInput = createTextarea(
+      "multi-round-template-description",
+      "",
+      4,
+      "模板用途说明，可留空",
+    );
+    body.appendChild(createFormGroup("模板名称", nameInput));
+    body.appendChild(createFormGroup("模板说明", descriptionInput));
+
+    const btnCancel = createStyledButton("取消", "#9e9e9e", "small");
+    btnCancel.addEventListener("click", close);
+    const btnConfirm = createStyledButton("保存模板", "#4caf50", "small");
+    btnConfirm.addEventListener("click", () => {
+      const name = nameInput.value.trim();
+      if (!name) {
+        new ztoolkit.ProgressWindow("提示词")
+          .createLine({ text: "模板名称不能为空", type: "fail" })
+          .show();
+        return;
+      }
+      options.onConfirm(name, descriptionInput.value.trim());
+      close();
+    });
+
+    actions.appendChild(btnCancel);
+    actions.appendChild(btnConfirm);
+    setTimeout(() => nameInput.focus(), 0);
+  }
+
+  private showJsonDialog(options: {
+    title: string;
+    value: string;
+    readOnly?: boolean;
+    placeholder?: string;
+    confirmText?: string;
+    onConfirm?: (value: string) => boolean | void;
+  }): void {
+    const doc = Zotero.getMainWindow().document;
+    const { body, actions, close } = this.createPageDialog(options.title);
+    const textarea = doc.createElement("textarea");
+    textarea.value = options.value;
+    textarea.readOnly = !!options.readOnly;
+    if (options.placeholder) {
+      textarea.placeholder = options.placeholder;
+    }
+    Object.assign(textarea.style, {
+      width: "100%",
+      height: "360px",
+      boxSizing: "border-box",
+      resize: "vertical",
+      fontFamily: "Consolas, Menlo, monospace",
+      fontSize: "12px",
+      lineHeight: "1.5",
+      border: "1px solid var(--ai-input-border)",
+      borderRadius: "6px",
+      background: "var(--ai-input-bg)",
+      color: "var(--ai-input-text)",
+      padding: "10px",
+    });
+    body.appendChild(textarea);
+
+    const btnClose = createStyledButton("关闭", "#9e9e9e", "small");
+    btnClose.addEventListener("click", close);
+    actions.appendChild(btnClose);
+
+    if (options.onConfirm && options.confirmText) {
+      const btnConfirm = createStyledButton(
+        options.confirmText,
+        "#4caf50",
+        "small",
+      );
+      btnConfirm.addEventListener("click", () => {
+        const shouldClose = options.onConfirm?.(textarea.value);
+        if (shouldClose !== false) {
+          close();
+        }
+      });
+      actions.appendChild(btnConfirm);
+    }
+  }
+
   /**
    * 渲染多轮提示词列表
    */
@@ -809,7 +1229,7 @@ export class PromptsSettingsPage {
       } else {
         prompts[index] = savedPrompt;
       }
-      setPref("multiRoundPrompts" as any, JSON.stringify(prompts) as any);
+      this.saveMultiRoundPrompts(prompts);
       this.editingMultiRoundPromptId = null;
       this.renderMultiRoundPromptsList(listContainer, prompts);
 
@@ -833,6 +1253,84 @@ export class PromptsSettingsPage {
     return parseMultiRoundPrompts(promptsJson);
   }
 
+  private createPageDialog(titleText: string): {
+    body: HTMLElement;
+    actions: HTMLElement;
+    close: () => void;
+  } {
+    const doc = Zotero.getMainWindow().document;
+    this.container
+      .querySelectorAll(".ai-butler-page-dialog")
+      .forEach((node: Element) => node.remove());
+
+    if (!this.container.style.position) {
+      this.container.style.position = "relative";
+    }
+
+    const overlay = doc.createElement("div");
+    overlay.className = "ai-butler-page-dialog";
+    Object.assign(overlay.style, {
+      position: "absolute",
+      inset: "0",
+      minHeight: "100%",
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "center",
+      padding: "32px 24px",
+      background: "var(--ai-bg, #f7f9fb)",
+      zIndex: "1000",
+      boxSizing: "border-box",
+      overflow: "auto",
+    });
+
+    const dialog = doc.createElement("div");
+    Object.assign(dialog.style, {
+      width: "min(760px, 100%)",
+      padding: "18px",
+      borderRadius: "8px",
+      background: "var(--ai-surface, #ffffff)",
+      border: "1px solid var(--ai-border, #d7dde5)",
+      boxShadow: "0 18px 50px rgba(15, 23, 42, 0.16)",
+      color: "var(--ai-text, #1f2937)",
+      boxSizing: "border-box",
+    });
+    overlay.appendChild(dialog);
+
+    const title = doc.createElement("div");
+    title.textContent = titleText;
+    Object.assign(title.style, {
+      fontSize: "16px",
+      fontWeight: "700",
+      marginBottom: "14px",
+      color: "var(--ai-text, #1f2937)",
+    });
+    dialog.appendChild(title);
+
+    const body = doc.createElement("div");
+    dialog.appendChild(body);
+
+    const actions = doc.createElement("div");
+    Object.assign(actions.style, {
+      display: "flex",
+      justifyContent: "flex-end",
+      gap: "10px",
+      marginTop: "14px",
+      flexWrap: "wrap",
+    });
+    dialog.appendChild(actions);
+
+    const close = () => overlay.remove();
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) {
+        close();
+      }
+    });
+    dialog.addEventListener("click", (event) => event.stopPropagation());
+    this.container.appendChild(overlay);
+
+    return { body, actions, close };
+  }
+
   /**
    * 显示设置页内确认弹窗
    */
@@ -844,66 +1342,18 @@ export class PromptsSettingsPage {
     onConfirm: () => void;
   }): void {
     const doc = Zotero.getMainWindow().document;
-    this.container
-      .querySelectorAll(".ai-butler-inline-confirm")
-      .forEach((node: Element) => node.remove());
-
-    const overlay = doc.createElement("div");
-    overlay.className = "ai-butler-inline-confirm";
-    Object.assign(overlay.style, {
-      position: "fixed",
-      inset: "0",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "24px",
-      background: "rgba(0, 0, 0, 0.12)",
-      zIndex: "2147483647",
-      boxSizing: "border-box",
-    });
-
-    const dialog = doc.createElement("div");
-    Object.assign(dialog.style, {
-      width: "min(420px, 100%)",
-      padding: "20px",
-      borderRadius: "12px",
-      background: "#ffffff",
-      border: "1px solid #e5e7eb",
-      boxShadow: "0 18px 60px rgba(0, 0, 0, 0.18)",
-      color: "#1f2937",
-    });
-    overlay.appendChild(dialog);
-
-    const title = doc.createElement("div");
-    title.textContent = options.title;
-    Object.assign(title.style, {
-      fontSize: "16px",
-      fontWeight: "700",
-      marginBottom: "10px",
-      color: "#1f2937",
-    });
-    dialog.appendChild(title);
+    const { body, actions, close } = this.createPageDialog(options.title);
 
     const message = doc.createElement("div");
     message.textContent = options.message;
     Object.assign(message.style, {
       fontSize: "13px",
       lineHeight: "1.6",
-      marginBottom: "18px",
-      color: "#4b5563",
+      color: "var(--ai-text-muted, #4b5563)",
       wordBreak: "break-word",
     });
-    dialog.appendChild(message);
+    body.appendChild(message);
 
-    const actions = doc.createElement("div");
-    Object.assign(actions.style, {
-      display: "flex",
-      justifyContent: "flex-end",
-      gap: "8px",
-    });
-    dialog.appendChild(actions);
-
-    const close = () => overlay.remove();
     const btnCancel = createStyledButton("取消", "#9e9e9e", "small");
     btnCancel.addEventListener("click", close);
 
@@ -919,15 +1369,6 @@ export class PromptsSettingsPage {
 
     actions.appendChild(btnCancel);
     actions.appendChild(btnConfirm);
-
-    overlay.addEventListener("click", (event) => {
-      if (event.target === overlay) {
-        close();
-      }
-    });
-    dialog.addEventListener("click", (event) => event.stopPropagation());
-
-    this.container.appendChild(overlay);
   }
 
   /**
@@ -983,7 +1424,7 @@ export class PromptsSettingsPage {
         // 重新排序
         prompts.forEach((p, i) => (p.order = i + 1));
 
-        setPref("multiRoundPrompts" as any, JSON.stringify(prompts) as any);
+        this.saveMultiRoundPrompts(prompts);
         this.editingMultiRoundPromptId = null;
 
         const list = this.container.querySelector(
@@ -1011,7 +1452,8 @@ export class PromptsSettingsPage {
       confirmColor: "#ff9800",
       onConfirm: () => {
         const defaults = getDefaultMultiRoundPrompts();
-        setPref("multiRoundPrompts" as any, JSON.stringify(defaults) as any);
+        this.saveMultiRoundPrompts(defaults);
+        setPref("multiRoundFinalPrompt", getDefaultMultiRoundFinalPrompt());
         this.editingMultiRoundPromptId = null;
 
         const list = this.container.querySelector(

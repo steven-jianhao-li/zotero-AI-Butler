@@ -76,6 +76,8 @@ pref(
   "__prefsPrefix__.multiRoundFinalPrompt",
   "基于以上多轮对话的内容，请为我生成一份完整、结构化的论文总结笔记。要求：\\n1. 开头用一段话概括论文的核心内容\\n2. 分章节整理各部分的关键信息\\n3. 突出论文的创新点和贡献\\n4. 指出论文的局限性和未来方向\\n5. 语言简洁清晰，使用中文",
 );
+// AI 精读多轮提示词模板库（JSON 数组），内置默认模板由 src/utils/prompts.ts 提供
+pref("__prefsPrefix__.multiRoundPromptTemplates", "[]");
 // 兼容旧版本的多轮最终总结配置；AI 精读当前固定使用多轮拼接
 pref("__prefsPrefix__.multiSummarySaveIntermediate", false);
 // Legacy AI note compatibility prompt state for AI总结 / AI精读 split.

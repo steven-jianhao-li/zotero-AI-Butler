@@ -36,6 +36,8 @@ import {
 type PresetMap = Record<string, string>;
 type PromptSettingsKind = "summary" | "deepRead" | "table" | "all";
 const CURRENT_MULTI_ROUND_TEMPLATE_ID = "__current_multi_round_template__";
+const DEEP_READ_PROMPT_NOTICE =
+  "AI 精读目标是把论文读厚：按多轮提示词依次追问论文，并把每一轮回答完整沉淀到 AI 精读笔记。<br/>下面的模板是一组可复用的多轮提示词；每一轮的“标题”用于标识本轮阅读主题，“提示词”是实际发给 AI 的问题。";
 
 export class PromptsSettingsPage {
   private container: HTMLElement;
@@ -78,7 +80,7 @@ export class PromptsSettingsPage {
       case "summary":
         return "AI \u603b\u7ed3\u7528\u4e8e\u628a\u6587\u7ae0\u8bfb\u8584\u3002\u672c\u9875\u53ea\u7ba1\u7406\u5355\u8f6e\u603b\u7ed3\u63d0\u793a\u8bcd\u3001\u9884\u8bbe\u6a21\u677f\u3001\u53d8\u91cf\u9884\u89c8\u3001\u4fdd\u5b58\u548c\u6062\u590d\u9ed8\u8ba4\u3002";
       case "deepRead":
-        return "AI 精读目标是把论文读厚：按多轮提示词依次追问论文，并把每一轮回答完整沉淀到 AI 精读笔记。<br>下面的模板是一组可复用的多轮提示词；每一轮的“标题”用于标识本轮阅读主题，“提示词”是实际发给 AI 的问题。";
+        return DEEP_READ_PROMPT_NOTICE;
       case "table":
         return "\u8868\u683c\u603b\u7ed3\u7528\u4e8e\u7ed3\u6784\u5316\u9605\u8bfb\u548c\u6587\u732e\u7efc\u8ff0\u3002\u672c\u9875\u53ea\u7ba1\u7406\u8868\u683c\u6a21\u677f\u3001\u9010\u7bc7\u586b\u8868\u63d0\u793a\u8bcd\u548c\u6c47\u603b\u7efc\u8ff0\u63d0\u793a\u8bcd\u3002";
       default:
@@ -118,12 +120,7 @@ export class PromptsSettingsPage {
     });
 
     if (this.pageKind === "all") {
-      modeSection.appendChild(
-        createNotice(
-          "AI 精读目标是把论文读厚：按多轮提示词依次追问论文，并把每一轮回答完整沉淀到 AI 精读笔记。<br>下面的模板是一组可复用的多轮提示词；每一轮的“标题”用于标识本轮阅读主题，“提示词”是实际发给 AI 的问题。",
-          "info",
-        ),
-      );
+      modeSection.appendChild(createNotice(DEEP_READ_PROMPT_NOTICE, "info"));
     }
 
     const multiRoundContainer =

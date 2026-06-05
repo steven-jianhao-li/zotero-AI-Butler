@@ -6,12 +6,29 @@ import {
 } from "./aiNoteClassifier";
 import { TaskQueueManager, TaskStatus, type TaskItem } from "./taskQueue";
 
-const COLUMN_DATA_KEY = "aiButlerSummaryStatus";
-const COLUMN_LABEL = "AI 状态";
+type AiStatusColumnKind = "summary" | "deepRead";
+
+const COLUMN_CONFIGS = [
+  {
+    kind: "summary",
+    dataKey: "aiButlerSummaryStatus",
+    label: "AI总结",
+  },
+  {
+    kind: "deepRead",
+    dataKey: "aiButlerDeepReadStatus",
+    label: "AI精读",
+  },
+] as const satisfies Array<{
+  kind: AiStatusColumnKind;
+  dataKey: string;
+  label: string;
+}>;
+
 const DEFAULT_STATUS_JSON = JSON.stringify({
   status: "idle",
   progress: 0,
-  tooltip: "未精读",
+  tooltip: "",
 } satisfies LibraryStatusColumnData);
 
 type SummaryColumnStatus =
@@ -39,7 +56,7 @@ export type SummaryTaskLike = Pick<
   | "taskType"
 >;
 
-let registeredDataKey: string | null = null;
+let registeredDataKeys: string[] = [];
 let notifierID: string | null = null;
 let unsubscribeProgress: (() => void) | null = null;
 let unsubscribeComplete: (() => void) | null = null;
@@ -71,66 +88,14 @@ export function resolveSummaryStatusFromTasks(
   tasks: SummaryTaskLike[],
   hasSummaryNote: boolean,
 ): LibraryStatusColumnData {
-  const summaryTasks = tasks.filter(isSummaryTask);
-  const activeTask = pickLatestTaskByStatus(summaryTasks, [
-    TaskStatus.PROCESSING,
-    TaskStatus.PRIORITY,
-    TaskStatus.PENDING,
-  ]);
+  return resolveKindStatus(tasks, hasSummaryNote, "summary", "AI 总结");
+}
 
-  if (activeTask) {
-    if (activeTask.status === TaskStatus.PROCESSING) {
-      const progress = clampProgress(activeTask.progress);
-      return {
-        status: "processing",
-        progress,
-        tooltip: `正在精读：${progress}%`,
-      };
-    }
-
-    return {
-      status: "queued",
-      progress: clampProgress(activeTask.progress),
-      tooltip:
-        activeTask.status === TaskStatus.PRIORITY
-          ? "等待精读（优先）"
-          : "等待精读",
-    };
-  }
-
-  if (hasSummaryNote) {
-    return {
-      status: "completed",
-      progress: 100,
-      tooltip: "已精读",
-    };
-  }
-
-  const completedTask = pickLatestTaskByStatus(summaryTasks, [
-    TaskStatus.COMPLETED,
-  ]);
-  if (completedTask) {
-    return {
-      status: "completed",
-      progress: 100,
-      tooltip: "已精读",
-    };
-  }
-
-  const failedTask = pickLatestTaskByStatus(summaryTasks, [TaskStatus.FAILED]);
-  if (failedTask) {
-    return {
-      status: "failed",
-      progress: clampProgress(failedTask.progress),
-      tooltip: failedTask.error ? `精读失败：${failedTask.error}` : "精读失败",
-    };
-  }
-
-  return {
-    status: "idle",
-    progress: 0,
-    tooltip: "未精读",
-  };
+export function resolveDeepReadStatusFromTasks(
+  tasks: SummaryTaskLike[],
+  hasDeepReadNote: boolean,
+): LibraryStatusColumnData {
+  return resolveKindStatus(tasks, hasDeepReadNote, "deepRead", "AI 精读");
 }
 
 export function resolveCombinedAiStatusFromTasks(
@@ -157,7 +122,7 @@ export function resolveCombinedAiStatusFromTasks(
     return {
       status: "processing",
       progress: active.progress,
-      tooltip: parts.join("?"),
+      tooltip: parts.join("\n"),
     };
   }
   if (summary.status === "queued" || deepRead.status === "queued") {
@@ -165,7 +130,7 @@ export function resolveCombinedAiStatusFromTasks(
     return {
       status: "queued",
       progress: active.progress,
-      tooltip: parts.join("?"),
+      tooltip: parts.join("\n"),
     };
   }
   if (summary.status === "failed" || deepRead.status === "failed") {
@@ -173,13 +138,13 @@ export function resolveCombinedAiStatusFromTasks(
     return {
       status: "failed",
       progress: active.progress,
-      tooltip: parts.join("?"),
+      tooltip: parts.join("\n"),
     };
   }
   if (summary.status === "completed" && deepRead.status === "completed") {
-    return { status: "completed", progress: 100, tooltip: parts.join("?") };
+    return { status: "completed", progress: 100, tooltip: parts.join("\n") };
   }
-  return { status: "idle", progress: 0, tooltip: parts.join("?") };
+  return { status: "idle", progress: 0, tooltip: parts.join("\n") };
 }
 
 function resolveKindStatus(
@@ -227,7 +192,11 @@ function resolveKindStatus(
         : `${label}失败`,
     };
   }
-  return { status: "idle", progress: 0, tooltip: `? ${label}` };
+  return {
+    status: "idle",
+    progress: 0,
+    tooltip: `未${label.replace("AI ", "")}`,
+  };
 }
 
 export function serializeStatusData(data: LibraryStatusColumnData): string {
@@ -235,36 +204,49 @@ export function serializeStatusData(data: LibraryStatusColumnData): string {
 }
 
 export function registerLibraryStatusColumn(): void {
-  if (registeredDataKey || typeof Zotero === "undefined") {
+  if (registeredDataKeys.length || typeof Zotero === "undefined") {
     return;
   }
 
   try {
-    const result = Zotero.ItemTreeManager.registerColumn({
-      dataKey: COLUMN_DATA_KEY,
-      label: COLUMN_LABEL,
-      pluginID: config.addonID,
-      enabledTreeIDs: ["main"],
-      width: "42",
-      minWidth: 32,
-      fixedWidth: true,
-      staticWidth: true,
-      showInColumnPicker: true,
-      columnPickerSubMenu: true,
-      zoteroPersist: ["width", "hidden"],
-      dataProvider: provideStatusData,
-      renderCell: renderStatusCell,
-    });
+    for (const columnConfig of COLUMN_CONFIGS) {
+      const result = Zotero.ItemTreeManager.registerColumn({
+        dataKey: columnConfig.dataKey,
+        label: columnConfig.label,
+        pluginID: config.addonID,
+        enabledTreeIDs: ["main"],
+        width: "64",
+        minWidth: 52,
+        fixedWidth: false,
+        staticWidth: false,
+        showInColumnPicker: true,
+        columnPickerSubMenu: true,
+        zoteroPersist: ["width", "hidden"],
+        dataProvider: (item) => provideStatusData(item, columnConfig.kind),
+        renderCell: renderStatusCell,
+      });
 
-    if (!result) {
-      logLibraryStatusColumn("[AI-Butler] AI 状态列注册失败");
+      if (!result) {
+        logLibraryStatusColumn(
+          "[AI-Butler] AI 状态列注册失败",
+          columnConfig.label,
+        );
+        continue;
+      }
+
+      registeredDataKeys.push(result);
+    }
+
+    if (!registeredDataKeys.length) {
       return;
     }
 
-    registeredDataKey = result;
     bindQueueRefreshCallbacks();
     bindNoteRefreshNotifier();
-    logLibraryStatusColumn("[AI-Butler] AI 状态列已注册", registeredDataKey);
+    logLibraryStatusColumn(
+      "[AI-Butler] AI 状态列已注册",
+      registeredDataKeys.join(", "),
+    );
   } catch (error) {
     logLibraryStatusColumn("[AI-Butler] AI 状态列注册失败", error);
   }
@@ -290,14 +272,14 @@ export function unregisterLibraryStatusColumn(): void {
     notifierID = null;
   }
 
-  if (registeredDataKey) {
+  for (const dataKey of registeredDataKeys) {
     try {
-      Zotero.ItemTreeManager.unregisterColumn(registeredDataKey);
+      Zotero.ItemTreeManager.unregisterColumn(dataKey);
     } catch (error) {
-      logLibraryStatusColumn("[AI-Butler] 注销 AI 状态列失败", error);
+      logLibraryStatusColumn("[AI-Butler] 注销 AI 状态列失败", dataKey, error);
     }
-    registeredDataKey = null;
   }
+  registeredDataKeys = [];
 
   pendingRefreshItemIDs.clear();
   forceRefreshAll = false;
@@ -305,7 +287,10 @@ export function unregisterLibraryStatusColumn(): void {
   deepReadNoteCache.clear();
 }
 
-function provideStatusData(item: Zotero.Item): string {
+function provideStatusData(
+  item: Zotero.Item,
+  kind: AiStatusColumnKind,
+): string {
   try {
     const itemId = getRegularItemId(item);
     if (!itemId) {
@@ -320,11 +305,13 @@ function provideStatusData(item: Zotero.Item): string {
     const tasks = manager
       .getAllTasks()
       .filter((task) => task.itemId === itemId);
-    const data = resolveCombinedAiStatusFromTasks(
-      tasks,
-      hasRegularSummaryNote(item, itemId),
-      hasDeepReadNote(item, itemId),
-    );
+    const data =
+      kind === "summary"
+        ? resolveSummaryStatusFromTasks(
+            tasks,
+            hasRegularSummaryNote(item, itemId),
+          )
+        : resolveDeepReadStatusFromTasks(tasks, hasDeepReadNote(item, itemId));
     return serializeStatusData(data);
   } catch (error) {
     logLibraryStatusColumn("[AI-Butler] 读取 AI 状态列失败", error);
@@ -419,7 +406,7 @@ function parseStatusData(data: string): LibraryStatusColumnData {
     return {
       status,
       progress: clampProgress(parsed.progress || 0),
-      tooltip: parsed.tooltip || "未精读",
+      tooltip: parsed.tooltip || "",
     };
   } catch {
     return JSON.parse(DEFAULT_STATUS_JSON) as LibraryStatusColumnData;

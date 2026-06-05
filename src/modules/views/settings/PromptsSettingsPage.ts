@@ -99,9 +99,9 @@ export class PromptsSettingsPage {
     modeSection.appendChild(
       createNotice(
         "选择 AI 总结论文的方式：<br/>" +
-          "• <b>单次对话</b>: 一次对话完成总结（Token消耗最少，笔记简洁）<br/>" +
-          "• <b>多轮拼接</b>: 多轮对话后拼接所有内容（Token消耗较多，笔记最详细）<br/>" +
-          "• <b>多轮总结</b>: 多轮对话后AI汇总（Token消耗最多，笔记详细且篇幅适中）",
+          "• <b>AI 总结</b>: 单次对话完成总结（Token消耗最少，笔记简洁）<br/>" +
+          "• <b>AI 精读-多轮拼接</b>: 多轮对话后拼接所有内容（Token消耗较多，笔记最详细）<br/>" +
+          "• <b>AI 精读-多轮总结</b>: 多轮对话后 AI 汇总（Token消耗最多，笔记详细且篇幅适中）",
         "info",
       ),
     );
@@ -110,9 +110,9 @@ export class PromptsSettingsPage {
     const currentMode = ((getPref("summaryMode" as any) as string) ||
       "single") as SummaryMode;
     const modeOptions = [
-      { value: "single", label: "📝 单次对话 (默认)" },
-      { value: "multi_concat", label: "📚 多轮拼接" },
-      { value: "multi_summarize", label: "✨ 多轮总结" },
+      { value: "single", label: "📝 AI 总结 (默认)" },
+      { value: "multi_concat", label: "📚 AI 精读-多轮拼接" },
+      { value: "multi_summarize", label: "✨ AI 精读-多轮总结" },
     ];
 
     const modeSelect = createSelect(
@@ -145,7 +145,7 @@ export class PromptsSettingsPage {
 
     // 多轮提示词编辑区
     const multiRoundTitle = Zotero.getMainWindow().document.createElement("h4");
-    multiRoundTitle.textContent = "📋 多轮提示词设置";
+    multiRoundTitle.textContent = "📋 AI 精读提示词设置";
     Object.assign(multiRoundTitle.style, {
       color: "#59c0bc",
       marginBottom: "12px",
@@ -198,7 +198,7 @@ export class PromptsSettingsPage {
 
     const finalPromptTitle =
       Zotero.getMainWindow().document.createElement("h4");
-    finalPromptTitle.textContent = "📝 最终总结提示词";
+    finalPromptTitle.textContent = "📝 AI 精读最终总结提示词";
     Object.assign(finalPromptTitle.style, {
       color: "#59c0bc",
       marginBottom: "8px",
@@ -220,9 +220,9 @@ export class PromptsSettingsPage {
     });
     finalPromptContainer.appendChild(
       createFormGroup(
-        "最终总结提示词",
+        "AI 精读最终总结提示词",
         finalPromptEditor,
-        "多轮对话完成后，使用此提示词生成最终总结",
+        "多轮对话完成后，使用此提示词生成 AI 精读最终总结",
       ),
     );
 
@@ -261,7 +261,7 @@ export class PromptsSettingsPage {
     modeSection.appendChild(multiRoundContainer);
     contentWrapper.appendChild(modeSection);
 
-    // =========== 原有的单次提示词设置 ===========
+    // =========== AI 总结提示词设置 ===========
     // 左右布局
     const layout = Zotero.getMainWindow().document.createElement("div");
     layout.id = "single-round-settings";
@@ -420,7 +420,7 @@ export class PromptsSettingsPage {
     // 初次渲染时也做一次预览
     this.updatePreview();
 
-    // =========== 文献综述表格设置 ===========
+    // =========== 表格总结提示词设置 ===========
     this.renderTableSettings(contentWrapper);
   }
 

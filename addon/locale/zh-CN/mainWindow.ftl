@@ -1,6 +1,6 @@
-menuitem-generateSummary = 召唤AI管家进行分析
+menuitem-generateSummary = AI 管家生成 AI 总结
 menuitem-chatWithAI = AI管家-后续追问
-menuitem-multiRoundReanalyze = AI管家多轮对话重新精读
+menuitem-multiRoundReanalyze = AI 管家生成 AI 精读
 menuitem-multiRoundConcat = 多轮拼接
 menuitem-multiRoundSummary = 多轮总结
 menuitem-imageSummary = 召唤AI管家一图总结

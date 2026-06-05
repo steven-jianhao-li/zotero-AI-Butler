@@ -258,10 +258,10 @@ export class ImageSummarySettingsPage {
       ),
     );
 
-    // 使用已有 AI 笔记代替
+    // 使用已有 AI 总结代替
     form.appendChild(
       createFormGroup(
-        "使用已有 AI 笔记",
+        "使用已有 AI 总结",
         createCheckbox(
           "imageSummaryUseExistingNote",
           (getPref("imageSummaryUseExistingNote" as any) as boolean) || false,

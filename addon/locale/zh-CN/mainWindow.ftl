@@ -1,8 +1,6 @@
 menuitem-generateSummary = AI 管家生成 AI 总结
 menuitem-chatWithAI = AI管家-后续追问
 menuitem-multiRoundReanalyze = AI 管家生成 AI 精读
-menuitem-multiRoundConcat = 多轮拼接
-menuitem-multiRoundSummary = 多轮总结
 menuitem-imageSummary = 召唤AI管家一图总结
 menuitem-mindmap = AI管家生成思维导图
 error-noItemsSelected = 抱歉,您尚未选择需要分析的文献。

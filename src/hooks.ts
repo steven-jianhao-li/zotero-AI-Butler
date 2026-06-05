@@ -987,22 +987,11 @@ function registerContextMenuItem() {
     multiRoundReanalyze: {
       scope: "item",
       options: {
-        tag: "menu",
+        tag: "menuitem",
         id: CONTEXT_MENU_DOM_IDS.multiRoundReanalyze,
         label: getString("menuitem-multiRoundReanalyze" as any),
         icon: menuIcon,
-        children: [
-          {
-            tag: "menuitem",
-            label: getString("menuitem-multiRoundConcat" as any),
-            commandListener: () => handleMultiRoundSummary("multi_concat"),
-          },
-          {
-            tag: "menuitem",
-            label: getString("menuitem-multiRoundSummary" as any),
-            commandListener: () => handleMultiRoundSummary("multi_summarize"),
-          },
-        ],
+        commandListener: () => handleMultiRoundSummary(),
         getVisibility: () =>
           isContextMenuItemEnabled("multiRoundReanalyze") &&
           isRegularItemSelection(),
@@ -2078,12 +2067,8 @@ async function handleFillTable() {
 
 /**
  * 处理 AI 精读任务
- *
- * @param mode 多轮对话模式
  */
-async function handleMultiRoundSummary(
-  mode: "multi_concat" | "multi_summarize",
-) {
+async function handleMultiRoundSummary() {
   // 1. 验证 API 配置 (简略版，主要依赖后续流程的检查)
   const provider =
     (Zotero.Prefs.get(`${config.prefsPrefix}.provider`, true) as string) ||
@@ -2110,7 +2095,7 @@ async function handleMultiRoundSummary(
     // 批量添加任务，带有特定选项
     for (const item of items) {
       await taskQueue.addDeepReadTask(item, priority, {
-        summaryMode: mode,
+        summaryMode: "multi_concat",
         forceOverwrite: true,
       });
     }

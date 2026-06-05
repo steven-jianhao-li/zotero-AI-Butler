@@ -534,7 +534,7 @@ export class TaskQueueManager {
     const taskId = getDeepReadTaskId(item.id);
     const deepReadOptions = {
       ...(options || {}),
-      summaryMode: options?.summaryMode || "multi_summarize",
+      summaryMode: "multi_concat",
     };
 
     if (this.tasks.has(taskId)) {

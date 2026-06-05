@@ -121,9 +121,11 @@ export class NoteGenerator {
       const policy = (
         (getPref("noteStrategy" as any) as string) || "skip"
       ).toLowerCase();
-      const summaryMode = (options?.summaryMode ||
+      const requestedSummaryMode = (options?.summaryMode ||
         (getPref("summaryMode" as any) as string) ||
         "single") as SummaryMode;
+      const summaryMode: SummaryMode =
+        requestedSummaryMode === "single" ? "single" : "multi_concat";
       const multiModelEndpoints =
         LLMEndpointManager.isMultiModelSummaryEnabled()
           ? LLMEndpointManager.getMultiModelSummaryEndpoints()
@@ -226,7 +228,7 @@ export class NoteGenerator {
         }
       }
 
-      // 多轮总结会复用同一份 PDF 内容；单次总结交给 LLMService 统一解析，避免 MinerU 重复处理。
+      // AI 精读会复用同一份 PDF 内容；单次总结交给 LLMService 统一解析，避免 MinerU 重复处理。
       if (summaryMode !== "single" && !useMultiModelSummary) {
         const extracted = await this.extractPdfContentForMode(item, prefMode);
         pdfContent = extracted.content;
@@ -239,7 +241,7 @@ export class NoteGenerator {
       progressCallback?.(
         summaryMode === "single"
           ? "正在生成AI总结..."
-          : `正在进行多轮对话分析 (模式: ${summaryMode === "multi_concat" ? "拼接" : "总结"})...`,
+          : "正在进行 AI 精读分析...",
         40,
       );
 
@@ -978,8 +980,8 @@ export class NoteGenerator {
    * 执行多轮对话并生成内容
    *
    * 根据配置的多轮提示词依次进行对话，支持两种模式：
-   * - multi_concat: 将所有对话内容拼接（最详细）
-   * - multi_summarize: 基于对话生成最终总结（均衡）
+   * - multi_concat: AI 精读固定模式，将所有轮次内容拼接（最详细）
+   * - multi_summarize: 旧版兼容模式，新入口不再使用
    *
    * @param pdfContent PDF内容（Base64或文本）
    * @param isBase64 是否为Base64编码

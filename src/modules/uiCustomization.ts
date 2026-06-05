@@ -16,7 +16,7 @@ export const CONTEXT_MENU_ITEMS = [
   {
     id: "multiRoundReanalyze",
     label: "AI 管家生成 AI 精读",
-    description: "文献右键：多轮拼接 / 多轮总结子菜单",
+    description: "文献右键：加入 AI 精读任务队列",
     scope: "item",
   },
   {

@@ -204,8 +204,8 @@ export interface MultiRoundPromptItem {
 /**
  * 总结模式类型
  * - single: 单次对话总结（默认，Token消耗最少）
- * - multi_concat: 多轮拼接模式（将所有对话内容拼接作为笔记）
- * - multi_summarize: 多轮总结模式（多轮对话后再进行汇总）
+ * - multi_concat: AI 精读模式（将所有轮次内容拼接作为笔记）
+ * - multi_summarize: 旧版兼容值；新入口不再暴露
  */
 export type SummaryMode = "single" | "multi_concat" | "multi_summarize";
 
@@ -269,7 +269,7 @@ export function getDefaultMultiRoundPrompts(): MultiRoundPromptItem[] {
 }
 
 /**
- * 获取默认的多轮对话最终总结提示词
+ * 获取旧版多轮最终总结提示词（兼容保留）
  *
  * @returns 默认最终总结提示词
  */

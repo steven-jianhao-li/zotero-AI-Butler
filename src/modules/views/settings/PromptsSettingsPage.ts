@@ -13,9 +13,7 @@ import {
   PROMPT_VERSION,
   parseMultiRoundPrompts,
   getDefaultMultiRoundPrompts,
-  getDefaultMultiRoundFinalPrompt,
   type MultiRoundPromptItem,
-  type SummaryMode,
 } from "../../../utils/prompts";
 import {
   createFormGroup,
@@ -110,43 +108,20 @@ export class PromptsSettingsPage {
       marginBottom: "24px",
     });
 
-    const currentMode = ((getPref("summaryMode" as any) as string) ||
-      "single") as SummaryMode;
-    const modeOptions = [
-      { value: "single", label: "不启用 AI 精读（仅 AI 总结）" },
-      { value: "multi_concat", label: "📚 AI 精读-多轮拼接" },
-      { value: "multi_summarize", label: "✨ AI 精读-多轮总结" },
-    ];
-
-    const modeSelect = createSelect(
-      "summary-mode",
-      modeOptions,
-      currentMode,
-      (newValue) => {
-        setPref("summaryMode" as any, newValue as any);
-        this.updateMultiRoundVisibility(newValue as SummaryMode);
-        new ztoolkit.ProgressWindow("提示词")
-          .createLine({
-            text: `已切换为: ${modeOptions.find((o) => o.value === newValue)?.label}`,
-            type: "success",
-          })
-          .show();
-      },
+    const deepReadNotice = createNotice(
+      "AI 精读固定使用多轮拼接：按轮次提示词依次阅读论文，并把所有轮次内容完整沉淀到 AI 精读笔记。",
+      "info",
     );
-    modeSection.appendChild(
-      createFormGroup("AI 精读模式", modeSelect, "更改后立即生效"),
-    );
+    modeSection.appendChild(deepReadNotice);
 
-    // 多轮设置容器（根据模式显示/隐藏）
     const multiRoundContainer =
       Zotero.getMainWindow().document.createElement("div");
     multiRoundContainer.id = "multi-round-settings";
     Object.assign(multiRoundContainer.style, {
       marginTop: "16px",
-      display: currentMode === "single" ? "none" : "block",
+      display: "block",
     });
 
-    // 多轮提示词编辑区
     const multiRoundHeader =
       Zotero.getMainWindow().document.createElement("div");
     Object.assign(multiRoundHeader.style, {
@@ -158,8 +133,7 @@ export class PromptsSettingsPage {
     });
 
     const multiRoundTitle = Zotero.getMainWindow().document.createElement("h4");
-    multiRoundTitle.textContent =
-      "\u{1f4cb} AI \u7cbe\u8bfb\u63d0\u793a\u8bcd\u8bbe\u7f6e";
+    multiRoundTitle.textContent = "📋 AI 精读轮次提示词设置";
     Object.assign(multiRoundTitle.style, {
       color: "#59c0bc",
       margin: "0",
@@ -177,17 +151,9 @@ export class PromptsSettingsPage {
       flex: "1",
     });
 
-    const btnAddPrompt = createStyledButton(
-      "+ \u6dfb\u52a0\u8f6e\u6b21",
-      "#4caf50",
-      "small",
-    );
+    const btnAddPrompt = createStyledButton("+ 添加轮次", "#4caf50", "small");
     btnAddPrompt.addEventListener("click", () => this.addMultiRoundPrompt());
-    const btnResetPrompts = createStyledButton(
-      "\u6062\u590d\u9ed8\u8ba4",
-      "#9e9e9e",
-      "small",
-    );
+    const btnResetPrompts = createStyledButton("恢复默认", "#9e9e9e", "small");
     btnResetPrompts.addEventListener("click", () =>
       this.resetMultiRoundPrompts(),
     );
@@ -196,7 +162,6 @@ export class PromptsSettingsPage {
     multiRoundHeader.appendChild(promptsToolbar);
     multiRoundContainer.appendChild(multiRoundHeader);
 
-    // 当前多轮提示词列表
     const promptsJson = (getPref("multiRoundPrompts" as any) as string) || "[]";
     const prompts = parseMultiRoundPrompts(promptsJson);
 
@@ -208,80 +173,6 @@ export class PromptsSettingsPage {
 
     this.renderMultiRoundPromptsList(promptsList, prompts);
     multiRoundContainer.appendChild(promptsList);
-
-    // 多轮提示词操作按钮
-
-    // 最终总结提示词（仅多轮总结模式显示）
-    const finalPromptContainer =
-      Zotero.getMainWindow().document.createElement("div");
-    finalPromptContainer.id = "final-prompt-container";
-    Object.assign(finalPromptContainer.style, {
-      display: currentMode === "multi_summarize" ? "block" : "none",
-      marginTop: "12px",
-    });
-
-    const finalPromptTitle =
-      Zotero.getMainWindow().document.createElement("h4");
-    finalPromptTitle.textContent = "📝 AI 精读最终总结提示词";
-    Object.assign(finalPromptTitle.style, {
-      color: "#59c0bc",
-      marginBottom: "8px",
-      fontSize: "14px",
-    });
-    finalPromptContainer.appendChild(finalPromptTitle);
-
-    const currentFinalPrompt =
-      (getPref("multiRoundFinalPrompt" as any) as string) ||
-      getDefaultMultiRoundFinalPrompt();
-    const finalPromptEditor = createTextarea(
-      "final-prompt-editor",
-      currentFinalPrompt,
-      6,
-      "输入最终总结提示词...",
-    );
-    finalPromptEditor.addEventListener("change", () => {
-      setPref("multiRoundFinalPrompt" as any, finalPromptEditor.value as any);
-    });
-    finalPromptContainer.appendChild(
-      createFormGroup(
-        "AI 精读最终总结提示词",
-        finalPromptEditor,
-        "多轮对话完成后，使用此提示词生成 AI 精读最终总结",
-      ),
-    );
-
-    // 保存中间对话内容选项
-    const saveIntermediate =
-      (getPref("multiSummarySaveIntermediate" as any) as boolean) ?? false;
-    const saveIntermediateCheckbox = createCheckbox(
-      "save-intermediate",
-      saveIntermediate,
-    );
-    saveIntermediateCheckbox.addEventListener("click", () => {
-      const checkbox = saveIntermediateCheckbox.querySelector(
-        "input",
-      ) as HTMLInputElement;
-      if (checkbox) {
-        setPref("multiSummarySaveIntermediate" as any, checkbox.checked as any);
-        new ztoolkit.ProgressWindow("提示词")
-          .createLine({
-            text: checkbox.checked
-              ? "✅ 将保存中间对话内容"
-              : "ℹ️ 仅保存最终总结",
-            type: "success",
-          })
-          .show();
-      }
-    });
-    finalPromptContainer.appendChild(
-      createFormGroup(
-        "保存中间对话内容",
-        saveIntermediateCheckbox,
-        "开启后，笔记中将同时包含多轮对话过程和最终总结",
-      ),
-    );
-
-    multiRoundContainer.appendChild(finalPromptContainer);
     modeSection.appendChild(multiRoundContainer);
 
     // =========== AI 总结提示词设置 ===========
@@ -689,25 +580,6 @@ export class PromptsSettingsPage {
   }
 
   // =========== 多轮提示词相关方法 ===========
-
-  /**
-   * 根据总结模式更新多轮设置区域的可见性
-   */
-  private updateMultiRoundVisibility(mode: SummaryMode): void {
-    const multiRoundSettings = this.container.querySelector(
-      "#multi-round-settings",
-    ) as HTMLElement;
-    const finalPromptContainer = this.container.querySelector(
-      "#final-prompt-container",
-    ) as HTMLElement;
-    if (multiRoundSettings) {
-      multiRoundSettings.style.display = mode === "single" ? "none" : "block";
-    }
-    if (finalPromptContainer) {
-      finalPromptContainer.style.display =
-        mode === "multi_summarize" ? "block" : "none";
-    }
-  }
 
   /**
    * 渲染多轮提示词列表
@@ -1134,16 +1006,12 @@ export class PromptsSettingsPage {
   private resetMultiRoundPrompts(): void {
     this.showInlineConfirm({
       title: "恢复默认多轮提示词？",
-      message: "当前多轮提示词和最终总结提示词会被默认配置覆盖。",
+      message: "当前 AI 精读轮次提示词会被默认配置覆盖。",
       confirmText: "恢复默认",
       confirmColor: "#ff9800",
       onConfirm: () => {
         const defaults = getDefaultMultiRoundPrompts();
         setPref("multiRoundPrompts" as any, JSON.stringify(defaults) as any);
-        setPref(
-          "multiRoundFinalPrompt" as any,
-          getDefaultMultiRoundFinalPrompt() as any,
-        );
         this.editingMultiRoundPromptId = null;
 
         const list = this.container.querySelector(

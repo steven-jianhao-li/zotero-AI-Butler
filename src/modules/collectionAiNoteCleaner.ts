@@ -304,7 +304,7 @@ export class CollectionAiNoteCleaner {
         break;
       case "deepRead":
         await manager.addDeepReadTask(item, false, {
-          summaryMode: "multi_summarize",
+          summaryMode: "multi_concat",
           forceOverwrite: true,
         });
         break;

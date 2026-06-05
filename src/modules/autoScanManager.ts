@@ -224,7 +224,7 @@ export class AutoScanManager {
       }
       if (needsDeepRead) {
         await tqm.addDeepReadTask(item, false, {
-          summaryMode: "multi_summarize",
+          summaryMode: "multi_concat",
         });
       }
       ztoolkit.log(

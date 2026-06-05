@@ -1136,7 +1136,7 @@ export class NoteGenerator {
 
     // 根据模式生成最终内容
     if (mode === "multi_concat") {
-      // 拼接模式：直接拼接所有问答
+      // 拼接模式：直接拼接每轮回答内容
       return {
         content: this.formatMultiRoundConcat(roundResults),
         response: lastResponse,
@@ -1233,7 +1233,7 @@ export class NoteGenerator {
   }
 
   /**
-   * 格式化多轮对话拼接内容
+   * 格式化多轮回答拼接内容
    *
    * @param roundResults 各轮对话结果
    * @returns 格式化后的 Markdown 内容
@@ -1246,8 +1246,7 @@ export class NoteGenerator {
     for (let i = 0; i < roundResults.length; i++) {
       const result = roundResults[i];
       content += `## 第 ${i + 1} 轮: ${result.title}\n\n`;
-      content += `**提问:** ${result.question}\n\n`;
-      content += `**回答:**\n${result.answer}\n\n`;
+      content += `${result.answer}\n\n`;
       content += "---\n\n";
     }
 

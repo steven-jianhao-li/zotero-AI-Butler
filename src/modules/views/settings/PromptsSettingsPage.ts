@@ -12,7 +12,6 @@ import {
   getDefaultTableReviewPrompt,
   PROMPT_VERSION,
   parseMultiRoundPrompts,
-  getDefaultMultiRoundPrompts,
   getDefaultMultiRoundFinalPrompt,
   getBuiltinMultiRoundPromptTemplates,
   parseMultiRoundPromptTemplates,
@@ -658,26 +657,27 @@ export class PromptsSettingsPage {
     btnNewTemplate.addEventListener("click", () =>
       this.createMultiRoundPromptTemplate(),
     );
-    const btnExportTemplate = createStyledButton(
-      "导出模板",
-      "#2196f3",
+    const btnRenameTemplate = createStyledButton("重命名", "#2196f3", "small");
+    btnRenameTemplate.addEventListener("click", () =>
+      this.renameCurrentMultiRoundPromptTemplate(),
+    );
+    const btnCopyTemplate = createStyledButton("复制模板", "#673ab7", "small");
+    btnCopyTemplate.addEventListener("click", () =>
+      this.copyCurrentMultiRoundPromptTemplate(),
+    );
+    const btnDeleteTemplate = createStyledButton(
+      "删除模板",
+      "#e53935",
       "small",
     );
-    btnExportTemplate.addEventListener("click", () =>
-      this.exportCurrentMultiRoundTemplate(),
-    );
-    const btnImportTemplate = createStyledButton(
-      "导入模板",
-      "#673ab7",
-      "small",
-    );
-    btnImportTemplate.addEventListener("click", () =>
-      this.importMultiRoundPromptTemplate(),
+    btnDeleteTemplate.addEventListener("click", () =>
+      this.deleteCurrentMultiRoundPromptTemplate(),
     );
 
     actions.appendChild(btnNewTemplate);
-    actions.appendChild(btnExportTemplate);
-    actions.appendChild(btnImportTemplate);
+    actions.appendChild(btnRenameTemplate);
+    actions.appendChild(btnCopyTemplate);
+    actions.appendChild(btnDeleteTemplate);
     controlsRow.appendChild(actions);
     container.appendChild(controlsRow);
 
@@ -702,14 +702,27 @@ export class PromptsSettingsPage {
     btnSaveTemplate.addEventListener("click", () =>
       this.confirmSaveCurrentMultiRoundTemplate(),
     );
-    const btnResetPrompts = createStyledButton("恢复默认", "#9e9e9e", "small");
-    btnResetPrompts.addEventListener("click", () =>
-      this.resetMultiRoundPrompts(),
+    const btnExportTemplate = createStyledButton(
+      "导出模板",
+      "#673ab7",
+      "small",
+    );
+    btnExportTemplate.addEventListener("click", () =>
+      this.exportCurrentMultiRoundTemplate(),
+    );
+    const btnImportTemplate = createStyledButton(
+      "导入模板",
+      "#ff9800",
+      "small",
+    );
+    btnImportTemplate.addEventListener("click", () =>
+      this.importMultiRoundPromptTemplate(),
     );
 
     actions.appendChild(btnAddPrompt);
     actions.appendChild(btnSaveTemplate);
-    actions.appendChild(btnResetPrompts);
+    actions.appendChild(btnExportTemplate);
+    actions.appendChild(btnImportTemplate);
     return actions;
   }
 
@@ -740,6 +753,33 @@ export class PromptsSettingsPage {
   private rememberSelectedMultiRoundTemplate(templateId: string | null): void {
     this.selectedMultiRoundTemplateId = templateId;
     setPref(MULTI_ROUND_TEMPLATE_ID_PREF as any, (templateId || "") as any);
+  }
+
+  private getSelectedMultiRoundTemplateId(): string {
+    return (
+      (this.multiRoundTemplateSelect as any)?.getValue?.() ||
+      this.selectedMultiRoundTemplateId ||
+      (getPref(MULTI_ROUND_TEMPLATE_ID_PREF as any) as string) ||
+      ""
+    );
+  }
+
+  private getSelectedMultiRoundTemplate(): MultiRoundPromptTemplate | null {
+    const templateId = this.getSelectedMultiRoundTemplateId();
+    if (!templateId || templateId === CURRENT_MULTI_ROUND_TEMPLATE_ID) {
+      return null;
+    }
+    return (
+      this.getMultiRoundPromptTemplates().find(
+        (template) => template.id === templateId,
+      ) || null
+    );
+  }
+
+  private isBuiltinMultiRoundPromptTemplate(templateId: string): boolean {
+    return getBuiltinMultiRoundPromptTemplates().some(
+      (template) => template.id === templateId,
+    );
   }
 
   private detectMultiRoundTemplateId(
@@ -991,6 +1031,120 @@ export class PromptsSettingsPage {
     });
   }
 
+  private renameCurrentMultiRoundPromptTemplate(): void {
+    const template = this.getSelectedMultiRoundTemplate();
+    if (!template) {
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: "请先选择一个模板", type: "fail" })
+        .show();
+      return;
+    }
+    if (this.isBuiltinMultiRoundPromptTemplate(template.id)) {
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: "默认模板不可重命名，请先复制模板", type: "fail" })
+        .show();
+      return;
+    }
+
+    this.showTemplateMetadataDialog({
+      title: "重命名 AI 精读提示词模板",
+      name: template.name,
+      description: template.description || "",
+      confirmText: "重命名",
+      onConfirm: (name, description) => {
+        const customTemplates = parseMultiRoundPromptTemplates(
+          (getPref("multiRoundPromptTemplates") as string) || "[]",
+        );
+        const nextTemplates = this.upsertMultiRoundPromptTemplate(
+          customTemplates,
+          {
+            ...template,
+            name,
+            description,
+          },
+        );
+        setPref("multiRoundPromptTemplates", JSON.stringify(nextTemplates));
+        this.rememberSelectedMultiRoundTemplate(template.id);
+        this.render();
+        new ztoolkit.ProgressWindow("提示词")
+          .createLine({ text: `✅ 已重命名模板: ${name}`, type: "success" })
+          .show();
+      },
+    });
+  }
+
+  private copyCurrentMultiRoundPromptTemplate(): void {
+    const template = this.getSelectedMultiRoundTemplate();
+    if (!template) {
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: "请先选择一个模板", type: "fail" })
+        .show();
+      return;
+    }
+
+    const copyName = `${template.name} 副本`;
+    const copiedTemplate: MultiRoundPromptTemplate = {
+      ...template,
+      id: `custom-${Date.now()}`,
+      name: copyName,
+      description: template.description || `从模板「${template.name}」复制。`,
+    };
+    const customTemplates = parseMultiRoundPromptTemplates(
+      (getPref("multiRoundPromptTemplates") as string) || "[]",
+    );
+    const nextTemplates = this.upsertMultiRoundPromptTemplate(
+      customTemplates,
+      copiedTemplate,
+    );
+    setPref("multiRoundPromptTemplates", JSON.stringify(nextTemplates));
+    this.rememberSelectedMultiRoundTemplate(copiedTemplate.id);
+    this.saveMultiRoundPrompts(copiedTemplate.prompts);
+    if (copiedTemplate.finalPrompt) {
+      setPref("multiRoundFinalPrompt", copiedTemplate.finalPrompt);
+    }
+    this.render();
+    new ztoolkit.ProgressWindow("提示词")
+      .createLine({ text: `✅ 已复制模板: ${copyName}`, type: "success" })
+      .show();
+  }
+
+  private deleteCurrentMultiRoundPromptTemplate(): void {
+    const template = this.getSelectedMultiRoundTemplate();
+    if (!template) {
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: "请先选择一个模板", type: "fail" })
+        .show();
+      return;
+    }
+    if (this.isBuiltinMultiRoundPromptTemplate(template.id)) {
+      new ztoolkit.ProgressWindow("提示词")
+        .createLine({ text: "默认模板不可删除", type: "fail" })
+        .show();
+      return;
+    }
+
+    this.showInlineConfirm({
+      title: "删除提示词模板？",
+      message: `将删除「${template.name}」模板。当前轮次提示词不会被清空，但该模板会从模板列表移除。`,
+      confirmText: "删除模板",
+      confirmColor: "#e53935",
+      onConfirm: () => {
+        const customTemplates = parseMultiRoundPromptTemplates(
+          (getPref("multiRoundPromptTemplates") as string) || "[]",
+        ).filter((item) => item.id !== template.id);
+        setPref("multiRoundPromptTemplates", JSON.stringify(customTemplates));
+        this.rememberSelectedMultiRoundTemplate(null);
+        this.render();
+        new ztoolkit.ProgressWindow("提示词")
+          .createLine({
+            text: `✅ 已删除模板: ${template.name}`,
+            type: "success",
+          })
+          .show();
+      },
+    });
+  }
+
   private upsertMultiRoundPromptTemplate(
     templates: MultiRoundPromptTemplate[],
     imported: MultiRoundPromptTemplate,
@@ -1037,6 +1191,9 @@ export class PromptsSettingsPage {
 
   private showTemplateMetadataDialog(options: {
     title: string;
+    name?: string;
+    description?: string;
+    confirmText?: string;
     onConfirm: (name: string, description: string) => void;
   }): void {
     const { body, actions, close } = this.createPageDialog(options.title);
@@ -1044,12 +1201,12 @@ export class PromptsSettingsPage {
     const nameInput = createInput(
       "multi-round-template-name",
       "text",
-      "",
+      options.name || "",
       "例如：系统论文精读模板",
     );
     const descriptionInput = createTextarea(
       "multi-round-template-description",
-      "",
+      options.description || "",
       4,
       "模板用途说明，可留空",
     );
@@ -1058,7 +1215,11 @@ export class PromptsSettingsPage {
 
     const btnCancel = createStyledButton("取消", "#9e9e9e", "small");
     btnCancel.addEventListener("click", close);
-    const btnConfirm = createStyledButton("保存模板", "#4caf50", "small");
+    const btnConfirm = createStyledButton(
+      options.confirmText || "保存模板",
+      "#4caf50",
+      "small",
+    );
     btnConfirm.addEventListener("click", () => {
       const name = nameInput.value.trim();
       if (!name) {
@@ -1563,30 +1724,6 @@ export class PromptsSettingsPage {
 
         new ztoolkit.ProgressWindow("提示词")
           .createLine({ text: "✅ 已删除", type: "success" })
-          .show();
-      },
-    });
-  }
-
-  /**
-   * 恢复默认的多轮提示词
-   */
-  private resetMultiRoundPrompts(): void {
-    this.showInlineConfirm({
-      title: "恢复默认多轮提示词？",
-      message: "当前 AI 精读轮次提示词会被默认配置覆盖。",
-      confirmText: "恢复默认",
-      confirmColor: "#ff9800",
-      onConfirm: () => {
-        const defaults = getDefaultMultiRoundPrompts();
-        this.saveMultiRoundPrompts(defaults);
-        setPref("multiRoundFinalPrompt", getDefaultMultiRoundFinalPrompt());
-        this.rememberSelectedMultiRoundTemplate("default");
-        this.editingMultiRoundPromptId = null;
-        this.render();
-
-        new ztoolkit.ProgressWindow("提示词")
-          .createLine({ text: "✅ 已恢复默认多轮提示词", type: "success" })
           .show();
       },
     });

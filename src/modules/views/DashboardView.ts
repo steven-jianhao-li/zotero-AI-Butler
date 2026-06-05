@@ -1152,14 +1152,22 @@ export class DashboardView extends BaseView {
         }),
       );
       if (item.url) {
-        const link = this.createElement("a", {
+        const link = this.createElement("button", {
           textContent: "打开",
-          attributes: { href: item.url, target: "_blank", rel: "noreferrer" },
           styles: {
+            border: "none",
+            background: "transparent",
             color: "#00a67e",
             fontWeight: "700",
             textDecoration: "none",
+            cursor: "pointer",
+            padding: "6px 8px",
           },
+        });
+        link.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.openExternalUrl(item.url!);
         });
         row.appendChild(link);
       } else {
@@ -1170,6 +1178,29 @@ export class DashboardView extends BaseView {
     return list;
   }
 
+  private openExternalUrl(url: string): void {
+    try {
+      if ((Zotero as any).launchURL) {
+        (Zotero as any).launchURL(url);
+        return;
+      }
+      const win = Zotero.getMainWindow() as any;
+      if (win?.ZoteroPane?.loadURI) {
+        win.ZoteroPane.loadURI(url);
+        return;
+      }
+      if (win?.openTrustedLinkIn) {
+        win.openTrustedLinkIn(url, "tab");
+        return;
+      }
+      win?.open?.(url, "_blank");
+    } catch (error) {
+      ztoolkit.log("[AI-Butler] 打开外部链接失败:", error);
+      new ztoolkit.ProgressWindow("一键初始化配置", { closeTime: 3000 })
+        .createLine({ text: `无法打开链接：${url}`, type: "fail" })
+        .show();
+    }
+  }
   private createMutedCell(text: string): HTMLElement {
     return this.createElement("div", {
       textContent: text,

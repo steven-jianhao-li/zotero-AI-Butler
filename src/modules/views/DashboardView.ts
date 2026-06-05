@@ -27,6 +27,7 @@ import { BaseView } from "./BaseView";
 import { TaskQueueManager, QueueStats, TaskStatus } from "../taskQueue";
 import { MainWindow } from "./MainWindow";
 import { AutoScanManager } from "../autoScanManager";
+import LLMClient from "../llmClient";
 import { setPref } from "../../utils/prefs";
 import { createCard, createStyledButton } from "./ui/components";
 import {
@@ -862,8 +863,87 @@ export class DashboardView extends BaseView {
     showKeyRow.appendChild(showKeyBox);
     showKeyRow.appendChild(docText("显示密钥"));
 
+    const modelInput = this.createElement("input", {
+      attributes: {
+        type: "text",
+        placeholder: "先填写 API Key，再点击获取模型",
+      },
+      styles: {
+        flex: "1",
+        minWidth: "0",
+        padding: "10px 12px",
+        border: "1px solid #cfd8dc",
+        borderRadius: "8px",
+        fontSize: "14px",
+      },
+    }) as HTMLInputElement;
+    modelInput.value = preset.endpoint.model;
+    const modelStatus = this.createElement("div", {
+      textContent: "可手动填写模型，也可以用 API Key 获取模型列表后选择。",
+      styles: {
+        marginTop: "6px",
+        fontSize: "12px",
+        color: "var(--ai-text-muted, #666)",
+      },
+    });
+    const modelList = this.createElement("div", {
+      styles: {
+        display: "none",
+        marginTop: "8px",
+        border: "1px solid rgba(89, 192, 188, 0.25)",
+        borderRadius: "8px",
+        maxHeight: "180px",
+        overflow: "auto",
+      },
+    });
+    const fetchModelsButton = createStyledButton(
+      "获取模型",
+      "#3f51b5",
+      "small",
+    );
+    fetchModelsButton.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await this.fetchSetupPresetModels(
+        preset,
+        keyInput.value.trim(),
+        modelInput,
+        modelStatus,
+        modelList,
+        fetchModelsButton,
+      );
+    });
+    const modelSection = this.createElement("div", {
+      styles: { display: "none", marginTop: "16px" },
+      children: [
+        this.createElement("div", {
+          textContent: "模型 *",
+          styles: {
+            marginBottom: "8px",
+            fontSize: "14px",
+            fontWeight: "700",
+          },
+        }),
+        this.createElement("div", {
+          styles: { display: "flex", gap: "8px", alignItems: "center" },
+          children: [modelInput, fetchModelsButton],
+        }),
+        modelStatus,
+        modelList,
+      ],
+    });
+
+    keyInput.addEventListener("input", () => {
+      modelSection.style.display = keyInput.value.trim() ? "block" : "none";
+    });
+
     const content = this.createElement("div", {
-      children: [this.createGuideList(preset.guideSteps), keyInput, showKeyRow],
+      children: [
+        this.createGuideList(preset.guideSteps),
+        keyInput,
+        showKeyRow,
+        modelSection,
+      ],
     });
 
     const backButton = createStyledButton("上一步", "#607d8b", "medium");
@@ -880,7 +960,10 @@ export class DashboardView extends BaseView {
           .show();
         return;
       }
-      this.renderSetupPresetConfirmStep(modal, close, preset, { apiKey });
+      this.renderSetupPresetConfirmStep(modal, close, preset, {
+        apiKey,
+        model: modelInput.value.trim() || preset.endpoint.model,
+      });
     });
 
     modal.appendChild(
@@ -913,6 +996,26 @@ export class DashboardView extends BaseView {
         overflow: "hidden",
       },
     });
+    list.appendChild(
+      this.createElement("div", {
+        styles: {
+          display: "grid",
+          gridTemplateColumns: "1.1fr 1fr 1fr",
+          gap: "10px",
+          padding: "10px 14px",
+          backgroundColor: "rgba(89, 192, 188, 0.08)",
+          borderBottom: "1px solid rgba(89, 192, 188, 0.2)",
+          fontSize: "12px",
+          fontWeight: "700",
+          color: "var(--ai-text-muted, #666)",
+        },
+        children: [
+          this.createElement("div", { textContent: "设置项" }),
+          this.createElement("div", { textContent: "当前设置" }),
+          this.createElement("div", { textContent: "将改为" }),
+        ],
+      }),
+    );
 
     changes.forEach((change, index) => {
       const row = this.createElement("div", {
@@ -921,8 +1024,7 @@ export class DashboardView extends BaseView {
           gridTemplateColumns: "1.1fr 1fr 1fr",
           gap: "10px",
           padding: "12px 14px",
-          borderTop:
-            index === 0 ? "none" : "1px solid rgba(89, 192, 188, 0.18)",
+          borderTop: "1px solid rgba(89, 192, 188, 0.18)",
           fontSize: "13px",
           alignItems: "center",
         },
@@ -1194,6 +1296,92 @@ export class DashboardView extends BaseView {
         .createLine({ text: `无法打开链接：${url}`, type: "fail" })
         .show();
     }
+  }
+
+  private async fetchSetupPresetModels(
+    preset: SetupPreset,
+    apiKey: string,
+    modelInput: HTMLInputElement,
+    status: HTMLElement,
+    modelList: HTMLElement,
+    button: HTMLButtonElement,
+  ): Promise<void> {
+    if (!apiKey) {
+      status.style.color = "#b71c1c";
+      status.textContent = `请先填写 ${preset.name} API Key`;
+      return;
+    }
+
+    const previousText = button.textContent || "获取模型";
+    button.disabled = true;
+    button.textContent = "获取中...";
+    button.style.opacity = "0.75";
+    status.style.color = "var(--ai-text-muted, #666)";
+    status.textContent = "正在获取模型列表...";
+    modelList.style.display = "none";
+
+    try {
+      const models = await LLMClient.listModels(preset.endpoint.providerType, {
+        apiUrl: preset.endpoint.apiUrl,
+        apiKey,
+        model: modelInput.value.trim() || preset.endpoint.model,
+        requestTimeoutMs: 30000,
+      });
+      if (models.length === 0) throw new Error("供应商未返回可用模型");
+
+      modelList.innerHTML = "";
+      models.forEach((model) => {
+        const item = this.createElement("button", {
+          textContent: this.formatSetupPresetModelLabel(model),
+          styles: {
+            width: "100%",
+            padding: "9px 12px",
+            border: "none",
+            borderBottom: "1px solid rgba(89, 192, 188, 0.12)",
+            background: "transparent",
+            color: "var(--ai-text, #222)",
+            cursor: "pointer",
+            textAlign: "left",
+            fontSize: "13px",
+          },
+        });
+        item.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          modelInput.value = model.id;
+          modelList.style.display = "none";
+          status.style.color = "#2e7d32";
+          status.textContent = `已选择模型：${model.id}`;
+        });
+        modelList.appendChild(item);
+      });
+      modelList.style.display = "block";
+      status.style.color = "#2e7d32";
+      status.textContent = `已获取 ${models.length} 个模型，请选择一个模型。`;
+    } catch (error: any) {
+      const message = error?.message || String(error);
+      status.style.color = "#b71c1c";
+      status.textContent = `获取失败：${message}`;
+      new ztoolkit.ProgressWindow("模型列表", { closeTime: 3500 })
+        .createLine({ text: `❌ ${message}`, type: "fail" })
+        .show();
+    } finally {
+      button.disabled = false;
+      button.textContent = previousText;
+      button.style.opacity = "1";
+    }
+  }
+
+  private formatSetupPresetModelLabel(model: {
+    id: string;
+    name?: string;
+    contextLength?: number;
+  }): string {
+    const parts = [model.id];
+    if (model.name && model.name !== model.id) parts.push(model.name);
+    if (model.contextLength)
+      parts.push(`${model.contextLength.toLocaleString()} ctx`);
+    return parts.join(" · ");
   }
   private createMutedCell(text: string): HTMLElement {
     return this.createElement("div", {

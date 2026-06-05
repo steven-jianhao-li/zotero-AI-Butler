@@ -17,14 +17,37 @@ function maskApiKey(apiKey: string): string {
   return `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`;
 }
 
+function providerLabel(raw: unknown): string {
+  const value = String(raw || "").trim();
+  const labels: Record<string, string> = {
+    "openai-compat": "OpenAI 兼容接口",
+    openai: "OpenAI",
+    google: "Google Gemini",
+    anthropic: "Anthropic Claude",
+    openrouter: "OpenRouter",
+    volcanoark: "火山方舟",
+    ollama: "Ollama 本地模型",
+  };
+  return labels[value] || value || "未配置";
+}
+
+function pdfModeLabel(raw: unknown): string {
+  const value = String(raw || "base64").trim();
+  const labels: Record<string, string> = {
+    text: "文本提取",
+    base64: "Base64 文件输入",
+    mineru: "MinerU 解析",
+  };
+  return labels[value] || value;
+}
 function getChanges(values: SetupPresetValues): SetupPresetChange[] {
   const endpoints = LLMEndpointManager.getEndpoints();
   const currentTop = endpoints[0]?.name || "未配置";
   return [
     {
-      label: "模型平台",
-      before: String(getPref("provider") || "未配置"),
-      after: "OpenAI 兼容 / DeepSeek",
+      label: "AI 平台",
+      before: providerLabel(getPref("provider")),
+      after: "DeepSeek（使用 OpenAI 兼容接口）",
     },
     {
       label: "DeepSeek API 地址",
@@ -34,17 +57,17 @@ function getChanges(values: SetupPresetValues): SetupPresetChange[] {
     {
       label: "DeepSeek 模型",
       before: String(getPref("openaiCompatModel") || "空"),
-      after: DEEPSEEK_MODEL,
+      after: values.model || DEEPSEEK_MODEL,
     },
     {
       label: "API Key",
       before: "本地已有值会被替换",
       after: maskApiKey(values.apiKey),
     },
-    { label: "端点优先级", before: currentTop, after: "DeepSeek 排在第一位" },
+    { label: "模型优先级", before: currentTop, after: "DeepSeek 排在第一位" },
     {
       label: "PDF 处理",
-      before: String(getPref("pdfProcessMode") || "base64"),
+      before: pdfModeLabel(getPref("pdfProcessMode")),
       after: "文本提取",
     },
     {
@@ -58,17 +81,17 @@ function getChanges(values: SetupPresetValues): SetupPresetChange[] {
       after: "开启",
     },
     {
-      label: "温度参数",
+      label: "随机性参数（Temperature）",
       before: getPref("enableTemperature") ? "发送" : "不发送",
       after: "不发送",
     },
     {
-      label: "Max Tokens 参数",
+      label: "最大输出长度参数（Max Tokens）",
       before: getPref("enableMaxTokens") ? "发送" : "不发送",
       after: "不发送",
     },
     {
-      label: "Top P 参数",
+      label: "采样参数（Top P）",
       before: getPref("enableTopP") ? "发送" : "不发送",
       after: "不发送",
     },
@@ -84,7 +107,7 @@ function apply(values: SetupPresetValues): void {
     providerType: "openai-compat",
     apiUrl: DEEPSEEK_API_URL,
     apiKey: trimmedKey,
-    model: DEEPSEEK_MODEL,
+    model: values.model || DEEPSEEK_MODEL,
     reasoningEffort: "default",
     pdfProcessMode: "text",
     enabled: true,
@@ -98,7 +121,7 @@ function apply(values: SetupPresetValues): void {
   setPref("provider", "openai-compat");
   setPref("openaiCompatApiUrl", DEEPSEEK_API_URL);
   setPref("openaiCompatApiKey", trimmedKey);
-  setPref("openaiCompatModel", DEEPSEEK_MODEL);
+  setPref("openaiCompatModel", values.model || DEEPSEEK_MODEL);
   setPref("llmRoutingStrategy", "priority");
   setPref("pdfProcessMode", "text");
   setPref("autoScan", true);

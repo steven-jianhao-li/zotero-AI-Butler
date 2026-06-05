@@ -22,6 +22,7 @@ export interface SetupPresetEndpointConfig {
 
 export interface SetupPresetValues {
   apiKey: string;
+  model: string;
 }
 
 export interface SetupPresetChange {

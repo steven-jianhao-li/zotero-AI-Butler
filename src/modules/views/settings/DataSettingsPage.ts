@@ -186,6 +186,7 @@ export class DataSettingsPage {
       "multiRoundPrompts",
       "multiRoundFinalPrompt",
       "multiRoundPromptTemplates",
+      "multiRoundPromptTemplateId",
       "maxRetries",
       "batchSize",
       "batchInterval",
@@ -316,6 +317,7 @@ export class DataSettingsPage {
     setPref("batchInterval", "60");
     clearPref("customPrompts");
     clearPref("multiRoundPromptTemplates");
+    clearPref("multiRoundPromptTemplateId");
 
     // 任务队列本地存储
     Zotero.Prefs.clear("extensions.zotero.aibutler.taskQueue", true);

@@ -3,6 +3,8 @@ import { config } from "../package.json";
 import {
   TaskQueueManager,
   TaskStatus,
+  getDeepReadTaskId,
+  getSummaryTaskId,
   type TaskItem,
 } from "../src/modules/taskQueue";
 import {
@@ -188,5 +190,11 @@ describe("TaskQueue artifact-aware requeue", function () {
     expect(failedTask.status).to.equal(TaskStatus.PRIORITY);
     expect(failedTask.error).to.equal(undefined);
     expect(failedTask.retryCount).to.equal(0);
+  });
+
+  it("uses distinct task IDs for summary and deep read", function () {
+    expect(getSummaryTaskId(1)).to.equal("summary-task-1");
+    expect(getDeepReadTaskId(1)).to.equal("deepread-task-1");
+    expect(getSummaryTaskId(1)).to.not.equal(getDeepReadTaskId(1));
   });
 });

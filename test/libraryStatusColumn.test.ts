@@ -1,6 +1,8 @@
 import { expect } from "chai";
 import {
+  isDeepReadTask,
   isSummaryTask,
+  resolveCombinedAiStatusFromTasks,
   resolveSummaryStatusFromTasks,
   type SummaryTaskLike,
 } from "../src/modules/libraryStatusColumn";
@@ -97,5 +99,29 @@ describe("library status column", function () {
     );
 
     expect(status.status).to.equal("idle");
+  });
+
+  it("treats deepRead as its own task type", function () {
+    const task = createTask(TaskStatus.PENDING, { taskType: "deepRead" });
+    expect(isSummaryTask(task)).to.equal(false);
+    expect(isDeepReadTask(task)).to.equal(true);
+  });
+
+  it("combines summary and deep-read status in one tooltip", function () {
+    const status = resolveCombinedAiStatusFromTasks(
+      [
+        createTask(TaskStatus.PROCESSING, {
+          progress: 42,
+          taskType: "deepRead",
+        }),
+      ],
+      true,
+      false,
+    );
+
+    expect(status.status).to.equal("processing");
+    expect(status.progress).to.equal(42);
+    expect(status.tooltip).to.contain("AI 总结已完成");
+    expect(status.tooltip).to.contain("AI 精读处理中 42%");
   });
 });

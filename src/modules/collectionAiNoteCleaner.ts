@@ -10,6 +10,7 @@ export type CollectionAiNoteCleanAction = "delete" | "deleteAndRegenerate";
 
 export type RegeneratableAiNoteType =
   | "summary"
+  | "deepRead"
   | "imageSummary"
   | "mindmap"
   | "tableFill";
@@ -48,6 +49,7 @@ export interface CollectionAiNoteCleanResult {
 
 const REGENERATABLE_NOTE_TYPES: RegeneratableAiNoteType[] = [
   "summary",
+  "deepRead",
   "imageSummary",
   "mindmap",
   "tableFill",
@@ -60,6 +62,7 @@ const CLEANABLE_NOTE_TYPES: CleanableAiNoteType[] = [
 
 const EMPTY_COUNTS: Record<CleanableAiNoteType, number> = {
   summary: 0,
+  deepRead: 0,
   imageSummary: 0,
   mindmap: 0,
   tableFill: 0,
@@ -68,6 +71,7 @@ const EMPTY_COUNTS: Record<CleanableAiNoteType, number> = {
 
 const EMPTY_REGENERATABLE_COUNTS: Record<RegeneratableAiNoteType, number> = {
   summary: 0,
+  deepRead: 0,
   imageSummary: 0,
   mindmap: 0,
   tableFill: 0,
@@ -78,6 +82,7 @@ function isRegeneratableNoteType(
 ): type is RegeneratableAiNoteType {
   return (
     type === "summary" ||
+    type === "deepRead" ||
     type === "imageSummary" ||
     type === "mindmap" ||
     type === "tableFill"
@@ -89,6 +94,7 @@ function isCleanableNoteType(
 ): type is CleanableAiNoteType {
   return (
     type === "summary" ||
+    type === "deepRead" ||
     type === "imageSummary" ||
     type === "mindmap" ||
     type === "tableFill" ||
@@ -117,7 +123,8 @@ function getItemTitle(item: Zotero.Item): string {
 
 export class CollectionAiNoteCleaner {
   public static readonly TYPE_LABELS: Record<CleanableAiNoteType, string> = {
-    summary: "精读笔记",
+    summary: "AI 总结",
+    deepRead: "AI 精读",
     imageSummary: "一图总结",
     mindmap: "思维导图",
     tableFill: "填表笔记",
@@ -290,7 +297,16 @@ export class CollectionAiNoteCleaner {
   ): Promise<void> {
     switch (type) {
       case "summary":
-        await manager.addTask(item, false, { forceOverwrite: true });
+        await manager.addTask(item, false, {
+          summaryMode: "single",
+          forceOverwrite: true,
+        });
+        break;
+      case "deepRead":
+        await manager.addDeepReadTask(item, false, {
+          summaryMode: "multi_summarize",
+          forceOverwrite: true,
+        });
         break;
       case "imageSummary":
         await manager.addImageSummaryTask(item, false);

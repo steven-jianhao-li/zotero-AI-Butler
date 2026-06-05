@@ -272,6 +272,8 @@ function initializeDefaultPrefsOnStartup() {
     sidebarModuleVisibility: DEFAULT_SIDEBAR_MODULE_VISIBILITY_PREF,
     sidebarModuleOrder: DEFAULT_SIDEBAR_MODULE_ORDER_PREF,
     openTaskPanelOnSummon: false,
+    autoScanSummaryEnabled: true,
+    autoScanDeepReadEnabled: true,
   };
 
   // 遍历所有配置项,确保每项都有有效值
@@ -537,6 +539,7 @@ function getRegenerationCounts(
 ): Record<RegeneratableAiNoteType, number> {
   const counts: Record<RegeneratableAiNoteType, number> = {
     summary: 0,
+    deepRead: 0,
     imageSummary: 0,
     mindmap: 0,
     tableFill: 0,
@@ -565,12 +568,12 @@ function isRegeneratableDialogType(
 
 function formatCleanScope(plan: CollectionAiNoteCleanPlan): string {
   if (plan.scope === "summary") {
-    return "仅清空 AI 管家精读笔记";
+    return "仅清空 AI 管家AI 总结";
   }
 
   return plan.includeChat
     ? "清空AI管家所有笔记，并同时清空后续追问记录"
-    : "清空AI管家所有笔记（含精读笔记、一图总结、思维导图、填表)";
+    : "清空AI管家所有笔记（含 AI 总结、AI 精读、一图总结、思维导图、填表)";
 }
 
 function formatPlanTypeCounts(plan: CollectionAiNoteCleanPlan): string {
@@ -651,12 +654,12 @@ function showCollectionCleanChoiceDialog(collectionName: string): Promise<{
     }> = [
       {
         value: "summary",
-        label: "只清空 AI 管家的精读笔记",
+        label: "只清空 AI 管家的 AI 总结",
         checked: true,
       },
       {
         value: "all",
-        label: "清空AI管家所有笔记（含精读笔记、一图总结、思维导图、填表)",
+        label: "清空AI管家所有笔记（含AI 总结、一图总结、思维导图、填表)",
         checked: false,
       },
     ];
@@ -697,8 +700,8 @@ function showCollectionCleanChoiceDialog(collectionName: string): Promise<{
       const desc = doc.createElement("div");
       desc.textContent =
         option.value === "summary"
-          ? "只删除常规精读笔记，并清空对应总结任务。"
-          : "删除精读笔记、一图总结、思维导图、填表；后续追问记录需单独勾选。";
+          ? "只删除常规AI 总结，并清空对应总结任务。"
+          : "删除 AI 总结、AI 精读、一图总结、思维导图、填表；旧后续追问记录需单独勾选。";
       Object.assign(desc.style, {
         marginTop: "3px",
         fontSize: "12px",
@@ -1442,15 +1445,15 @@ async function handleOpenAIChat(itemId: number): Promise<void> {
 }
 
 /**
- * 处理 AI 笔记的后续追问
+ * 处理 AI 总结 / AI 精读的后续追问
  *
- * 当用户在 AI 笔记上右键点击"后续追问"时触发
+ * 当用户在 AI 总结或 AI 精读上右键点击"后续追问"时触发
  *
  * 执行流程:
- * 1. 获取选中的 AI 笔记
+ * 1. 获取选中的 AI 总结或 AI 精读
  * 2. 找到笔记对应的父文献条目
  * 3. 打开主窗口并切换到摘要视图
- * 4. 加载该文献的 AI 笔记并显示聊天界面
+ * 4. 加载该文献的 AI 总结并显示聊天界面
  *
  * 错误处理:
  * - 笔记无父条目:提示用户笔记已损坏
@@ -1465,7 +1468,7 @@ async function handleChatWithAI() {
         closeTime: 3000,
       })
         .createLine({
-          text: "请选择一个 AI 笔记",
+          text: "请选择一个 AI 总结或 AI 精读笔记",
           type: "error",
         })
         .show();
@@ -2074,7 +2077,7 @@ async function handleFillTable() {
 }
 
 /**
- * 处理多轮对话重新精读
+ * 处理 AI 精读任务
  *
  * @param mode 多轮对话模式
  */
@@ -2106,7 +2109,7 @@ async function handleMultiRoundSummary(
 
     // 批量添加任务，带有特定选项
     for (const item of items) {
-      await taskQueue.addTask(item, priority, {
+      await taskQueue.addDeepReadTask(item, priority, {
         summaryMode: mode,
         forceOverwrite: true,
       });

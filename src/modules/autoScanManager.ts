@@ -17,7 +17,7 @@
  */
 
 import { getPref } from "../utils/prefs";
-import { isRegularSummaryNote } from "./aiNoteClassifier";
+import { AiNoteService, type AiNoteKind } from "./aiNoteService";
 import { TaskQueueManager } from "./taskQueue";
 
 /**
@@ -210,17 +210,25 @@ export class AutoScanManager {
 
   /** 如果条目附件已就绪且需要 AI，则入队；否则进入待观察并轮询重试 */
   private async enqueueIfReady(item: Zotero.Item): Promise<void> {
-    // 已有 AI 笔记则不处理
-    if (await this.hasExistingAINote(item)) return;
+    const needsSummary = await this.shouldAutoCreate(item, "summary");
+    const needsDeepRead = await this.shouldAutoCreate(item, "deepRead");
+    if (!needsSummary && !needsDeepRead) return;
 
     // 检查 PDF 附件
     if (await this.hasUsablePDFAttachment(item)) {
-      // 具备条件，入队
+      // 具备条件，按缺失类型分别入队
       this.pendingParents.delete(item.id);
       const tqm = TaskQueueManager.getInstance();
-      await tqm.addTasks([item], false);
+      if (needsSummary) {
+        await tqm.addTask(item, false, { summaryMode: "single" });
+      }
+      if (needsDeepRead) {
+        await tqm.addDeepReadTask(item, false, {
+          summaryMode: "multi_summarize",
+        });
+      }
       ztoolkit.log(
-        `[AutoScan] 自动加入 1 个新条目到队列: ${item.getField("title")}`,
+        `[AutoScan] 自动加入新条目到队列: ${item.getField("title")}`,
       );
       // 清理重试计时器
       const timer = this.retryTimers.get(item.id);
@@ -270,8 +278,9 @@ export class AutoScanManager {
     const result: Zotero.Item[] = [];
 
     for (const item of items) {
-      const hasAINote = await this.hasExistingAINote(item);
-      if (!hasAINote) {
+      const needsSummary = await this.needsAiNoteKind(item, "summary");
+      const needsDeepRead = await this.needsAiNoteKind(item, "deepRead");
+      if (needsSummary || needsDeepRead) {
         result.push(item);
       }
     }
@@ -283,23 +292,32 @@ export class AutoScanManager {
    * 检查条目是否已有 AI 笔记
    */
   private async hasExistingAINote(item: Zotero.Item): Promise<boolean> {
-    try {
-      const noteIDs = (item as any).getNotes?.() || [];
-      for (const nid of noteIDs) {
-        const n = await Zotero.Items.getAsync(nid);
-        if (!n) continue;
+    return (
+      (await AiNoteService.hasNote(item, "summary")) ||
+      (await AiNoteService.hasNote(item, "deepRead"))
+    );
+  }
 
-        const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-        const noteHtml: string = (n as any).getNote?.() || "";
-        if (isRegularSummaryNote(tags, noteHtml)) {
-          return true;
-        }
-      }
-      return false;
+  private async needsAiNoteKind(
+    item: Zotero.Item,
+    kind: AiNoteKind,
+  ): Promise<boolean> {
+    try {
+      return !(await AiNoteService.hasNote(item, kind));
     } catch (error) {
       ztoolkit.log("[AutoScan] 检查 AI 笔记时出错:", error);
-      return false;
+      return true;
     }
+  }
+
+  private async shouldAutoCreate(
+    item: Zotero.Item,
+    kind: AiNoteKind,
+  ): Promise<boolean> {
+    const prefKey =
+      kind === "summary" ? "autoScanSummaryEnabled" : "autoScanDeepReadEnabled";
+    const enabled = (getPref(prefKey as any) as boolean) ?? true;
+    return enabled && (await this.needsAiNoteKind(item, kind));
   }
 
   /**

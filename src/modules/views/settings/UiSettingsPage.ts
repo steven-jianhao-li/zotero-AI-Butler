@@ -59,7 +59,7 @@ export class UiSettingsPage {
 
     this.container.appendChild(
       createNotice(
-        "界面与行为设置：自动滚动、自动扫描；以及已有 AI 笔记时的处理策略。",
+        "界面与行为设置：自动滚动、自动扫描；以及已有 AI 总结 / AI 精读时的处理策略。",
       ),
     );
 
@@ -144,7 +144,7 @@ export class UiSettingsPage {
     );
     form.appendChild(
       createFormGroup(
-        "已有 AI 笔记时的策略",
+        "已有 AI 总结 / AI 精读时的策略",
         policySelect,
         "当检测到条目已有 AI 总结笔记时该如何处理",
       ),
@@ -187,7 +187,7 @@ export class UiSettingsPage {
       createFormGroup(
         "侧边栏笔记样式",
         themeSelect,
-        "设置侧边栏 AI 笔记的 Markdown 渲染样式",
+        "设置侧边栏 AI 总结 / AI 精读的 Markdown 渲染样式",
       ),
     );
 
@@ -237,6 +237,18 @@ export class UiSettingsPage {
       const autoScanVal =
         (form.querySelector("#setting-autoScan") as HTMLInputElement)
           ?.checked ?? true;
+      const autoScanSummaryVal =
+        (
+          form.querySelector(
+            "#setting-autoScanSummaryEnabled",
+          ) as HTMLInputElement
+        )?.checked ?? true;
+      const autoScanDeepReadVal =
+        (
+          form.querySelector(
+            "#setting-autoScanDeepReadEnabled",
+          ) as HTMLInputElement
+        )?.checked ?? true;
       const saveChatHistoryVal =
         (form.querySelector("#setting-saveChatHistory") as HTMLInputElement)
           ?.checked ?? true;
@@ -261,6 +273,8 @@ export class UiSettingsPage {
 
       setPref("autoScroll", !!autoVal as any);
       setPref("autoScan", !!autoScanVal as any);
+      setPref("autoScanSummaryEnabled" as any, !!autoScanSummaryVal as any);
+      setPref("autoScanDeepReadEnabled" as any, !!autoScanDeepReadVal as any);
       setPref("saveChatHistory", !!saveChatHistoryVal as any);
       setPref(
         "openTaskPanelOnSummon" as any,
@@ -295,6 +309,8 @@ export class UiSettingsPage {
     btnReset.addEventListener("click", async () => {
       setPref("autoScroll", true as any);
       setPref("autoScan", true as any);
+      setPref("autoScanSummaryEnabled" as any, true as any);
+      setPref("autoScanDeepReadEnabled" as any, true as any);
       setPref("saveChatHistory", true as any);
       setPref("openTaskPanelOnSummon" as any, false as any);
       setPref("enableTableFeature", true);

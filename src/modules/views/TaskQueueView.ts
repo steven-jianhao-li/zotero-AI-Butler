@@ -50,7 +50,7 @@ export class TaskQueueView extends BaseView {
   /** 当前筛选状态 */
   private filterStatus: TaskStatus | "all" = "all";
 
-  /** 任务类型筛选: all(全部), summary(论文总结), imageSummary(一图总结) */
+  /** 任务类型筛选: all(全部), summary(AI 总结), deepRead(AI 精读), imageSummary(一图总结) */
   private filterTaskType: TaskType | "all" = "all";
 
   /** 文本搜索关键字 */
@@ -290,7 +290,7 @@ export class TaskQueueView extends BaseView {
 
     // 任务类型筛选按钮
     const typeButtons = [
-      { label: "📝 论文总结", value: "summary" as TaskType | "all" },
+      { label: "📝 AI 总结", value: "summary" as TaskType | "all" },
       { label: "🖼️ 一图总结", value: "imageSummary" as TaskType | "all" },
       { label: "🧠 思维导图", value: "mindmap" as TaskType | "all" },
       { label: "📊 填表", value: "tableFill" as TaskType | "all" },
@@ -537,9 +537,24 @@ export class TaskQueueView extends BaseView {
     taskHeader.appendChild(taskStatus);
 
     // 任务类型标识 (一图总结/思维导图特殊显示)
+    const isDeepRead = task.taskType === "deepRead";
     const isImageSummary = task.taskType === "imageSummary";
     const isMindmap = task.taskType === "mindmap";
     const isTargetedQuestion = task.taskType === "targetedQuestion";
+    if (isDeepRead) {
+      const typeBadge = this.createElement("span", {
+        styles: {
+          fontSize: "11px",
+          padding: "2px 8px",
+          borderRadius: "10px",
+          backgroundColor: "#3f51b5",
+          color: "white",
+          marginLeft: "8px",
+        },
+        textContent: "📚 AI 精读",
+      });
+      taskHeader.appendChild(typeBadge);
+    }
     if (isImageSummary) {
       const typeBadge = this.createElement("span", {
         styles: {
@@ -745,7 +760,8 @@ export class TaskQueueView extends BaseView {
     actions.appendChild(detailBtn);
 
     if (
-      (task.taskType || "summary") === "summary" &&
+      ((task.taskType || "summary") === "summary" ||
+        task.taskType === "deepRead") &&
       task.status === TaskStatus.PROCESSING
     ) {
       const abortBtn = this.createElement("button", {

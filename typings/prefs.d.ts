@@ -56,6 +56,8 @@ declare namespace _ZoteroTypes {
       "batchSize": string;
       "batchInterval": string;
       "autoScan": boolean;
+      "autoScanSummaryEnabled": boolean;
+      "autoScanDeepReadEnabled": boolean;
       "scanInterval": string;
       "pdfProcessMode": string;
       "pdfAttachmentMode": string;

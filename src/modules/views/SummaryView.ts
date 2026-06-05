@@ -44,6 +44,7 @@ import {
   normalizeFollowUpChatNoteHtml,
   parseFollowUpChatPairsFromNoteHtml,
 } from "../noteMarkdown";
+import { AiNoteService } from "../aiNoteService";
 
 /**
  * AI 总结视图类
@@ -817,7 +818,7 @@ export class SummaryView extends BaseView {
     userMessage: string,
     assistantMessage: string,
   ): Promise<void> {
-    // 为兼容旧方法保留，但不再使用。后续追问改为保存到独立笔记。
+    // 为兼容旧方法保留，但不再使用。后续追问改为保存到 AI 精读笔记。
     if (!this.currentItemId) return;
     try {
       await this.saveChatPairToSeparateNote(
@@ -880,7 +881,7 @@ export class SummaryView extends BaseView {
   }
 
   /**
-   * 将对话对追加到独立笔记（带可解析标记，便于恢复）
+   * 将对话对追加到 AI 精读笔记（带可解析标记，便于恢复）
    */
   private async saveChatPairToSeparateNote(
     pairId: string,
@@ -908,9 +909,9 @@ export class SummaryView extends BaseView {
       noteHtml += block;
       (note as any).setNote(noteHtml);
       await (note as any).saveTx();
-      ztoolkit.log("[AI-Butler] 追问对已保存到独立笔记");
+      ztoolkit.log("[AI-Butler] 追问对已保存到 AI 精读笔记");
     } catch (e) {
-      ztoolkit.log("[AI-Butler] 保存追问对到独立笔记失败:", e);
+      ztoolkit.log("[AI-Butler] 保存追问对到 AI 精读笔记失败:", e);
     }
   }
 
@@ -1336,7 +1337,7 @@ export class SummaryView extends BaseView {
                 </div>
                 <div style="font-size: 13px; color: var(--ai-text-muted); line-height: 1.6;">
                   该文献尚未生成 AI 总结。您可以直接在下方输入问题与 AI 对话，
-                  或者先右键该文献选择"召唤 AI 管家进行分析"生成完整总结。
+                  或者先右键该文献选择“AI 管家生成 AI 总结”生成完整总结。
                 </div>
               `;
               this.outputContainer.appendChild(welcomeHint);
@@ -1463,7 +1464,7 @@ export class SummaryView extends BaseView {
       this.hideLoading();
 
       if (!targetNote) {
-        // 没有找到匹配的 AI 笔记
+        // 没有找到匹配的 AI 总结
         this.startItem(title);
         this.appendContent("未找到已保存的 AI 总结笔记。");
         this.finishItem();

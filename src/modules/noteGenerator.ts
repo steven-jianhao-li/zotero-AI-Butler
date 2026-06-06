@@ -3,17 +3,17 @@
  * AI 笔记生成器模块
  * ================================================================
  *
- * 本模块是插件的核心功能实现,负责协调 PDF 提取、AI 分析和笔记创建的完整流程
+ * 本模块是插件的核心功能实现，负责协调内容源提取、AI 分析和笔记创建的完整流程。
  *
  * 主要职责:
  * 1. 统筹论文总结生成的完整工作流
- * 2. 协调 PDF 文本提取和 AI 模型调用
+ * 2. 协调可分析内容源提取和 AI 模型调用
  * 3. 管理流式输出和用户界面更新
  * 4. 处理批量文献的队列执行
  * 5. 创建和管理 Zotero 笔记条目
  *
  * 工作流程:
- * PDF提取 -> 文本清理 -> AI分析 -> Markdown转换 -> 笔记保存
+ * 内容源提取 -> 文本清理 -> AI分析 -> Markdown转换 -> 笔记保存
  *
  * 技术特点:
  * - 支持流式输出,实时反馈生成进度
@@ -25,6 +25,7 @@
  * @author AI-Butler Team
  */
 
+import { ContentExtractor } from "./contentExtractor";
 import { PDFExtractor } from "./pdfExtractor";
 import LLMService, { type LLMChatRequest } from "./llmService";
 import {
@@ -75,7 +76,7 @@ export class NoteGenerator {
    * 这是单条目处理的核心函数,协调整个生成流程
    *
    * 执行流程:
-   * 1. 从文献条目提取 PDF 文本
+   * 1. 从文献条目提取可分析内容
    * 2. 清理和预处理文本内容
    * 3. 调用 AI 模型生成总结
    * 4. 将 Markdown 格式转换为 Zotero 笔记格式
@@ -87,7 +88,7 @@ export class NoteGenerator {
    * - 用户可以在输出窗口中看到"打字机效果"
    *
    * 错误处理:
-   * - PDF 提取失败:抛出明确的错误信息
+   * - 内容源提取失败:抛出明确的错误信息
    * - AI 调用失败:包含 API 错误详情
    * - 不创建包含错误信息的笔记,直接抛出异常由上层处理
    *
@@ -133,9 +134,9 @@ export class NoteGenerator {
         }
       }
 
-      // 步骤 1: PDF 处理
+      // 步骤 1: 内容源处理
       throwIfAborted(options?.abortSignal);
-      progressCallback?.("正在处理PDF...", 10);
+      progressCallback?.("正在处理内容源...", 10);
 
       // 检查 PDF 文件大小限制
       const enableSizeLimit =
@@ -173,7 +174,7 @@ export class NoteGenerator {
         );
       }
 
-      let pdfContent = "";
+      let sourceContent = "";
       let isBase64 = false;
       let useMultiPdfMode = false;
 
@@ -219,10 +220,13 @@ export class NoteGenerator {
         }
       }
 
-      // 多轮总结会复用同一份 PDF 内容；单次总结交给 LLMService 统一解析，避免 MinerU 重复处理。
+      // 多轮总结会复用同一份分析内容；单次总结交给 LLMService 统一解析，避免 MinerU 重复处理。
       if (summaryMode !== "single" && !useMultiModelSummary) {
-        const extracted = await this.extractPdfContentForMode(item, prefMode);
-        pdfContent = extracted.content;
+        const extracted = await this.extractAnalyzableContentForMode(
+          item,
+          prefMode,
+        );
+        sourceContent = extracted.content;
         isBase64 = extracted.isBase64;
       }
 
@@ -249,7 +253,7 @@ export class NoteGenerator {
           itemTitle,
           endpoints: multiModelEndpoints,
           summaryMode,
-          pdfContent,
+          sourceContent,
           isBase64,
           pdfAttachmentMode,
           prefMode,
@@ -308,7 +312,7 @@ export class NoteGenerator {
       } else {
         // 多轮对话模式
         const multiRoundResult = await this.generateMultiRoundContent(
-          pdfContent,
+          sourceContent,
           isBase64,
           itemTitle,
           summaryMode,
@@ -383,32 +387,30 @@ export class NoteGenerator {
             const tableStrategy =
               (getPref("tableStrategy" as any) as string) || "skip";
 
-            // 获取 PDF 附件
-            const noteIDs = (item as any).getAttachments?.() || [];
             void (async () => {
-              for (const attId of noteIDs) {
-                try {
-                  const att = await Zotero.Items.getAsync(attId);
-                  if (att && att.isPDFAttachment?.()) {
-                    // skip 策略时先检查是否已有表格
-                    if (tableStrategy === "skip") {
-                      const existing =
-                        await LiteratureReviewService.findTableNote(item);
-                      if (existing) break;
-                    }
-                    await LiteratureReviewService.fillTableForSinglePDF(
-                      item,
-                      att,
-                      tableTemplate,
-                      fillPrompt,
-                    ).then((table) =>
-                      LiteratureReviewService.saveTableNote(item, table),
-                    );
-                    break; // 只用第一个 PDF
-                  }
-                } catch (e) {
-                  ztoolkit.log("[AI-Butler] 额外填表失败:", e);
+              try {
+                const attachments =
+                  await ContentExtractor.getAllAnalyzableAttachments(item);
+                const att = attachments[0];
+                if (!att) return;
+
+                // skip 策略时先检查是否已有表格
+                if (tableStrategy === "skip") {
+                  const existing =
+                    await LiteratureReviewService.findTableNote(item);
+                  if (existing) return;
                 }
+
+                await LiteratureReviewService.fillTableForSingleAttachment(
+                  item,
+                  att,
+                  tableTemplate,
+                  fillPrompt,
+                ).then((table) =>
+                  LiteratureReviewService.saveTableNote(item, table),
+                );
+              } catch (e) {
+                ztoolkit.log("[AI-Butler] 额外填表失败:", e);
               }
             })();
           })
@@ -460,18 +462,18 @@ export class NoteGenerator {
     }
   }
 
-  private static async extractPdfContentForMode(
+  private static async extractAnalyzableContentForMode(
     item: Zotero.Item,
     mode: LLMPdfProcessMode,
   ): Promise<{ content: string; isBase64: boolean }> {
-    if (mode === "base64") {
-      return {
-        content: await PDFExtractor.extractBase64FromItem(item),
-        isBase64: true,
-      };
-    }
+    const extracted = await ContentExtractor.extractAnalyzableContentFromItem(
+      item,
+      mode === "base64",
+      mode,
+    );
+    if (extracted.isBase64) return extracted;
 
-    const fullText = await PDFExtractor.extractTextFromItem(item, mode);
+    const fullText = extracted.content;
     const cleanedText = PDFExtractor.cleanText(fullText);
     return {
       content: PDFExtractor.truncateText(cleanedText),
@@ -484,7 +486,7 @@ export class NoteGenerator {
     itemTitle: string;
     endpoints: LLMEndpoint[];
     summaryMode: SummaryMode;
-    pdfContent: string;
+    sourceContent: string;
     isBase64: boolean;
     pdfAttachmentMode: string;
     prefMode: string;
@@ -498,7 +500,7 @@ export class NoteGenerator {
       itemTitle,
       endpoints,
       summaryMode,
-      pdfContent,
+      sourceContent,
       isBase64,
       pdfAttachmentMode,
       prefMode,
@@ -524,7 +526,7 @@ export class NoteGenerator {
           itemTitle,
           endpoint,
           summaryMode,
-          pdfContent,
+          sourceContent,
           isBase64,
           pdfAttachmentMode,
           prefMode,
@@ -637,7 +639,7 @@ export class NoteGenerator {
     itemTitle: string;
     endpoint: LLMEndpoint;
     summaryMode: SummaryMode;
-    pdfContent: string;
+    sourceContent: string;
     isBase64: boolean;
     pdfAttachmentMode: string;
     prefMode: string;
@@ -648,7 +650,7 @@ export class NoteGenerator {
       itemTitle,
       endpoint,
       summaryMode,
-      pdfContent,
+      sourceContent,
       isBase64,
       pdfAttachmentMode,
       prefMode,
@@ -678,9 +680,9 @@ export class NoteGenerator {
     } else {
       const endpointPdfMode = LLMService.getEffectivePdfProcessMode(endpoint);
       const extracted =
-        pdfContent && prefMode === endpointPdfMode
-          ? { content: pdfContent, isBase64 }
-          : await this.extractPdfContentForMode(item, endpointPdfMode);
+        sourceContent && prefMode === endpointPdfMode
+          ? { content: sourceContent, isBase64 }
+          : await this.extractAnalyzableContentForMode(item, endpointPdfMode);
       const multiRoundResult = await this.generateMultiRoundContent(
         extracted.content,
         extracted.isBase64,
@@ -994,7 +996,7 @@ export class NoteGenerator {
    * - multi_concat: 将所有对话内容拼接（最详细）
    * - multi_summarize: 基于对话生成最终总结（均衡）
    *
-   * @param pdfContent PDF内容（Base64或文本）
+   * @param sourceContent 可分析内容源（PDF Base64 或文本）
    * @param isBase64 是否为Base64编码
    * @param itemTitle 文献标题
    * @param mode 总结模式
@@ -1004,7 +1006,7 @@ export class NoteGenerator {
    * @returns 生成的内容
    */
   private static async generateMultiRoundContent(
-    pdfContent: string,
+    sourceContent: string,
     isBase64: boolean,
     itemTitle: string,
     mode: SummaryMode,
@@ -1083,7 +1085,7 @@ export class NoteGenerator {
         const chatRequest: LLMChatRequest = {
           content: {
             kind: "legacy",
-            content: pdfContent,
+            content: sourceContent,
             isBase64,
             policy: isBase64 ? "pdf-base64" : "text",
           },
@@ -1177,7 +1179,7 @@ export class NoteGenerator {
         const chatRequest: LLMChatRequest = {
           content: {
             kind: "legacy",
-            content: pdfContent,
+            content: sourceContent,
             isBase64,
             policy: isBase64 ? "pdf-base64" : "text",
           },

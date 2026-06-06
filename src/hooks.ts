@@ -194,14 +194,15 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
  * - 支持国际化标题和图标定制
  */
 function registerPrefsPane() {
+  const chromeRoot = `chrome://${config.addonRef}/`;
   const prefOptions = {
     pluginID: config.addonID, // 插件唯一标识
-    src: rootURI + "content/preferences.xhtml", // 配置页面 XHTML 文件路径
+    src: chromeRoot + "content/preferences.xhtml", // 配置页面 XHTML 文件路径
     label: getString("prefs-title"), // 国际化的面板标题
-    image: `chrome://${config.addonRef}/content/icons/favicon.png`, // 面板图标
+    image: chromeRoot + "content/icons/favicon.png", // 面板图标
     defaultXUL: true, // 使用默认 XUL 布局
     // 在偏好设置窗格中加载外部脚本,用于触发 onPrefsEvent('load')
-    scripts: [rootURI + `content/scripts/${config.addonRef}-prefs.js`],
+    scripts: [chromeRoot + `content/scripts/${config.addonRef}-prefs.js`],
   };
   Zotero.PreferencePanes.register(prefOptions);
 }
@@ -2007,7 +2008,7 @@ async function handleClearCollectionAiNotes() {
  * 处理填表请求
  *
  * 当用户在文献右键点击"AI管家填表"时触发
- * 为选中文献的 PDF 附件进行填表
+ * 为选中文献的可分析附件进行填表
  */
 async function handleFillTable() {
   if (!isTableFeatureEnabled()) {

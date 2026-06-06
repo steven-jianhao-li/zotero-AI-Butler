@@ -4,7 +4,7 @@
  * ================================================================
  *
  * 整合完整的一图总结工作流：
- * 1. 提取论文 PDF 内容
+ * 1. 解析论文条目的可分析内容源
  * 2. 调用 LLM 生成视觉摘要
  * 3. 调用 Gemini 生成学术概念海报
  * 4. 将图片保存到 Zotero 笔记
@@ -24,12 +24,16 @@ import {
   getDefaultImageSummaryPrompt,
   getDefaultImageGenerationPrompt,
 } from "../utils/prompts";
+import {
+  ContentExtractor,
+  type ResolvedAnalyzableContent,
+} from "./contentExtractor";
 
 /**
  * 工作流阶段类型
  */
 export type WorkflowStage =
-  | "extracting" // 提取 PDF
+  | "extracting" // 解析内容源
   | "summarizing" // 生成视觉摘要
   | "generating" // 生成图片
   | "saving" // 保存笔记
@@ -81,7 +85,7 @@ export class ImageSummaryService {
         }
       }
 
-      let pdfContent: string;
+      let analysisContent: string;
       let isBase64 = false;
       const pdfMode = LLMService.getEffectivePdfProcessMode();
 
@@ -95,30 +99,30 @@ export class ImageSummaryService {
         if (existingNote) {
           const noteHtml = (existingNote as any).getNote?.() || "";
           // 简单地去除 HTML 标签
-          pdfContent = noteHtml
+          analysisContent = noteHtml
             .replace(/<[^>]+>/g, " ")
             .replace(/\s+/g, " ")
             .trim();
           ztoolkit.log(
-            `[AI-Butler] 使用已有 AI 笔记，长度: ${pdfContent.length}`,
+            `[AI-Butler] 使用已有 AI 笔记，长度: ${analysisContent.length}`,
           );
         } else {
-          // 没有已有笔记，回退到 PDF 提取
-          ztoolkit.log("[AI-Butler] 未找到已有 AI 笔记，使用 PDF 提取");
-          pdfContent = await this.extractPdfContent(item, pdfMode);
-          isBase64 = pdfMode === "base64";
+          ztoolkit.log("[AI-Butler] 未找到已有 AI 笔记，解析条目内容源");
+          const extracted = await this.resolveItemContent(item, pdfMode);
+          analysisContent = extracted.content;
+          isBase64 = extracted.isBase64;
         }
       } else {
-        // 直接从 PDF 提取
-        pdfContent = await this.extractPdfContent(item, pdfMode);
-        isBase64 = pdfMode === "base64";
+        const extracted = await this.resolveItemContent(item, pdfMode);
+        analysisContent = extracted.content;
+        isBase64 = extracted.isBase64;
       }
 
       // ========== 阶段 2: 生成视觉摘要 ==========
       progressCallback?.("summarizing", "正在生成视觉摘要...", 30);
 
       const visualSummary = await this.generateVisualSummary(
-        pdfContent,
+        analysisContent,
         isBase64,
         itemTitle,
       );
@@ -168,26 +172,33 @@ export class ImageSummaryService {
   }
 
   /**
-   * 提取 PDF 内容
+   * 解析一图总结使用的可分析内容源
    */
-  private static async extractPdfContent(
+  private static async resolveItemContent(
     item: Zotero.Item,
     mode: LLMPdfProcessMode,
-  ): Promise<string> {
-    if (mode === "base64") {
-      return await PDFExtractor.extractBase64FromItem(item);
-    } else {
-      const fullText = await PDFExtractor.extractTextFromItem(item, mode);
-      const cleanedText = PDFExtractor.cleanText(fullText);
-      return PDFExtractor.truncateText(cleanedText);
-    }
-  }
+  ): Promise<ResolvedAnalyzableContent> {
+    const extracted = await ContentExtractor.extractAnalyzableContentFromItem(
+      item,
+      mode === "base64",
+      mode,
+    );
 
+    if (extracted.isBase64) {
+      return extracted;
+    }
+
+    const cleanedText = PDFExtractor.cleanText(extracted.content);
+    return {
+      content: PDFExtractor.truncateText(cleanedText),
+      isBase64: false,
+    };
+  }
   /**
    * 生成视觉摘要
    */
   private static async generateVisualSummary(
-    pdfContent: string,
+    analysisContent: string,
     isBase64: boolean,
     itemTitle: string,
   ): Promise<string> {
@@ -199,7 +210,7 @@ export class ImageSummaryService {
     // 替换变量
     prompt = prompt.replace(
       /\$\{context\}/g,
-      isBase64 ? "[PDF 文件内容]" : pdfContent.substring(0, 5000),
+      isBase64 ? "[PDF 文件内容]" : analysisContent.substring(0, 5000),
     );
     prompt = prompt.replace(/\$\{title\}/g, itemTitle);
 
@@ -209,7 +220,7 @@ export class ImageSummaryService {
       prompt,
       content: {
         kind: "legacy",
-        content: pdfContent,
+        content: analysisContent,
         isBase64,
         policy: isBase64 ? "pdf-base64" : "text",
       },

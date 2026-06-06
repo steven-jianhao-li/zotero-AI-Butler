@@ -1626,21 +1626,22 @@ function renderTableSection(
         }
       }
 
-      // 找到 PDF 附件
-      const attachmentIDs = (item as any).getAttachments?.() || [];
-      for (const attId of attachmentIDs) {
-        const att = await Zotero.Items.getAsync(attId);
-        if (att && (att as any).isPDFAttachment?.()) {
-          const table = await LiteratureReviewService.fillTableForSinglePDF(
-            item,
-            att,
-            tableTemplate,
-            fillPrompt,
-          );
-          await LiteratureReviewService.saveTableNote(item, table);
-          break;
-        }
+      // 找到可分析附件。当前策略保留 PDF 优先，其次使用文本内容源。
+      const { ContentExtractor } = await import("./contentExtractor");
+      const attachments =
+        await ContentExtractor.getAllAnalyzableAttachments(item);
+      const att = attachments[0];
+      if (!att) {
+        throw new Error("该条目没有可分析附件");
       }
+
+      const table = await LiteratureReviewService.fillTableForSingleAttachment(
+        item,
+        att,
+        tableTemplate,
+        fillPrompt,
+      );
+      await LiteratureReviewService.saveTableNote(item, table);
 
       // 刷新内容
       const tableContent = doc.getElementById(
@@ -2813,32 +2814,31 @@ function renderChatArea(
       return;
     }
 
-    // 如果尚未加载 PDF 内容，则加载
+    // 如果尚未加载可分析内容，则加载
     if (item) {
       try {
-        const { PDFExtractor } = await import("./pdfExtractor");
+        const { ContentExtractor } = await import("./contentExtractor");
         const { default: LLMService } = await import("./llmService");
         const pdfMode = LLMService.getEffectivePdfProcessMode();
-        const isBase64 = pdfMode === "base64";
 
         messagesArea.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">📄 正在加载论文内容...</div>`;
 
-        let pdfContent = "";
-        if (isBase64) {
-          pdfContent = await PDFExtractor.extractBase64FromItem(item);
-        } else {
-          pdfContent = await PDFExtractor.extractTextFromItem(item, pdfMode);
-        }
+        const { content: analysisContent, isBase64 } =
+          await ContentExtractor.extractAnalyzableContentFromItem(
+            item,
+            pdfMode === "base64",
+            pdfMode,
+          );
 
-        if (pdfContent) {
-          currentChatState.pdfContent = pdfContent;
+        if (analysisContent) {
+          currentChatState.pdfContent = analysisContent;
           currentChatState.isBase64 = isBase64;
           messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">✅ 论文内容已加载，可以开始提问！</div>`;
         } else {
-          messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 无法加载论文内容，请确保该文献有 PDF 附件</div>`;
+          messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 无法加载论文内容，请确保该文献有可分析附件</div>`;
         }
       } catch (err: any) {
-        ztoolkit.log("[AI-Butler] 快速追问加载 PDF 失败:", err);
+        ztoolkit.log("[AI-Butler] 快速提问加载可分析内容失败:", err);
         messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 加载失败: ${err?.message || "未知错误"}</div>`;
       }
     }

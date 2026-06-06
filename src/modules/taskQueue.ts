@@ -26,8 +26,8 @@
  */
 
 import { getPref } from "../utils/prefs";
+import { ContentExtractor } from "./contentExtractor";
 import { NoteGenerator } from "./noteGenerator";
-import { PDFExtractor } from "./pdfExtractor";
 import type { LLMAbortSignal } from "./llmproviders/types";
 import {
   LLM_REQUEST_ABORT_MESSAGE,
@@ -46,9 +46,9 @@ function logTaskQueue(...args: Parameters<ZToolkit["log"]>): void {
   }
 }
 
-/** 无 PDF 附件错误标识 */
-const NO_PDF_ERROR_MSG =
-  "该条目没有 PDF 附件，无法进行 AI 分析。请先为该文献添加 PDF 文件。";
+/** 无可分析附件错误标识 */
+const NO_ANALYZABLE_ATTACHMENT_ERROR_MSG =
+  "该条目没有可分析附件，无法进行 AI 分析。请先为该文献添加 PDF 文件、网页快照或其他支持的内容源。";
 const TASK_ABORT_DETAIL = "该总结任务已由用户手动终止。";
 
 type TaskAbortController = {
@@ -156,6 +156,7 @@ export interface TaskItem {
   };
   /** 综述任务参数 */
   collectionId?: number;
+  /** 选中的内容源附件 ID（保留历史字段名以兼容已持久化任务） */
   pdfAttachmentIds?: number[];
   reviewName?: string;
   tableTemplate?: string;
@@ -965,33 +966,29 @@ export class TaskQueueManager {
         (getPref("tableFillPrompt" as any) as string) ||
         DEFAULT_TABLE_FILL_PROMPT;
 
-      task.workflowStage = "正在提取 PDF";
+      task.workflowStage = "正在提取内容";
       task.progress = 20;
-      this.notifyProgress(taskId, 20, "正在提取 PDF");
+      this.notifyProgress(taskId, 20, "正在提取内容");
 
-      // 找到 PDF 附件
-      const attachmentIDs = (item as any).getAttachments?.() || [];
-      let pdfAtt: Zotero.Item | null = null;
-      for (const attId of attachmentIDs) {
-        const att = await Zotero.Items.getAsync(attId);
-        if (att && (att as any).isPDFAttachment?.()) {
-          pdfAtt = att;
-          break;
-        }
-      }
+      // 找到可分析附件。当前策略保留 PDF 优先，其次使用文本内容源。
+      const analyzableAttachments =
+        await ContentExtractor.getAllAnalyzableAttachments(item);
+      const sourceAttachment = analyzableAttachments[0] || null;
 
-      if (!pdfAtt) throw new Error("该条目没有 PDF 附件");
+      if (!sourceAttachment)
+        throw new Error(NO_ANALYZABLE_ATTACHMENT_ERROR_MSG);
 
       task.workflowStage = "正在 AI 填表";
       task.progress = 40;
       this.notifyProgress(taskId, 40, "正在 AI 填表");
 
-      const tableContent = await LiteratureReviewService.fillTableForSinglePDF(
-        item,
-        pdfAtt,
-        tableTemplate,
-        fillPrompt,
-      );
+      const tableContent =
+        await LiteratureReviewService.fillTableForSingleAttachment(
+          item,
+          sourceAttachment,
+          tableTemplate,
+          fillPrompt,
+        );
 
       task.workflowStage = "正在保存";
       task.progress = 80;
@@ -1034,7 +1031,7 @@ export class TaskQueueManager {
    */
   public async addReviewTask(
     collection: Zotero.Collection,
-    pdfAttachments: Zotero.Item[],
+    sourceAttachments: Zotero.Item[],
     reviewName: string,
     prompt?: string,
     tableTemplate?: string,
@@ -1063,7 +1060,7 @@ export class TaskQueueManager {
       taskType: "review",
       workflowStage: "等待开始",
       collectionId: collection.id,
-      pdfAttachmentIds: pdfAttachments.map((p) => p.id),
+      pdfAttachmentIds: sourceAttachments.map((source) => source.id),
       reviewName,
       tableTemplate,
     };
@@ -1116,14 +1113,16 @@ export class TaskQueueManager {
       ) as Zotero.Collection;
       if (!collection) throw new Error("分类不存在");
 
-      // 加载 PDF 附件
-      const pdfAttachments: Zotero.Item[] = [];
+      // 加载内容源附件
+      const sourceAttachments: Zotero.Item[] = [];
       for (const attId of task.pdfAttachmentIds) {
         const att = await Zotero.Items.getAsync(attId);
-        if (att) pdfAttachments.push(att);
+        if (att) sourceAttachments.push(att);
       }
 
-      if (pdfAttachments.length === 0) throw new Error("没有可用的 PDF 附件");
+      if (sourceAttachments.length === 0) {
+        throw new Error("没有可用的内容源附件");
+      }
 
       const { LiteratureReviewService } =
         await import("./literatureReviewService");
@@ -1133,7 +1132,7 @@ export class TaskQueueManager {
 
       await LiteratureReviewService.generateReview(
         collection,
-        pdfAttachments,
+        sourceAttachments,
         reviewName,
         prompt || "",
         task.tableTemplate || "",
@@ -1189,7 +1188,7 @@ export class TaskQueueManager {
    */
   public async addTargetedQuestionTask(
     collection: Zotero.Collection,
-    pdfAttachments: Zotero.Item[],
+    sourceAttachments: Zotero.Item[],
     noteTitle: string,
     targetedPrompt: string,
     tableTemplate?: string,
@@ -1214,7 +1213,7 @@ export class TaskQueueManager {
       taskType: "targetedQuestion",
       workflowStage: "等待开始",
       collectionId: collection.id,
-      pdfAttachmentIds: pdfAttachments.map((p) => p.id),
+      pdfAttachmentIds: sourceAttachments.map((source) => source.id),
       tableTemplate,
       targetedPrompt,
       targetedNoteTitle: noteTitle,
@@ -1271,12 +1270,14 @@ export class TaskQueueManager {
       ) as Zotero.Collection;
       if (!collection) throw new Error("分类不存在");
 
-      const pdfAttachments: Zotero.Item[] = [];
+      const sourceAttachments: Zotero.Item[] = [];
       for (const attId of task.pdfAttachmentIds) {
         const att = await Zotero.Items.getAsync(attId);
-        if (att) pdfAttachments.push(att);
+        if (att) sourceAttachments.push(att);
       }
-      if (pdfAttachments.length === 0) throw new Error("没有可用的 PDF 附件");
+      if (sourceAttachments.length === 0) {
+        throw new Error("没有可用的内容源附件");
+      }
 
       const { LiteratureReviewService } =
         await import("./literatureReviewService");
@@ -1286,7 +1287,7 @@ export class TaskQueueManager {
 
       await LiteratureReviewService.generateTargetedAnswer(
         collection,
-        pdfAttachments,
+        sourceAttachments,
         noteTitle,
         task.targetedPrompt,
         task.tableTemplate || "",
@@ -1780,7 +1781,7 @@ export class TaskQueueManager {
    * 执行单个任务
    *
    * @param taskId 任务ID
-   * @returns 是否为快速失败（无 PDF 附件），用于批次配额判断
+   * @returns 是否为快速失败（无可分析附件），用于批次配额判断
    */
   private async executeTask(taskId: string): Promise<boolean> {
     const task = this.tasks.get(taskId);
@@ -1845,10 +1846,11 @@ export class TaskQueueManager {
         throw new Error("文献条目不存在");
       }
 
-      // 检查是否有 PDF 附件
-      const hasPdf = await PDFExtractor.hasPDFAttachment(item);
-      if (!hasPdf) {
-        throw new Error(NO_PDF_ERROR_MSG);
+      // 检查条目是否有当前支持的可分析内容源。
+      const hasAnalyzableAttachment =
+        await ContentExtractor.hasAnalyzableAttachment(item);
+      if (!hasAnalyzableAttachment) {
+        throw new Error(NO_ANALYZABLE_ATTACHMENT_ERROR_MSG);
       }
 
       // 调用 NoteGenerator 生成笔记
@@ -1913,16 +1915,17 @@ export class TaskQueueManager {
         : this.buildTaskErrorDetails(task, error);
       const suppressTaskRetry = this.shouldSuppressTaskRetry(error, task);
 
-      // 无 PDF 附件错误直接标记失败，不重试（用户需要手动添加 PDF）
-      const isNoPdfError = task.error === NO_PDF_ERROR_MSG;
-      if (isTaskAborted || isNoPdfError || suppressTaskRetry) {
+      // 无可分析附件错误直接标记失败，不重试（用户需要手动补充附件）
+      const isNoAnalyzableAttachmentError =
+        task.error === NO_ANALYZABLE_ATTACHMENT_ERROR_MSG;
+      if (isTaskAborted || isNoAnalyzableAttachmentError || suppressTaskRetry) {
         task.status = TaskStatus.FAILED;
         task.completedAt = new Date();
         logTaskQueue(
           isTaskAborted
             ? `任务已终止: ${task.title}`
-            : isNoPdfError
-              ? `任务失败（无 PDF 附件）: ${task.title}`
+            : isNoAnalyzableAttachmentError
+              ? `任务失败（无可分析附件）: ${task.title}`
               : `任务失败（API 尝试已用尽，不再进行队列重试）: ${task.title}`,
         );
       } else {
@@ -1945,7 +1948,7 @@ export class TaskQueueManager {
 
       this.notifyComplete(taskId, false, task.error);
       this.notifyStream(taskId, { type: "error" });
-      return isNoPdfError; // 无 PDF 错误时返回 true，表示快速失败
+      return isNoAnalyzableAttachmentError; // 无可分析附件时返回 true，表示快速失败
     } finally {
       // 移除处理中标记
       this.processingTasks.delete(taskId);

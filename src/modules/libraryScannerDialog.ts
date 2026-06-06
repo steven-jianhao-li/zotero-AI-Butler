@@ -18,6 +18,7 @@
  */
 
 import { isRegularSummaryNote } from "./aiNoteClassifier";
+import { ContentExtractor } from "./contentExtractor";
 import { TaskQueueManager } from "./taskQueue";
 
 /**
@@ -222,6 +223,10 @@ export class LibraryScannerDialog {
     // 检查是否已有 AI 笔记
     const hasAINote = await this.hasExistingAINote(item);
     if (hasAINote) {
+      return null;
+    }
+
+    if (!(await ContentExtractor.hasAnalyzableAttachment(item))) {
       return null;
     }
 

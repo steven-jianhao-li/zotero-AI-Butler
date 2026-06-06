@@ -1285,27 +1285,26 @@ export class SummaryView extends BaseView {
           .trim();
       }
 
-      // 获取 PDF 内容以支持追问
+      // 获取可分析内容以支持追问
       try {
-        const { PDFExtractor } = await import("../pdfExtractor");
+        const { ContentExtractor } = await import("../contentExtractor");
         const { default: LLMService } = await import("../llmService");
         const pdfMode = LLMService.getEffectivePdfProcessMode();
-        const isBase64 = pdfMode === "base64";
 
-        let pdfContent = "";
-        if (isBase64) {
-          pdfContent = await PDFExtractor.extractBase64FromItem(item);
-        } else {
-          pdfContent = await PDFExtractor.extractTextFromItem(item, pdfMode);
-        }
+        const { content: analysisContent, isBase64 } =
+          await ContentExtractor.extractAnalyzableContentFromItem(
+            item,
+            pdfMode === "base64",
+            pdfMode,
+          );
 
         this.hideLoading();
 
-        if (pdfContent) {
+        if (analysisContent) {
           // 设置论文上下文
           this.setCurrentPaperContext(
             itemId,
-            pdfContent,
+            analysisContent,
             isBase64,
             aiSummaryText,
           );
@@ -1370,13 +1369,13 @@ export class SummaryView extends BaseView {
           }
         } else {
           this.hideLoading();
-          // 没有 PDF 内容
+          // 没有可分析内容
           new ztoolkit.ProgressWindow("AI Butler", {
             closeOnClick: true,
             closeTime: 3000,
           })
             .createLine({
-              text: "该文献没有可用的 PDF 附件",
+              text: "该文献没有可用的内容源附件",
               type: "error",
             })
             .show();
@@ -1384,13 +1383,13 @@ export class SummaryView extends BaseView {
         }
       } catch (err) {
         this.hideLoading();
-        ztoolkit.log("[AI-Butler] 获取 PDF 内容失败:", err);
+        ztoolkit.log("[AI-Butler] 获取可分析内容失败:", err);
         new ztoolkit.ProgressWindow("AI Butler", {
           closeOnClick: true,
           closeTime: 3000,
         })
           .createLine({
-            text: "获取 PDF 内容失败",
+            text: "获取可分析内容失败",
             type: "error",
           })
           .show();
@@ -1487,19 +1486,18 @@ export class SummaryView extends BaseView {
         .replace(/&amp;/g, "&")
         .trim();
 
-      // 获取PDF内容以支持后续追问
+      // 获取可分析内容以支持后续追问
       try {
-        const { PDFExtractor } = await import("../pdfExtractor");
+        const { ContentExtractor } = await import("../contentExtractor");
         const { default: LLMService } = await import("../llmService");
         const pdfMode = LLMService.getEffectivePdfProcessMode();
-        const isBase64 = pdfMode === "base64";
 
-        let pdfContent = "";
-        if (isBase64) {
-          pdfContent = await PDFExtractor.extractBase64FromItem(item);
-        } else {
-          pdfContent = await PDFExtractor.extractTextFromItem(item, pdfMode);
-        }
+        const { content: pdfContent, isBase64 } =
+          await ContentExtractor.extractAnalyzableContentFromItem(
+            item,
+            pdfMode === "base64",
+            pdfMode,
+          );
 
         if (pdfContent) {
           // 设置论文上下文，传入AI总结内容
@@ -1527,11 +1525,11 @@ export class SummaryView extends BaseView {
             ztoolkit.log("[AI-Butler] 加载历史追问失败:", e);
           }
         } else {
-          // 没有PDF内容，不显示追问按钮
+          // 没有可分析内容，不显示追问按钮
           this.clearPaperContext();
         }
       } catch (err) {
-        ztoolkit.log("[AI-Butler] 获取PDF内容失败，无法启用追问功能:", err);
+        ztoolkit.log("[AI-Butler] 获取可分析内容失败，无法启用追问功能:", err);
         this.clearPaperContext();
       }
     } catch (err) {

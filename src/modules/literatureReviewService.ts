@@ -6,17 +6,18 @@
  * 本模块提供文献综述生成的核心服务
  *
  * 主要职责:
- * 1. 创建报告条目
- * 2. 将选中的 PDF 作为附件添加到报告
- * 3. 逐篇文献按表格模板填表（并行，可复用已有表格）
- * 4. 汇总表格内容生成文献综述
- * 5. 生成 AI 笔记并关联到报告条目
+ * 1. 将选中的可分析附件映射到父文献
+ * 2. 逐篇文献按表格模板填表（并行，可复用已有表格）
+ * 3. 汇总表格内容生成文献综述或针对性回答
+ * 4. 在目标分类下创建独立 AI 笔记
+ * 5. 为已纳入综述的文献更新处理标签
  *
  * @module literatureReviewService
  * @author AI-Butler Team
  */
 
 import { PDFExtractor } from "./pdfExtractor";
+import { ContentExtractor } from "./contentExtractor";
 import { NoteGenerator } from "./noteGenerator";
 import LLMService from "./llmService";
 import {
@@ -37,15 +38,18 @@ type TableStrategy = "skip" | "overwrite";
 /** AI-Table 标签名，用于标识文献填表笔记 */
 const TABLE_NOTE_TAG = "AI-Table";
 
-/**
- * PDF 文件信息（带文件路径）
- */
-interface PdfFileData {
+/** 可分析来源文件信息（带文件路径） */
+interface SourceFileData {
   title: string;
   filePath: string;
   content: string;
   isBase64: boolean;
 }
+
+type ReviewSourcePair = {
+  parentItem: Zotero.Item;
+  sourceAttachment: Zotero.Item;
+};
 
 interface TargetedAnswerOptions {
   selectedTableEntries?: string[];
@@ -62,22 +66,21 @@ export class LiteratureReviewService {
    * 生成文献综述（表格驱动的两阶段流程）
    *
    * 流程:
-   * 1. 创建报告条目
-   * 2. 添加 PDF 附件到报告
-   * 3. 逐篇填表（并行，复用已有表格）
-   * 4. 汇总所有表格 → 调用 LLM 生成综述
-   * 5. 创建综述笔记
+   * 1. 逐篇填表（并行，复用已有表格）
+   * 2. 汇总所有表格 → 调用 LLM 生成综述
+   * 3. 创建独立综述笔记
+   * 4. 为已纳入综述的文献添加 AI-Reviewed 标签
    *
    * @param collection 目标分类
-   * @param pdfAttachments 选中的 PDF 附件
+   * @param sourceAttachments 选中的可分析附件
    * @param reviewName 综述名称
    * @param prompt 用户自定义综述提示词（可选，默认使用 tableReviewPrompt）
    * @param progressCallback 进度回调
-   * @returns 创建的报告条目
+   * @returns 创建的独立综述笔记
    */
   static async generateReview(
     collection: Zotero.Collection,
-    pdfAttachments: Zotero.Item[],
+    sourceAttachments: Zotero.Item[],
     reviewName: string,
     prompt: string,
     tableTemplateOverride?: string,
@@ -93,17 +96,14 @@ export class LiteratureReviewService {
       DEFAULT_TABLE_FILL_PROMPT;
     const concurrency = (getPref("tableFillConcurrency" as any) as number) || 3;
 
-    // 构建父条目 → PDF 附件的映射
-    const itemPdfPairs: Array<{
-      parentItem: Zotero.Item;
-      pdfAttachment: Zotero.Item;
-    }> = [];
-    for (const pdfAtt of pdfAttachments) {
-      const parentID = pdfAtt.parentID;
+    // 构建父条目 → 可分析附件的映射
+    const sourcePairs: ReviewSourcePair[] = [];
+    for (const sourceAttachment of sourceAttachments) {
+      const parentID = sourceAttachment.parentID;
       if (parentID) {
         const parentItem = await Zotero.Items.getAsync(parentID);
         if (parentItem) {
-          itemPdfPairs.push({ parentItem, pdfAttachment: pdfAtt });
+          sourcePairs.push({ parentItem, sourceAttachment });
         }
       }
     }
@@ -111,7 +111,7 @@ export class LiteratureReviewService {
     progressCallback?.("正在逐篇填表...", 10);
 
     const tableResults = await this.fillTablesInParallel(
-      itemPdfPairs,
+      sourcePairs,
       tableTemplate,
       fillPrompt,
       concurrency,
@@ -125,7 +125,7 @@ export class LiteratureReviewService {
     // 2. 汇总表格并生成综述
     progressCallback?.("正在汇总表格...", 65);
 
-    const aggregated = this.aggregateTableContents(tableResults, itemPdfPairs);
+    const aggregated = this.aggregateTableContents(tableResults, sourcePairs);
 
     progressCallback?.("正在生成综述...", 70);
 
@@ -145,7 +145,7 @@ export class LiteratureReviewService {
     // 3. 后处理引用链接
     summaryContent = await this.postProcessCitations(
       summaryContent,
-      itemPdfPairs,
+      sourcePairs,
     );
 
     progressCallback?.("正在创建笔记...", 90);
@@ -159,7 +159,7 @@ export class LiteratureReviewService {
     );
 
     // 5. 为所有已纳入综述的文献添加 AI-Reviewed 标签
-    for (const { parentItem } of itemPdfPairs) {
+    for (const { parentItem } of sourcePairs) {
       try {
         const existingTags: Array<{ tag: string }> =
           (parentItem as any).getTags?.() || [];
@@ -187,7 +187,7 @@ export class LiteratureReviewService {
    */
   static async generateTargetedAnswer(
     collection: Zotero.Collection,
-    pdfAttachments: Zotero.Item[],
+    sourceAttachments: Zotero.Item[],
     noteTitle: string,
     questionPrompt: string,
     tableTemplateOverride?: string,
@@ -211,18 +211,15 @@ export class LiteratureReviewService {
     );
     const forceMergeAppendedEntries = appendedTableEntries.length > 0;
 
-    const itemPdfPairs: Array<{
-      parentItem: Zotero.Item;
-      pdfAttachment: Zotero.Item;
-    }> = [];
+    const sourcePairs: ReviewSourcePair[] = [];
     const parentSeen = new Set<number>();
-    for (const pdfAtt of pdfAttachments) {
-      const parentID = pdfAtt.parentID;
+    for (const sourceAttachment of sourceAttachments) {
+      const parentID = sourceAttachment.parentID;
       if (!parentID || parentSeen.has(parentID)) continue;
       const parentItem = await Zotero.Items.getAsync(parentID);
       if (parentItem) {
         parentSeen.add(parentID);
-        itemPdfPairs.push({ parentItem, pdfAttachment: pdfAtt });
+        sourcePairs.push({ parentItem, sourceAttachment });
       }
     }
 
@@ -230,7 +227,7 @@ export class LiteratureReviewService {
 
     const tableResults = forceMergeAppendedEntries
       ? await this.appendTableEntriesInParallel(
-          itemPdfPairs,
+          sourcePairs,
           appendedTableEntries,
           fillPrompt,
           concurrency,
@@ -240,7 +237,7 @@ export class LiteratureReviewService {
           },
         )
       : await this.fillTablesInParallel(
-          itemPdfPairs,
+          sourcePairs,
           tableTemplate,
           fillPrompt,
           concurrency,
@@ -266,7 +263,7 @@ export class LiteratureReviewService {
     progressCallback?.("正在汇总表格...", 65);
     const aggregated = this.aggregateTableContents(
       filteredTableResults,
-      itemPdfPairs,
+      sourcePairs,
     );
 
     const selectedEntriesInstruction =
@@ -283,10 +280,7 @@ export class LiteratureReviewService {
       content: { kind: "text", text: aggregated, policy: "text" },
     });
     let answerContent = answerResponse.text;
-    answerContent = await this.postProcessCitations(
-      answerContent,
-      itemPdfPairs,
-    );
+    answerContent = await this.postProcessCitations(answerContent, sourcePairs);
 
     progressCallback?.("正在创建笔记...", 90);
     const note = await this.createStandaloneReviewNote(
@@ -507,7 +501,7 @@ ${entryList}
   }
 
   private static async appendTableEntriesInParallel(
-    items: Array<{ parentItem: Zotero.Item; pdfAttachment: Zotero.Item }>,
+    items: ReviewSourcePair[],
     appendedEntries: string[],
     fillPrompt: string,
     concurrency: number,
@@ -529,9 +523,9 @@ ${entryList}
         try {
           const existingTable =
             (await this.findTableNote(task.parentItem)) || "";
-          const appendResult = await this.fillTableForSinglePDF(
+          const appendResult = await this.fillTableForSingleAttachment(
             task.parentItem,
-            task.pdfAttachment,
+            task.sourceAttachment,
             appendTemplate,
             appendPrompt,
           );
@@ -569,25 +563,25 @@ ${entryList}
   // ==================== 表格填写相关方法 ====================
 
   /**
-   * 对单篇文献的 PDF 进行填表
+   * 对单篇文献的可分析附件进行填表
    *
    * @param item 文献条目
-   * @param pdfAttachment PDF 附件
+   * @param sourceAttachment 可分析附件
    * @param tableTemplate Markdown 表格模板
    * @param fillPrompt 填表提示词
    * @param progressCallback 进度回调
    * @returns 填好的 Markdown 表格字符串
    */
-  static async fillTableForSinglePDF(
+  static async fillTableForSingleAttachment(
     item: Zotero.Item,
-    pdfAttachment: Zotero.Item,
+    sourceAttachment: Zotero.Item,
     tableTemplate: string,
     fillPrompt: string,
     progressCallback?: (message: string, progress: number) => void,
   ): Promise<string> {
     const itemTitle = (item.getField("title") as string) || "未知标题";
 
-    progressCallback?.(`正在提取 PDF: ${itemTitle.slice(0, 30)}...`, 10);
+    progressCallback?.(`正在提取内容: ${itemTitle.slice(0, 30)}...`, 10);
 
     // 构建完整提示词：将 ${tableTemplate} 替换为实际模板
     const actualPrompt = fillPrompt.replace(
@@ -597,14 +591,14 @@ ${entryList}
 
     progressCallback?.(`正在填表: ${itemTitle.slice(0, 30)}...`, 50);
 
-    // 调用统一 LLM 中间件填表。输入策略由中间件统一读取并按 Provider 能力降级。
+    // 调用统一 LLM 中间件填表。输入策略由中间件统一读取并按 Provider 能力解析。
     const response = await LLMService.generate({
       task: "table",
       prompt: actualPrompt,
       content: {
         kind: "pdf-attachment",
         item,
-        attachment: pdfAttachment,
+        attachment: sourceAttachment,
       },
       onProgress: () => {
         /* dummy callback to trigger streaming */
@@ -777,20 +771,20 @@ ${entryList}
    * 大幅减少 100+ 篇文献场景下的 token 消耗。
    *
    * @param tableResults 文献ID → 表格内容的映射
-   * @param itemPdfPairs 父条目 → PDF 附件的映射（用于提取作者/年份）
+   * @param sourcePairs 父条目 → 可分析附件的映射（用于提取作者/年份）
    * @returns 合并后的 Markdown 文档
    */
   static aggregateTableContents(
     tableResults: Map<number, string>,
-    itemPdfPairs?: Array<{
+    sourcePairs?: Array<{
       parentItem: Zotero.Item;
-      pdfAttachment: Zotero.Item;
+      sourceAttachment: Zotero.Item;
     }>,
   ): string {
     // 构建 itemId → parentItem 的快速查找
     const itemMap = new Map<number, Zotero.Item>();
-    if (itemPdfPairs) {
-      for (const { parentItem } of itemPdfPairs) {
+    if (sourcePairs) {
+      for (const { parentItem } of sourcePairs) {
         itemMap.set(parentItem.id, parentItem);
       }
     }
@@ -909,7 +903,7 @@ ${entryList}
   /**
    * 并行填表（带并发控制）
    *
-   * @param items 文献条目与 PDF 附件的配对列表
+   * @param items 文献条目与可分析附件的配对列表
    * @param tableTemplate 表格模板
    * @param fillPrompt 填表提示词
    * @param concurrency 并发数
@@ -918,7 +912,7 @@ ${entryList}
    * @returns 文献ID → 表格内容的映射
    */
   static async fillTablesInParallel(
-    items: Array<{ parentItem: Zotero.Item; pdfAttachment: Zotero.Item }>,
+    items: ReviewSourcePair[],
     tableTemplate: string,
     fillPrompt: string,
     concurrency: number,
@@ -953,9 +947,9 @@ ${entryList}
               continue;
             }
           }
-          const table = await this.fillTableForSinglePDF(
+          const table = await this.fillTableForSingleAttachment(
             task.parentItem,
-            task.pdfAttachment,
+            task.sourceAttachment,
             tableTemplate,
             fillPrompt,
           );
@@ -1006,36 +1000,37 @@ ${entryList}
   }
 
   /**
-   * 将 PDF 附件添加到报告条目
+   * 将可分析附件添加到报告条目。
    *
-   * 创建链接附件，将原始 PDF 链接到报告条目下
-   * 附件命名格式：论文标题前N位 + 原附件名称
+   * 创建链接附件，将原始内容源链接到报告条目下。
+   * 附件命名格式：论文标题前N位 + 原附件名称。
    * 优化：缓存父条目标题，避免重复查询
    */
-  static async attachPdfsToReport(
+  static async attachSourcesToReport(
     reportItem: Zotero.Item,
-    pdfAttachments: Zotero.Item[],
+    sourceAttachments: Zotero.Item[],
   ): Promise<void> {
     const TITLE_PREFIX_LENGTH = 30; // 论文标题前缀长度
 
     // 缓存父条目标题
     const parentTitleCache = new Map<number, string>();
 
-    for (const pdfAtt of pdfAttachments) {
+    for (const sourceAttachment of sourceAttachments) {
       try {
-        // 获取原始 PDF 文件路径
-        const filePath = await pdfAtt.getFilePathAsync();
+        // 获取原始附件文件路径
+        const filePath = await sourceAttachment.getFilePathAsync();
         if (!filePath) {
-          ztoolkit.log(`[AI-Butler] PDF 附件无文件路径: ${pdfAtt.id}`);
+          ztoolkit.log(`[AI-Butler] 附件无文件路径: ${sourceAttachment.id}`);
           continue;
         }
 
         // 获取原始附件的标题
-        const originalTitle = (pdfAtt.getField("title") as string) || "PDF";
+        const originalTitle =
+          (sourceAttachment.getField("title") as string) || "附件";
 
         // 获取父条目（论文）的标题（带缓存）
         let paperTitle = "";
-        const parentID = pdfAtt.parentID;
+        const parentID = sourceAttachment.parentID;
         if (parentID) {
           if (parentTitleCache.has(parentID)) {
             paperTitle = parentTitleCache.get(parentID) || "";
@@ -1067,40 +1062,43 @@ ${entryList}
           title: newTitle,
         });
       } catch (error) {
-        ztoolkit.log(`[AI-Butler] 添加 PDF 附件失败:`, error);
+        ztoolkit.log(`[AI-Butler] 添加附件失败:`, error);
         // 继续处理其他附件
       }
     }
   }
 
   /**
-   * 从 PDF 附件提取内容（包括文件路径）
+   * 从可分析附件提取内容（包括文件路径）
    * 优化：缓存父条目信息，避免重复查询
    */
-  static async extractPDFContentsFromAttachments(
-    pdfAttachments: Zotero.Item[],
+  static async extractSourceContentsFromAttachments(
+    sourceAttachments: Zotero.Item[],
     progressCallback?: (message: string, progress: number) => void,
-  ): Promise<PdfFileData[]> {
-    const contents: PdfFileData[] = [];
-    const total = pdfAttachments.length;
+  ): Promise<SourceFileData[]> {
+    const contents: SourceFileData[] = [];
+    const total = sourceAttachments.length;
 
     // 缓存父条目标题，避免重复查询
     const parentTitleCache = new Map<number, string>();
-    // 统计每个父条目有多少个 PDF，用于判断是否需要显示附件名
-    const parentPdfCount = new Map<number, number>();
+    // 统计每个父条目有多少个内容源，用于判断是否需要显示附件名
+    const parentSourceCount = new Map<number, number>();
 
-    // 第一遍：统计每个父条目的 PDF 数量
-    for (const pdfAtt of pdfAttachments) {
-      const parentID = pdfAtt.parentID;
+    // 第一遍：统计每个父条目的内容源数量
+    for (const sourceAttachment of sourceAttachments) {
+      const parentID = sourceAttachment.parentID;
       if (parentID) {
-        parentPdfCount.set(parentID, (parentPdfCount.get(parentID) || 0) + 1);
+        parentSourceCount.set(
+          parentID,
+          (parentSourceCount.get(parentID) || 0) + 1,
+        );
       }
     }
 
-    for (let i = 0; i < pdfAttachments.length; i++) {
-      const pdfAtt = pdfAttachments[i];
+    for (let i = 0; i < sourceAttachments.length; i++) {
+      const sourceAttachment = sourceAttachments[i];
       const attachmentTitle =
-        (pdfAtt.getField("title") as string) || `PDF ${i + 1}`;
+        (sourceAttachment.getField("title") as string) || `附件 ${i + 1}`;
       const progress = 30 + Math.floor((i / total) * 20);
       progressCallback?.(
         `正在提取 (${i + 1}/${total}): ${attachmentTitle.slice(0, 30)}...`,
@@ -1109,15 +1107,15 @@ ${entryList}
 
       try {
         // 获取文件路径
-        const filePath = await pdfAtt.getFilePathAsync();
+        const filePath = await sourceAttachment.getFilePathAsync();
         if (!filePath) {
-          ztoolkit.log(`[AI-Butler] PDF 附件无文件路径: ${pdfAtt.id}`);
+          ztoolkit.log(`[AI-Butler] 附件无文件路径: ${sourceAttachment.id}`);
           continue;
         }
 
         // 获取父条目标题（带缓存）
         let paperTitle = "";
-        const parentID = pdfAtt.parentID;
+        const parentID = sourceAttachment.parentID;
         if (parentID) {
           if (parentTitleCache.has(parentID)) {
             paperTitle = parentTitleCache.get(parentID) || "";
@@ -1132,36 +1130,30 @@ ${entryList}
           }
         }
 
-        // 构建显示标题：如果同一论文有多个 PDF，则显示 "论文标题 - 附件名"
+        // 构建显示标题：如果同一论文有多个内容源，则显示 "论文标题 - 附件名"
         let displayTitle = paperTitle || attachmentTitle;
-        const pdfCountForParent = parentID
-          ? parentPdfCount.get(parentID) || 1
+        const sourceCountForParent = parentID
+          ? parentSourceCount.get(parentID) || 1
           : 1;
-        if (pdfCountForParent > 1 && paperTitle) {
+        if (sourceCountForParent > 1 && paperTitle) {
           displayTitle = `${paperTitle} - ${attachmentTitle}`;
         }
 
-        // 尝试读取 Base64 内容
-        let base64Content = "";
-        try {
-          const fileData = await IOUtils.read(filePath);
-          // 使用分块方式转换为 base64，避免大文件导致 "too many function arguments" 错误
-          base64Content = this.arrayBufferToBase64(fileData);
-        } catch (e) {
-          ztoolkit.log(`[AI-Butler] 读取 PDF 文件失败: ${filePath}`, e);
-        }
+        const isPdf = PDFExtractor.isPdfAttachment(sourceAttachment);
+        const content = isPdf
+          ? this.arrayBufferToBase64(await IOUtils.read(filePath))
+          : await ContentExtractor.extractTextFromAnalyzableAttachment(
+              sourceAttachment,
+            );
 
         contents.push({
           title: displayTitle,
           filePath,
-          content: base64Content,
-          isBase64: true,
+          content,
+          isBase64: isPdf,
         });
       } catch (error) {
-        ztoolkit.log(
-          `[AI-Butler] 提取 PDF 内容失败: ${attachmentTitle}`,
-          error,
-        );
+        ztoolkit.log(`[AI-Butler] 提取附件内容失败: ${attachmentTitle}`, error);
         // 继续处理其他文献
       }
     }
@@ -1170,24 +1162,47 @@ ${entryList}
   }
 
   /**
-   * 使用 LLM 从多个 PDF 生成综述
+   * 使用 LLM 从多个内容源生成综述
    */
-  static async generateSummaryFromMultiplePDFs(
-    pdfContents: PdfFileData[],
+  static async generateSummaryFromMultipleSources(
+    sourceContents: SourceFileData[],
     prompt: string,
     progressCallback?: (message: string, progress: number) => void,
   ): Promise<string> {
-    if (pdfContents.length === 0) {
-      throw new Error("没有可用的 PDF 内容");
+    if (sourceContents.length === 0) {
+      throw new Error("没有可用的分析内容");
     }
 
     progressCallback?.("正在调用 AI 生成综述...", 60);
 
-    const files = pdfContents.map((pdf, index) => ({
-      filePath: pdf.filePath,
-      displayName: `${index + 1}_${pdf.title.slice(0, 50)}`,
-      base64Content: pdf.isBase64 ? pdf.content : undefined,
-      textContent: pdf.isBase64 ? undefined : pdf.content,
+    const hasTextSource = sourceContents.some((source) => !source.isBase64);
+    if (hasTextSource) {
+      const combinedText = sourceContents
+        .map((source) => {
+          if (source.isBase64) {
+            return `\n\n=== ${source.title} ===\n[PDF 内容源: ${source.filePath}]`;
+          }
+          return `\n\n=== ${source.title} ===\n${source.content}`;
+        })
+        .join("\n");
+
+      const fullPrompt = `${prompt}\n\n以下是需要综述的内容源:\n${combinedText}`;
+
+      return LLMService.generateText({
+        task: "literature-review",
+        prompt: fullPrompt,
+        content: {
+          kind: "text",
+          text: combinedText,
+          policy: "text",
+        },
+      });
+    }
+
+    const files = sourceContents.map((source, index) => ({
+      filePath: source.filePath,
+      displayName: `${index + 1}_${source.title.slice(0, 50)}`,
+      base64Content: source.content,
     }));
 
     return LLMService.generateText({
@@ -1204,17 +1219,17 @@ ${entryList}
    * 使用 Gemini File API 生成综述
    */
   private static async generateWithGeminiFileAPI(
-    pdfContents: PdfFileData[],
+    sourceContents: SourceFileData[],
     prompt: string,
     progressCallback?: (message: string, progress: number) => void,
   ): Promise<string> {
-    progressCallback?.("正在上传 PDF 文件到大模型...", 55);
+    progressCallback?.("正在上传内容源到大模型...", 55);
 
-    const files = pdfContents.map((pdf, index) => ({
-      filePath: pdf.filePath,
-      displayName: `${index + 1}_${pdf.title.slice(0, 50)}`,
-      base64Content: pdf.isBase64 ? pdf.content : undefined,
-      textContent: pdf.isBase64 ? undefined : pdf.content,
+    const files = sourceContents.map((source, index) => ({
+      filePath: source.filePath,
+      displayName: `${index + 1}_${source.title.slice(0, 50)}`,
+      base64Content: source.isBase64 ? source.content : undefined,
+      textContent: source.isBase64 ? undefined : source.content,
     }));
 
     progressCallback?.("正在调用 AI 生成综述...", 65);
@@ -1232,7 +1247,7 @@ ${entryList}
    * 使用合并文本模式生成综述
    */
   private static async generateWithMergedText(
-    pdfContents: PdfFileData[],
+    sourceContents: SourceFileData[],
     prompt: string,
     progressCallback?: (message: string, progress: number) => void,
   ): Promise<string> {
@@ -1243,21 +1258,21 @@ ${entryList}
     let hasBase64 = false;
     let firstBase64Content = "";
 
-    for (const pdf of pdfContents) {
-      if (pdf.isBase64 && pdf.content) {
+    for (const source of sourceContents) {
+      if (source.isBase64 && source.content) {
         if (!hasBase64) {
           hasBase64 = true;
-          firstBase64Content = pdf.content;
+          firstBase64Content = source.content;
         }
-        combinedContent += `\n\n=== 论文: ${pdf.title} ===\n[PDF 内容]\n`;
+        combinedContent += `\n\n=== 论文: ${source.title} ===\n[Base64 内容源]\n`;
       } else {
-        combinedContent += `\n\n=== 论文: ${pdf.title} ===\n${pdf.content}\n`;
+        combinedContent += `\n\n=== 论文: ${source.title} ===\n${source.content}\n`;
       }
     }
 
-    // 如果有 Base64 内容，使用第一个 PDF 的 Base64
+    // 如果有 Base64 内容，使用第一个可上传内容源
     if (hasBase64 && firstBase64Content) {
-      const fullPrompt = `${prompt}\n\n以下是需要综述的论文列表:\n${pdfContents.map((p, i) => `${i + 1}. ${p.title}`).join("\n")}\n\n请基于上传的 PDF 内容生成综述。`;
+      const fullPrompt = `${prompt}\n\n以下是需要综述的论文列表:\n${sourceContents.map((p, i) => `${i + 1}. ${p.title}`).join("\n")}\n\n请基于上传内容生成综述。`;
 
       const result = await LLMService.generateText({
         task: "literature-review",
@@ -1274,7 +1289,7 @@ ${entryList}
 
     // 纯文本模式
     if (!combinedContent.trim()) {
-      throw new Error("当前 API 不支持多文件处理，且无法提取 PDF 文本内容");
+      throw new Error("当前 API 不支持多文件处理，且无法提取文本内容");
     }
 
     const fullPrompt = `${prompt}\n\n以下是需要综述的论文内容:\n${combinedContent}`;
@@ -1352,21 +1367,21 @@ ${entryList}
    * 将匹配成功的引用转换为 zotero://select 可点击链接。
    *
    * @param content 综述正文
-   * @param itemPdfPairs 文献条目列表（顺序与 aggregateTableContents 中的编号一致）
+   * @param sourcePairs 文献条目列表（顺序与 aggregateTableContents 中的编号一致）
    * @returns 处理后的正文
    */
   static async postProcessCitations(
     content: string,
-    itemPdfPairs: Array<{
+    sourcePairs: Array<{
       parentItem: Zotero.Item;
-      pdfAttachment: Zotero.Item;
+      sourceAttachment: Zotero.Item;
     }>,
   ): Promise<string> {
-    if (itemPdfPairs.length === 0) return content;
+    if (sourcePairs.length === 0) return content;
 
     // 构建序号 → Zotero URI 的映射（序号从 1 开始，与 aggregateTableContents 一致）
     const numToUri = new Map<number, string>();
-    itemPdfPairs.forEach(({ parentItem }, idx) => {
+    sourcePairs.forEach(({ parentItem }, idx) => {
       const itemKey = (parentItem as any).key || "";
       if (itemKey) {
         numToUri.set(idx + 1, `zotero://select/library/items/${itemKey}`);

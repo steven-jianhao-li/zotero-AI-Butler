@@ -7,7 +7,7 @@
  *
  * 主要职责:
  * 1. 显示综述配置表单（名称、提示词）
- * 2. 以树形结构展示分类下的文献（仅显示有 PDF 的条目）
+ * 2. 以树形结构展示分类下的文献（仅显示有可分析附件的条目）
  * 3. 提供多选功能选择要纳入综述的文献
  * 4. 调用综述服务生成报告
  *
@@ -18,6 +18,7 @@
 import { BaseView } from "./BaseView";
 import { MainWindow } from "./MainWindow";
 import { LiteratureReviewService } from "../literatureReviewService";
+import { ContentExtractor } from "../contentExtractor";
 import {
   createInput,
   createTextarea,
@@ -69,9 +70,9 @@ ${"${question}"}
 3. 对引用的结论使用[num]标注来源`;
 
 /**
- * PDF 附件节点接口
+ * 可分析附件节点接口
  */
-interface PdfNode {
+interface SourceNode {
   id: string;
   attachment: Zotero.Item;
   name: string;
@@ -89,7 +90,7 @@ interface TreeNode {
   name: string;
   checked: boolean;
   expanded: boolean;
-  pdfNodes: PdfNode[];
+  sourceNodes: SourceNode[];
   checkboxElement?: HTMLInputElement;
   expandButton?: HTMLElement;
   childrenContainer?: HTMLElement;
@@ -101,8 +102,8 @@ interface TreeNode {
 export class LiteratureReviewView extends BaseView {
   private collection: Zotero.Collection | null = null;
   private treeNodes: TreeNode[] = [];
-  private selectedPdfCount: number = 0;
-  private totalPdfCount: number = 0;
+  private selectedSourceCount: number = 0;
+  private totalSourceCount: number = 0;
 
   // UI 元素引用
   private nameInput: HTMLInputElement | null = null;
@@ -533,7 +534,7 @@ export class LiteratureReviewView extends BaseView {
     formContainer.appendChild(tablePromptGroup);
     formContainer.appendChild(targetedPromptGroup);
 
-    // PDF 选择区域标题
+    // 附件选择区域标题
     const selectionHeader = this.createElement("div", {
       styles: {
         padding: "16px 20px",
@@ -553,7 +554,7 @@ export class LiteratureReviewView extends BaseView {
         fontWeight: "600",
         color: "var(--ai-text)",
       },
-      textContent: "选择要纳入综述的 PDF",
+      textContent: "选择要纳入综述的内容源",
     });
 
     // 全选/仅默认/取消按钮
@@ -561,12 +562,12 @@ export class LiteratureReviewView extends BaseView {
     selectAllBtn.addEventListener("click", () => this.toggleAllNodes(true));
 
     const selectDefaultBtn = createStyledButton(
-      "仅默认 PDF",
+      "仅默认附件",
       "#0f766e",
       "small",
     );
     selectDefaultBtn.addEventListener("click", () =>
-      this.selectDefaultPdfNodes(),
+      this.selectDefaultSourceNodes(),
     );
 
     const deselectAllBtn = createStyledButton("取消全选", "#94a3b8", "small");
@@ -635,7 +636,7 @@ export class LiteratureReviewView extends BaseView {
         flexShrink: "0",
         whiteSpace: "nowrap",
       },
-      innerHTML: "已选择: <strong>0</strong> 个 PDF",
+      innerHTML: "已选择: <strong>0</strong> 个附件",
     });
 
     // 按钮容器
@@ -698,12 +699,12 @@ export class LiteratureReviewView extends BaseView {
   }
 
   /**
-   * 扫描分类下所有文献及其 PDF 附件
+   * 扫描分类下所有文献及其可分析附件
    */
   private async scanCollection(): Promise<void> {
     this.treeNodes = [];
-    this.totalPdfCount = 0;
-    this.selectedPdfCount = 0;
+    this.totalSourceCount = 0;
+    this.selectedSourceCount = 0;
 
     if (!this.collection) {
       return;
@@ -718,16 +719,16 @@ export class LiteratureReviewView extends BaseView {
         continue;
       }
 
-      // 获取所有 PDF 附件
-      const pdfAttachments = await this.getPdfAttachments(item);
+      // 获取所有可分析附件。当前策略保留 PDF 优先，其次使用文本内容源。
+      const sourceAttachments = await this.getAnalyzableAttachments(item);
 
-      if (pdfAttachments.length > 0) {
-        this.totalPdfCount += pdfAttachments.length;
+      if (sourceAttachments.length > 0) {
+        this.totalSourceCount += sourceAttachments.length;
 
-        const pdfNodes: PdfNode[] = pdfAttachments.map((att, idx) => ({
-          id: `pdf-${att.id}`,
+        const sourceNodes: SourceNode[] = sourceAttachments.map((att, idx) => ({
+          id: `source-${att.id}`,
           attachment: att,
-          name: (att.getField("title") as string) || `PDF ${idx + 1}`,
+          name: (att.getField("title") as string) || `附件 ${idx + 1}`,
           checked: false,
           isDefault: idx === 0,
         }));
@@ -738,7 +739,7 @@ export class LiteratureReviewView extends BaseView {
           name: item.getField("title") as string,
           checked: false,
           expanded: false,
-          pdfNodes,
+          sourceNodes,
         });
       }
     }
@@ -776,35 +777,12 @@ export class LiteratureReviewView extends BaseView {
   }
 
   /**
-   * 获取条目的所有 PDF 附件
+   * 获取条目的可分析附件
    */
-  private async getPdfAttachments(item: Zotero.Item): Promise<Zotero.Item[]> {
-    const attachmentIDs = item.getAttachments();
-    const pdfAttachments: Zotero.Item[] = [];
-
-    for (const attID of attachmentIDs) {
-      const att = await Zotero.Items.getAsync(attID);
-      if (att && att.isPDFAttachment?.()) {
-        pdfAttachments.push(att);
-      }
-    }
-
-    return pdfAttachments.sort((a, b) => {
-      const dateA = new Date(a.dateAdded).getTime();
-      const dateB = new Date(b.dateAdded).getTime();
-      const normalizedDateA = Number.isNaN(dateA)
-        ? Number.MAX_SAFE_INTEGER
-        : dateA;
-      const normalizedDateB = Number.isNaN(dateB)
-        ? Number.MAX_SAFE_INTEGER
-        : dateB;
-
-      if (normalizedDateA !== normalizedDateB) {
-        return normalizedDateA - normalizedDateB;
-      }
-
-      return a.id - b.id;
-    });
+  private async getAnalyzableAttachments(
+    item: Zotero.Item,
+  ): Promise<Zotero.Item[]> {
+    return ContentExtractor.getAllAnalyzableAttachments(item);
   }
 
   /**
@@ -820,7 +798,7 @@ export class LiteratureReviewView extends BaseView {
       "#review-collection-name",
     );
     if (nameElement) {
-      nameElement.innerHTML = `分类: <strong>${this.collection.name}</strong> (${this.treeNodes.length} 篇文献, ${this.totalPdfCount} 个 PDF)`;
+      nameElement.innerHTML = `分类: <strong>${this.collection.name}</strong> (${this.treeNodes.length} 篇文献, ${this.totalSourceCount} 个附件)`;
     }
 
     // 渲染文献列表
@@ -835,7 +813,7 @@ export class LiteratureReviewView extends BaseView {
             color: "var(--ai-text-muted)",
             fontSize: "14px",
           },
-          innerHTML: "📭<br><br>该分类下没有带 PDF 附件的文献",
+          innerHTML: "📭<br><br>该分类下没有带可分析附件的文献",
         });
         this.treeContainer.appendChild(emptyMessage);
       } else {
@@ -853,7 +831,7 @@ export class LiteratureReviewView extends BaseView {
    * 创建树节点元素
    */
   private createTreeNode(node: TreeNode): HTMLElement {
-    const hasMultiplePdfs = node.pdfNodes.length > 1;
+    const hasMultipleSources = node.sourceNodes.length > 1;
 
     const wrapper = this.createElement("div", {
       styles: {
@@ -867,10 +845,10 @@ export class LiteratureReviewView extends BaseView {
         alignItems: "center",
         padding: "10px 12px",
         background: "var(--ai-review-node-bg)",
-        borderRadius: hasMultiplePdfs ? "6px 6px 0 0" : "6px",
+        borderRadius: hasMultipleSources ? "6px 6px 0 0" : "6px",
         border: "1px solid var(--ai-border)",
         borderBottom:
-          hasMultiplePdfs && node.expanded
+          hasMultipleSources && node.expanded
             ? "none"
             : "1px solid var(--ai-border)",
         cursor: "pointer",
@@ -878,8 +856,8 @@ export class LiteratureReviewView extends BaseView {
       },
     });
 
-    // 展开按钮（只有多个 PDF 时显示）
-    if (hasMultiplePdfs) {
+    // 展开按钮（只有多个附件时显示）
+    if (hasMultipleSources) {
       const expandBtn = this.createElement("span", {
         styles: {
           marginRight: "8px",
@@ -923,7 +901,9 @@ export class LiteratureReviewView extends BaseView {
     });
 
     // 图标和名称 - 截取显示，避免溢出
-    const pdfInfo = hasMultiplePdfs ? ` (${node.pdfNodes.length} 个 PDF)` : "";
+    const sourceInfo = hasMultipleSources
+      ? ` (${node.sourceNodes.length} 个附件)`
+      : "";
     const maxTitleLength = 60;
     const displayName =
       node.name.length > maxTitleLength
@@ -939,15 +919,15 @@ export class LiteratureReviewView extends BaseView {
         textOverflow: "ellipsis",
         whiteSpace: "nowrap",
       },
-      textContent: `📄 ${displayName}${pdfInfo}`,
+      textContent: `📄 ${displayName}${sourceInfo}`,
     });
 
     nodeElement.appendChild(checkbox);
     nodeElement.appendChild(label);
 
-    if (hasMultiplePdfs) {
+    if (hasMultipleSources) {
       const selectDefaultBtn = createStyledButton("仅默认", "#0f766e", "small");
-      selectDefaultBtn.title = "仅选择该条目的默认 PDF（最早添加的附件）";
+      selectDefaultBtn.title = "仅选择该条目的默认附件（最早添加的内容源）";
       Object.assign(selectDefaultBtn.style, {
         padding: "4px 8px",
         fontSize: "11px",
@@ -956,7 +936,7 @@ export class LiteratureReviewView extends BaseView {
       });
       selectDefaultBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.selectDefaultPdfForNode(node);
+        this.selectDefaultSourceForNode(node);
       });
       nodeElement.appendChild(selectDefaultBtn);
     }
@@ -1030,11 +1010,11 @@ export class LiteratureReviewView extends BaseView {
     nodeElement.addEventListener("click", (e) => {
       if (e.target === checkbox) return;
 
-      if (hasMultiplePdfs) {
-        // 多个 PDF 时，点击展开/收起
+      if (hasMultipleSources) {
+        // 多个附件时，点击展开/收起
         this.toggleExpand(node);
       } else {
-        // 单个 PDF 时，点击切换选中
+        // 单个附件时，点击切换选中
         checkbox.checked = !checkbox.checked;
         this.toggleItemNode(node, checkbox.checked);
       }
@@ -1042,8 +1022,8 @@ export class LiteratureReviewView extends BaseView {
 
     wrapper.appendChild(nodeElement);
 
-    // 子 PDF 列表容器
-    if (hasMultiplePdfs) {
+    // 子附件列表容器
+    if (hasMultipleSources) {
       const childrenContainer = this.createElement("div", {
         styles: {
           display: node.expanded ? "block" : "none",
@@ -1056,8 +1036,8 @@ export class LiteratureReviewView extends BaseView {
       });
       node.childrenContainer = childrenContainer;
 
-      for (const pdfNode of node.pdfNodes) {
-        const pdfElement = this.createPdfNode(pdfNode, node);
+      for (const sourceNode of node.sourceNodes) {
+        const pdfElement = this.createSourceNode(sourceNode, node);
         childrenContainer.appendChild(pdfElement);
       }
 
@@ -1068,9 +1048,12 @@ export class LiteratureReviewView extends BaseView {
   }
 
   /**
-   * 创建 PDF 子节点元素
+   * 创建附件子节点元素
    */
-  private createPdfNode(pdfNode: PdfNode, parentNode: TreeNode): HTMLElement {
+  private createSourceNode(
+    sourceNode: SourceNode,
+    parentNode: TreeNode,
+  ): HTMLElement {
     const pdfElement = this.createElement("div", {
       styles: {
         display: "flex",
@@ -1095,12 +1078,12 @@ export class LiteratureReviewView extends BaseView {
       },
     }) as HTMLInputElement;
 
-    checkbox.checked = pdfNode.checked;
-    pdfNode.checkboxElement = checkbox;
+    checkbox.checked = sourceNode.checked;
+    sourceNode.checkboxElement = checkbox;
 
     checkbox.addEventListener("change", (e) => {
       e.stopPropagation();
-      pdfNode.checked = checkbox.checked;
+      sourceNode.checked = checkbox.checked;
       this.updateParentCheckState(parentNode);
       this.updateSelectedCount();
     });
@@ -1115,13 +1098,13 @@ export class LiteratureReviewView extends BaseView {
         textOverflow: "ellipsis",
         whiteSpace: "nowrap",
       },
-      textContent: `📎 ${pdfNode.name}`,
+      textContent: `📎 ${sourceNode.name}`,
     });
 
     pdfElement.appendChild(checkbox);
     pdfElement.appendChild(label);
 
-    if (pdfNode.isDefault) {
+    if (sourceNode.isDefault) {
       const defaultBadge = this.createElement("span", {
         className: "ai-pill ai-pill--info",
         styles: {
@@ -1148,7 +1131,7 @@ export class LiteratureReviewView extends BaseView {
     pdfElement.addEventListener("click", (e) => {
       if (e.target !== checkbox) {
         checkbox.checked = !checkbox.checked;
-        pdfNode.checked = checkbox.checked;
+        sourceNode.checked = checkbox.checked;
         this.updateParentCheckState(parentNode);
         this.updateSelectedCount();
       }
@@ -1178,11 +1161,11 @@ export class LiteratureReviewView extends BaseView {
   private toggleItemNode(node: TreeNode, checked: boolean): void {
     node.checked = checked;
 
-    // 同步所有子 PDF 的选中状态
-    for (const pdfNode of node.pdfNodes) {
-      pdfNode.checked = checked;
-      if (pdfNode.checkboxElement) {
-        pdfNode.checkboxElement.checked = checked;
+    // 同步所有子附件的选中状态
+    for (const sourceNode of node.sourceNodes) {
+      sourceNode.checked = checked;
+      if (sourceNode.checkboxElement) {
+        sourceNode.checkboxElement.checked = checked;
       }
     }
 
@@ -1193,8 +1176,8 @@ export class LiteratureReviewView extends BaseView {
    * 更新父节点选中状态
    */
   private updateParentCheckState(node: TreeNode): void {
-    const allChecked = node.pdfNodes.every((p) => p.checked);
-    const someChecked = node.pdfNodes.some((p) => p.checked);
+    const allChecked = node.sourceNodes.every((p) => p.checked);
+    const someChecked = node.sourceNodes.some((p) => p.checked);
 
     node.checked = allChecked;
 
@@ -1215,36 +1198,36 @@ export class LiteratureReviewView extends BaseView {
         node.checkboxElement.indeterminate = false;
       }
 
-      for (const pdfNode of node.pdfNodes) {
-        pdfNode.checked = checked;
-        if (pdfNode.checkboxElement) {
-          pdfNode.checkboxElement.checked = checked;
+      for (const sourceNode of node.sourceNodes) {
+        sourceNode.checked = checked;
+        if (sourceNode.checkboxElement) {
+          sourceNode.checkboxElement.checked = checked;
         }
       }
     }
     this.updateSelectedCount();
   }
 
-  private getDefaultPdfNode(node: TreeNode): PdfNode | null {
-    return node.pdfNodes.find((pdfNode) => pdfNode.isDefault) || null;
+  private getDefaultSourceNode(node: TreeNode): SourceNode | null {
+    return node.sourceNodes.find((sourceNode) => sourceNode.isDefault) || null;
   }
 
-  private setPdfNodeChecked(pdfNode: PdfNode, checked: boolean): void {
-    pdfNode.checked = checked;
-    if (pdfNode.checkboxElement) {
-      pdfNode.checkboxElement.checked = checked;
+  private setSourceNodeChecked(sourceNode: SourceNode, checked: boolean): void {
+    sourceNode.checked = checked;
+    if (sourceNode.checkboxElement) {
+      sourceNode.checkboxElement.checked = checked;
     }
   }
 
   /**
-   * 仅选择每个条目下的默认 PDF（最早添加的附件）
+   * 仅选择每个条目下的默认附件（最早添加的内容源）
    */
-  private selectDefaultPdfNodes(): void {
+  private selectDefaultSourceNodes(): void {
     for (const node of this.treeNodes) {
-      const defaultPdfNode = this.getDefaultPdfNode(node);
+      const defaultSourceNode = this.getDefaultSourceNode(node);
 
-      for (const pdfNode of node.pdfNodes) {
-        this.setPdfNodeChecked(pdfNode, pdfNode === defaultPdfNode);
+      for (const sourceNode of node.sourceNodes) {
+        this.setSourceNodeChecked(sourceNode, sourceNode === defaultSourceNode);
       }
 
       this.updateParentCheckState(node);
@@ -1254,13 +1237,13 @@ export class LiteratureReviewView extends BaseView {
   }
 
   /**
-   * 仅选择单个条目下的默认 PDF
+   * 仅选择单个条目下的默认附件
    */
-  private selectDefaultPdfForNode(node: TreeNode): void {
-    const defaultPdfNode = this.getDefaultPdfNode(node);
+  private selectDefaultSourceForNode(node: TreeNode): void {
+    const defaultSourceNode = this.getDefaultSourceNode(node);
 
-    for (const pdfNode of node.pdfNodes) {
-      this.setPdfNodeChecked(pdfNode, pdfNode === defaultPdfNode);
+    for (const sourceNode of node.sourceNodes) {
+      this.setSourceNodeChecked(sourceNode, sourceNode === defaultSourceNode);
     }
 
     this.updateParentCheckState(node);
@@ -1271,41 +1254,41 @@ export class LiteratureReviewView extends BaseView {
    * 更新选择计数
    */
   private updateSelectedCount(): void {
-    this.selectedPdfCount = 0;
+    this.selectedSourceCount = 0;
     for (const node of this.treeNodes) {
-      for (const pdfNode of node.pdfNodes) {
-        if (pdfNode.checked) {
-          this.selectedPdfCount++;
+      for (const sourceNode of node.sourceNodes) {
+        if (sourceNode.checked) {
+          this.selectedSourceCount++;
         }
       }
     }
 
     if (this.selectedCountElement) {
-      this.selectedCountElement.innerHTML = `已选择: <strong>${this.selectedPdfCount}</strong> 个 PDF`;
+      this.selectedCountElement.innerHTML = `已选择: <strong>${this.selectedSourceCount}</strong> 个附件`;
     }
 
     // 更新生成按钮状态
     if (this.generateButton) {
-      this.generateButton.disabled = this.selectedPdfCount === 0;
+      this.generateButton.disabled = this.selectedSourceCount === 0;
       this.generateButton.style.opacity =
-        this.selectedPdfCount === 0 ? "0.5" : "1";
+        this.selectedSourceCount === 0 ? "0.5" : "1";
     }
     if (this.askQuestionButton) {
-      this.askQuestionButton.disabled = this.selectedPdfCount === 0;
+      this.askQuestionButton.disabled = this.selectedSourceCount === 0;
       this.askQuestionButton.style.opacity =
-        this.selectedPdfCount === 0 ? "0.5" : "1";
+        this.selectedSourceCount === 0 ? "0.5" : "1";
     }
   }
 
   /**
-   * 收集选中的 PDF 附件
+   * 收集选中的内容源附件
    */
-  private collectSelectedPdfAttachments(): Zotero.Item[] {
+  private collectSelectedSourceAttachments(): Zotero.Item[] {
     const attachments: Zotero.Item[] = [];
     for (const node of this.treeNodes) {
-      for (const pdfNode of node.pdfNodes) {
-        if (pdfNode.checked) {
-          attachments.push(pdfNode.attachment);
+      for (const sourceNode of node.sourceNodes) {
+        if (sourceNode.checked) {
+          attachments.push(sourceNode.attachment);
         }
       }
     }
@@ -1628,14 +1611,14 @@ export class LiteratureReviewView extends BaseView {
       return;
     }
 
-    const selectedPdfs = this.collectSelectedPdfAttachments();
-    if (selectedPdfs.length === 0) {
+    const selectedSources = this.collectSelectedSourceAttachments();
+    if (selectedSources.length === 0) {
       new ztoolkit.ProgressWindow("AI Butler", {
         closeOnClick: true,
         closeTime: 3000,
       })
         .createLine({
-          text: "请至少选择一个 PDF",
+          text: "请至少选择一个内容源附件",
           type: "error",
         })
         .show();
@@ -1663,7 +1646,7 @@ export class LiteratureReviewView extends BaseView {
       const manager = TaskQueueManager.getInstance();
       await manager.addReviewTask(
         this.collection,
-        selectedPdfs,
+        selectedSources,
         reviewName,
         reviewPrompt,
         tableTemplate,
@@ -1707,13 +1690,13 @@ export class LiteratureReviewView extends BaseView {
       return;
     }
 
-    const selectedPdfs = this.collectSelectedPdfAttachments();
-    if (selectedPdfs.length === 0) {
+    const selectedSources = this.collectSelectedSourceAttachments();
+    if (selectedSources.length === 0) {
       new ztoolkit.ProgressWindow("AI Butler", {
         closeOnClick: true,
         closeTime: 3000,
       })
-        .createLine({ text: "请至少选择一个 PDF", type: "error" })
+        .createLine({ text: "请至少选择一个内容源附件", type: "error" })
         .show();
       return;
     }
@@ -1798,7 +1781,7 @@ export class LiteratureReviewView extends BaseView {
       const manager = TaskQueueManager.getInstance();
       await manager.addTargetedQuestionTask(
         this.collection,
-        selectedPdfs,
+        selectedSources,
         noteTitle,
         targetedPrompt,
         targetedTemplate,
@@ -1849,14 +1832,14 @@ export class LiteratureReviewView extends BaseView {
 
     if (!this.collection) return;
 
-    const selectedPdfs = this.collectSelectedPdfAttachments();
-    if (selectedPdfs.length === 0) {
+    const selectedSources = this.collectSelectedSourceAttachments();
+    if (selectedSources.length === 0) {
       new ztoolkit.ProgressWindow("AI Butler", {
         closeOnClick: true,
         closeTime: 3000,
       })
         .createLine({
-          text: "请至少选择一个 PDF",
+          text: "请至少选择一个内容源附件",
           type: "error",
         })
         .show();
@@ -1867,11 +1850,11 @@ export class LiteratureReviewView extends BaseView {
       const { TaskQueueManager } = await import("../taskQueue");
       const manager = TaskQueueManager.getInstance();
 
-      // 为每个选中的 PDF 的父条目创建填表任务
+      // 为每个选中附件的父条目创建填表任务
       const addedItems = new Set<number>();
       let count = 0;
-      for (const pdfAtt of selectedPdfs) {
-        const parentID = pdfAtt.parentID;
+      for (const sourceAttachment of selectedSources) {
+        const parentID = sourceAttachment.parentID;
         if (parentID && !addedItems.has(parentID)) {
           addedItems.add(parentID);
           const parentItem = await Zotero.Items.getAsync(parentID);

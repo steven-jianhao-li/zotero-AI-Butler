@@ -44,13 +44,27 @@ import { getPref } from "../utils/prefs";
 import { MainWindow } from "./views/MainWindow";
 import { marked } from "marked";
 import {
-  parseMultiRoundPrompts,
-  getDefaultMultiRoundFinalPrompt,
-  DEFAULT_TABLE_TEMPLATE,
   DEFAULT_TABLE_FILL_PROMPT,
-  type MultiRoundPromptItem,
+  DEFAULT_TABLE_TEMPLATE,
+  getDefaultMultiRoundFinalPrompt,
+  getBuiltinMultiRoundPromptTemplates,
+  getDefaultMultiRoundPromptTemplate,
+  mergeMultiRoundPromptTemplates,
+  parseChapterStructure,
+  parseMultiRoundPromptTemplates,
+  parseMultiRoundPrompts,
+  type MultiRoundPromptTemplate,
   type SummaryMode,
 } from "../utils/prompts";
+import {
+  buildDeepReadSkeletonHtml,
+  fillDeepReadSlot,
+  hasDeepReadV2Slots,
+  hasRunnableDeepReadSlots,
+  planDeepReadSlots,
+  shouldRunDeepReadSlot,
+  type DeepReadSlot,
+} from "./deepReadEngine";
 import { isTableFeatureEnabled } from "./uiCustomization";
 import { AiNoteService, type AiNoteKind } from "./aiNoteService";
 
@@ -130,17 +144,23 @@ export class NoteGenerator {
         LLMEndpointManager.isMultiModelSummaryEnabled()
           ? LLMEndpointManager.getMultiModelSummaryEndpoints()
           : [];
-      const useMultiModelSummary = multiModelEndpoints.length > 0;
+      const useMultiModelSummary =
+        summaryMode === "single" && multiModelEndpoints.length > 0;
       const noteKind: AiNoteKind =
         summaryMode === "single" && !useMultiModelSummary
           ? "summary"
           : "deepRead";
-      const existing = await AiNoteService.findNote(item, noteKind);
-      // 如果不是强制覆盖，且已存在笔记，则检查策略
-      if (existing && !options?.forceOverwrite) {
+      const existingRecord = await AiNoteService.findNoteRecord(item, noteKind);
+      const existing = existingRecord?.note || null;
+      const canResumeDeepRead =
+        noteKind === "deepRead" &&
+        !!existingRecord?.rawHtml &&
+        hasDeepReadV2Slots(existingRecord.rawHtml) &&
+        hasRunnableDeepReadSlots(existingRecord.rawHtml);
+      if (existing && !options?.forceOverwrite && !canResumeDeepRead) {
         if (policy === "skip") {
           progressCallback?.(
-            `已存在${AiNoteService.getTitle(noteKind)}，跳过`,
+            `\u5df2\u5b58\u5728${AiNoteService.getTitle(noteKind)}\uff0c\u8df3\u8fc7`,
             100,
           );
           return {
@@ -150,7 +170,7 @@ export class NoteGenerator {
         }
       }
 
-      // 步骤 1: PDF 处理
+      // Step 1: PDF processing
       throwIfAborted(options?.abortSignal);
       progressCallback?.("正在处理PDF...", 10);
 
@@ -315,27 +335,37 @@ export class NoteGenerator {
         fullContent = response.text;
         llmMetadata = LLMNoteMetadataService.fromResponse("summary", response);
       } else {
-        // 多轮对话模式
-        const multiRoundResult = await this.generateMultiRoundContent(
+        const deepReadResult = await this.generateDeepReadContent({
+          item,
+          existing,
+          existingHtml: existingRecord?.rawHtml || "",
+          policy,
           pdfContent,
           isBase64,
           itemTitle,
-          summaryMode,
           outputWindow,
           progressCallback,
           streamCallback,
-          undefined,
-          options?.abortSignal,
-        );
-        fullContent = multiRoundResult.content;
+          abortSignal: options?.abortSignal,
+        });
+        note = deepReadResult.note;
+        fullContent = deepReadResult.content;
+        noteContentOverride = deepReadResult.noteHtml;
         llmMetadata = LLMNoteMetadataService.fromResponse(
           "summary",
-          multiRoundResult.response,
+          deepReadResult.response,
         );
       }
 
-      // 步骤 3: 创建/更新笔记
-      // 通知进度回调开始创建笔记 (80% 完成)
+      if (note && noteContentOverride) {
+        progressCallback?.(
+          "AI \u7cbe\u8bfb\u7b14\u8bb0\u5df2\u66f4\u65b0",
+          100,
+        );
+        return { note, content: fullContent };
+      }
+
+      // Step 3: create or update note
       throwIfAborted(options?.abortSignal);
       progressCallback?.(`正在创建${AiNoteService.getTitle(noteKind)}...`, 80);
 
@@ -992,6 +1022,263 @@ export class NoteGenerator {
    * @param streamCallback 流式输出回调
    * @returns 生成的内容
    */
+  private static async generateDeepReadContent(params: {
+    item: Zotero.Item;
+    existing: Zotero.Item | null;
+    existingHtml: string;
+    policy: string;
+    pdfContent: string;
+    isBase64: boolean;
+    itemTitle: string;
+    outputWindow?: SummaryView;
+    progressCallback?: (message: string, progress: number) => void;
+    streamCallback?: (chunk: string) => void;
+    abortSignal?: LLMAbortSignal;
+  }): Promise<{
+    note: Zotero.Item;
+    content: string;
+    noteHtml: string;
+    response?: LLMResponse;
+  }> {
+    const template = this.getActiveDeepReadTemplate();
+    const sequentialPhase = template.phases.find(
+      (phase) => phase.type === "sequential_dynamic",
+    );
+    if (!sequentialPhase || sequentialPhase.type !== "sequential_dynamic") {
+      throw new Error(
+        "AI \u7cbe\u8bfb\u6a21\u677f\u7f3a\u5c11 sequential_dynamic \u9636\u6bb5",
+      );
+    }
+
+    if (params.outputWindow) {
+      params.outputWindow.startItem(params.itemTitle);
+      params.outputWindow.appendContent(
+        "## AI \u7cbe\u8bfb v2\uff1a\u53cc\u9636\u6bb5\u9010\u7ae0\u9605\u8bfb\n\nAI \u4f1a\u5148\u89e3\u6790\u7ae0\u8282 JSON\uff0c\u518d\u6309\u7ae0\u8282\u987a\u5e8f\u9010\u7ae0\u7cbe\u8bfb\uff0c\u6700\u540e\u6267\u884c\u91cd\u70b9\u8ffd\u95ee\u3002\n\n",
+      );
+      params.outputWindow.appendContent(
+        "### \u6b63\u5728\u89e3\u6790\u7ae0\u8282 JSON\n\n",
+      );
+      params.outputWindow.appendContent(
+        `**\u7ae0\u8282\u89e3\u6790\u63d0\u793a\u8bcd\uff1a**\n\n${sequentialPhase.planningPrompt}\n\n`,
+      );
+    }
+
+    params.progressCallback?.(
+      "\u6b63\u5728\u89e3\u6790\u7ae0\u8282 JSON...",
+      45,
+    );
+    const planningResponse = await this.callDeepReadChat({
+      pdfContent: params.pdfContent,
+      isBase64: params.isBase64,
+      conversation: [{ role: "user", content: sequentialPhase.planningPrompt }],
+      abortSignal: params.abortSignal,
+    });
+    let lastResponse = planningResponse;
+    const chapters = parseChapterStructure(planningResponse.text);
+    const planned = planDeepReadSlots(template, chapters);
+
+    if (params.outputWindow) {
+      params.outputWindow.appendContent(
+        `\u8bc6\u522b\u5230\u7ae0\u8282\uff1a${chapters
+          .map(
+            (chapter) =>
+              `${chapter.title_zh}\uff08${chapter.title_en || "\u65e0\u82f1\u6587\u6807\u9898"}\uff09`,
+          )
+          .join("\u3001")}\n\n`,
+      );
+    }
+
+    const shouldResume =
+      params.existing &&
+      hasDeepReadV2Slots(params.existingHtml) &&
+      hasRunnableDeepReadSlots(params.existingHtml);
+    const skeleton = buildDeepReadSkeletonHtml(
+      params.itemTitle,
+      template,
+      planned,
+    );
+    const note = shouldResume
+      ? (params.existing as Zotero.Item)
+      : await AiNoteService.saveGeneratedNote({
+          item: params.item,
+          kind: "deepRead",
+          html: skeleton,
+          existing: params.existing,
+          policy: params.policy === "append" ? "append" : "overwrite",
+        });
+
+    let writeQueue = Promise.resolve();
+    const updateSlot = async (
+      slot: DeepReadSlot,
+      markdown: string,
+      status: "done" | "error" = "done",
+    ) => {
+      writeQueue = writeQueue.then(async () => {
+        const currentHtml = ((note as any).getNote?.() as string) || "";
+        const nextHtml = fillDeepReadSlot(
+          currentHtml,
+          slot.id,
+          markdown,
+          status,
+        );
+        if (nextHtml !== currentHtml) {
+          (note as any).setNote?.(nextHtml);
+          await (note as any).saveTx?.();
+        }
+      });
+      await writeQueue;
+    };
+
+    const fullHistory: Array<{ role: "user" | "assistant"; content: string }> =
+      [
+        { role: "user", content: sequentialPhase.planningPrompt },
+        { role: "assistant", content: planningResponse.text },
+      ];
+    let previousAnswer = "";
+    const collected: string[] = [];
+
+    for (let index = 0; index < planned.sequentialSlots.length; index++) {
+      const slot = planned.sequentialSlots[index];
+      const currentHtml = ((note as any).getNote?.() as string) || "";
+      if (!shouldRunDeepReadSlot(currentHtml, slot.id)) continue;
+
+      throwIfAborted(params.abortSignal);
+      params.progressCallback?.(
+        `\u6b63\u5728\u7cbe\u8bfb\uff1a${slot.title}`,
+        55 +
+          Math.floor(
+            (index / Math.max(1, planned.sequentialSlots.length)) * 20,
+          ),
+      );
+      params.outputWindow?.appendContent(
+        `### \u6b63\u5728\u7cbe\u8bfb\uff1a${slot.title}\n\n`,
+      );
+      params.outputWindow?.appendContent(
+        `**\u672c\u7ae0\u63d0\u793a\u8bcd\uff1a**\n\n${slot.prompt}\n\n`,
+      );
+
+      const userPrompt =
+        sequentialPhase.contextStrategy === "full_history"
+          ? slot.prompt
+          : previousAnswer
+            ? `\u4e0a\u4e00\u8f6e\u7cbe\u8bfb\u5185\u5bb9\u4f9b\u53c2\u8003\uff1a\n${previousAnswer}\n\n\u672c\u8f6e\u4efb\u52a1\uff1a\n${slot.prompt}`
+            : slot.prompt;
+      const conversation =
+        sequentialPhase.contextStrategy === "full_history"
+          ? [...fullHistory, { role: "user" as const, content: userPrompt }]
+          : [{ role: "user" as const, content: userPrompt }];
+
+      try {
+        const response = await this.callDeepReadChat({
+          pdfContent: params.pdfContent,
+          isBase64: params.isBase64,
+          conversation,
+          abortSignal: params.abortSignal,
+          onProgress: (chunk) => {
+            params.streamCallback?.(chunk);
+            params.outputWindow?.appendContent(chunk);
+          },
+        });
+        lastResponse = response;
+        previousAnswer = response.text;
+        collected.push(`# ${slot.title}\n\n${response.text}`);
+        fullHistory.push({ role: "user", content: userPrompt });
+        fullHistory.push({ role: "assistant", content: response.text });
+        await updateSlot(slot, response.text, "done");
+      } catch (error: any) {
+        if (this.shouldStopMultiRoundOnError(error)) throw error;
+        await updateSlot(slot, error?.message || String(error), "error");
+      }
+    }
+
+    for (let index = 0; index < planned.independentSlots.length; index++) {
+      const slot = planned.independentSlots[index];
+      const currentHtml = ((note as any).getNote?.() as string) || "";
+      if (!shouldRunDeepReadSlot(currentHtml, slot.id)) continue;
+
+      throwIfAborted(params.abortSignal);
+      params.progressCallback?.(
+        `\u6b63\u5728\u8ffd\u95ee\uff1a${slot.title}`,
+        78 +
+          Math.floor(
+            (index / Math.max(1, planned.independentSlots.length)) * 12,
+          ),
+      );
+      params.outputWindow?.appendContent(
+        `### \u6b63\u5728\u8ffd\u95ee\uff1a${slot.title}\n\n`,
+      );
+      params.outputWindow?.appendContent(
+        `**\u8ffd\u95ee\u63d0\u793a\u8bcd\uff1a**\n\n${slot.prompt}\n\n`,
+      );
+
+      try {
+        const response = await this.callDeepReadChat({
+          pdfContent: params.pdfContent,
+          isBase64: params.isBase64,
+          conversation: [{ role: "user", content: slot.prompt }],
+          abortSignal: params.abortSignal,
+          onProgress: (chunk) => {
+            params.streamCallback?.(chunk);
+            params.outputWindow?.appendContent(chunk);
+          },
+        });
+        lastResponse = response;
+        collected.push(`# ${slot.title}\n\n${response.text}`);
+        await updateSlot(slot, response.text, "done");
+      } catch (error: any) {
+        if (this.shouldStopMultiRoundOnError(error)) throw error;
+        await updateSlot(slot, error?.message || String(error), "error");
+      }
+    }
+
+    await writeQueue;
+    const noteHtml = ((note as any).getNote?.() as string) || skeleton;
+    return {
+      note,
+      content: collected.join("\n\n---\n\n") || noteHtml,
+      noteHtml,
+      response: lastResponse,
+    };
+  }
+
+  private static getActiveDeepReadTemplate(): MultiRoundPromptTemplate {
+    const selectedTemplateId = (
+      (getPref("multiRoundPromptTemplateId" as any) as string) || ""
+    ).trim();
+    const customTemplates = parseMultiRoundPromptTemplates(
+      (getPref("multiRoundPromptTemplates" as any) as string) || "[]",
+    );
+    const templates = mergeMultiRoundPromptTemplates(
+      getBuiltinMultiRoundPromptTemplates(),
+      customTemplates,
+    );
+    return (
+      templates.find((template) => template.id === selectedTemplateId) ||
+      getDefaultMultiRoundPromptTemplate()
+    );
+  }
+
+  private static async callDeepReadChat(params: {
+    pdfContent: string;
+    isBase64: boolean;
+    conversation: Array<{ role: "user" | "assistant"; content: string }>;
+    abortSignal?: LLMAbortSignal;
+    onProgress?: (chunk: string) => void;
+  }): Promise<LLMResponse> {
+    const chatRequest: LLMChatRequest = {
+      content: {
+        kind: "legacy",
+        content: params.pdfContent,
+        isBase64: params.isBase64,
+        policy: params.isBase64 ? "pdf-base64" : "text",
+      },
+      conversation: params.conversation,
+      transport: { abortSignal: params.abortSignal },
+      onProgress: params.onProgress,
+    };
+    return LLMService.chat(chatRequest);
+  }
+
   private static async generateMultiRoundContent(
     pdfContent: string,
     isBase64: boolean,

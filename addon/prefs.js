@@ -79,6 +79,10 @@ pref(
 // AI 精读多轮提示词模板库（JSON 数组），内置默认模板由 src/utils/prompts.ts 提供
 pref("__prefsPrefix__.multiRoundPromptTemplates", "[]");
 pref("__prefsPrefix__.multiRoundPromptTemplateId", "");
+// AI deep read v2 settings
+pref("__prefsPrefix__.multiRoundContextStrategy", "last_round");
+pref("__prefsPrefix__.multiRoundIndependentParallelEnabled", false);
+pref("__prefsPrefix__.multiRoundIndependentMaxConcurrency", 4);
 // 兼容旧版本的多轮最终总结配置；AI 精读当前固定使用多轮拼接
 pref("__prefsPrefix__.multiSummarySaveIntermediate", false);
 // Legacy AI note compatibility prompt state for AI总结 / AI精读 split.

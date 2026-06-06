@@ -200,12 +200,9 @@ export function shouldUpdatePrompt(
 }
 
 // ================================================================
-// 多轮对话提示词相关功能
+// AI \u7cbe\u8bfb v2 \u63d0\u793a\u8bcd\u76f8\u5173\u529f\u80fd
 // ================================================================
 
-/**
- * 多轮提示词条目类型
- */
 export interface MultiRoundPromptItem {
   id: string;
   title: string;
@@ -213,17 +210,55 @@ export interface MultiRoundPromptItem {
   order: number;
 }
 
+export interface ChapterInfo {
+  id: string;
+  title_zh: string;
+  title_en: string;
+}
+
+export type DeepReadSlotStatus = "pending" | "running" | "done" | "error";
+export type MultiRoundPhaseType = "sequential_dynamic" | "independent";
+export type MultiRoundContextStrategy = "full_history" | "last_round";
+
+export interface MultiRoundSequentialDynamicPhase {
+  id: string;
+  title: string;
+  type: "sequential_dynamic";
+  description: string;
+  contextStrategy: MultiRoundContextStrategy;
+  planningPrompt: string;
+  fixedPrompts: MultiRoundPromptItem[];
+  chapterTemplate: string;
+  maxChapters?: number;
+}
+
+export interface MultiRoundIndependentPhase {
+  id: string;
+  title: string;
+  type: "independent";
+  description: string;
+  parallelizable: boolean;
+  maxConcurrency: number;
+  prompts: MultiRoundPromptItem[];
+}
+
+export type MultiRoundPromptPhase =
+  | MultiRoundSequentialDynamicPhase
+  | MultiRoundIndependentPhase;
+
 export const MULTI_ROUND_PROMPT_TEMPLATE_SCHEMA =
   "zotero-ai-butler.multi-round-prompt-template";
-export const MULTI_ROUND_PROMPT_TEMPLATE_EXPORT_VERSION = 1;
+export const MULTI_ROUND_PROMPT_TEMPLATE_EXPORT_VERSION = 2;
+export const DEFAULT_DEEP_READ_CHAPTER_LIMIT = Number.POSITIVE_INFINITY;
 
 export interface MultiRoundPromptTemplate {
   id: string;
   name: string;
   description: string;
   version: number;
+  phases: MultiRoundPromptPhase[];
   prompts: MultiRoundPromptItem[];
-  finalPrompt?: string;
+  finalPrompt?: string | null;
 }
 
 export interface MultiRoundPromptTemplateExport {
@@ -233,117 +268,113 @@ export interface MultiRoundPromptTemplateExport {
   template: MultiRoundPromptTemplate;
 }
 
-/**
- * 总结模式类型
- * - single: 单次对话总结（默认，Token消耗最少）
- * - multi_concat: AI 精读模式（将所有轮次内容拼接作为笔记）
- * - multi_summarize: 旧版兼容值；新入口不再暴露
- */
 export type SummaryMode = "single" | "multi_concat" | "multi_summarize";
 
-/**
- * 默认的多轮提示词数组
- *
- * 包含四轮提示词，分别针对：
- * 1. 研究背景与问题
- * 2. 研究方法与技术
- * 3. 实验设计与结果
- * 4. 结论与展望
- */
-export const DEFAULT_MULTI_ROUND_PROMPTS: MultiRoundPromptItem[] = [
-  {
-    id: "round1",
-    title: "研究背景与问题",
-    prompt:
-      "请详细介绍这篇论文的研究背景和动机。具体包括：1) 这个研究领域目前面临哪些主要挑战？2) 现有方法存在什么不足？3) 本文要解决的核心问题是什么？请用中文回答。",
-    order: 1,
-  },
-  {
-    id: "round2",
-    title: "研究方法与技术",
-    prompt:
-      "请详细解释这篇论文提出的方法和技术。具体包括：1) 核心方法/算法/框架是什么？2) 关键技术细节和创新点有哪些？3) 与现有方法相比有什么改进？请用中文回答。",
-    order: 2,
-  },
-  {
-    id: "round3",
-    title: "实验设计与结果",
-    prompt:
-      "请详细分析这篇论文的实验部分。具体包括：1) 使用了哪些数据集和评价指标？2) 主要的实验结果是什么？3) 与基线方法相比表现如何？4) 有哪些消融实验和分析？请用中文回答。",
-    order: 3,
-  },
-  {
-    id: "round4",
-    title: "结论与展望",
-    prompt:
-      "请总结这篇论文的结论和贡献。具体包括：1) 论文的主要贡献和创新点是什么？2) 存在哪些局限性？3) 未来可能的研究方向有哪些？请用中文回答。",
-    order: 4,
-  },
+export const DEFAULT_CHAPTER_FALLBACKS: ChapterInfo[] = [
+  { id: "ch1", title_zh: "\u5f15\u8a00", title_en: "Introduction" },
+  { id: "ch2", title_zh: "\u7b2c\u4e8c\u7ae0", title_en: "Chapter 2" },
 ];
 
-/**
- * 默认的 AI 精读最终总结提示词
- */
-export const DEFAULT_MULTI_ROUND_FINAL_PROMPT = `基于以上多轮精读对话的内容，请为我生成一份完整、结构化的 AI 精读最终总结。要求：
-1. 开头用一段话概括论文的核心内容
-2. 分章节整理各部分的关键信息
-3. 突出论文的创新点和贡献
-4. 指出论文的局限性和未来方向
-5. 语言简洁清晰，使用中文`;
+export const DEFAULT_MULTI_ROUND_PLANNING_PROMPT = `\u8bf7\u9605\u8bfb\u8bba\u6587\u5168\u6587\uff0c\u8bc6\u522b\u8bba\u6587\u7684\u4e3b\u8981\u7ae0\u8282\u7ed3\u6784\uff0c\u5e76\u53ea\u8fd4\u56de JSON\uff0c\u4e0d\u8981\u8f93\u51fa\u89e3\u91ca\u6587\u5b57\u3002
 
-export const DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE: MultiRoundPromptTemplate = {
-  id: "default",
-  name: "默认",
-  description: "通用论文 AI 精读四轮提示词。",
-  version: 1,
-  prompts: DEFAULT_MULTI_ROUND_PROMPTS,
-  finalPrompt: DEFAULT_MULTI_ROUND_FINAL_PROMPT,
-};
-
-/**
- * 获取默认的多轮提示词数组
- *
- * @returns 默认多轮提示词数组
- */
-export function getDefaultMultiRoundPrompts(): MultiRoundPromptItem[] {
-  return cloneMultiRoundPrompts(DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE.prompts);
+\u8fd4\u56de\u683c\u5f0f\u5fc5\u987b\u662f\uff1a
+{
+  "chapters": [
+    { "id": "ch1", "title_zh": "\u5f15\u8a00", "title_en": "Introduction" },
+    { "id": "ch2", "title_zh": "\u7b2c\u4e8c\u7ae0", "title_en": "Related Work \u6216 Method" }
+  ]
 }
 
-/**
- * 获取旧版多轮最终总结提示词（兼容保留）
- *
- * @returns 默认最终总结提示词
- */
+\u8981\u6c42\uff1a
+1. \u4f18\u5148\u4f7f\u7528\u8bba\u6587\u539f\u6587\u4e2d\u7684\u7ae0\u8282\u6807\u9898\u3002
+2. \u5982\u679c\u8bba\u6587\u6807\u9898\u4e0d\u662f\u4e2d\u6587\uff0c\u8bf7\u7ed9\u51fa\u7b80\u77ed\u4e2d\u6587\u8bd1\u540d\u548c\u82f1\u6587\u539f\u540d\u3002
+3. \u81f3\u5c11\u8fd4\u56de\u4e24\u4e2a\u7ae0\u8282\uff1b\u5982\u679c\u7ed3\u6784\u4e0d\u6e05\u6670\uff0c\u5c31\u8fd4\u56de\u201c\u5f15\u8a00\u201d\u548c\u201c\u7b2c\u4e8c\u7ae0\u201d\u3002`;
+
+export const DEFAULT_MULTI_ROUND_CHAPTER_TEMPLATE = `\u8bf7\u7cbe\u8bfb\u8bba\u6587\u4e2d\u7684\u201c{{chapter_title_zh}}\uff08{{chapter_title_en}}\uff09\u201d\u8fd9\u4e00\u7ae0\u3002
+
+\u8bf7\u56f4\u7ed5\u4e0b\u9762\u95ee\u9898\u7ec4\u7ec7\u56de\u7b54\uff1a
+1. \u8fd9\u4e00\u7ae0\u5728\u5168\u6587\u4e2d\u7684\u4f5c\u7528\u662f\u4ec0\u4e48\uff1f
+2. \u8fd9\u4e00\u7ae0\u63d0\u51fa\u4e86\u54ea\u4e9b\u5173\u952e\u6982\u5ff5\u3001\u8bba\u8bc1\u6216\u6280\u672f\u7ec6\u8282\uff1f
+3. \u54ea\u4e9b\u5185\u5bb9\u662f\u8bfb\u8005\u7406\u89e3\u540e\u7eed\u7ae0\u8282\u5fc5\u987b\u638c\u63e1\u7684\uff1f
+4. \u5982\u679c\u8fd9\u4e00\u7ae0\u6709\u516c\u5f0f\u3001\u5b9e\u9a8c\u8bbe\u7f6e\u6216\u5b9a\u4e49\uff0c\u8bf7\u7528\u901a\u4fd7\u4e2d\u6587\u89e3\u91ca\u3002
+
+\u8f93\u51fa\u8981\u6c42\uff1a
+- \u4f7f\u7528 Markdown\u3002
+- \u4e0d\u8981\u5bd2\u6684\uff0c\u4e0d\u8981\u91cd\u590d\u9898\u76ee\u3002
+- \u6807\u9898\u5c42\u7ea7\u4ece\u4e09\u7ea7\u6807\u9898\u5f00\u59cb\uff0c\u4f8b\u5982\u201c### \u672c\u7ae0\u4f5c\u7528\u201d\u3002
+- \u5c3d\u91cf\u8ba9\u6ca1\u6709\u8be5\u5c0f\u65b9\u5411\u80cc\u666f\u7684\u8bfb\u8005\u4e5f\u80fd\u770b\u61c2\u3002`;
+
+export const DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE: MultiRoundPromptTemplate = {
+  id: "default-v2-chapter-reading",
+  name: "\u9ed8\u8ba4\uff1a\u53cc\u9636\u6bb5\u9010\u7ae0\u7cbe\u8bfb",
+  description:
+    "\u5148\u89e3\u6790\u7ae0\u8282 JSON\uff0c\u518d\u6309\u7ae0\u8282\u987a\u5e8f\u9010\u7ae0\u7cbe\u8bfb\uff1b\u7b2c\u4e8c\u9636\u6bb5\u7528\u91cd\u70b9\u8ffd\u95ee\u8865\u5145\u8bba\u6587\u7406\u89e3\u3002",
+  version: 2,
+  phases: [
+    {
+      id: "chapter_reading",
+      title: "\u9636\u6bb5\u4e00\uff1a\u9010\u7ae0\u7cbe\u8bfb",
+      type: "sequential_dynamic",
+      description:
+        "\u5148\u8ba9 AI \u8bc6\u522b\u8bba\u6587\u7ae0\u8282\u7ed3\u6784\uff0c\u518d\u628a\u7ae0\u8282\u6807\u9898\u6e32\u67d3\u8fdb\u7ae0\u8282\u7cbe\u8bfb\u63d0\u793a\u8bcd\uff0c\u6309\u987a\u5e8f\u5199\u5165\u7cbe\u8bfb\u7b14\u8bb0\u3002",
+      contextStrategy: "last_round",
+      planningPrompt: DEFAULT_MULTI_ROUND_PLANNING_PROMPT,
+      fixedPrompts: [],
+      chapterTemplate: DEFAULT_MULTI_ROUND_CHAPTER_TEMPLATE,
+    },
+    {
+      id: "deep_questions",
+      title: "\u9636\u6bb5\u4e8c\uff1a\u91cd\u70b9\u8ffd\u95ee",
+      type: "independent",
+      description:
+        "\u6bcf\u4e2a\u8ffd\u95ee\u72ec\u7acb\u9605\u8bfb\u8bba\u6587\u5168\u6587\uff0c\u4e0d\u643a\u5e26\u5176\u4ed6\u8f6e\u6b21\u4e0a\u4e0b\u6587\u3002",
+      parallelizable: false,
+      maxConcurrency: 1,
+      prompts: [
+        {
+          id: "q_core_contribution",
+          title: "\u6838\u5fc3\u8d21\u732e\u5224\u65ad",
+          prompt:
+            "\u8bf7\u57fa\u4e8e\u8bba\u6587\u5168\u6587\uff0c\u7528\u4e2d\u6587\u5224\u65ad\u672c\u6587\u6700\u6838\u5fc3\u7684\u8d21\u732e\u662f\u4ec0\u4e48\uff0c\u5e76\u8bf4\u660e\u5b83\u4e3a\u4ec0\u4e48\u91cd\u8981\u3002\u8f93\u51fa Markdown\uff0c\u6807\u9898\u5c42\u7ea7\u4ece\u4e09\u7ea7\u6807\u9898\u5f00\u59cb\u3002",
+          order: 1,
+        },
+        {
+          id: "q_limits_questions",
+          title: "\u5c40\u9650\u4e0e\u7591\u95ee",
+          prompt:
+            "\u8bf7\u57fa\u4e8e\u8bba\u6587\u5168\u6587\uff0c\u7528\u4e2d\u6587\u5217\u51fa\u672c\u6587\u6700\u503c\u5f97\u6ce8\u610f\u7684\u5c40\u9650\u3001\u98ce\u9669\u6216\u4ecd\u672a\u89e3\u51b3\u7684\u95ee\u9898\u3002\u8f93\u51fa Markdown\uff0c\u6807\u9898\u5c42\u7ea7\u4ece\u4e09\u7ea7\u6807\u9898\u5f00\u59cb\u3002",
+          order: 2,
+        },
+      ],
+    },
+  ],
+  prompts: [],
+  finalPrompt: null,
+};
+
+export const DEFAULT_MULTI_ROUND_PROMPTS: MultiRoundPromptItem[] = [];
+export const DEFAULT_MULTI_ROUND_FINAL_PROMPT = "";
+
+export function getDefaultMultiRoundPrompts(): MultiRoundPromptItem[] {
+  return [];
+}
+
 export function getDefaultMultiRoundFinalPrompt(): string {
-  return DEFAULT_MULTI_ROUND_FINAL_PROMPT;
+  return "";
+}
+
+export function getDefaultMultiRoundPromptTemplate(): MultiRoundPromptTemplate {
+  return cloneMultiRoundPromptTemplate(DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE);
 }
 
 export function getBuiltinMultiRoundPromptTemplates(): MultiRoundPromptTemplate[] {
-  return [cloneMultiRoundPromptTemplate(DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE)];
+  return [getDefaultMultiRoundPromptTemplate()];
 }
 
-/**
- * 解析存储的多轮提示词 JSON 字符串
- *
- * @param jsonStr 存储的 JSON 字符串
- * @returns 解析后的多轮提示词数组，解析失败则返回默认值
- */
 export function parseMultiRoundPrompts(
-  jsonStr: string | undefined,
+  _jsonStr: string | undefined,
 ): MultiRoundPromptItem[] {
-  if (!jsonStr || !jsonStr.trim()) {
-    return getDefaultMultiRoundPrompts();
-  }
-  try {
-    const parsed = JSON.parse(jsonStr);
-    const prompts = normalizeMultiRoundPromptItems(parsed);
-    if (prompts.length > 0) {
-      return prompts;
-    }
-    return getDefaultMultiRoundPrompts();
-  } catch (e) {
-    return getDefaultMultiRoundPrompts();
-  }
+  return [];
 }
 
 export function parseMultiRoundPromptTemplates(
@@ -408,13 +439,15 @@ export function parseMultiRoundPromptTemplateExport(
 ): MultiRoundPromptTemplate {
   const parsed = JSON.parse(jsonStr);
   if (!isRecord(parsed)) {
-    throw new Error("导入内容必须是 JSON 对象");
+    throw new Error(
+      "\u5bfc\u5165\u5185\u5bb9\u5fc5\u987b\u662f JSON \u5bf9\u8c61",
+    );
   }
   if (parsed.schema !== MULTI_ROUND_PROMPT_TEMPLATE_SCHEMA) {
-    throw new Error("模板 JSON schema 不匹配");
+    throw new Error("\u6a21\u677f JSON schema \u4e0d\u5339\u914d");
   }
   if (parsed.version !== MULTI_ROUND_PROMPT_TEMPLATE_EXPORT_VERSION) {
-    throw new Error("模板 JSON 版本不受支持");
+    throw new Error("\u6a21\u677f JSON \u7248\u672c\u4e0d\u53d7\u652f\u6301");
   }
   return normalizeMultiRoundPromptTemplate(parsed.template);
 }
@@ -423,40 +456,63 @@ export function normalizeMultiRoundPromptTemplate(
   value: unknown,
 ): MultiRoundPromptTemplate {
   if (!isRecord(value)) {
-    throw new Error("模板必须是对象");
+    throw new Error("\u6a21\u677f\u5fc5\u987b\u662f\u5bf9\u8c61");
   }
 
   const name = typeof value.name === "string" ? value.name.trim() : "";
   if (!name) {
-    throw new Error("模板名称不能为空");
+    throw new Error("\u6a21\u677f\u540d\u79f0\u4e0d\u80fd\u4e3a\u7a7a");
   }
 
-  const prompts = normalizeMultiRoundPromptItems(value.prompts, {
-    strict: true,
-  });
-  if (prompts.length === 0) {
-    throw new Error("模板至少需要一个轮次提示词");
-  }
+  const phases = normalizeMultiRoundPromptPhases(value.phases);
+  validateMultiRoundSlotIds(phases);
 
   const version =
     typeof value.version === "number" && Number.isFinite(value.version)
-      ? Math.max(1, Math.round(value.version))
-      : 1;
+      ? Math.max(2, Math.round(value.version))
+      : 2;
   const description =
     typeof value.description === "string" ? value.description.trim() : "";
   const finalPrompt =
     typeof value.finalPrompt === "string" && value.finalPrompt.trim()
       ? value.finalPrompt.trim()
-      : undefined;
+      : null;
 
   return {
     id: normalizeMultiRoundTemplateId(value.id, name),
     name,
     description,
     version,
-    prompts,
-    ...(finalPrompt ? { finalPrompt } : {}),
+    phases,
+    prompts: [],
+    finalPrompt,
   };
+}
+
+export function normalizeMultiRoundPromptPhases(
+  value: unknown,
+): MultiRoundPromptPhase[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error("\u6a21\u677f\u81f3\u5c11\u9700\u8981\u4e00\u4e2a phase");
+  }
+
+  return value.map((entry, index) => {
+    if (!isRecord(entry)) {
+      throw new Error(
+        `\u7b2c ${index + 1} \u4e2a phase \u5fc5\u987b\u662f\u5bf9\u8c61`,
+      );
+    }
+    const type = entry.type;
+    if (type === "sequential_dynamic") {
+      return normalizeSequentialDynamicPhase(entry, index);
+    }
+    if (type === "independent") {
+      return normalizeIndependentPhase(entry, index);
+    }
+    throw new Error(
+      `\u7b2c ${index + 1} \u4e2a phase \u7c7b\u578b\u4e0d\u53d7\u652f\u6301`,
+    );
+  });
 }
 
 export function normalizeMultiRoundPromptItems(
@@ -465,7 +521,9 @@ export function normalizeMultiRoundPromptItems(
 ): MultiRoundPromptItem[] {
   if (!Array.isArray(value)) {
     if (options.strict) {
-      throw new Error("轮次提示词必须是数组");
+      throw new Error(
+        "\u8f6e\u6b21\u63d0\u793a\u8bcd\u5fc5\u987b\u662f\u6570\u7ec4",
+      );
     }
     return [];
   }
@@ -474,16 +532,20 @@ export function normalizeMultiRoundPromptItems(
   value.forEach((entry, index) => {
     if (!isRecord(entry)) {
       if (options.strict) {
-        throw new Error(`第 ${index + 1} 轮提示词必须是对象`);
+        throw new Error(
+          `\u7b2c ${index + 1} \u8f6e\u63d0\u793a\u8bcd\u5fc5\u987b\u662f\u5bf9\u8c61`,
+        );
       }
       return;
     }
 
-    const title = typeof entry.title === "string" ? entry.title.trim() : "";
+    const title = normalizeImportedTitle(entry.title);
     const prompt = typeof entry.prompt === "string" ? entry.prompt.trim() : "";
     if (!title || !prompt) {
       if (options.strict) {
-        throw new Error(`第 ${index + 1} 轮标题和提示词不能为空`);
+        throw new Error(
+          `\u7b2c ${index + 1} \u8f6e\u6807\u9898\u548c\u63d0\u793a\u8bcd\u4e0d\u80fd\u4e3a\u7a7a`,
+        );
       }
       return;
     }
@@ -506,13 +568,186 @@ export function normalizeMultiRoundPromptItems(
     .map((prompt, index) => ({ ...prompt, order: index + 1 }));
 }
 
+export function parseChapterStructure(responseText: string): ChapterInfo[] {
+  const jsonCandidates = [
+    ...responseText.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi),
+  ].map((match) => match[1]);
+  const objectMatch = responseText.match(/\{[\s\S]*\}/);
+  if (objectMatch) {
+    jsonCandidates.push(objectMatch[0]);
+  }
+  jsonCandidates.push(responseText);
+
+  for (const candidate of jsonCandidates) {
+    try {
+      const parsed = JSON.parse(candidate.trim());
+      const chapters = normalizeChapterArray(
+        (parsed as { chapters?: unknown }).chapters,
+      );
+      if (chapters.length > 0) {
+        return chapters;
+      }
+    } catch {
+      // Continue to regex fallback.
+    }
+  }
+
+  const zhMatches = [...responseText.matchAll(/"title_zh"\s*:\s*"([^"]+)"/g)];
+  const enMatches = [...responseText.matchAll(/"title_en"\s*:\s*"([^"]+)"/g)];
+  if (zhMatches.length > 0) {
+    return zhMatches.map((match, index) => ({
+      id: `ch${index + 1}`,
+      title_zh: match[1].trim(),
+      title_en: enMatches[index]?.[1]?.trim() || "",
+    }));
+  }
+
+  return cloneChapterInfos(DEFAULT_CHAPTER_FALLBACKS);
+}
+
+export function generateChapterPrompts(
+  chapters: ChapterInfo[],
+  chapterTemplate: string,
+  fixedPromptsCount = 0,
+  maxChapters = DEFAULT_DEEP_READ_CHAPTER_LIMIT,
+): MultiRoundPromptItem[] {
+  return chapters.slice(0, maxChapters).map((chapter, index) => ({
+    id: `chapter_${chapter.id || `ch${index + 1}`}`,
+    title: chapter.title_zh || chapter.title_en || `\u7b2c ${index + 1} \u7ae0`,
+    prompt: chapterTemplate
+      .replace(/\{\{chapter_title_zh\}\}/g, chapter.title_zh || "")
+      .replace(/\{\{chapter_title_en\}\}/g, chapter.title_en || ""),
+    order: fixedPromptsCount + index + 1,
+  }));
+}
+
 export function cloneMultiRoundPromptTemplate(
   template: MultiRoundPromptTemplate,
 ): MultiRoundPromptTemplate {
   return {
     ...template,
-    prompts: cloneMultiRoundPrompts(template.prompts),
+    prompts: cloneMultiRoundPrompts(template.prompts || []),
+    phases: template.phases.map((phase) =>
+      phase.type === "sequential_dynamic"
+        ? {
+            ...phase,
+            fixedPrompts: cloneMultiRoundPrompts(phase.fixedPrompts),
+          }
+        : {
+            ...phase,
+            prompts: cloneMultiRoundPrompts(phase.prompts),
+          },
+    ),
   };
+}
+
+function normalizeSequentialDynamicPhase(
+  value: Record<string, unknown>,
+  index: number,
+): MultiRoundSequentialDynamicPhase {
+  const planningPrompt =
+    typeof value.planningPrompt === "string" ? value.planningPrompt.trim() : "";
+  const chapterTemplate =
+    typeof value.chapterTemplate === "string"
+      ? value.chapterTemplate.trim()
+      : "";
+  if (!planningPrompt) {
+    throw new Error("sequential_dynamic phase \u7f3a\u5c11 planningPrompt");
+  }
+  if (!chapterTemplate) {
+    throw new Error("sequential_dynamic phase \u7f3a\u5c11 chapterTemplate");
+  }
+  const contextStrategy =
+    value.contextStrategy === "full_history" ? "full_history" : "last_round";
+  const maxChapters =
+    typeof value.maxChapters === "number" && Number.isFinite(value.maxChapters)
+      ? Math.max(1, Math.round(value.maxChapters))
+      : DEFAULT_DEEP_READ_CHAPTER_LIMIT;
+
+  return {
+    id: normalizeMultiRoundPromptId(value.id, index),
+    title: normalizeNonEmptyString(value.title, `\u9636\u6bb5 ${index + 1}`),
+    type: "sequential_dynamic",
+    description: normalizeOptionalString(value.description),
+    contextStrategy,
+    planningPrompt,
+    fixedPrompts: normalizeMultiRoundPromptItems(value.fixedPrompts),
+    chapterTemplate,
+    maxChapters,
+  };
+}
+
+function normalizeIndependentPhase(
+  value: Record<string, unknown>,
+  index: number,
+): MultiRoundIndependentPhase {
+  const prompts = normalizeMultiRoundPromptItems(value.prompts, {
+    strict: true,
+  });
+  if (prompts.length === 0) {
+    throw new Error(
+      "independent phase \u81f3\u5c11\u9700\u8981\u4e00\u4e2a\u63d0\u793a\u8bcd",
+    );
+  }
+  const maxConcurrency =
+    typeof value.maxConcurrency === "number" &&
+    Number.isFinite(value.maxConcurrency)
+      ? Math.min(8, Math.max(1, Math.round(value.maxConcurrency)))
+      : 1;
+
+  return {
+    id: normalizeMultiRoundPromptId(value.id, index),
+    title: normalizeNonEmptyString(value.title, `\u9636\u6bb5 ${index + 1}`),
+    type: "independent",
+    description: normalizeOptionalString(value.description),
+    parallelizable: value.parallelizable === true,
+    maxConcurrency,
+    prompts,
+  };
+}
+
+function validateMultiRoundSlotIds(phases: MultiRoundPromptPhase[]): void {
+  const seen = new Set<string>();
+  const register = (id: string) => {
+    if (seen.has(id)) {
+      throw new Error(`\u7cbe\u8bfb\u6a21\u677f slot ID \u91cd\u590d: ${id}`);
+    }
+    seen.add(id);
+  };
+
+  phases.forEach((phase) => {
+    if (phase.type === "sequential_dynamic") {
+      phase.fixedPrompts.forEach((prompt) => register(prompt.id));
+      return;
+    }
+    phase.prompts.forEach((prompt) => register(prompt.id));
+  });
+}
+
+function normalizeChapterArray(value: unknown): ChapterInfo[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.reduce<ChapterInfo[]>((chapters, entry, index) => {
+    if (!isRecord(entry)) {
+      return chapters;
+    }
+    const titleZh = normalizeOptionalString(entry.title_zh);
+    const titleEn = normalizeOptionalString(entry.title_en);
+    if (!titleZh && !titleEn) {
+      return chapters;
+    }
+    chapters.push({
+      id: normalizeMultiRoundPromptId(entry.id, index).replace(/^chapter_/, ""),
+      title_zh: titleZh || titleEn,
+      title_en: titleEn,
+    });
+    return chapters;
+  }, []);
+}
+
+function cloneChapterInfos(chapters: ChapterInfo[]): ChapterInfo[] {
+  return chapters.map((chapter) => ({ ...chapter }));
 }
 
 function cloneMultiRoundPrompts(
@@ -540,12 +775,28 @@ function normalizeMultiRoundTemplateId(
   return normalized || `template-${Date.now()}`;
 }
 
+function normalizeNonEmptyString(value: unknown, fallback: string): string {
+  const normalized = normalizeOptionalString(value);
+  return normalized || fallback;
+}
+
+function normalizeImportedTitle(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .trim()
+    .replace(/\uFFFD/g, "\u00b7")
+    .replace(/\u00c2\u00b7/g, "\u00b7")
+    .replace(/\s*\u00b7\s*/g, "\u00b7");
+}
+
+function normalizeOptionalString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-// ================================================================
-// 一图总结提示词相关功能
 // ================================================================
 
 /**

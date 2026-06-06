@@ -13,6 +13,7 @@ import {
   PROMPT_VERSION,
   parseMultiRoundPrompts,
   getDefaultMultiRoundFinalPrompt,
+  getDefaultMultiRoundPromptTemplate,
   getBuiltinMultiRoundPromptTemplates,
   parseMultiRoundPromptTemplates,
   mergeMultiRoundPromptTemplates,
@@ -138,6 +139,9 @@ export class PromptsSettingsPage {
       display: "flex",
       alignItems: "center",
       marginBottom: "10px",
+      justifyContent: "space-between",
+      gap: "12px",
+      flexWrap: "wrap",
     });
 
     const multiRoundTitle = Zotero.getMainWindow().document.createElement("h4");
@@ -149,24 +153,12 @@ export class PromptsSettingsPage {
       whiteSpace: "nowrap",
     });
     multiRoundHeader.appendChild(multiRoundTitle);
+    multiRoundHeader.appendChild(this.renderMultiRoundManagementActions());
 
     multiRoundContainer.appendChild(multiRoundHeader);
 
-    const promptsJson = (getPref("multiRoundPrompts" as any) as string) || "[]";
-    const prompts = parseMultiRoundPrompts(promptsJson);
-
-    multiRoundContainer.appendChild(
-      this.renderMultiRoundTemplateControls(prompts),
-    );
-
-    const promptsList = Zotero.getMainWindow().document.createElement("div");
-    promptsList.id = "multi-round-prompts-list";
-    Object.assign(promptsList.style, {
-      marginBottom: "12px",
-    });
-
-    this.renderMultiRoundPromptsList(promptsList, prompts);
-    multiRoundContainer.appendChild(promptsList);
+    multiRoundContainer.appendChild(this.renderMultiRoundTemplateControls([]));
+    multiRoundContainer.appendChild(this.renderDeepReadV2Settings());
     multiRoundContainer.appendChild(this.renderMultiRoundPromptActions());
     modeSection.appendChild(multiRoundContainer);
 
@@ -586,6 +578,340 @@ export class PromptsSettingsPage {
 
   // =========== 多轮提示词相关方法 ===========
 
+  private renderMultiRoundManagementActions(): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const actions = doc.createElement("div");
+    Object.assign(actions.style, {
+      display: "flex",
+      gap: "8px",
+      justifyContent: "flex-end",
+      flexWrap: "wrap",
+      marginLeft: "auto",
+    });
+
+    const btnNewTemplate = createStyledButton(
+      "\u65b0\u5efa\u6a21\u677f",
+      "#4caf50",
+      "small",
+    );
+    btnNewTemplate.addEventListener("click", () =>
+      this.createMultiRoundPromptTemplate(),
+    );
+    const btnRenameTemplate = createStyledButton(
+      "\u91cd\u547d\u540d",
+      "#2196f3",
+      "small",
+    );
+    btnRenameTemplate.addEventListener("click", () =>
+      this.renameCurrentMultiRoundPromptTemplate(),
+    );
+    const btnCopyTemplate = createStyledButton(
+      "\u590d\u5236\u6a21\u677f",
+      "#673ab7",
+      "small",
+    );
+    btnCopyTemplate.addEventListener("click", () =>
+      this.copyCurrentMultiRoundPromptTemplate(),
+    );
+    const btnDeleteTemplate = createStyledButton(
+      "\u5220\u9664\u6a21\u677f",
+      "#e53935",
+      "small",
+    );
+    btnDeleteTemplate.addEventListener("click", () =>
+      this.deleteCurrentMultiRoundPromptTemplate(),
+    );
+
+    actions.appendChild(btnNewTemplate);
+    actions.appendChild(btnRenameTemplate);
+    actions.appendChild(btnCopyTemplate);
+    actions.appendChild(btnDeleteTemplate);
+    return actions;
+  }
+
+  private renderDeepReadV2Settings(): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const template =
+      this.getSelectedMultiRoundTemplate() ||
+      getDefaultMultiRoundPromptTemplate();
+    const container = doc.createElement("div");
+    Object.assign(container.style, {
+      display: "flex",
+      flexDirection: "column",
+      gap: "14px",
+      marginBottom: "16px",
+    });
+
+    const sequential = template.phases.find(
+      (phase) => phase.type === "sequential_dynamic",
+    );
+    if (sequential && sequential.type === "sequential_dynamic") {
+      const card = this.createDeepReadPhaseCard(
+        sequential.title,
+        sequential.description,
+      );
+      card.appendChild(
+        this.createDeepReadFlow([
+          "\u89e3\u6790\u7ae0\u8282 JSON",
+          "\u751f\u6210\u7ae0\u8282\u4efb\u52a1",
+          "\u9010\u7ae0\u7cbe\u8bfb",
+          "\u5199\u5165\u7cbe\u8bfb\u7b14\u8bb0",
+        ]),
+      );
+      card.appendChild(
+        this.createPromptDetails(
+          "\u7ae0\u8282\u89e3\u6790\u63d0\u793a\u8bcd",
+          sequential.planningPrompt,
+          "deep-read-planning-prompt",
+          "\u8fd9\u4e00\u8f6e\u8981\u6c42 AI \u4ece\u8bba\u6587\u4e2d\u8bc6\u522b\u7ae0\u8282\u7ed3\u6784\uff0c\u5e76\u8fd4\u56de chapters JSON\u3002",
+        ),
+      );
+      card.appendChild(
+        this.createPromptDetails(
+          "\u7ae0\u8282\u7cbe\u8bfb\u63d0\u793a\u8bcd\u6a21\u677f",
+          sequential.chapterTemplate,
+          "deep-read-chapter-template",
+          "\u89e3\u6790\u51fa\u7684\u6bcf\u4e2a\u7ae0\u8282\u90fd\u4f1a\u5957\u7528\u8fd9\u4e2a\u6a21\u677f\u751f\u6210\u9010\u7ae0\u7cbe\u8bfb\u4efb\u52a1\u3002",
+        ),
+      );
+      card.appendChild(this.createVariableNotice());
+      container.appendChild(card);
+    }
+
+    const independent = template.phases.find(
+      (phase) => phase.type === "independent",
+    );
+    if (independent && independent.type === "independent") {
+      const card = this.createDeepReadPhaseCard(
+        independent.title,
+        independent.description,
+      );
+      independent.prompts.forEach((prompt, index) => {
+        const promptCard = doc.createElement("div");
+        Object.assign(promptCard.style, {
+          border: "1px solid rgba(89, 192, 188, 0.28)",
+          borderRadius: "10px",
+          padding: "12px",
+          marginTop: index === 0 ? "0" : "12px",
+          background: "rgba(89, 192, 188, 0.035)",
+        });
+
+        const cardHeader = doc.createElement("div");
+        Object.assign(cardHeader.style, {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "10px",
+          marginBottom: "10px",
+        });
+        const cardTitle = doc.createElement("div");
+        cardTitle.textContent = `\u8ffd\u95ee\u8f6e\u6b21 ${index + 1}`;
+        Object.assign(cardTitle.style, {
+          fontWeight: "700",
+          color: "var(--ai-text, #1f2937)",
+        });
+        cardHeader.appendChild(cardTitle);
+
+        const deleteButton = createStyledButton(
+          "\u5220\u9664\u8f6e\u6b21",
+          "#e53935",
+          "small",
+        );
+        deleteButton.addEventListener("click", () =>
+          this.removeIndependentPromptFromCurrentTemplate(index),
+        );
+        cardHeader.appendChild(deleteButton);
+        promptCard.appendChild(cardHeader);
+
+        promptCard.appendChild(
+          this.createLabeledInput(
+            `deep-read-independent-title-${index}`,
+            "\u8f6e\u6b21\u6807\u9898",
+            "\u7528\u4e8e\u5728 UI \u548c\u7b14\u8bb0\u4e2d\u6807\u8bc6\u8fd9\u4e00\u8f6e\u8ffd\u95ee\u7684\u9605\u8bfb\u4e3b\u9898\u3002",
+            prompt.title,
+            "\u8ffd\u95ee\u6807\u9898",
+          ),
+        );
+        promptCard.appendChild(
+          this.createPromptDetails(
+            "\u5b9e\u9645\u53d1\u7ed9 AI \u7684\u63d0\u793a\u8bcd",
+            prompt.prompt,
+            `deep-read-independent-prompt-${index}`,
+            "\u8fd9\u91cc\u662f\u672c\u8f6e\u771f\u6b63\u53d1\u7ed9 AI \u7684\u95ee\u9898\u6216\u6307\u4ee4\u3002",
+          ),
+        );
+        card.appendChild(promptCard);
+      });
+
+      const addButton = createStyledButton(
+        "+ \u6dfb\u52a0\u8ffd\u95ee\u8f6e\u6b21",
+        "#4caf50",
+        "small",
+      );
+      addButton.addEventListener("click", () =>
+        this.addIndependentPromptToCurrentTemplate(),
+      );
+      Object.assign(addButton.style, { marginTop: "12px" });
+      card.appendChild(addButton);
+      container.appendChild(card);
+    }
+
+    return container;
+  }
+
+  private createVariableNotice(): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const notice = doc.createElement("div");
+    Object.assign(notice.style, {
+      marginTop: "10px",
+      padding: "10px 12px",
+      borderRadius: "8px",
+      border: "1px solid rgba(33, 150, 243, 0.35)",
+      background: "rgba(33, 150, 243, 0.08)",
+      color: "var(--ai-text, #1f2937)",
+      fontSize: "13px",
+      lineHeight: "1.6",
+    });
+    notice.innerHTML =
+      "<strong>\u53d8\u91cf\u8bf4\u660e</strong>\uff1a" +
+      "<code>{{chapter_title_zh}}</code> \u4f1a\u66ff\u6362\u4e3a\u4e2d\u6587\u7ae0\u8282\u540d\uff1b" +
+      "<code>{{chapter_title_en}}</code> \u4f1a\u66ff\u6362\u4e3a\u82f1\u6587\u7ae0\u8282\u540d\u3002";
+    return notice;
+  }
+
+  private createDeepReadPhaseCard(
+    title: string,
+    description: string,
+  ): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const card = doc.createElement("div");
+    Object.assign(card.style, {
+      border: "1px solid rgba(89, 192, 188, 0.35)",
+      borderRadius: "10px",
+      padding: "14px",
+      background: "var(--ai-surface, #fff)",
+    });
+
+    const heading = doc.createElement("h4");
+    heading.textContent = description ? `${title} ⓘ` : title;
+    if (description) heading.title = description;
+    Object.assign(heading.style, {
+      margin: "0 0 8px 0",
+      color: "#59c0bc",
+      fontSize: "15px",
+    });
+    card.appendChild(heading);
+
+    if (description) {
+      const desc = doc.createElement("p");
+      desc.textContent = description;
+      Object.assign(desc.style, {
+        margin: "0 0 10px 0",
+        opacity: "0.82",
+        lineHeight: "1.6",
+      });
+      card.appendChild(desc);
+    }
+
+    return card;
+  }
+
+  private createDeepReadFlow(steps: string[]): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const flow = doc.createElement("div");
+    Object.assign(flow.style, {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: "8px",
+      margin: "10px 0",
+    });
+    steps.forEach((step, index) => {
+      const badge = doc.createElement("span");
+      badge.textContent = `${index + 1}. ${step}`;
+      Object.assign(badge.style, {
+        padding: "5px 9px",
+        borderRadius: "999px",
+        background: "rgba(89, 192, 188, 0.12)",
+        color: "var(--ai-text, #333)",
+        fontSize: "12px",
+      });
+      flow.appendChild(badge);
+    });
+    return flow;
+  }
+
+  private createLabeledInput(
+    id: string,
+    label: string,
+    helpText: string,
+    value: string,
+    placeholder: string,
+  ): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const wrapper = doc.createElement("div");
+    Object.assign(wrapper.style, { marginBottom: "10px" });
+
+    const labelEl = doc.createElement("label");
+    labelEl.textContent = `${label} ⓘ`;
+    labelEl.title = helpText;
+    labelEl.setAttribute("for", `setting-${id}`);
+    Object.assign(labelEl.style, {
+      display: "block",
+      marginBottom: "6px",
+      fontWeight: "600",
+      color: "var(--ai-text, #333)",
+      cursor: "help",
+    });
+    wrapper.appendChild(labelEl);
+
+    wrapper.appendChild(createInput(id, "text", value, placeholder));
+    return wrapper;
+  }
+
+  private createPromptDetails(
+    title: string,
+    content: string,
+    inputId?: string,
+    helpText?: string,
+  ): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const details = doc.createElement("details");
+    details.open = true;
+    Object.assign(details.style, { marginTop: "8px" });
+
+    const summary = doc.createElement("summary");
+    summary.textContent = helpText ? `${title} ⓘ` : title;
+    if (helpText) summary.title = helpText;
+    Object.assign(summary.style, {
+      cursor: "pointer",
+      fontWeight: "600",
+      color: "var(--ai-text, #333)",
+    });
+    details.appendChild(summary);
+
+    const editor = doc.createElement("textarea");
+    if (inputId) editor.id = inputId;
+    editor.value = content;
+    Object.assign(editor.style, {
+      width: "100%",
+      minHeight: "150px",
+      boxSizing: "border-box",
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-word",
+      padding: "10px",
+      margin: "8px 0 0 0",
+      borderRadius: "8px",
+      background: "var(--ai-bg, #f7f9fb)",
+      border: "1px solid rgba(0,0,0,0.12)",
+      fontSize: "12px",
+      lineHeight: "1.5",
+      fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+      resize: "vertical",
+    });
+    details.appendChild(editor);
+    return details;
+  }
+
   private renderMultiRoundTemplateControls(
     currentPrompts: MultiRoundPromptItem[],
   ): HTMLElement {
@@ -644,41 +970,6 @@ export class PromptsSettingsPage {
     });
     controlsRow.appendChild(templateGroup);
 
-    const actions = doc.createElement("div");
-    Object.assign(actions.style, {
-      display: "flex",
-      gap: "8px",
-      justifyContent: "flex-start",
-      flexWrap: "wrap",
-      paddingTop: "27px",
-    });
-
-    const btnNewTemplate = createStyledButton("新建模板", "#4caf50", "small");
-    btnNewTemplate.addEventListener("click", () =>
-      this.createMultiRoundPromptTemplate(),
-    );
-    const btnRenameTemplate = createStyledButton("重命名", "#2196f3", "small");
-    btnRenameTemplate.addEventListener("click", () =>
-      this.renameCurrentMultiRoundPromptTemplate(),
-    );
-    const btnCopyTemplate = createStyledButton("复制模板", "#673ab7", "small");
-    btnCopyTemplate.addEventListener("click", () =>
-      this.copyCurrentMultiRoundPromptTemplate(),
-    );
-    const btnDeleteTemplate = createStyledButton(
-      "删除模板",
-      "#e53935",
-      "small",
-    );
-    btnDeleteTemplate.addEventListener("click", () =>
-      this.deleteCurrentMultiRoundPromptTemplate(),
-    );
-
-    actions.appendChild(btnNewTemplate);
-    actions.appendChild(btnRenameTemplate);
-    actions.appendChild(btnCopyTemplate);
-    actions.appendChild(btnDeleteTemplate);
-    controlsRow.appendChild(actions);
     container.appendChild(controlsRow);
 
     return container;
@@ -696,14 +987,16 @@ export class PromptsSettingsPage {
       flexWrap: "wrap",
     });
 
-    const btnAddPrompt = createStyledButton("+ 添加轮次", "#4caf50", "small");
-    btnAddPrompt.addEventListener("click", () => this.addMultiRoundPrompt());
-    const btnSaveTemplate = createStyledButton("保存模板", "#2196f3", "small");
+    const btnSaveTemplate = createStyledButton(
+      "\u4fdd\u5b58\u6a21\u677f",
+      "#2196f3",
+      "small",
+    );
     btnSaveTemplate.addEventListener("click", () =>
       this.confirmSaveCurrentMultiRoundTemplate(),
     );
     const btnExportTemplate = createStyledButton(
-      "导出模板",
+      "\u5bfc\u51fa v2 \u6a21\u677f",
       "#673ab7",
       "small",
     );
@@ -711,7 +1004,7 @@ export class PromptsSettingsPage {
       this.exportCurrentMultiRoundTemplate(),
     );
     const btnImportTemplate = createStyledButton(
-      "导入模板",
+      "\u5bfc\u5165 v2 \u6a21\u677f",
       "#ff9800",
       "small",
     );
@@ -719,7 +1012,6 @@ export class PromptsSettingsPage {
       this.importMultiRoundPromptTemplate(),
     );
 
-    actions.appendChild(btnAddPrompt);
     actions.appendChild(btnSaveTemplate);
     actions.appendChild(btnExportTemplate);
     actions.appendChild(btnImportTemplate);
@@ -747,7 +1039,9 @@ export class PromptsSettingsPage {
       this.selectedMultiRoundTemplateId = savedTemplateId;
       return savedTemplateId;
     }
-    return this.detectMultiRoundTemplateId(currentPrompts, templates);
+    const defaultTemplateId = getDefaultMultiRoundPromptTemplate().id;
+    this.selectedMultiRoundTemplateId = defaultTemplateId;
+    return defaultTemplateId;
   }
 
   private rememberSelectedMultiRoundTemplate(templateId: string | null): void {
@@ -823,10 +1117,6 @@ export class PromptsSettingsPage {
       return;
     }
 
-    this.saveMultiRoundPrompts(template.prompts);
-    if (template.finalPrompt) {
-      setPref("multiRoundFinalPrompt", template.finalPrompt);
-    }
     this.rememberSelectedMultiRoundTemplate(template.id);
     this.editingMultiRoundPromptId = null;
     this.render();
@@ -845,8 +1135,11 @@ export class PromptsSettingsPage {
       (getPref(MULTI_ROUND_TEMPLATE_ID_PREF as any) as string) ||
       "";
     if (!templateId || templateId === CURRENT_MULTI_ROUND_TEMPLATE_ID) {
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "当前配置未绑定模板，请先新建模板", type: "fail" })
+      new ztoolkit.ProgressWindow("\u63d0\u793a\u8bcd")
+        .createLine({
+          text: "\u5f53\u524d\u914d\u7f6e\u672a\u7ed1\u5b9a\u6a21\u677f\uff0c\u8bf7\u5148\u65b0\u5efa\u6a21\u677f",
+          type: "fail",
+        })
         .show();
       return;
     }
@@ -855,35 +1148,24 @@ export class PromptsSettingsPage {
       (item) => item.id === templateId,
     );
     if (!template) {
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "模板不存在", type: "fail" })
-        .show();
-      return;
-    }
-
-    const prompts = this.getMultiRoundPrompts();
-    if (!prompts.length) {
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "请先添加至少一轮提示词", type: "fail" })
+      new ztoolkit.ProgressWindow("\u63d0\u793a\u8bcd")
+        .createLine({ text: "\u6a21\u677f\u4e0d\u5b58\u5728", type: "fail" })
         .show();
       return;
     }
 
     const saveTarget = this.createWritableMultiRoundPromptTemplate(template);
     this.showInlineConfirm({
-      title: "保存提示词模板？",
-      message: `将保存至「${saveTarget.name}」模板。`,
-      confirmText: "保存模板",
+      title: "\u4fdd\u5b58\u63d0\u793a\u8bcd\u6a21\u677f\uff1f",
+      message: `\u5c06\u4fdd\u5b58\u5f53\u524d\u9875\u9762\u4e2d\u7684 v2 \u9636\u6bb5\u63d0\u793a\u8bcd\u5230\u300c${saveTarget.name}\u300d\u6a21\u677f\u3002`,
+      confirmText: "\u4fdd\u5b58\u6a21\u677f",
       confirmColor: "#4caf50",
       onConfirm: () => {
-        const savedTemplate = this.saveCurrentMultiRoundTemplate(
-          saveTarget,
-          prompts,
-        );
+        const savedTemplate = this.saveCurrentMultiRoundTemplate(saveTarget);
         this.render();
-        new ztoolkit.ProgressWindow("提示词")
+        new ztoolkit.ProgressWindow("\u63d0\u793a\u8bcd")
           .createLine({
-            text: `✅ 已保存模板: ${savedTemplate.name}`,
+            text: `\u2705 \u5df2\u4fdd\u5b58\u6a21\u677f: ${savedTemplate.name}`,
             type: "success",
           })
           .show();
@@ -893,16 +1175,8 @@ export class PromptsSettingsPage {
 
   private saveCurrentMultiRoundTemplate(
     template: MultiRoundPromptTemplate,
-    prompts: MultiRoundPromptItem[],
   ): MultiRoundPromptTemplate {
-    const updatedTemplate: MultiRoundPromptTemplate = {
-      ...template,
-      prompts,
-      finalPrompt:
-        (getPref("multiRoundFinalPrompt") as string) ||
-        template.finalPrompt ||
-        getDefaultMultiRoundFinalPrompt(),
-    };
+    const updatedTemplate = this.collectDeepReadTemplateFromEditor(template);
     const customTemplates = parseMultiRoundPromptTemplates(
       (getPref("multiRoundPromptTemplates") as string) || "[]",
     );
@@ -915,30 +1189,65 @@ export class PromptsSettingsPage {
     return updatedTemplate;
   }
 
+  private collectDeepReadTemplateFromEditor(
+    template: MultiRoundPromptTemplate,
+  ): MultiRoundPromptTemplate {
+    const doc = Zotero.getMainWindow().document;
+    const getValue = (id: string, fallback: string) => {
+      const value = (doc.getElementById(id) as HTMLTextAreaElement | null)
+        ?.value;
+      return value && value.trim() ? value.trim() : fallback;
+    };
+
+    const phases = template.phases.map((phase) => {
+      if (phase.type === "sequential_dynamic") {
+        return {
+          ...phase,
+          planningPrompt: getValue(
+            "deep-read-planning-prompt",
+            phase.planningPrompt,
+          ),
+          chapterTemplate: getValue(
+            "deep-read-chapter-template",
+            phase.chapterTemplate,
+          ),
+        };
+      }
+      return {
+        ...phase,
+        prompts: phase.prompts.map((prompt, index) => ({
+          ...prompt,
+          title: getValue(`deep-read-independent-title-${index}`, prompt.title),
+          prompt: getValue(
+            `deep-read-independent-prompt-${index}`,
+            prompt.prompt,
+          ),
+          order: index + 1,
+        })),
+      };
+    });
+
+    return {
+      ...template,
+      version: 2,
+      phases,
+      prompts: [],
+      finalPrompt: null,
+    };
+  }
+
   private exportCurrentMultiRoundTemplate(): void {
-    const prompts = this.getMultiRoundPrompts();
     const selectedTemplateId = (
       this.multiRoundTemplateSelect as any
     )?.getValue?.();
-    const selectedTemplate = this.getMultiRoundPromptTemplates().find(
-      (item) => item.id === selectedTemplateId,
+    const template = this.collectDeepReadTemplateFromEditor(
+      this.getMultiRoundPromptTemplates().find(
+        (item) => item.id === selectedTemplateId,
+      ) || getDefaultMultiRoundPromptTemplate(),
     );
-    const currentFinalPrompt =
-      (getPref("multiRoundFinalPrompt") as string) ||
-      selectedTemplate?.finalPrompt ||
-      getDefaultMultiRoundFinalPrompt();
-    const template: MultiRoundPromptTemplate = {
-      id: selectedTemplate?.id || `template-${Date.now()}`,
-      name: selectedTemplate?.name || "当前 AI 精读模板",
-      description:
-        selectedTemplate?.description || "从当前 AI 精读轮次提示词导出。",
-      version: selectedTemplate?.version || 1,
-      prompts,
-      finalPrompt: currentFinalPrompt,
-    };
 
     this.showJsonDialog({
-      title: "导出 AI 精读提示词模板",
+      title: "\u5bfc\u51fa AI \u7cbe\u8bfb v2 \u63d0\u793a\u8bcd\u6a21\u677f",
       value: serializeMultiRoundPromptTemplate(template),
       readOnly: true,
     });
@@ -967,10 +1276,6 @@ export class PromptsSettingsPage {
             JSON.stringify(nextTemplates) as any,
           );
           this.rememberSelectedMultiRoundTemplate(templateToImport.id);
-          this.saveMultiRoundPrompts(templateToImport.prompts);
-          if (templateToImport.finalPrompt) {
-            setPref("multiRoundFinalPrompt", templateToImport.finalPrompt);
-          }
           this.render();
           new ztoolkit.ProgressWindow("提示词")
             .createLine({
@@ -993,27 +1298,15 @@ export class PromptsSettingsPage {
   }
 
   private createMultiRoundPromptTemplate(): void {
-    const prompts = this.getMultiRoundPrompts();
-    if (!prompts.length) {
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "请先添加至少一轮提示词", type: "fail" })
-        .show();
-      return;
-    }
-
     this.showTemplateMetadataDialog({
       title: "新建 AI 精读提示词模板",
       onConfirm: (name, description) => {
-        const template: MultiRoundPromptTemplate = {
+        const template = this.collectDeepReadTemplateFromEditor({
+          ...getDefaultMultiRoundPromptTemplate(),
           id: `custom-${Date.now()}`,
           name,
           description,
-          version: 1,
-          prompts,
-          finalPrompt:
-            (getPref("multiRoundFinalPrompt") as string) ||
-            getDefaultMultiRoundFinalPrompt(),
-        };
+        });
         const customTemplates = parseMultiRoundPromptTemplates(
           (getPref("multiRoundPromptTemplates") as string) || "[]",
         );
@@ -1098,10 +1391,6 @@ export class PromptsSettingsPage {
     );
     setPref("multiRoundPromptTemplates", JSON.stringify(nextTemplates));
     this.rememberSelectedMultiRoundTemplate(copiedTemplate.id);
-    this.saveMultiRoundPrompts(copiedTemplate.prompts);
-    if (copiedTemplate.finalPrompt) {
-      setPref("multiRoundFinalPrompt", copiedTemplate.finalPrompt);
-    }
     this.render();
     new ztoolkit.ProgressWindow("提示词")
       .createLine({ text: `✅ 已复制模板: ${copyName}`, type: "success" })
@@ -1143,6 +1432,70 @@ export class PromptsSettingsPage {
           .show();
       },
     });
+  }
+
+  private addIndependentPromptToCurrentTemplate(): void {
+    const template = this.collectDeepReadTemplateFromEditor(
+      this.getSelectedMultiRoundTemplate() ||
+        getDefaultMultiRoundPromptTemplate(),
+    );
+    const nextTemplate: MultiRoundPromptTemplate = {
+      ...template,
+      phases: template.phases.map((phase) => {
+        if (phase.type !== "independent") return phase;
+        const nextIndex = phase.prompts.length + 1;
+        return {
+          ...phase,
+          prompts: [
+            ...phase.prompts,
+            {
+              id: `q_custom_${Date.now()}`,
+              title: `\u81ea\u5b9a\u4e49\u8ffd\u95ee ${nextIndex}`,
+              prompt:
+                "\u8bf7\u57fa\u4e8e\u8bba\u6587\u5168\u6587\u63d0\u51fa\u4e00\u4e2a\u4f60\u8ba4\u4e3a\u6700\u5173\u952e\u7684\u8ffd\u95ee\uff0c\u5e76\u7528\u4e2d\u6587\u56de\u7b54\u3002\u8f93\u51fa Markdown\uff0c\u6807\u9898\u5c42\u7ea7\u4ece\u4e09\u7ea7\u6807\u9898\u5f00\u59cb\u3002",
+              order: nextIndex,
+            },
+          ],
+        };
+      }),
+    };
+    this.saveEditableTemplateDraft(nextTemplate);
+  }
+
+  private removeIndependentPromptFromCurrentTemplate(
+    indexToRemove: number,
+  ): void {
+    const template = this.collectDeepReadTemplateFromEditor(
+      this.getSelectedMultiRoundTemplate() ||
+        getDefaultMultiRoundPromptTemplate(),
+    );
+    const nextTemplate: MultiRoundPromptTemplate = {
+      ...template,
+      phases: template.phases.map((phase) => {
+        if (phase.type !== "independent") return phase;
+        return {
+          ...phase,
+          prompts: phase.prompts
+            .filter((_prompt, index) => index !== indexToRemove)
+            .map((prompt, index) => ({ ...prompt, order: index + 1 })),
+        };
+      }),
+    };
+    this.saveEditableTemplateDraft(nextTemplate);
+  }
+
+  private saveEditableTemplateDraft(template: MultiRoundPromptTemplate): void {
+    const writable = this.createWritableMultiRoundPromptTemplate(template);
+    const customTemplates = parseMultiRoundPromptTemplates(
+      (getPref("multiRoundPromptTemplates") as string) || "[]",
+    );
+    const nextTemplates = this.upsertMultiRoundPromptTemplate(
+      customTemplates,
+      writable,
+    );
+    setPref("multiRoundPromptTemplates", JSON.stringify(nextTemplates));
+    this.rememberSelectedMultiRoundTemplate(writable.id);
+    this.render();
   }
 
   private upsertMultiRoundPromptTemplate(
@@ -1551,29 +1904,27 @@ export class PromptsSettingsPage {
       .querySelectorAll(".ai-butler-page-dialog")
       .forEach((node: Element) => node.remove());
 
-    if (!this.container.style.position) {
-      this.container.style.position = "relative";
-    }
-
     const overlay = doc.createElement("div");
     overlay.className = "ai-butler-page-dialog";
     Object.assign(overlay.style, {
-      position: "absolute",
+      position: "fixed",
       inset: "0",
-      minHeight: "100%",
+      minHeight: "100vh",
       display: "flex",
-      alignItems: "flex-start",
+      alignItems: "center",
       justifyContent: "center",
-      padding: "32px 24px",
-      background: "var(--ai-bg, #f7f9fb)",
-      zIndex: "1000",
+      padding: "24px",
+      background: "rgba(15, 23, 42, 0.32)",
+      zIndex: "99999",
       boxSizing: "border-box",
       overflow: "auto",
     });
 
     const dialog = doc.createElement("div");
     Object.assign(dialog.style, {
-      width: "min(760px, 100%)",
+      width: "min(760px, calc(100vw - 48px))",
+      maxHeight: "calc(100vh - 48px)",
+      overflow: "auto",
       padding: "18px",
       borderRadius: "8px",
       background: "var(--ai-surface, #ffffff)",
@@ -1614,7 +1965,7 @@ export class PromptsSettingsPage {
       }
     });
     dialog.addEventListener("click", (event) => event.stopPropagation());
-    this.container.appendChild(overlay);
+    (doc.body || this.container).appendChild(overlay);
 
     return { body, actions, close };
   }

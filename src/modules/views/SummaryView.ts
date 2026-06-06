@@ -1486,7 +1486,7 @@ export class SummaryView extends BaseView {
         .replace(/&amp;/g, "&")
         .trim();
 
-      // 获取PDF内容以支持后续追问
+      // 获取可分析内容以支持后续追问
       try {
         const { ContentExtractor } = await import("../contentExtractor");
         const { default: LLMService } = await import("../llmService");
@@ -1525,11 +1525,11 @@ export class SummaryView extends BaseView {
             ztoolkit.log("[AI-Butler] 加载历史追问失败:", e);
           }
         } else {
-          // 没有PDF内容，不显示追问按钮
+          // 没有可分析内容，不显示追问按钮
           this.clearPaperContext();
         }
       } catch (err) {
-        ztoolkit.log("[AI-Butler] 获取PDF内容失败，无法启用追问功能:", err);
+        ztoolkit.log("[AI-Butler] 获取可分析内容失败，无法启用追问功能:", err);
         this.clearPaperContext();
       }
     } catch (err) {

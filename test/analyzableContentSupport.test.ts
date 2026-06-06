@@ -303,6 +303,86 @@ describe("analyzable content source support", function () {
     });
   });
 
+  describe("LiteratureReviewService", function () {
+    let originalIsPdfAttachment: typeof PDFExtractor.isPdfAttachment;
+    let originalExtractTextFromAnalyzableAttachment: typeof ContentExtractor.extractTextFromAnalyzableAttachment;
+    let originalGenerateText: typeof LLMService.generateText;
+
+    beforeEach(function () {
+      originalIsPdfAttachment = PDFExtractor.isPdfAttachment;
+      originalExtractTextFromAnalyzableAttachment =
+        ContentExtractor.extractTextFromAnalyzableAttachment;
+      originalGenerateText = LLMService.generateText;
+    });
+
+    afterEach(function () {
+      PDFExtractor.isPdfAttachment = originalIsPdfAttachment;
+      ContentExtractor.extractTextFromAnalyzableAttachment =
+        originalExtractTextFromAnalyzableAttachment;
+      LLMService.generateText = originalGenerateText;
+    });
+
+    it("extracts web snapshot source contents as text instead of base64", async function () {
+      PDFExtractor.isPdfAttachment = () => false;
+      ContentExtractor.extractTextFromAnalyzableAttachment = async () =>
+        "Snapshot literature review text";
+
+      const contents =
+        await LiteratureReviewService.extractSourceContentsFromAttachments([
+          {
+            id: 1,
+            getField: () => "Snapshot Attachment",
+            getFilePathAsync: async () => "/tmp/snapshot.xhtml",
+          } as Zotero.Item,
+        ]);
+
+      expect(contents).to.have.length(1);
+      expect(contents[0]).to.deep.include({
+        title: "Snapshot Attachment",
+        filePath: "/tmp/snapshot.xhtml",
+        content: "Snapshot literature review text",
+        isBase64: false,
+      });
+    });
+
+    it("uses text content for multi-source summaries when any source is not base64", async function () {
+      let capturedRequest: any = null;
+      LLMService.generateText = (async (request: any) => {
+        capturedRequest = request;
+        return "Generated review";
+      }) as any;
+
+      const result =
+        await LiteratureReviewService.generateSummaryFromMultipleSources(
+          [
+            {
+              title: "PDF Paper",
+              filePath: "/tmp/paper.pdf",
+              content: "JVBERi0x",
+              isBase64: true,
+            },
+            {
+              title: "Snapshot Paper",
+              filePath: "/tmp/snapshot.xhtml",
+              content: "Snapshot readable text",
+              isBase64: false,
+            },
+          ],
+          "Write a review",
+        );
+
+      expect(result).to.equal("Generated review");
+      expect(capturedRequest.content).to.deep.include({
+        kind: "text",
+        policy: "text",
+      });
+      expect(capturedRequest.content.text).to.contain("Snapshot Paper");
+      expect(capturedRequest.content.text).to.contain("Snapshot readable text");
+      expect(capturedRequest.content.text).to.contain("PDF Paper");
+      expect(capturedRequest.content.text).not.to.contain("JVBERi0x");
+    });
+  });
+
   describe("TaskQueueManager", function () {
     let originalGetAsync: typeof Zotero.Items.getAsync;
     let originalHasAnalyzableAttachment: typeof ContentExtractor.hasAnalyzableAttachment;

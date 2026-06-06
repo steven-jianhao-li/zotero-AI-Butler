@@ -6,17 +6,18 @@
  * 本模块提供文献综述生成的核心服务
  *
  * 主要职责:
- * 1. 创建报告条目
- * 2. 将选中的可分析附件添加到报告
- * 3. 逐篇文献按表格模板填表（并行，可复用已有表格）
- * 4. 汇总表格内容生成文献综述
- * 5. 生成 AI 笔记并关联到报告条目
+ * 1. 将选中的可分析附件映射到父文献
+ * 2. 逐篇文献按表格模板填表（并行，可复用已有表格）
+ * 3. 汇总表格内容生成文献综述或针对性回答
+ * 4. 在目标分类下创建独立 AI 笔记
+ * 5. 为已纳入综述的文献更新处理标签
  *
  * @module literatureReviewService
  * @author AI-Butler Team
  */
 
 import { PDFExtractor } from "./pdfExtractor";
+import { ContentExtractor } from "./contentExtractor";
 import { NoteGenerator } from "./noteGenerator";
 import LLMService from "./llmService";
 import {
@@ -65,18 +66,17 @@ export class LiteratureReviewService {
    * 生成文献综述（表格驱动的两阶段流程）
    *
    * 流程:
-   * 1. 创建报告条目
-   * 2. 添加可分析附件到报告
-   * 3. 逐篇填表（并行，复用已有表格）
-   * 4. 汇总所有表格 → 调用 LLM 生成综述
-   * 5. 创建综述笔记
+   * 1. 逐篇填表（并行，复用已有表格）
+   * 2. 汇总所有表格 → 调用 LLM 生成综述
+   * 3. 创建独立综述笔记
+   * 4. 为已纳入综述的文献添加 AI-Reviewed 标签
    *
    * @param collection 目标分类
    * @param sourceAttachments 选中的可分析附件
    * @param reviewName 综述名称
    * @param prompt 用户自定义综述提示词（可选，默认使用 tableReviewPrompt）
    * @param progressCallback 进度回调
-   * @returns 创建的报告条目
+   * @returns 创建的独立综述笔记
    */
   static async generateReview(
     collection: Zotero.Collection,
@@ -1139,21 +1139,18 @@ ${entryList}
           displayTitle = `${paperTitle} - ${attachmentTitle}`;
         }
 
-        // 尝试读取附件内容
-        let base64Content = "";
-        try {
-          const fileData = await IOUtils.read(filePath);
-          // 使用分块方式转换为 base64，避免大文件导致 "too many function arguments" 错误
-          base64Content = this.arrayBufferToBase64(fileData);
-        } catch (e) {
-          ztoolkit.log(`[AI-Butler] 读取附件文件失败: ${filePath}`, e);
-        }
+        const isPdf = PDFExtractor.isPdfAttachment(sourceAttachment);
+        const content = isPdf
+          ? this.arrayBufferToBase64(await IOUtils.read(filePath))
+          : await ContentExtractor.extractTextFromAnalyzableAttachment(
+              sourceAttachment,
+            );
 
         contents.push({
           title: displayTitle,
           filePath,
-          content: base64Content,
-          isBase64: true,
+          content,
+          isBase64: isPdf,
         });
       } catch (error) {
         ztoolkit.log(`[AI-Butler] 提取附件内容失败: ${attachmentTitle}`, error);
@@ -1178,11 +1175,34 @@ ${entryList}
 
     progressCallback?.("正在调用 AI 生成综述...", 60);
 
+    const hasTextSource = sourceContents.some((source) => !source.isBase64);
+    if (hasTextSource) {
+      const combinedText = sourceContents
+        .map((source) => {
+          if (source.isBase64) {
+            return `\n\n=== ${source.title} ===\n[PDF 内容源: ${source.filePath}]`;
+          }
+          return `\n\n=== ${source.title} ===\n${source.content}`;
+        })
+        .join("\n");
+
+      const fullPrompt = `${prompt}\n\n以下是需要综述的内容源:\n${combinedText}`;
+
+      return LLMService.generateText({
+        task: "literature-review",
+        prompt: fullPrompt,
+        content: {
+          kind: "text",
+          text: combinedText,
+          policy: "text",
+        },
+      });
+    }
+
     const files = sourceContents.map((source, index) => ({
       filePath: source.filePath,
       displayName: `${index + 1}_${source.title.slice(0, 50)}`,
-      base64Content: source.isBase64 ? source.content : undefined,
-      textContent: source.isBase64 ? undefined : source.content,
+      base64Content: source.content,
     }));
 
     return LLMService.generateText({

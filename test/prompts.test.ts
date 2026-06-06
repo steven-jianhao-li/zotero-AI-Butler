@@ -162,7 +162,7 @@ describe("multi-round prompt templates v2", function () {
         { id: "ch2", title_zh: "方法", title_en: "Method" },
         { id: "ch3", title_zh: "实验", title_en: "Experiments" },
       ],
-      "Read {{chapter_title_zh}} / {{chapter_title_en}}",
+      "Read {{chapter_index}}. {{chapter_title_zh}} / {{chapter_title_en}}",
       0,
       2,
     );
@@ -171,14 +171,14 @@ describe("multi-round prompt templates v2", function () {
       "chapter_ch1",
       "chapter_ch2",
     ]);
-    expect(prompts[1].prompt).to.equal("Read 方法 / Method");
+    expect(prompts[1].prompt).to.equal("Read 2. 方法 / Method");
   });
 
   it("builds and fills ordered deep-read slots", function () {
     const template = v2Template();
     const planned = planDeepReadSlots(template, DEFAULT_CHAPTER_FALLBACKS);
     const html = buildDeepReadSkeletonHtml("Paper", template, planned);
-    const filled = fillDeepReadSlot(html, "chapter_ch1", "### Done");
+    const filled = fillDeepReadSlot(html, "chapter_ch1", "### Done", "引言");
 
     expect(planned.slots.map((slot) => slot.id)).to.deep.equal([
       "chapter_ch1",
@@ -187,7 +187,27 @@ describe("multi-round prompt templates v2", function () {
       "q2",
     ]);
     expect(getDeepReadSlotStatus(filled, "chapter_ch1")).to.equal("done");
+    expect(html).to.include("<h1>AI 精读 - Paper</h1>");
+    expect(html).to.include("<h2>章节解析</h2>");
+    expect(html).to.include("<p>第1章：引言（Introduction）</p>");
+    expect(html).to.not.include("逐章精读 ⓘ");
+    expect(filled).to.include("<h2>引言</h2>");
     expect(shouldRunDeepReadSlot(filled, "chapter_ch1")).to.equal(false);
     expect(shouldRunDeepReadSlot(filled, "chapter_ch2")).to.equal(true);
+  });
+
+  it("does not duplicate model-provided top-level slot headings", function () {
+    const template = v2Template();
+    const planned = planDeepReadSlots(template, DEFAULT_CHAPTER_FALLBACKS);
+    const html = buildDeepReadSkeletonHtml("Paper", template, planned);
+    const filled = fillDeepReadSlot(
+      html,
+      "chapter_ch1",
+      "## 第1章精读：Introduction\n\n### Done",
+      "引言",
+    );
+
+    expect(filled).to.not.include("<h2>引言</h2>");
+    expect(filled).to.include("<h2>第1章精读：Introduction</h2>");
   });
 });

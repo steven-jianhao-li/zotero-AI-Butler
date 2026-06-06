@@ -615,6 +615,7 @@ export function generateChapterPrompts(
     id: `chapter_${chapter.id || `ch${index + 1}`}`,
     title: chapter.title_zh || chapter.title_en || `\u7b2c ${index + 1} \u7ae0`,
     prompt: chapterTemplate
+      .replace(/\{\{chapter_index\}\}/g, String(index + 1))
       .replace(/\{\{chapter_title_zh\}\}/g, chapter.title_zh || "")
       .replace(/\{\{chapter_title_en\}\}/g, chapter.title_en || ""),
     order: fixedPromptsCount + index + 1,

@@ -19,6 +19,7 @@ import {
   mergeMultiRoundPromptTemplates,
   parseMultiRoundPromptTemplateExport,
   serializeMultiRoundPromptTemplate,
+  type MultiRoundContextStrategy,
   type MultiRoundPromptItem,
   type MultiRoundPromptTemplate,
 } from "../../../utils/prompts";
@@ -653,11 +654,18 @@ export class PromptsSettingsPage {
       card.appendChild(
         this.createDeepReadFlow([
           "\u89e3\u6790\u7ae0\u8282 JSON",
+          "\u6267\u884c\u56fa\u5b9a\u7cbe\u8bfb\u8f6e\u6b21",
           "\u751f\u6210\u7ae0\u8282\u4efb\u52a1",
           "\u9010\u7ae0\u7cbe\u8bfb",
           "\u5199\u5165\u7cbe\u8bfb\u7b14\u8bb0",
         ]),
       );
+      card.appendChild(
+        this.createContextStrategySelector(sequential.contextStrategy),
+      );
+      if (sequential.fixedPrompts.length > 0) {
+        card.appendChild(this.renderFixedPromptCards(sequential.fixedPrompts));
+      }
       card.appendChild(
         this.createPromptDetails(
           "\u7ae0\u8282\u89e3\u6790\u63d0\u793a\u8bcd",
@@ -774,9 +782,106 @@ export class PromptsSettingsPage {
     });
     notice.innerHTML =
       "<strong>\u53d8\u91cf\u8bf4\u660e</strong>\uff1a" +
+      "<code>{{chapter_index}}</code> \u4f1a\u66ff\u6362\u4e3a\u7ae0\u8282\u5e8f\u53f7\uff1b" +
       "<code>{{chapter_title_zh}}</code> \u4f1a\u66ff\u6362\u4e3a\u4e2d\u6587\u7ae0\u8282\u540d\uff1b" +
       "<code>{{chapter_title_en}}</code> \u4f1a\u66ff\u6362\u4e3a\u82f1\u6587\u7ae0\u8282\u540d\u3002";
     return notice;
+  }
+
+  private createContextStrategySelector(value: string): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const wrapper = doc.createElement("div");
+    Object.assign(wrapper.style, { margin: "10px 0" });
+
+    const label = doc.createElement("label");
+    label.textContent = "\u9010\u7ae0\u7cbe\u8bfb\u4e0a\u4e0b\u6587\u6a21\u5f0f \u24d8";
+    label.title =
+      "\u7cbe\u7b80\u4e0a\u4e0b\u6587\uff1a\u6bcf\u8f6e\u53ea\u5e26\u4e0a\u4e00\u8f6e\u7cbe\u8bfb\u5185\u5bb9\uff1b\u5b8c\u6574\u4e0a\u4e0b\u6587\uff1a\u6bcf\u8f6e\u5e26\u4e0a\u7ae0\u8282\u89e3\u6790\u548c\u6240\u6709\u5df2\u5b8c\u6210\u8f6e\u6b21\u3002";
+    label.setAttribute("for", "setting-deep-read-context-strategy");
+    Object.assign(label.style, {
+      display: "block",
+      marginBottom: "6px",
+      fontWeight: "600",
+      color: "var(--ai-text, #333)",
+      cursor: "help",
+    });
+    wrapper.appendChild(label);
+
+    wrapper.appendChild(
+      createSelect(
+        "deep-read-context-strategy",
+        [
+          { value: "last_round", label: "\u7cbe\u7b80\u4e0a\u4e0b\u6587" },
+          { value: "full_history", label: "\u5b8c\u6574\u4e0a\u4e0b\u6587" },
+        ],
+        value === "full_history" ? "full_history" : "last_round",
+      ),
+    );
+    return wrapper;
+  }
+
+  private renderFixedPromptCards(
+    prompts: MultiRoundPromptItem[],
+  ): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const wrapper = doc.createElement("div");
+    Object.assign(wrapper.style, {
+      marginTop: "12px",
+      padding: "12px",
+      border: "1px solid rgba(33, 150, 243, 0.22)",
+      borderRadius: "10px",
+      background: "rgba(33, 150, 243, 0.04)",
+    });
+
+    const heading = doc.createElement("div");
+    heading.textContent = "\u56fa\u5b9a\u7cbe\u8bfb\u8f6e\u6b21";
+    Object.assign(heading.style, {
+      fontWeight: "700",
+      marginBottom: "8px",
+      color: "var(--ai-text, #1f2937)",
+    });
+    wrapper.appendChild(heading);
+
+    const desc = doc.createElement("p");
+    desc.textContent =
+      "\u8fd9\u4e9b\u8f6e\u6b21\u4f1a\u5728\u9010\u7ae0\u7cbe\u8bfb\u524d\u5148\u6267\u884c\uff0c\u9002\u5408\u7efc\u8ff0\u3001\u6458\u8981\u7b49\u4e0d\u4f9d\u8d56\u5355\u4e2a\u7ae0\u8282\u7684\u4efb\u52a1\u3002";
+    Object.assign(desc.style, {
+      margin: "0 0 10px 0",
+      opacity: "0.78",
+      lineHeight: "1.6",
+    });
+    wrapper.appendChild(desc);
+
+    prompts.forEach((prompt, index) => {
+      const promptCard = doc.createElement("div");
+      Object.assign(promptCard.style, {
+        border: "1px solid rgba(33, 150, 243, 0.2)",
+        borderRadius: "8px",
+        padding: "10px",
+        marginTop: index === 0 ? "0" : "10px",
+        background: "var(--ai-surface, #fff)",
+      });
+      promptCard.appendChild(
+        this.createLabeledInput(
+          `deep-read-fixed-title-${index}`,
+          `\u56fa\u5b9a\u8f6e\u6b21 ${index + 1} \u6807\u9898`,
+          "\u7528\u4e8e\u5728 UI \u548c\u7b14\u8bb0\u4e2d\u6807\u8bc6\u8fd9\u4e2a\u56fa\u5b9a\u7cbe\u8bfb\u4efb\u52a1\u3002",
+          prompt.title,
+          "\u56fa\u5b9a\u8f6e\u6b21\u6807\u9898",
+        ),
+      );
+      promptCard.appendChild(
+        this.createPromptDetails(
+          "\u56fa\u5b9a\u8f6e\u6b21\u63d0\u793a\u8bcd",
+          prompt.prompt,
+          `deep-read-fixed-prompt-${index}`,
+          "\u8fd9\u91cc\u662f\u5728\u9010\u7ae0\u7cbe\u8bfb\u524d\u53d1\u7ed9 AI \u7684\u56fa\u5b9a\u95ee\u9898\u6216\u6307\u4ee4\u3002",
+        ),
+      );
+      wrapper.appendChild(promptCard);
+    });
+
+    return wrapper;
   }
 
   private createDeepReadPhaseCard(
@@ -1198,15 +1303,33 @@ export class PromptsSettingsPage {
         ?.value;
       return value && value.trim() ? value.trim() : fallback;
     };
+    const getSelectValue = (id: string, fallback: string) => {
+      const value = (doc.getElementById(id) as any)?.getValue?.();
+      return typeof value === "string" && value.trim() ? value : fallback;
+    };
+    const getContextStrategy = (
+      fallback: MultiRoundContextStrategy,
+    ): MultiRoundContextStrategy =>
+      getSelectValue("setting-deep-read-context-strategy", fallback) ===
+      "full_history"
+        ? "full_history"
+        : "last_round";
 
     const phases = template.phases.map((phase) => {
       if (phase.type === "sequential_dynamic") {
         return {
           ...phase,
+          contextStrategy: getContextStrategy(phase.contextStrategy),
           planningPrompt: getValue(
             "deep-read-planning-prompt",
             phase.planningPrompt,
           ),
+          fixedPrompts: phase.fixedPrompts.map((prompt, index) => ({
+            ...prompt,
+            title: getValue(`deep-read-fixed-title-${index}`, prompt.title),
+            prompt: getValue(`deep-read-fixed-prompt-${index}`, prompt.prompt),
+            order: index + 1,
+          })),
           chapterTemplate: getValue(
             "deep-read-chapter-template",
             phase.chapterTemplate,

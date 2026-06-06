@@ -1119,6 +1119,7 @@ export class NoteGenerator {
           currentHtml,
           slot.id,
           markdown,
+          slot.title,
           status,
         );
         if (nextHtml !== currentHtml) {
@@ -1191,10 +1192,13 @@ export class NoteGenerator {
       }
     }
 
-    for (let index = 0; index < planned.independentSlots.length; index++) {
-      const slot = planned.independentSlots[index];
+    const runIndependentSlot = async (
+      slot: DeepReadSlot,
+      index: number,
+      streamLive: boolean,
+    ) => {
       const currentHtml = ((note as any).getNote?.() as string) || "";
-      if (!shouldRunDeepReadSlot(currentHtml, slot.id)) continue;
+      if (!shouldRunDeepReadSlot(currentHtml, slot.id)) return;
 
       throwIfAborted(params.abortSignal);
       params.progressCallback?.(
@@ -1217,17 +1221,46 @@ export class NoteGenerator {
           isBase64: params.isBase64,
           conversation: [{ role: "user", content: slot.prompt }],
           abortSignal: params.abortSignal,
-          onProgress: (chunk) => {
-            params.streamCallback?.(chunk);
-            params.outputWindow?.appendContent(chunk);
-          },
+          onProgress: streamLive
+            ? (chunk) => {
+                params.streamCallback?.(chunk);
+                params.outputWindow?.appendContent(chunk);
+              }
+            : undefined,
         });
         lastResponse = response;
         collected.push(`# ${slot.title}\n\n${response.text}`);
+        if (!streamLive) {
+          params.streamCallback?.(response.text);
+          params.outputWindow?.appendContent(response.text);
+        }
         await updateSlot(slot, response.text, "done");
       } catch (error: any) {
         if (this.shouldStopMultiRoundOnError(error)) throw error;
         await updateSlot(slot, error?.message || String(error), "error");
+      }
+    };
+
+    let independentIndex = 0;
+    for (const phase of template.phases) {
+      if (phase.type !== "independent") continue;
+      const phaseSlots = planned.independentSlots.filter(
+        (slot) => slot.phaseId === phase.id,
+      );
+      const maxConcurrency = phase.parallelizable ? phase.maxConcurrency : 1;
+      for (let start = 0; start < phaseSlots.length; start += maxConcurrency) {
+        const batch = phaseSlots.slice(start, start + maxConcurrency);
+        const batchStartIndex = independentIndex;
+        independentIndex += batch.length;
+        if (maxConcurrency === 1) {
+          await runIndependentSlot(batch[0], batchStartIndex, true);
+          continue;
+        }
+        await Promise.all(
+          batch.map((slot, offset) =>
+            runIndependentSlot(slot, batchStartIndex + offset, false),
+          ),
+        );
       }
     }
 

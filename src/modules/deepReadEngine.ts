@@ -60,8 +60,9 @@ export function buildDeepReadSkeletonHtml(
   planned: PlannedDeepRead,
 ): string {
   const parts: string[] = [
-    `<h2>AI 精读 - ${escapeHtml(truncateTitle(itemTitle))}</h2>`,
-    `<p>AI \u7cbe\u8bfb\u5c06\u5148\u89e3\u6790\u7ae0\u8282\u7ed3\u6784\uff0c\u518d\u6309\u7ae0\u8282\u987a\u5e8f\u5199\u5165\u9010\u7ae0\u7cbe\u8bfb\u7ed3\u679c\uff0c\u5e76\u8865\u5145\u91cd\u70b9\u8ffd\u95ee\u3002</p>`,
+    `<h1>AI 精读 - ${escapeHtml(truncateTitle(itemTitle))}</h1>`,
+    `<h2>章节解析</h2>`,
+    ...buildChapterListHtml(planned.chapters),
   ];
 
   for (const phase of template.phases) {
@@ -69,7 +70,6 @@ export function buildDeepReadSkeletonHtml(
       (slot) => slot.phaseId === phase.id,
     );
     if (!phaseSlots.length) continue;
-    parts.push(buildPhaseHeader(phase));
     for (let index = 0; index < phaseSlots.length; index++) {
       const slot = phaseSlots[index];
       parts.push(buildPendingSlotHtml(slot));
@@ -86,13 +86,22 @@ export function fillDeepReadSlot(
   noteHtml: string,
   slotId: string,
   markdown: string,
+  slotTitle?: string,
   status: "done" | "error" = "done",
 ): string {
+  const headingHtml = shouldPrependSlotHeading(markdown, slotTitle)
+    ? `<h2>${escapeHtml(slotTitle || "")}</h2>\n`
+    : "";
   const htmlContent =
     status === "done"
-      ? markdownToZoteroNoteHtml(markdown)
-      : `<p>❌ ${escapeHtml(markdown)}</p>`;
+      ? `${headingHtml}${markdownToZoteroNoteHtml(markdown)}`
+      : `${headingHtml}<p>❌ ${escapeHtml(markdown)}</p>`;
   return replaceDeepReadSlotHtml(noteHtml, slotId, htmlContent, status);
+}
+
+function shouldPrependSlotHeading(markdown: string, slotTitle?: string): boolean {
+  if (!slotTitle) return false;
+  return !/^\s*#{1,2}\s+\S/m.test(markdown);
 }
 
 export function replaceDeepReadSlotHtml(
@@ -183,22 +192,33 @@ function promptToSlot(
   };
 }
 
-function buildPhaseHeader(phase: MultiRoundPromptPhase): string {
-  return [
-    `<h2>${escapeHtml(phase.title)} <span title="${escapeHtml(phase.description)}">ⓘ</span></h2>`,
-    phase.description ? `<p>${escapeHtml(phase.description)}</p>` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
 function buildPendingSlotHtml(slot: DeepReadSlot): string {
   return [
     `<!-- ${DEEP_READ_SLOT_PREFIX}:${slot.id}:pending -->`,
-    `<h3>${escapeHtml(slot.title)}</h3>`,
+    `<h2>${escapeHtml(slot.title)}</h2>`,
     `<p>⏳ 等待生成...</p>`,
     `<!-- ${DEEP_READ_SLOT_PREFIX}:${slot.id}:end -->`,
   ].join("\n");
+}
+
+function buildChapterListHtml(chapters: ChapterInfo[]): string[] {
+  if (!chapters.length) {
+    return ["<p>未识别到章节结构。</p>"];
+  }
+
+  return chapters.map((chapter, index) => {
+    const title = formatChapterTitle(chapter);
+    return `<p>第${index + 1}章：${escapeHtml(title)}</p>`;
+  });
+}
+
+function formatChapterTitle(chapter: ChapterInfo): string {
+  const titleZh = chapter.title_zh.trim();
+  const titleEn = chapter.title_en.trim();
+  if (titleZh && titleEn && titleZh !== titleEn) {
+    return `${titleZh}（${titleEn}）`;
+  }
+  return titleZh || titleEn || "未命名章节";
 }
 
 function truncateTitle(title: string): string {

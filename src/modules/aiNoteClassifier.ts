@@ -10,7 +10,7 @@ const IMAGE_NOTE_TAGS = ["AI-Image-Summary", "AI-ImageSummary"];
 
 const AI_BUTLER_SUMMARY_HEADING_RE = /<h2>\s*AI\s*管家\s*-\s*(?!后续追问)/;
 const AI_BUTLER_DEEP_READ_HEADING_RE =
-  /<h2>\s*AI\s*(?:\u7cbe\u8bfb|\u7ba1\u5bb6\s*-\s*\u7cbe\u8bfb)\s*-/;
+  /<h[12]>\s*AI\s*(?:\u7cbe\u8bfb|\u7ba1\u5bb6\s*-\s*\u7cbe\u8bfb)\s*-/;
 const AI_BUTLER_CHAT_HEADING_RE =
   /<h2>\s*AI\s*管家\s*-\s*后续追问(?:\s*-|\s*笔记|[\s<])/;
 const AI_BUTLER_MINDMAP_HEADING_RE = /AI\s*管家思维导图\s*-/;

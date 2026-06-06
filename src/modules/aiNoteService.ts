@@ -236,7 +236,7 @@ export class AiNoteService {
     const note = new Zotero.Item("note");
     note.libraryID = parentItem.libraryID;
     note.parentID = parentItem.id;
-    note.setNote(`<h2>AI 精读 - ${escapeHtml(title)}</h2>`);
+    note.setNote(`<h1>AI 精读 - ${escapeHtml(title)}</h1>`);
     note.addTag(DEEP_READ_NOTE_TAG);
     await note.saveTx();
     return note;

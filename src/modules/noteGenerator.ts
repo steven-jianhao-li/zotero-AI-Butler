@@ -1068,6 +1068,7 @@ export class NoteGenerator {
       45,
     );
     const planningResponse = await this.callDeepReadChat({
+      item: params.item,
       pdfContent: params.pdfContent,
       isBase64: params.isBase64,
       conversation: [{ role: "user", content: sequentialPhase.planningPrompt }],
@@ -1171,6 +1172,7 @@ export class NoteGenerator {
 
       try {
         const response = await this.callDeepReadChat({
+          item: params.item,
           pdfContent: params.pdfContent,
           isBase64: params.isBase64,
           conversation,
@@ -1217,6 +1219,7 @@ export class NoteGenerator {
 
       try {
         const response = await this.callDeepReadChat({
+          item: params.item,
           pdfContent: params.pdfContent,
           isBase64: params.isBase64,
           conversation: [{ role: "user", content: slot.prompt }],
@@ -1292,6 +1295,7 @@ export class NoteGenerator {
   }
 
   private static async callDeepReadChat(params: {
+    item?: Zotero.Item;
     pdfContent: string;
     isBase64: boolean;
     conversation: Array<{ role: "user" | "assistant"; content: string }>;
@@ -1299,12 +1303,18 @@ export class NoteGenerator {
     onProgress?: (chunk: string) => void;
   }): Promise<LLMResponse> {
     const chatRequest: LLMChatRequest = {
-      content: {
-        kind: "legacy",
-        content: params.pdfContent,
-        isBase64: params.isBase64,
-        policy: params.isBase64 ? "pdf-base64" : "text",
-      },
+      content: params.item
+        ? {
+            kind: "zotero-item",
+            item: params.item,
+            attachmentMode: "default",
+          }
+        : {
+            kind: "legacy",
+            content: params.pdfContent,
+            isBase64: params.isBase64,
+            policy: params.isBase64 ? "pdf-base64" : "text",
+          },
       conversation: params.conversation,
       transport: { abortSignal: params.abortSignal },
       onProgress: params.onProgress,

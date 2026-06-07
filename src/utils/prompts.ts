@@ -216,6 +216,13 @@ export interface ChapterInfo {
   title_en: string;
 }
 
+export type ChapterParseSource = "json" | "regex" | "manual" | "fallback";
+
+export interface ChapterParseResult {
+  chapters: ChapterInfo[];
+  source: ChapterParseSource;
+}
+
 export type DeepReadSlotStatus = "pending" | "running" | "done" | "error";
 export type MultiRoundPhaseType = "sequential_dynamic" | "independent";
 export type MultiRoundContextStrategy = "full_history" | "last_round";
@@ -268,7 +275,7 @@ export interface MultiRoundPromptTemplateExport {
   template: MultiRoundPromptTemplate;
 }
 
-export type SummaryMode = "single" | "multi_concat" | "multi_summarize";
+export type SummaryMode = "single" | "deepRead";
 
 export const DEFAULT_CHAPTER_FALLBACKS: ChapterInfo[] = [
   { id: "ch1", title_zh: "\u5f15\u8a00", title_en: "Introduction" },
@@ -352,29 +359,12 @@ export const DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE: MultiRoundPromptTemplate = {
   finalPrompt: null,
 };
 
-export const DEFAULT_MULTI_ROUND_PROMPTS: MultiRoundPromptItem[] = [];
-export const DEFAULT_MULTI_ROUND_FINAL_PROMPT = "";
-
-export function getDefaultMultiRoundPrompts(): MultiRoundPromptItem[] {
-  return [];
-}
-
-export function getDefaultMultiRoundFinalPrompt(): string {
-  return "";
-}
-
 export function getDefaultMultiRoundPromptTemplate(): MultiRoundPromptTemplate {
   return cloneMultiRoundPromptTemplate(DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE);
 }
 
 export function getBuiltinMultiRoundPromptTemplates(): MultiRoundPromptTemplate[] {
   return [getDefaultMultiRoundPromptTemplate()];
-}
-
-export function parseMultiRoundPrompts(
-  _jsonStr: string | undefined,
-): MultiRoundPromptItem[] {
-  return [];
 }
 
 export function parseMultiRoundPromptTemplates(
@@ -568,7 +558,9 @@ export function normalizeMultiRoundPromptItems(
     .map((prompt, index) => ({ ...prompt, order: index + 1 }));
 }
 
-export function parseChapterStructure(responseText: string): ChapterInfo[] {
+export function parseChapterStructureResult(
+  responseText: string,
+): ChapterParseResult {
   const jsonCandidates = [
     ...responseText.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi),
   ].map((match) => match[1]);
@@ -585,7 +577,7 @@ export function parseChapterStructure(responseText: string): ChapterInfo[] {
         (parsed as { chapters?: unknown }).chapters,
       );
       if (chapters.length > 0) {
-        return chapters;
+        return { chapters, source: "json" };
       }
     } catch {
       // Continue to regex fallback.
@@ -595,14 +587,45 @@ export function parseChapterStructure(responseText: string): ChapterInfo[] {
   const zhMatches = [...responseText.matchAll(/"title_zh"\s*:\s*"([^"]+)"/g)];
   const enMatches = [...responseText.matchAll(/"title_en"\s*:\s*"([^"]+)"/g)];
   if (zhMatches.length > 0) {
-    return zhMatches.map((match, index) => ({
-      id: `ch${index + 1}`,
-      title_zh: match[1].trim(),
-      title_en: enMatches[index]?.[1]?.trim() || "",
-    }));
+    return {
+      source: "regex",
+      chapters: zhMatches.map((match, index) => ({
+        id: `ch${index + 1}`,
+        title_zh: match[1].trim(),
+        title_en: enMatches[index]?.[1]?.trim() || "",
+      })),
+    };
   }
 
-  return cloneChapterInfos(DEFAULT_CHAPTER_FALLBACKS);
+  return {
+    chapters: cloneChapterInfos(DEFAULT_CHAPTER_FALLBACKS),
+    source: "fallback",
+  };
+}
+
+export function parseChapterStructure(responseText: string): ChapterInfo[] {
+  return parseChapterStructureResult(responseText).chapters;
+}
+
+export function parseManualChapterStructure(input: string): ChapterInfo[] {
+  const lines = input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.reduce<ChapterInfo[]>((chapters, line, index) => {
+    const normalized = line
+      .replace(/^第\s*\d+\s*章\s*[:：.-]?\s*/i, "")
+      .replace(/^chapter\s*\d+\s*[:：.-]?\s*/i, "")
+      .trim();
+    if (!normalized) return chapters;
+    const pair = normalized.match(/^(.+?)[（(]([^()（）]+)[）)]$/);
+    chapters.push({
+      id: `ch${index + 1}`,
+      title_zh: (pair?.[1] || normalized).trim(),
+      title_en: (pair?.[2] || "").trim(),
+    });
+    return chapters;
+  }, []);
 }
 
 export function generateChapterPrompts(
@@ -663,7 +686,7 @@ function normalizeSequentialDynamicPhase(
   const maxChapters =
     typeof value.maxChapters === "number" && Number.isFinite(value.maxChapters)
       ? Math.max(1, Math.round(value.maxChapters))
-      : DEFAULT_DEEP_READ_CHAPTER_LIMIT;
+      : undefined;
 
   return {
     id: normalizeMultiRoundPromptId(value.id, index),

@@ -1,6 +1,5 @@
 ﻿import { markdownToZoteroNoteHtml, escapeHtml } from "./noteMarkdown";
 import {
-  DEFAULT_DEEP_READ_CHAPTER_LIMIT,
   generateChapterPrompts,
   type ChapterInfo,
   type DeepReadSlotStatus,
@@ -28,7 +27,15 @@ export type PlannedDeepRead = {
   independentSlots: DeepReadSlot[];
 };
 
+export type DeepReadPlanMetadata = {
+  templateId: string;
+  chapters: ChapterInfo[];
+  template?: MultiRoundPromptTemplate;
+};
+
 export const DEEP_READ_SLOT_PREFIX = "zab:slot";
+export const DEEP_READ_PLAN_META_PREFIX = "zab:deep-read-plan";
+export const DEEP_READ_FINAL_SLOT_ID = "final_summary";
 
 export function planDeepReadSlots(
   template: MultiRoundPromptTemplate,
@@ -51,6 +58,7 @@ export function planDeepReadSlots(
     independentSlots.push(...phaseSlots);
   }
 
+  validatePlannedSlotIds(slots);
   return { chapters, slots, sequentialSlots, independentSlots };
 }
 
@@ -60,6 +68,7 @@ export function buildDeepReadSkeletonHtml(
   planned: PlannedDeepRead,
 ): string {
   const parts: string[] = [
+    buildPlanMetadataComment(template, planned.chapters),
     `<h1>AI 精读 - ${escapeHtml(truncateTitle(itemTitle))}</h1>`,
     `<h2>章节解析</h2>`,
     ...buildChapterListHtml(planned.chapters),
@@ -77,6 +86,21 @@ export function buildDeepReadSkeletonHtml(
         parts.push("<hr/>");
       }
     }
+  }
+
+  if (template.finalPrompt?.trim()) {
+    parts.push("<hr/>");
+    parts.push(
+      buildPendingSlotHtml({
+        id: DEEP_READ_FINAL_SLOT_ID,
+        title: "总结",
+        prompt: template.finalPrompt.trim(),
+        phaseId: "final",
+        phaseTitle: "总结",
+        phaseType: "independent",
+        status: "pending",
+      }),
+    );
   }
 
   return parts.join("\n");
@@ -99,7 +123,10 @@ export function fillDeepReadSlot(
   return replaceDeepReadSlotHtml(noteHtml, slotId, htmlContent, status);
 }
 
-function shouldPrependSlotHeading(markdown: string, slotTitle?: string): boolean {
+function shouldPrependSlotHeading(
+  markdown: string,
+  slotTitle?: string,
+): boolean {
   if (!slotTitle) return false;
   return !/^\s*#{1,2}\s+\S/m.test(markdown);
 }
@@ -142,6 +169,10 @@ export function shouldRunDeepReadSlot(
   return status === "pending" || status === "running" || status === "error";
 }
 
+export function isDeepReadSlotDone(noteHtml: string, slotId: string): boolean {
+  return getDeepReadSlotStatus(noteHtml, slotId) === "done";
+}
+
 export function hasDeepReadV2Slots(noteHtml: string): boolean {
   return noteHtml.includes(`<!-- ${DEEP_READ_SLOT_PREFIX}:`);
 }
@@ -150,11 +181,72 @@ export function hasRunnableDeepReadSlots(noteHtml: string): boolean {
   return /<!-- zab:slot:[^:]+:(?:pending|running|error) -->/.test(noteHtml);
 }
 
+export function markDeepReadSlotRunning(
+  noteHtml: string,
+  slotId: string,
+  slotTitle?: string,
+): string {
+  return replaceDeepReadSlotHtml(
+    noteHtml,
+    slotId,
+    `<h2>${escapeHtml(slotTitle || "")}</h2>\n<p>🔄 正在生成...</p>`,
+    "running",
+  );
+}
+
+export function resetRunningDeepReadSlots(noteHtml: string): string {
+  return noteHtml.replace(
+    /<!-- zab:slot:([^:]+):running -->[\s\S]*?<!-- zab:slot:\1:end -->/g,
+    (_match, slotId: string) =>
+      `<!-- ${DEEP_READ_SLOT_PREFIX}:${slotId}:pending -->\n<p>已取消，重新运行 AI 精读时会从这里继续。</p>\n<!-- ${DEEP_READ_SLOT_PREFIX}:${slotId}:end -->`,
+  );
+}
+
+export function extractDeepReadPlanMetadata(
+  noteHtml: string,
+): DeepReadPlanMetadata | null {
+  const match = noteHtml.match(
+    new RegExp(`<!-- ${DEEP_READ_PLAN_META_PREFIX}:([\\s\\S]*?) -->`),
+  );
+  if (!match?.[1]) return null;
+  try {
+    const parsed = JSON.parse(decodeURIComponent(match[1]));
+    if (!parsed || !Array.isArray(parsed.chapters)) return null;
+    return {
+      templateId:
+        typeof parsed.templateId === "string" ? parsed.templateId : "",
+      chapters: parsed.chapters,
+      template: parsed.template,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildPlanMetadataComment(
+  template: MultiRoundPromptTemplate,
+  chapters: ChapterInfo[],
+): string {
+  return `<!-- ${DEEP_READ_PLAN_META_PREFIX}:${encodeURIComponent(
+    JSON.stringify({ templateId: template.id, template, chapters }),
+  )} -->`;
+}
+
+function validatePlannedSlotIds(slots: DeepReadSlot[]): void {
+  const seen = new Set<string>();
+  for (const slot of slots) {
+    if (seen.has(slot.id)) {
+      throw new Error(`精读模板 slot ID 重复: ${slot.id}`);
+    }
+    seen.add(slot.id);
+  }
+}
+
 function createSequentialSlots(
   phase: MultiRoundSequentialDynamicPhase,
   chapters: ChapterInfo[],
 ): DeepReadSlot[] {
-  const maxChapters = phase.maxChapters || DEFAULT_DEEP_READ_CHAPTER_LIMIT;
+  const maxChapters = phase.maxChapters || chapters.length;
   const prompts = [
     ...phase.fixedPrompts,
     ...generateChapterPrompts(

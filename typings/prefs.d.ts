@@ -48,14 +48,11 @@ declare namespace _ZoteroTypes {
       "summaryPrompt": string;
       "customPrompts": string;
       "summaryMode": string;
-      "multiRoundPrompts": string;
-      "multiRoundFinalPrompt": string;
       "multiRoundPromptTemplates": string;
       "multiRoundPromptTemplateId": string;
       "multiRoundContextStrategy": string;
       "multiRoundIndependentParallelEnabled": boolean;
       "multiRoundIndependentMaxConcurrency": number;
-      "multiSummarySaveIntermediate": boolean;
       "legacyAiNoteRenamePromptState": string;
       "maxRetries": string;
       "batchSize": string;

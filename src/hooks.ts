@@ -2095,7 +2095,7 @@ async function handleMultiRoundSummary() {
     // 批量添加任务，带有特定选项
     for (const item of items) {
       await taskQueue.addDeepReadTask(item, priority, {
-        summaryMode: "multi_concat",
+        summaryMode: "deepRead",
         forceOverwrite: true,
       });
     }

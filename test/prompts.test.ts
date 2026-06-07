@@ -5,15 +5,21 @@ import {
   getBuiltinMultiRoundPromptTemplates,
   mergeMultiRoundPromptTemplates,
   parseChapterStructure,
+  parseChapterStructureResult,
+  parseManualChapterStructure,
   parseMultiRoundPromptTemplateExport,
   serializeMultiRoundPromptTemplate,
   type MultiRoundPromptTemplate,
 } from "../src/utils/prompts";
 import {
   buildDeepReadSkeletonHtml,
+  extractDeepReadPlanMetadata,
   fillDeepReadSlot,
   getDeepReadSlotStatus,
+  isDeepReadSlotDone,
+  markDeepReadSlotRunning,
   planDeepReadSlots,
+  resetRunningDeepReadSlots,
   shouldRunDeepReadSlot,
 } from "../src/modules/deepReadEngine";
 
@@ -155,6 +161,22 @@ describe("multi-round prompt templates v2", function () {
     expect(fallback).to.deep.equal(DEFAULT_CHAPTER_FALLBACKS);
   });
 
+  it("reports chapter parse source and parses manual chapter input", function () {
+    const parsed = parseChapterStructureResult(
+      'chapters: [{"title_zh":"??", "title_en":"Background"}]',
+    );
+    const manual = parseManualChapterStructure(
+      "Introduction\nChapter 2: Method (Method)",
+    );
+
+    expect(parsed.source).to.equal("regex");
+    expect(manual.map((chapter) => chapter.title_zh)).to.deep.equal([
+      "Introduction",
+      "Method",
+    ]);
+    expect(manual[1].title_en).to.equal("Method");
+  });
+
   it("renders only the first two chapter prompts", function () {
     const prompts = generateChapterPrompts(
       [
@@ -194,6 +216,35 @@ describe("multi-round prompt templates v2", function () {
     expect(filled).to.include("<h2>引言</h2>");
     expect(shouldRunDeepReadSlot(filled, "chapter_ch1")).to.equal(false);
     expect(shouldRunDeepReadSlot(filled, "chapter_ch2")).to.equal(true);
+  });
+
+  it("persists plan metadata, marks running slots, and renders final prompt slot", function () {
+    const template = { ...v2Template(), finalPrompt: "Summarize everything" };
+    const planned = planDeepReadSlots(template, DEFAULT_CHAPTER_FALLBACKS);
+    const html = buildDeepReadSkeletonHtml("Paper", template, planned);
+    const running = markDeepReadSlotRunning(html, "chapter_ch1", "Intro");
+    const metadata = extractDeepReadPlanMetadata(html);
+
+    expect(metadata?.templateId).to.equal("custom");
+    expect(metadata?.chapters).to.deep.equal(DEFAULT_CHAPTER_FALLBACKS);
+    expect(metadata?.template?.id).to.equal("custom");
+    expect(getDeepReadSlotStatus(running, "chapter_ch1")).to.equal("running");
+    expect(isDeepReadSlotDone(running, "chapter_ch1")).to.equal(false);
+    expect(getDeepReadSlotStatus(html, "final_summary")).to.equal("pending");
+    expect(html).to.include("<!-- zab:slot:final_summary:pending -->");
+
+    const reset = resetRunningDeepReadSlots(running);
+    expect(getDeepReadSlotStatus(reset, "chapter_ch1")).to.equal("pending");
+    expect(reset).to.include("<!-- zab:slot:chapter_ch1:pending -->");
+  });
+
+  it("rejects duplicate dynamically planned slot ids", function () {
+    expect(() =>
+      planDeepReadSlots(v2Template(), [
+        { id: "same", title_zh: "A", title_en: "A" },
+        { id: "same", title_zh: "B", title_en: "B" },
+      ]),
+    ).to.throw("slot ID");
   });
 
   it("does not duplicate model-provided top-level slot headings", function () {

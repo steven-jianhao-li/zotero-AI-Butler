@@ -183,8 +183,6 @@ export class DataSettingsPage {
       "stream",
       "summaryPrompt",
       "customPrompts",
-      "multiRoundPrompts",
-      "multiRoundFinalPrompt",
       "multiRoundPromptTemplates",
       "multiRoundPromptTemplateId",
       "maxRetries",

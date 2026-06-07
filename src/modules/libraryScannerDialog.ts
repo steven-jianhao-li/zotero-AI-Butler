@@ -574,7 +574,7 @@ export class LibraryScannerDialog {
           await manager.addTask(item, false, { summaryMode: "single" });
         } else {
           await manager.addDeepReadTask(item, false, {
-            summaryMode: "multi_concat",
+            summaryMode: "deepRead",
           });
         }
       }

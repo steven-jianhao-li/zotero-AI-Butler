@@ -1532,7 +1532,7 @@ export class LibraryScannerView extends BaseView {
         this.taskQueueManager.addTask(item, false, { summaryMode: "single" });
       } else {
         this.taskQueueManager.addDeepReadTask(item, false, {
-          summaryMode: "multi_concat",
+          summaryMode: "deepRead",
         });
       }
     }

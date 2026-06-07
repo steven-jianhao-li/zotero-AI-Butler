@@ -11,8 +11,6 @@ import {
   getDefaultTableFillPrompt,
   getDefaultTableReviewPrompt,
   PROMPT_VERSION,
-  parseMultiRoundPrompts,
-  getDefaultMultiRoundFinalPrompt,
   getDefaultMultiRoundPromptTemplate,
   getBuiltinMultiRoundPromptTemplates,
   parseMultiRoundPromptTemplates,
@@ -52,7 +50,6 @@ export class PromptsSettingsPage {
   private sampleTitle!: HTMLInputElement;
   private sampleAuthors!: HTMLInputElement;
   private sampleYear!: HTMLInputElement;
-  private editingMultiRoundPromptId: string | null = null;
   private multiRoundTemplateSelect!: HTMLElement;
   private selectedMultiRoundTemplateId: string | null = null;
 
@@ -663,9 +660,7 @@ export class PromptsSettingsPage {
       card.appendChild(
         this.createContextStrategySelector(sequential.contextStrategy),
       );
-      if (sequential.fixedPrompts.length > 0) {
-        card.appendChild(this.renderFixedPromptCards(sequential.fixedPrompts));
-      }
+      card.appendChild(this.renderFixedPromptCards(sequential.fixedPrompts));
       card.appendChild(
         this.createPromptDetails(
           "\u7ae0\u8282\u89e3\u6790\u63d0\u793a\u8bcd",
@@ -693,6 +688,23 @@ export class PromptsSettingsPage {
       const card = this.createDeepReadPhaseCard(
         independent.title,
         independent.description,
+      );
+      card.appendChild(
+        this.createCheckboxSetting(
+          "deep-read-independent-parallelizable",
+          "允许并行执行",
+          "开启后，重点追问会按最大并发数分批执行；关闭后严格串行。",
+          independent.parallelizable,
+        ),
+      );
+      card.appendChild(
+        this.createLabeledInput(
+          "deep-read-independent-max-concurrency",
+          "\u6700\u5927\u5e76\u884c\u6570",
+          "\u91cd\u70b9\u8ffd\u95ee\u5e76\u884c\u6267\u884c\u65f6\u6700\u591a\u540c\u65f6\u53d1\u9001\u7684 API \u8bf7\u6c42\u6570\u3002\u9ed8\u8ba4 1 \u8868\u793a\u4e32\u884c\u6267\u884c\u3002",
+          String(independent.maxConcurrency || 1),
+          "1",
+        ),
       );
       independent.prompts.forEach((prompt, index) => {
         const promptCard = doc.createElement("div");
@@ -764,7 +776,42 @@ export class PromptsSettingsPage {
       container.appendChild(card);
     }
 
+    container.appendChild(
+      this.createPromptDetails(
+        "最终总结提示词",
+        template.finalPrompt || "",
+        "deep-read-final-prompt",
+        "可选。填写后会在所有逐章精读和重点追问完成后再执行一轮总结，并写入笔记末尾。",
+      ),
+    );
+
     return container;
+  }
+
+  private createCheckboxSetting(
+    id: string,
+    label: string,
+    helpText: string,
+    checked: boolean,
+  ): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const wrapper = doc.createElement("div");
+    Object.assign(wrapper.style, { margin: "10px 0" });
+
+    const labelEl = doc.createElement("label");
+    labelEl.textContent = `${label} ?`;
+    labelEl.title = helpText;
+    labelEl.setAttribute("for", `setting-${id}`);
+    Object.assign(labelEl.style, {
+      display: "block",
+      marginBottom: "6px",
+      fontWeight: "600",
+      color: "var(--ai-text, #333)",
+      cursor: "help",
+    });
+    wrapper.appendChild(labelEl);
+    wrapper.appendChild(createCheckbox(id, checked));
+    return wrapper;
   }
 
   private createVariableNotice(): HTMLElement {
@@ -794,7 +841,8 @@ export class PromptsSettingsPage {
     Object.assign(wrapper.style, { margin: "10px 0" });
 
     const label = doc.createElement("label");
-    label.textContent = "\u9010\u7ae0\u7cbe\u8bfb\u4e0a\u4e0b\u6587\u6a21\u5f0f \u24d8";
+    label.textContent =
+      "\u9010\u7ae0\u7cbe\u8bfb\u4e0a\u4e0b\u6587\u6a21\u5f0f \u24d8";
     label.title =
       "\u7cbe\u7b80\u4e0a\u4e0b\u6587\uff1a\u6bcf\u8f6e\u53ea\u5e26\u4e0a\u4e00\u8f6e\u7cbe\u8bfb\u5185\u5bb9\uff1b\u5b8c\u6574\u4e0a\u4e0b\u6587\uff1a\u6bcf\u8f6e\u5e26\u4e0a\u7ae0\u8282\u89e3\u6790\u548c\u6240\u6709\u5df2\u5b8c\u6210\u8f6e\u6b21\u3002";
     label.setAttribute("for", "setting-deep-read-context-strategy");
@@ -820,9 +868,7 @@ export class PromptsSettingsPage {
     return wrapper;
   }
 
-  private renderFixedPromptCards(
-    prompts: MultiRoundPromptItem[],
-  ): HTMLElement {
+  private renderFixedPromptCards(prompts: MultiRoundPromptItem[]): HTMLElement {
     const doc = Zotero.getMainWindow().document;
     const wrapper = doc.createElement("div");
     Object.assign(wrapper.style, {
@@ -852,6 +898,13 @@ export class PromptsSettingsPage {
     });
     wrapper.appendChild(desc);
 
+    if (!prompts.length) {
+      const empty = doc.createElement("p");
+      empty.textContent = "当前没有固定精读轮次。";
+      Object.assign(empty.style, { margin: "0 0 10px 0", opacity: "0.72" });
+      wrapper.appendChild(empty);
+    }
+
     prompts.forEach((prompt, index) => {
       const promptCard = doc.createElement("div");
       Object.assign(promptCard.style, {
@@ -861,6 +914,25 @@ export class PromptsSettingsPage {
         marginTop: index === 0 ? "0" : "10px",
         background: "var(--ai-surface, #fff)",
       });
+      const rowHeader = doc.createElement("div");
+      Object.assign(rowHeader.style, {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: "10px",
+        marginBottom: "8px",
+      });
+      const rowTitle = doc.createElement("div");
+      rowTitle.textContent = `固定轮次 ${index + 1}`;
+      Object.assign(rowTitle.style, { fontWeight: "700" });
+      const deleteButton = createStyledButton("删除固定轮", "#e53935", "small");
+      deleteButton.addEventListener("click", () =>
+        this.removeFixedPromptFromCurrentTemplate(index),
+      );
+      rowHeader.appendChild(rowTitle);
+      rowHeader.appendChild(deleteButton);
+      promptCard.appendChild(rowHeader);
+
       promptCard.appendChild(
         this.createLabeledInput(
           `deep-read-fixed-title-${index}`,
@@ -880,6 +952,17 @@ export class PromptsSettingsPage {
       );
       wrapper.appendChild(promptCard);
     });
+
+    const addButton = createStyledButton(
+      "+ 添加固定精读轮次",
+      "#4caf50",
+      "small",
+    );
+    addButton.addEventListener("click", () =>
+      this.addFixedPromptToCurrentTemplate(),
+    );
+    Object.assign(addButton.style, { marginTop: "12px" });
+    wrapper.appendChild(addButton);
 
     return wrapper;
   }
@@ -1223,7 +1306,6 @@ export class PromptsSettingsPage {
     }
 
     this.rememberSelectedMultiRoundTemplate(template.id);
-    this.editingMultiRoundPromptId = null;
     this.render();
     new ztoolkit.ProgressWindow("提示词")
       .createLine({
@@ -1314,6 +1396,17 @@ export class PromptsSettingsPage {
       "full_history"
         ? "full_history"
         : "last_round";
+    const getNumberValue = (id: string, fallback: number) => {
+      const raw = getValue(id, String(fallback));
+      const value = Number(raw);
+      return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
+    };
+    const getCheckboxValue = (id: string, fallback: boolean) => {
+      const checkbox = doc.getElementById(
+        `setting-${id}`,
+      ) as HTMLInputElement | null;
+      return checkbox ? checkbox.checked : fallback;
+    };
 
     const phases = template.phases.map((phase) => {
       if (phase.type === "sequential_dynamic") {
@@ -1338,6 +1431,20 @@ export class PromptsSettingsPage {
       }
       return {
         ...phase,
+        parallelizable: getCheckboxValue(
+          "deep-read-independent-parallelizable",
+          phase.parallelizable,
+        ),
+        maxConcurrency: Math.min(
+          8,
+          Math.max(
+            1,
+            getNumberValue(
+              "deep-read-independent-max-concurrency",
+              phase.maxConcurrency || 1,
+            ),
+          ),
+        ),
         prompts: phase.prompts.map((prompt, index) => ({
           ...prompt,
           title: getValue(`deep-read-independent-title-${index}`, prompt.title),
@@ -1355,7 +1462,8 @@ export class PromptsSettingsPage {
       version: 2,
       phases,
       prompts: [],
-      finalPrompt: null,
+      finalPrompt:
+        getValue("deep-read-final-prompt", template.finalPrompt || "") || null,
     };
   }
 
@@ -1557,6 +1665,56 @@ export class PromptsSettingsPage {
     });
   }
 
+  private addFixedPromptToCurrentTemplate(): void {
+    const template = this.collectDeepReadTemplateFromEditor(
+      this.getSelectedMultiRoundTemplate() ||
+        getDefaultMultiRoundPromptTemplate(),
+    );
+    const nextTemplate: MultiRoundPromptTemplate = {
+      ...template,
+      phases: template.phases.map((phase) => {
+        if (phase.type !== "sequential_dynamic") return phase;
+        const nextIndex = phase.fixedPrompts.length + 1;
+        return {
+          ...phase,
+          fixedPrompts: [
+            ...phase.fixedPrompts,
+            {
+              id: `fixed_custom_${Date.now()}`,
+              title: `固定精读 ${nextIndex}`,
+              prompt: "请基于论文全文完成一个固定精读任务，输出 Markdown。",
+              order: nextIndex,
+            },
+          ],
+        };
+      }),
+    };
+    this.saveEditableTemplateDraft(nextTemplate);
+  }
+
+  private removeFixedPromptFromCurrentTemplate(index: number): void {
+    const template = this.collectDeepReadTemplateFromEditor(
+      this.getSelectedMultiRoundTemplate() ||
+        getDefaultMultiRoundPromptTemplate(),
+    );
+    const nextTemplate: MultiRoundPromptTemplate = {
+      ...template,
+      phases: template.phases.map((phase) => {
+        if (phase.type !== "sequential_dynamic") return phase;
+        return {
+          ...phase,
+          fixedPrompts: phase.fixedPrompts
+            .filter((_, promptIndex) => promptIndex !== index)
+            .map((prompt, promptIndex) => ({
+              ...prompt,
+              order: promptIndex + 1,
+            })),
+        };
+      }),
+    };
+    this.saveEditableTemplateDraft(nextTemplate);
+  }
+
   private addIndependentPromptToCurrentTemplate(): void {
     const template = this.collectDeepReadTemplateFromEditor(
       this.getSelectedMultiRoundTemplate() ||
@@ -1657,14 +1815,6 @@ export class PromptsSettingsPage {
     };
   }
 
-  private saveMultiRoundPrompts(prompts: MultiRoundPromptItem[]): void {
-    const normalized = prompts.map((prompt, index) => ({
-      ...prompt,
-      order: index + 1,
-    }));
-    setPref("multiRoundPrompts" as any, JSON.stringify(normalized) as any);
-  }
-
   private showTemplateMetadataDialog(options: {
     title: string;
     name?: string;
@@ -1763,258 +1913,6 @@ export class PromptsSettingsPage {
       });
       actions.appendChild(btnConfirm);
     }
-  }
-
-  /**
-   * 渲染多轮提示词列表
-   */
-  private renderMultiRoundPromptsList(
-    container: HTMLElement,
-    prompts: MultiRoundPromptItem[],
-  ): void {
-    const doc = Zotero.getMainWindow().document;
-    container.innerHTML = "";
-
-    if (prompts.length === 0) {
-      const empty = doc.createElement("div");
-      empty.textContent =
-        "\u6682\u65e0\u591a\u8f6e\u63d0\u793a\u8bcd\uff0c\u8bf7\u6dfb\u52a0\u6216\u6062\u590d\u9ed8\u8ba4";
-      Object.assign(empty.style, {
-        color: "var(--ai-text-secondary)",
-        padding: "18px 12px",
-        textAlign: "center",
-        border: "1px dashed var(--ai-input-border)",
-        borderRadius: "8px",
-      });
-      container.appendChild(empty);
-      return;
-    }
-
-    prompts.forEach((prompt, index) => {
-      const isEditing = this.editingMultiRoundPromptId === prompt.id;
-      const item = doc.createElement("div");
-      Object.assign(item.style, {
-        marginBottom: "8px",
-        padding: isEditing ? "10px 12px 12px" : "8px 10px",
-        background: isEditing ? "rgba(89, 192, 188, 0.06)" : "transparent",
-        borderRadius: "8px",
-        border: isEditing
-          ? "1px solid #59c0bc"
-          : "1px solid var(--ai-input-border)",
-        minWidth: "0",
-      });
-
-      const row = doc.createElement("div");
-      Object.assign(row.style, {
-        display: "grid",
-        gridTemplateColumns:
-          "28px minmax(76px, 120px) minmax(0, 1fr) auto auto",
-        alignItems: "center",
-        columnGap: "10px",
-        minWidth: "0",
-      });
-
-      const orderBadge = doc.createElement("span");
-      orderBadge.textContent = String(index + 1);
-      Object.assign(orderBadge.style, {
-        background: "#59c0bc",
-        color: "white",
-        borderRadius: "999px",
-        width: "24px",
-        height: "24px",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: "12px",
-        fontWeight: "700",
-      });
-      row.appendChild(orderBadge);
-
-      const title = doc.createElement("div");
-      title.textContent = prompt.title;
-      Object.assign(title.style, {
-        color: "var(--ai-text-primary)",
-        fontSize: "13px",
-        fontWeight: "700",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-      });
-      row.appendChild(title);
-
-      const preview = doc.createElement("div");
-      preview.textContent =
-        prompt.prompt ||
-        "\uff08\u5c1a\u672a\u586b\u5199\u63d0\u793a\u8bcd\uff09";
-      Object.assign(preview.style, {
-        color: "var(--ai-text-secondary)",
-        fontSize: "12px",
-        lineHeight: "1.5",
-        minWidth: "0",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-        opacity: prompt.prompt ? "0.9" : "0.58",
-      });
-      row.appendChild(preview);
-
-      const btnEdit = doc.createElement("button");
-      btnEdit.textContent = isEditing ? "\u6536\u8d77" : "\u7f16\u8f91";
-      btnEdit.title = isEditing
-        ? "\u6536\u8d77\u7f16\u8f91\u5668"
-        : "\u7f16\u8f91";
-      Object.assign(btnEdit.style, {
-        border: "1px solid #59c0bc",
-        borderRadius: "6px",
-        background: isEditing ? "#59c0bc" : "transparent",
-        color: isEditing ? "white" : "#59c0bc",
-        cursor: "pointer",
-        fontSize: "12px",
-        padding: "4px 10px",
-        minWidth: "52px",
-        whiteSpace: "nowrap",
-      });
-      btnEdit.addEventListener("click", () => {
-        this.editingMultiRoundPromptId = isEditing ? null : prompt.id;
-        this.renderMultiRoundPromptsList(container, prompts);
-      });
-      row.appendChild(btnEdit);
-
-      const btnDelete = doc.createElement("button");
-      btnDelete.textContent = "🗑️";
-      btnDelete.title = "\u5220\u9664";
-      const applyDeleteIdleStyle = () => {
-        btnDelete.style.border = "1px solid rgba(128, 128, 128, 0.28)";
-        btnDelete.style.background = "rgba(128, 128, 128, 0.04)";
-        btnDelete.style.color = "var(--ai-text-secondary)";
-        btnDelete.style.opacity = "0.82";
-      };
-      Object.assign(btnDelete.style, {
-        borderRadius: "6px",
-        cursor: "pointer",
-        fontSize: "13px",
-        padding: "4px 7px",
-        transition:
-          "border-color 0.15s ease, background 0.15s ease, color 0.15s ease",
-      });
-      applyDeleteIdleStyle();
-      btnDelete.addEventListener("mouseenter", () => {
-        btnDelete.style.border = "1px solid rgba(244, 67, 54, 0.45)";
-        btnDelete.style.background = "rgba(244, 67, 54, 0.08)";
-        btnDelete.style.color = "#f44336";
-        btnDelete.style.opacity = "1";
-      });
-      btnDelete.addEventListener("mouseleave", applyDeleteIdleStyle);
-      btnDelete.addEventListener("click", () =>
-        this.deleteMultiRoundPrompt(prompt.id),
-      );
-      row.appendChild(btnDelete);
-
-      item.appendChild(row);
-
-      if (isEditing) {
-        const editor = this.createMultiRoundPromptEditor(prompt, container);
-        item.appendChild(editor);
-      }
-
-      container.appendChild(item);
-    });
-  }
-
-  /**
-   * 创建多轮提示词内联编辑器
-   */
-  private createMultiRoundPromptEditor(
-    prompt: MultiRoundPromptItem,
-    listContainer: HTMLElement,
-  ): HTMLElement {
-    const doc = Zotero.getMainWindow().document;
-    const editor = doc.createElement("div");
-    Object.assign(editor.style, {
-      marginTop: "14px",
-      padding: "16px 16px 12px",
-      borderTop: "1px solid var(--ai-input-border)",
-      borderRadius: "8px",
-      background: "rgba(89, 192, 188, 0.06)",
-    });
-
-    const titleInput = createInput(
-      `multi-round-title-${prompt.id}`,
-      "text",
-      prompt.title,
-      "例如：研究背景与问题",
-    );
-    const promptTextarea = createTextarea(
-      `multi-round-prompt-${prompt.id}`,
-      prompt.prompt,
-      8,
-      "输入这一轮要问 AI 的提示词...",
-    );
-
-    editor.appendChild(createFormGroup("标题", titleInput));
-    editor.appendChild(createFormGroup("提示词", promptTextarea));
-
-    const actions = doc.createElement("div");
-    Object.assign(actions.style, {
-      display: "flex",
-      gap: "10px",
-      justifyContent: "flex-end",
-      marginTop: "4px",
-    });
-
-    const btnCancel = createStyledButton("取消", "#9e9e9e", "small");
-    btnCancel.addEventListener("click", () => {
-      this.editingMultiRoundPromptId = null;
-      const prompts = this.getMultiRoundPrompts();
-      this.renderMultiRoundPromptsList(listContainer, prompts);
-    });
-
-    const btnSave = createStyledButton("保存", "#4caf50", "small");
-    btnSave.addEventListener("click", () => {
-      const title = titleInput.value.trim();
-      const promptText = promptTextarea.value.trim();
-
-      if (!title || !promptText) {
-        new ztoolkit.ProgressWindow("提示词")
-          .createLine({ text: "标题和提示词都不能为空", type: "fail" })
-          .show();
-        return;
-      }
-
-      const prompts = this.getMultiRoundPrompts();
-      const index = prompts.findIndex((item) => item.id === prompt.id);
-      const savedPrompt: MultiRoundPromptItem = {
-        ...(index === -1 ? prompt : prompts[index]),
-        title,
-        prompt: promptText,
-      };
-      if (index === -1) {
-        prompts.push(savedPrompt);
-      } else {
-        prompts[index] = savedPrompt;
-      }
-      this.saveMultiRoundPrompts(prompts);
-      this.editingMultiRoundPromptId = null;
-      this.renderMultiRoundPromptsList(listContainer, prompts);
-
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: `✅ 已保存: ${title}`, type: "success" })
-        .show();
-    });
-
-    actions.appendChild(btnCancel);
-    actions.appendChild(btnSave);
-    editor.appendChild(actions);
-
-    return editor;
-  }
-
-  /**
-   * 获取当前多轮提示词配置
-   */
-  private getMultiRoundPrompts(): MultiRoundPromptItem[] {
-    const promptsJson = (getPref("multiRoundPrompts" as any) as string) || "[]";
-    return parseMultiRoundPrompts(promptsJson);
   }
 
   private createPageDialog(titleText: string): {
@@ -2131,76 +2029,6 @@ export class PromptsSettingsPage {
 
     actions.appendChild(btnCancel);
     actions.appendChild(btnConfirm);
-  }
-
-  /**
-   * 添加新的多轮提示词
-   */
-  private addMultiRoundPrompt(): void {
-    const prompts = this.getMultiRoundPrompts();
-
-    const newPrompt: MultiRoundPromptItem = {
-      id: `round_${Date.now()}`,
-      title: `第 ${prompts.length + 1} 轮`,
-      prompt: "",
-      order: prompts.length + 1,
-    };
-
-    this.editingMultiRoundPromptId = newPrompt.id;
-
-    // 刷新列表
-    const list = this.container.querySelector(
-      "#multi-round-prompts-list",
-    ) as HTMLElement;
-    if (list) {
-      this.renderMultiRoundPromptsList(list, [...prompts, newPrompt]);
-    }
-  }
-
-  /**
-   * 删除多轮提示词
-   */
-  private deleteMultiRoundPrompt(id: string): void {
-    const promptsJson = (getPref("multiRoundPrompts" as any) as string) || "[]";
-    const prompts = parseMultiRoundPrompts(promptsJson);
-    const index = prompts.findIndex((p) => p.id === id);
-
-    if (index === -1) {
-      this.editingMultiRoundPromptId = null;
-      const list = this.container.querySelector(
-        "#multi-round-prompts-list",
-      ) as HTMLElement;
-      if (list) {
-        this.renderMultiRoundPromptsList(list, prompts);
-      }
-      return;
-    }
-
-    const title = prompts[index].title;
-    this.showInlineConfirm({
-      title: "删除多轮提示词？",
-      message: `将删除「${title}」。此操作会立即保存，但不会影响已经生成的笔记。`,
-      confirmText: "删除",
-      onConfirm: () => {
-        prompts.splice(index, 1);
-        // 重新排序
-        prompts.forEach((p, i) => (p.order = i + 1));
-
-        this.saveMultiRoundPrompts(prompts);
-        this.editingMultiRoundPromptId = null;
-
-        const list = this.container.querySelector(
-          "#multi-round-prompts-list",
-        ) as HTMLElement;
-        if (list) {
-          this.renderMultiRoundPromptsList(list, prompts);
-        }
-
-        new ztoolkit.ProgressWindow("提示词")
-          .createLine({ text: "✅ 已删除", type: "success" })
-          .show();
-      },
-    });
   }
 
   // =========== 表格总结提示词设置 ===========

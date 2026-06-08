@@ -257,4 +257,23 @@ describe("multi-round prompt templates v2", function () {
     expect(filled).to.not.include("<h2>引言</h2>");
     expect(filled).to.include("<h2>第1章精读：Introduction</h2>");
   });
+
+  it("keeps deep-read prose from becoming a top-level heading", function () {
+    const template = v2Template();
+    const planned = planDeepReadSlots(template, DEFAULT_CHAPTER_FALLBACKS);
+    const html = buildDeepReadSkeletonHtml("Paper", template, planned);
+    const prose =
+      "在互联网安全领域，基于域名系统（DNS）的反射放大分布式拒绝服务（DRDoS）攻击一直是一项严峻的挑战。尽管学术界和工业界已经提出了诸如服务器屏蔽、访问控制、速率限制等多种防御措施，但开放DNS（ODNS）基础设施依然频繁被攻击者滥用。";
+    const filled = fillDeepReadSlot(
+      html,
+      "q1",
+      `## 综述精读\n\n### 论文概述与核心背景\n\n# ${prose}`,
+      "综述摘要精读",
+    );
+
+    expect(filled).to.include("<h2>综述精读</h2>");
+    expect(filled).to.include("<h3>论文概述与核心背景</h3>");
+    expect(filled).to.include(`<p>${prose}</p>`);
+    expect(filled).to.not.include(`<h1>${prose}</h1>`);
+  });
 });

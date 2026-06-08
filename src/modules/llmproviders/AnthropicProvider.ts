@@ -163,7 +163,7 @@ export class AnthropicProvider implements ILlmProvider {
                       const text = json?.delta?.text;
                       if (text) {
                         gotAnyDelta = true;
-                        chunks.push(text.replace(/\n+/g, "\n"));
+                        chunks.push(text);
                         const current = chunks.join("");
                         if (onProgress && current.length > delivered) {
                           const newChunk = current.slice(delivered);
@@ -369,7 +369,7 @@ export class AnthropicProvider implements ILlmProvider {
                     if (json.type === "content_block_delta") {
                       const text = json?.delta?.text;
                       if (text) {
-                        chunks.push(text.replace(/\n+/g, "\n"));
+                        chunks.push(text);
                         const current = chunks.join("");
                         if (onProgress && current.length > delivered) {
                           const newChunk = current.slice(delivered);
@@ -725,7 +725,7 @@ export class AnthropicProvider implements ILlmProvider {
                       const text = json?.delta?.text;
                       if (text) {
                         gotAnyDelta = true;
-                        chunks.push(text.replace(/\n+/g, "\n"));
+                        chunks.push(text);
                         const current = chunks.join("");
                         if (onProgress && current.length > delivered) {
                           const newChunk = current.slice(delivered);

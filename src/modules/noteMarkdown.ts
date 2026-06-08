@@ -79,9 +79,11 @@ export function markdownToZoteroNoteHtml(markdown: string): string {
     (_match, _start, formula) => {
       const placeholder = `FORMULA_BLOCK_${formulas.length}_END`;
       formulas.push({ content: formula.trim(), isBlock: true });
-      return placeholder;
+      return `\n\n${placeholder}\n\n`;
     },
   );
+
+  processedMarkdown = normalizeMarkdownBlockBoundaries(processedMarkdown);
 
   processedMarkdown = processedMarkdown.replace(
     // eslint-disable-next-line no-useless-escape
@@ -108,9 +110,9 @@ export function markdownToZoteroNoteHtml(markdown: string): string {
   html = html.replace(/\s+style="[^"]*"/g, "");
 
   return html.replace(
-    /FORMULA_(BLOCK|INLINE)_(\d+)_END/g,
-    (_match, _type, index) => {
-      const formulaData = formulas[parseInt(index)];
+    /<p>\s*FORMULA_BLOCK_(\d+)_END\s*<\/p>|FORMULA_(BLOCK|INLINE)_(\d+)_END/g,
+    (_match, blockIndex, _type, inlineIndex) => {
+      const formulaData = formulas[parseInt(blockIndex ?? inlineIndex)];
       if (!formulaData) return _match;
 
       const escapedContent = escapeHtml(formulaData.content);
@@ -120,6 +122,12 @@ export function markdownToZoteroNoteHtml(markdown: string): string {
       return `<span class="math">$${escapedContent}$</span>`;
     },
   );
+}
+
+function normalizeMarkdownBlockBoundaries(markdown: string): string {
+  return markdown
+    .replace(/^(#{1,6}\s+[^\n]+)\n(?=\S)/gm, "$1\n\n")
+    .replace(/\n{3,}/g, "\n\n");
 }
 
 /**

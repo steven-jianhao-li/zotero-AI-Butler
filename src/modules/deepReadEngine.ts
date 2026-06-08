@@ -102,9 +102,49 @@ export function fillDeepReadSlot(
     : "";
   const htmlContent =
     status === "done"
-      ? `${headingHtml}${markdownToZoteroNoteHtml(markdown)}`
+      ? `${headingHtml}${markdownToDeepReadSlotHtml(markdown)}`
       : `${headingHtml}<p>❌ ${escapeHtml(markdown)}</p>`;
   return replaceDeepReadSlotHtml(noteHtml, slotId, htmlContent, status);
+}
+
+function markdownToDeepReadSlotHtml(markdown: string): string {
+  const normalizedMarkdown = normalizeDeepReadSlotMarkdown(markdown);
+  const html = markdownToZoteroNoteHtml(normalizedMarkdown);
+  return normalizeDeepReadSlotHtml(html);
+}
+
+function normalizeDeepReadSlotMarkdown(markdown: string): string {
+  return markdown.replace(
+    /^(#{1,6})\s+(.+?)\s*#*\s*$/gm,
+    (match, markers: string, rawTitle: string) => {
+      const title = rawTitle.trim();
+      if (!title) return match;
+      if (markers.length === 1 && looksLikeProseHeading(title)) {
+        return title;
+      }
+      const level = Math.max(2, markers.length);
+      return `${"#".repeat(level)} ${title}`;
+    },
+  );
+}
+
+function normalizeDeepReadSlotHtml(html: string): string {
+  return html.replace(/<h1>([\s\S]*?)<\/h1>/g, (_match, title: string) => {
+    const plainTitle = stripHtml(title).trim();
+    if (looksLikeProseHeading(plainTitle)) {
+      return `<p>${title}</p>`;
+    }
+    return `<h2>${title}</h2>`;
+  });
+}
+
+function looksLikeProseHeading(text: string): boolean {
+  const normalized = text.replace(/\s+/g, "").trim();
+  return normalized.length >= 60 && /[。！？.!?]$/.test(normalized);
+}
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, "");
 }
 
 function shouldPrependSlotHeading(

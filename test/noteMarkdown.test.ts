@@ -27,6 +27,27 @@ describe("note Markdown rendering", function () {
     expect(html).to.contain('<span class="math">$a &lt; b &amp; c$</span>');
   });
 
+  it("keeps text after headings and block formulas as paragraphs", function () {
+    const html = markdownToZoteroNoteHtml(
+      [
+        "#### 论文中的作用",
+        "该公式从网络交互（I/O）角度定量评估了解析器的部分负载。",
+        "",
+        "公式为：",
+        "$$QSentCost(n) = RR\\_Sent(n) \\cdot 2$$",
+        "该公式通过对网络通信行为和处理器底层行为进行桥接。",
+      ].join("\n"),
+    );
+
+    expect(html).to.contain("<h4>论文中的作用</h4>");
+    expect(html).to.contain(
+      "<p>该公式从网络交互（I/O）角度定量评估了解析器的部分负载。</p>",
+    );
+    expect(html).to.contain("<p>该公式通过对网络通信行为和处理器底层行为进行桥接。</p>");
+    expect(html).not.to.contain("<h2>该公式从网络交互");
+    expect(html).not.to.contain("<p>公式为：<br><p");
+  });
+
   it("decodes escaped prime entities before KaTeX rendering", function () {
     expect(decodeMathHtmlEntities("X&#39;_t + Y&#x27;_t + Z&apos;_t")).to.equal(
       "X'_t + Y'_t + Z'_t",

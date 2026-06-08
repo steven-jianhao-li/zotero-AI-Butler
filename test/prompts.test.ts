@@ -55,7 +55,6 @@ function v2Template(id = "custom"): MultiRoundPromptTemplate {
         ],
       },
     ],
-    finalPrompt: null,
   };
 }
 
@@ -218,8 +217,8 @@ describe("multi-round prompt templates v2", function () {
     expect(shouldRunDeepReadSlot(filled, "chapter_ch2")).to.equal(true);
   });
 
-  it("persists plan metadata, marks running slots, and renders final prompt slot", function () {
-    const template = { ...v2Template(), finalPrompt: "Summarize everything" };
+  it("persists plan metadata and marks running slots", function () {
+    const template = v2Template();
     const planned = planDeepReadSlots(template, DEFAULT_CHAPTER_FALLBACKS);
     const html = buildDeepReadSkeletonHtml("Paper", template, planned);
     const running = markDeepReadSlotRunning(html, "chapter_ch1", "Intro");
@@ -230,9 +229,6 @@ describe("multi-round prompt templates v2", function () {
     expect(metadata?.template?.id).to.equal("custom");
     expect(getDeepReadSlotStatus(running, "chapter_ch1")).to.equal("running");
     expect(isDeepReadSlotDone(running, "chapter_ch1")).to.equal(false);
-    expect(getDeepReadSlotStatus(html, "final_summary")).to.equal("pending");
-    expect(html).to.include("<!-- zab:slot:final_summary:pending -->");
-
     const reset = resetRunningDeepReadSlots(running);
     expect(getDeepReadSlotStatus(reset, "chapter_ch1")).to.equal("pending");
     expect(reset).to.include("<!-- zab:slot:chapter_ch1:pending -->");

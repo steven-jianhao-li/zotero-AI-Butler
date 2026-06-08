@@ -265,7 +265,6 @@ export interface MultiRoundPromptTemplate {
   version: number;
   phases: MultiRoundPromptPhase[];
   prompts: MultiRoundPromptItem[];
-  finalPrompt?: string | null;
 }
 
 export interface MultiRoundPromptTemplateExport {
@@ -356,7 +355,6 @@ export const DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE: MultiRoundPromptTemplate = {
     },
   ],
   prompts: [],
-  finalPrompt: null,
 };
 
 export function getDefaultMultiRoundPromptTemplate(): MultiRoundPromptTemplate {
@@ -463,10 +461,6 @@ export function normalizeMultiRoundPromptTemplate(
       : 2;
   const description =
     typeof value.description === "string" ? value.description.trim() : "";
-  const finalPrompt =
-    typeof value.finalPrompt === "string" && value.finalPrompt.trim()
-      ? value.finalPrompt.trim()
-      : null;
 
   return {
     id: normalizeMultiRoundTemplateId(value.id, name),
@@ -475,7 +469,6 @@ export function normalizeMultiRoundPromptTemplate(
     version,
     phases,
     prompts: [],
-    finalPrompt,
   };
 }
 

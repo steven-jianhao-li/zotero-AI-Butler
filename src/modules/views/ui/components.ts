@@ -180,16 +180,18 @@ export function createFormGroup(
     marginBottom: "24px",
   });
 
-  const labelElement = doc.createElement("label");
-  labelElement.textContent = label;
-  Object.assign(labelElement.style, {
-    display: "block",
-    marginBottom: "8px",
-    fontSize: "14px",
-    fontWeight: "600",
-    color: "var(--ai-text)",
-  });
-  group.appendChild(labelElement);
+  if (label.trim()) {
+    const labelElement = doc.createElement("label");
+    labelElement.textContent = label;
+    Object.assign(labelElement.style, {
+      display: "block",
+      marginBottom: "8px",
+      fontSize: "14px",
+      fontWeight: "600",
+      color: "var(--ai-text)",
+    });
+    group.appendChild(labelElement);
+  }
 
   group.appendChild(input);
 

@@ -649,26 +649,17 @@ export class PromptsSettingsPage {
         sequential.description,
       );
       card.appendChild(
-        this.createDeepReadFlow([
-          "\u89e3\u6790\u7ae0\u8282 JSON",
-          "\u6267\u884c\u56fa\u5b9a\u7cbe\u8bfb\u8f6e\u6b21",
-          "\u751f\u6210\u7ae0\u8282\u4efb\u52a1",
-          "\u9010\u7ae0\u7cbe\u8bfb",
-          "\u5199\u5165\u7cbe\u8bfb\u7b14\u8bb0",
-        ]),
-      );
-      card.appendChild(
         this.createContextStrategySelector(sequential.contextStrategy),
       );
-      card.appendChild(this.renderFixedPromptCards(sequential.fixedPrompts));
       card.appendChild(
         this.createPromptDetails(
-          "\u7ae0\u8282\u89e3\u6790\u63d0\u793a\u8bcd",
+          "\u89e3\u6790\u7ae0\u8282\u7ed3\u6784",
           sequential.planningPrompt,
           "deep-read-planning-prompt",
           "\u8fd9\u4e00\u8f6e\u8981\u6c42 AI \u4ece\u8bba\u6587\u4e2d\u8bc6\u522b\u7ae0\u8282\u7ed3\u6784\uff0c\u5e76\u8fd4\u56de chapters JSON\u3002",
         ),
       );
+      card.appendChild(this.renderFixedPromptCards(sequential.fixedPrompts));
       card.appendChild(
         this.createPromptDetails(
           "\u7ae0\u8282\u7cbe\u8bfb\u63d0\u793a\u8bcd\u6a21\u677f",
@@ -776,15 +767,6 @@ export class PromptsSettingsPage {
       container.appendChild(card);
     }
 
-    container.appendChild(
-      this.createPromptDetails(
-        "最终总结提示词",
-        template.finalPrompt || "",
-        "deep-read-final-prompt",
-        "可选。填写后会在所有逐章精读和重点追问完成后再执行一轮总结，并写入笔记末尾。",
-      ),
-    );
-
     return container;
   }
 
@@ -865,6 +847,16 @@ export class PromptsSettingsPage {
         value === "full_history" ? "full_history" : "last_round",
       ),
     );
+    wrapper.appendChild(
+      this.createDeepReadFlow(
+        [
+          "\u89e3\u6790\u7ae0\u8282\u7ed3\u6784",
+          "\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb",
+          "\u9010\u7ae0\u7cbe\u8bfb",
+        ],
+        "phase",
+      ),
+    );
     return wrapper;
   }
 
@@ -880,7 +872,7 @@ export class PromptsSettingsPage {
     });
 
     const heading = doc.createElement("div");
-    heading.textContent = "\u56fa\u5b9a\u7cbe\u8bfb\u8f6e\u6b21";
+    heading.textContent = "\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb";
     Object.assign(heading.style, {
       fontWeight: "700",
       marginBottom: "8px",
@@ -900,7 +892,8 @@ export class PromptsSettingsPage {
 
     if (!prompts.length) {
       const empty = doc.createElement("p");
-      empty.textContent = "当前没有固定精读轮次。";
+      empty.textContent =
+        "\u5f53\u524d\u6ca1\u6709\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb\u8f6e\u6b21\u3002";
       Object.assign(empty.style, { margin: "0 0 10px 0", opacity: "0.72" });
       wrapper.appendChild(empty);
     }
@@ -923,9 +916,13 @@ export class PromptsSettingsPage {
         marginBottom: "8px",
       });
       const rowTitle = doc.createElement("div");
-      rowTitle.textContent = `固定轮次 ${index + 1}`;
+      rowTitle.textContent = `\u7efc\u8ff0\u6458\u8981\u8f6e\u6b21 ${index + 1}`;
       Object.assign(rowTitle.style, { fontWeight: "700" });
-      const deleteButton = createStyledButton("删除固定轮", "#e53935", "small");
+      const deleteButton = createStyledButton(
+        "\u5220\u9664\u7efc\u8ff0\u8f6e",
+        "#e53935",
+        "small",
+      );
       deleteButton.addEventListener("click", () =>
         this.removeFixedPromptFromCurrentTemplate(index),
       );
@@ -936,25 +933,25 @@ export class PromptsSettingsPage {
       promptCard.appendChild(
         this.createLabeledInput(
           `deep-read-fixed-title-${index}`,
-          `\u56fa\u5b9a\u8f6e\u6b21 ${index + 1} \u6807\u9898`,
-          "\u7528\u4e8e\u5728 UI \u548c\u7b14\u8bb0\u4e2d\u6807\u8bc6\u8fd9\u4e2a\u56fa\u5b9a\u7cbe\u8bfb\u4efb\u52a1\u3002",
+          `\u7efc\u8ff0\u6458\u8981\u8f6e\u6b21 ${index + 1} \u6807\u9898`,
+          "\u7528\u4e8e\u5728 UI \u548c\u7b14\u8bb0\u4e2d\u6807\u8bc6\u8fd9\u4e2a\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb\u4efb\u52a1\u3002",
           prompt.title,
-          "\u56fa\u5b9a\u8f6e\u6b21\u6807\u9898",
+          "\u7efc\u8ff0\u6458\u8981\u8f6e\u6b21\u6807\u9898",
         ),
       );
       promptCard.appendChild(
         this.createPromptDetails(
-          "\u56fa\u5b9a\u8f6e\u6b21\u63d0\u793a\u8bcd",
+          "\u7efc\u8ff0\u6458\u8981\u63d0\u793a\u8bcd",
           prompt.prompt,
           `deep-read-fixed-prompt-${index}`,
-          "\u8fd9\u91cc\u662f\u5728\u9010\u7ae0\u7cbe\u8bfb\u524d\u53d1\u7ed9 AI \u7684\u56fa\u5b9a\u95ee\u9898\u6216\u6307\u4ee4\u3002",
+          "\u8fd9\u91cc\u662f\u5728\u9010\u7ae0\u7cbe\u8bfb\u524d\u53d1\u7ed9 AI \u7684\u7efc\u8ff0\u3001\u6458\u8981\u6216\u5168\u6587\u7406\u89e3\u4efb\u52a1\u3002",
         ),
       );
       wrapper.appendChild(promptCard);
     });
 
     const addButton = createStyledButton(
-      "+ 添加固定精读轮次",
+      "+ \u6dfb\u52a0\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb\u8f6e\u6b21",
       "#4caf50",
       "small",
     );
@@ -981,8 +978,7 @@ export class PromptsSettingsPage {
     });
 
     const heading = doc.createElement("h4");
-    heading.textContent = description ? `${title} ⓘ` : title;
-    if (description) heading.title = description;
+    heading.textContent = title;
     Object.assign(heading.style, {
       margin: "0 0 8px 0",
       color: "#59c0bc",
@@ -1004,30 +1000,54 @@ export class PromptsSettingsPage {
     return card;
   }
 
-  private createDeepReadFlow(steps: string[]): HTMLElement {
+  private createDeepReadFlow(
+    steps: string[],
+    variant: "template" | "phase" = "phase",
+  ): HTMLElement {
     const doc = Zotero.getMainWindow().document;
     const flow = doc.createElement("div");
     Object.assign(flow.style, {
       display: "flex",
       flexWrap: "wrap",
-      gap: "8px",
-      margin: "10px 0",
+      alignItems: "center",
+      gap: variant === "template" ? "6px" : "8px",
+      margin: variant === "template" ? "8px 0 0 0" : "10px 0 12px 0",
     });
+
     steps.forEach((step, index) => {
       const badge = doc.createElement("span");
       badge.textContent = `${index + 1}. ${step}`;
       Object.assign(badge.style, {
-        padding: "5px 9px",
-        borderRadius: "999px",
-        background: "rgba(89, 192, 188, 0.12)",
+        padding: variant === "template" ? "5px 10px" : "6px 11px",
+        borderRadius: variant === "template" ? "999px" : "8px",
+        background:
+          variant === "template"
+            ? "linear-gradient(135deg, rgba(89, 192, 188, 0.14), rgba(76, 175, 80, 0.12))"
+            : "rgba(33, 150, 243, 0.1)",
+        border:
+          variant === "template"
+            ? "1px solid rgba(89, 192, 188, 0.3)"
+            : "1px solid rgba(33, 150, 243, 0.22)",
         color: "var(--ai-text, #333)",
-        fontSize: "12px",
+        fontSize: variant === "template" ? "12px" : "12.5px",
+        fontWeight: variant === "template" ? "600" : "500",
       });
       flow.appendChild(badge);
+
+      if (index < steps.length - 1) {
+        const arrow = doc.createElement("span");
+        arrow.textContent = "\u2192";
+        Object.assign(arrow.style, {
+          color: variant === "template" ? "#59c0bc" : "#2196f3",
+          fontWeight: "700",
+          fontSize: variant === "template" ? "15px" : "16px",
+          opacity: "0.85",
+        });
+        flow.appendChild(arrow);
+      }
     });
     return flow;
   }
-
   private createLabeledInput(
     id: string,
     label: string,
@@ -1147,9 +1167,15 @@ export class PromptsSettingsPage {
     });
 
     const templateGroup = createFormGroup(
-      "提示词模板",
+      "",
       this.multiRoundTemplateSelect,
       "选择模板后会立即切换当前 AI 精读轮次提示词。",
+    );
+    templateGroup.appendChild(
+      this.createDeepReadFlow(
+        ["\u9010\u7ae0\u7cbe\u8bfb", "\u91cd\u70b9\u8ffd\u95ee\u7cbe\u8bfb"],
+        "template",
+      ),
     );
     Object.assign(templateGroup.style, {
       flex: "1 1 320px",
@@ -1184,7 +1210,7 @@ export class PromptsSettingsPage {
       this.confirmSaveCurrentMultiRoundTemplate(),
     );
     const btnExportTemplate = createStyledButton(
-      "\u5bfc\u51fa v2 \u6a21\u677f",
+      "\u5bfc\u51fa\u6a21\u677f",
       "#673ab7",
       "small",
     );
@@ -1192,7 +1218,7 @@ export class PromptsSettingsPage {
       this.exportCurrentMultiRoundTemplate(),
     );
     const btnImportTemplate = createStyledButton(
-      "\u5bfc\u5165 v2 \u6a21\u677f",
+      "\u5bfc\u5165\u6a21\u677f",
       "#ff9800",
       "small",
     );
@@ -1344,7 +1370,7 @@ export class PromptsSettingsPage {
     const saveTarget = this.createWritableMultiRoundPromptTemplate(template);
     this.showInlineConfirm({
       title: "\u4fdd\u5b58\u63d0\u793a\u8bcd\u6a21\u677f\uff1f",
-      message: `\u5c06\u4fdd\u5b58\u5f53\u524d\u9875\u9762\u4e2d\u7684 v2 \u9636\u6bb5\u63d0\u793a\u8bcd\u5230\u300c${saveTarget.name}\u300d\u6a21\u677f\u3002`,
+      message: `\u5c06\u4fdd\u5b58\u5f53\u524d\u9875\u9762\u4e2d\u7684\u9636\u6bb5\u63d0\u793a\u8bcd\u5230\u300c${saveTarget.name}\u300d\u6a21\u677f\u3002`,
       confirmText: "\u4fdd\u5b58\u6a21\u677f",
       confirmColor: "#4caf50",
       onConfirm: () => {
@@ -1462,8 +1488,6 @@ export class PromptsSettingsPage {
       version: 2,
       phases,
       prompts: [],
-      finalPrompt:
-        getValue("deep-read-final-prompt", template.finalPrompt || "") || null,
     };
   }
 
@@ -1478,7 +1502,7 @@ export class PromptsSettingsPage {
     );
 
     this.showJsonDialog({
-      title: "\u5bfc\u51fa AI \u7cbe\u8bfb v2 \u63d0\u793a\u8bcd\u6a21\u677f",
+      title: "\u5bfc\u51fa AI \u7cbe\u8bfb\u63d0\u793a\u8bcd\u6a21\u677f",
       value: serializeMultiRoundPromptTemplate(template),
       readOnly: true,
     });
@@ -1681,8 +1705,9 @@ export class PromptsSettingsPage {
             ...phase.fixedPrompts,
             {
               id: `fixed_custom_${Date.now()}`,
-              title: `固定精读 ${nextIndex}`,
-              prompt: "请基于论文全文完成一个固定精读任务，输出 Markdown。",
+              title: `\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb ${nextIndex}`,
+              prompt:
+                "\u8bf7\u57fa\u4e8e\u8bba\u6587\u5168\u6587\u5b8c\u6210\u4e00\u4e2a\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb\u4efb\u52a1\uff0c\u8f93\u51fa Markdown\u3002",
               order: nextIndex,
             },
           ],

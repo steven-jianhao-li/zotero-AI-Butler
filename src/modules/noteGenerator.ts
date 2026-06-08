@@ -59,7 +59,6 @@ import {
   type SummaryMode,
 } from "../utils/prompts";
 import {
-  DEEP_READ_FINAL_SLOT_ID,
   buildDeepReadSkeletonHtml,
   extractDeepReadPlanMetadata,
   fillDeepReadSlot,
@@ -1106,20 +1105,7 @@ export class NoteGenerator {
       );
     }
 
-    const progressSlots = template.finalPrompt?.trim()
-      ? [
-          ...planned.slots,
-          {
-            id: DEEP_READ_FINAL_SLOT_ID,
-            title: "??",
-            prompt: template.finalPrompt.trim(),
-            phaseId: "final",
-            phaseTitle: "??",
-            phaseType: "independent" as const,
-            status: "pending" as const,
-          },
-        ]
-      : planned.slots;
+    const progressSlots = planned.slots;
     params.outputWindow?.setDeepReadProgressSlots?.(progressSlots);
 
     const skeleton = buildDeepReadSkeletonHtml(
@@ -1375,45 +1361,6 @@ export class NoteGenerator {
               this.shouldStopDeepReadOnError(result.reason),
           );
           if (aborted?.status === "rejected") throw aborted.reason;
-        }
-      }
-
-      if (template.finalPrompt?.trim()) {
-        const finalSlot: DeepReadSlot = {
-          id: DEEP_READ_FINAL_SLOT_ID,
-          title: "总结",
-          prompt: template.finalPrompt.trim(),
-          phaseId: "final",
-          phaseTitle: "总结",
-          phaseType: "independent",
-          status: "pending",
-        };
-        const currentHtml = ((note as any).getNote?.() as string) || "";
-        if (shouldRunDeepReadSlot(currentHtml, finalSlot.id)) {
-          await markSlotRunning(finalSlot);
-          params.progressCallback?.("正在生成精读总结...", 94);
-          try {
-            const response = await this.callDeepReadChat({
-              pdfContent: params.pdfContent,
-              isBase64: params.isBase64,
-              conversation: [{ role: "user", content: finalSlot.prompt }],
-              abortSignal: params.abortSignal,
-            });
-            lastResponse = response;
-            collected.push(`# ${finalSlot.title}\n\n${response.text}`);
-            await updateSlot(finalSlot, response.text, "done");
-          } catch (error: any) {
-            if (
-              isAbortError(error, params.abortSignal) ||
-              this.shouldStopDeepReadOnError(error)
-            )
-              throw error;
-            await updateSlot(
-              finalSlot,
-              error?.message || String(error),
-              "error",
-            );
-          }
         }
       }
     } catch (error) {

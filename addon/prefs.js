@@ -66,15 +66,13 @@ pref(
 pref("__prefsPrefix__.customPrompts", "[]");
 // Summary mode: "single" for AI summary; "deepRead" for AI deep read v2
 pref("__prefsPrefix__.summaryMode", "single");
-// 多轮提示词 (JSON 数组): 每个元素包含 id、title、prompt、order
+// AI deep read prompt template library
 pref("__prefsPrefix__.multiRoundPromptTemplates", "[]");
 pref("__prefsPrefix__.multiRoundPromptTemplateId", "");
-// AI deep read v2 settings
+// AI deep read settings
 pref("__prefsPrefix__.multiRoundContextStrategy", "last_round");
 pref("__prefsPrefix__.multiRoundIndependentParallelEnabled", false);
 pref("__prefsPrefix__.multiRoundIndependentMaxConcurrency", 1);
-// 兼容旧版本的多轮最终总结配置；AI 精读当前固定使用多轮拼接
-// Legacy AI note compatibility prompt state for AI总结 / AI精读 split.
 pref("__prefsPrefix__.legacyAiNoteRenamePromptState", "");
 
 // ==================== 任务队列配置 ====================

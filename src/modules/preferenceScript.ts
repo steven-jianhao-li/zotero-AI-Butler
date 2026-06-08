@@ -115,9 +115,9 @@ function updatePrefsUI(win: Window) {
   if (temperatureInput) temperatureInput.value = temperature;
   if (promptTextarea) {
     // 如果没有保存的 prompt 或者是 undefined/空字符串，使用默认值
-    const finalPrompt =
+    const promptValue =
       savedPrompt && savedPrompt.trim() ? savedPrompt : defaultPrompt;
-    promptTextarea.value = finalPrompt;
+    promptTextarea.value = promptValue;
     // 确保保存默认值到配置中
     if (!savedPrompt || !savedPrompt.trim()) {
       setPref("summaryPrompt", defaultPrompt);

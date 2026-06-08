@@ -35,7 +35,6 @@ export type DeepReadPlanMetadata = {
 
 export const DEEP_READ_SLOT_PREFIX = "zab:slot";
 export const DEEP_READ_PLAN_META_PREFIX = "zab:deep-read-plan";
-export const DEEP_READ_FINAL_SLOT_ID = "final_summary";
 
 export function planDeepReadSlots(
   template: MultiRoundPromptTemplate,
@@ -86,21 +85,6 @@ export function buildDeepReadSkeletonHtml(
         parts.push("<hr/>");
       }
     }
-  }
-
-  if (template.finalPrompt?.trim()) {
-    parts.push("<hr/>");
-    parts.push(
-      buildPendingSlotHtml({
-        id: DEEP_READ_FINAL_SLOT_ID,
-        title: "总结",
-        prompt: template.finalPrompt.trim(),
-        phaseId: "final",
-        phaseTitle: "总结",
-        phaseType: "independent",
-        status: "pending",
-      }),
-    );
   }
 
   return parts.join("\n");

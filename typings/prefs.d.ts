@@ -42,6 +42,7 @@ declare namespace _ZoteroTypes {
       "enableTopP": boolean;
       "reasoningEffort": string;
       "stream": boolean;
+      "enablePromptCacheOptimization": boolean;
       "requestTimeout": string;
       "mineruApiKey": string;
       "mineruModelVersion": string;

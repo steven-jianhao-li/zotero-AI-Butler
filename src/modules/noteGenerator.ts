@@ -74,6 +74,14 @@ import {
 import { isTableFeatureEnabled } from "./uiCustomization";
 import { AiNoteService, type AiNoteKind } from "./aiNoteService";
 
+/** 多轮精读会话的端点状态 */
+type DeepReadSession = {
+  /** 本会话固定使用的端点 ID；undefined 时退化为现状逐轮路由 */
+  endpointId?: string;
+  /** 端点重试耗尽后是否允许回退全局路由换端点续跑 */
+  allowFallback: boolean;
+};
+
 type MultiModelSummaryResult = {
   endpoint: LLMEndpoint;
   content: string;
@@ -1046,6 +1054,21 @@ export class NoteGenerator {
       );
     }
 
+    const session: DeepReadSession = { allowFallback: false };
+    const cacheOptEnabled =
+      (getPref("enablePromptCacheOptimization" as any) as boolean) === true;
+    if (cacheOptEnabled) {
+      try {
+        session.endpointId = LLMService.acquireChatSessionEndpoint().id;
+        session.allowFallback = true;
+      } catch (error) {
+        ztoolkit.log(
+          "[AI-Butler] Failed to acquire deep-read cache session endpoint; falling back to per-call routing:",
+          error,
+        );
+      }
+    }
+
     let lastResponse: LLMResponse | undefined;
     let chapters = restoredPlan?.chapters || [];
     if (params.outputWindow) {
@@ -1062,6 +1085,7 @@ export class NoteGenerator {
       );
       params.progressCallback?.("正在解析章节结构...", 45);
       const planningResponse = await this.callDeepReadChat({
+        session,
         pdfContent: params.pdfContent,
         isBase64: params.isBase64,
         conversation: [
@@ -1189,6 +1213,7 @@ export class NoteGenerator {
       await markSlotRunning(slot);
       try {
         const response = await this.callDeepReadChat({
+          session,
           item: params.item,
           pdfContent: params.pdfContent,
           isBase64: params.isBase64,
@@ -1250,6 +1275,7 @@ export class NoteGenerator {
         await markSlotRunning(slot);
         try {
           const response = await this.callDeepReadChat({
+            session,
             item: params.item,
             pdfContent: params.pdfContent,
             isBase64: params.isBase64,
@@ -1302,6 +1328,7 @@ export class NoteGenerator {
         await markSlotRunning(slot);
         try {
           const response = await this.callDeepReadChat({
+            session,
             item: params.item,
             pdfContent: params.pdfContent,
             isBase64: params.isBase64,
@@ -1446,6 +1473,7 @@ export class NoteGenerator {
   }
 
   private static async callDeepReadChat(params: {
+    session?: DeepReadSession;
     item?: Zotero.Item;
     pdfContent: string;
     isBase64: boolean;
@@ -1466,7 +1494,7 @@ export class NoteGenerator {
           policy: params.isBase64 ? ("pdf-base64" as const) : ("text" as const),
         };
     let conversation = params.conversation;
-    let response = await LLMService.chat({
+    let response = await this.chatWithDeepReadSession(params.session, {
       content,
       conversation,
       transport: { abortSignal: params.abortSignal },
@@ -1487,7 +1515,7 @@ export class NoteGenerator {
         { role: "assistant", content: response.text },
         { role: "user", content: continuePrompt },
       ];
-      const continuation = await LLMService.chat({
+      const continuation = await this.chatWithDeepReadSession(params.session, {
         content,
         conversation,
         transport: { abortSignal: params.abortSignal },
@@ -1498,6 +1526,36 @@ export class NoteGenerator {
     }
 
     return response;
+  }
+
+  private static async chatWithDeepReadSession(
+    session: DeepReadSession | undefined,
+    chatRequest: LLMChatRequest,
+  ): Promise<LLMResponse> {
+    if (!session?.endpointId) {
+      return LLMService.chat(chatRequest);
+    }
+
+    const fixedEndpointId = session.endpointId;
+    try {
+      return await LLMService.chatWithEndpoint(fixedEndpointId, chatRequest);
+    } catch (error) {
+      if (
+        !session.allowFallback ||
+        isAbortError(error, chatRequest.transport?.abortSignal)
+      ) {
+        throw error;
+      }
+
+      const response = await LLMService.chat(chatRequest);
+      if (response.endpointId) {
+        session.endpointId = response.endpointId;
+        ztoolkit.log(
+          `[AI-Butler] Deep-read session endpoint ${fixedEndpointId} unavailable; fell back and pinned to ${response.endpointId}`,
+        );
+      }
+      return response;
+    }
   }
 
   private static isLikelyTruncated(response: LLMResponse): boolean {

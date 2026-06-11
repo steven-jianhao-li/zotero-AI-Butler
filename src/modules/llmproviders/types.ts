@@ -37,6 +37,7 @@ export type LLMOptions = {
   topP?: number;
   maxTokens?: number;
   reasoningEffort?: LLMReasoningEffort;
+  enablePromptCache?: boolean;
   vendorOptions?: Record<string, unknown>;
   abortSignal?: LLMAbortSignal;
 };

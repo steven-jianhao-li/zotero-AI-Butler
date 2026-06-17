@@ -43,7 +43,9 @@ describe("note Markdown rendering", function () {
     expect(html).to.contain(
       "<p>该公式从网络交互（I/O）角度定量评估了解析器的部分负载。</p>",
     );
-    expect(html).to.contain("<p>该公式通过对网络通信行为和处理器底层行为进行桥接。</p>");
+    expect(html).to.contain(
+      "<p>该公式通过对网络通信行为和处理器底层行为进行桥接。</p>",
+    );
     expect(html).not.to.contain("<h2>该公式从网络交互");
     expect(html).not.to.contain("<p>公式为：<br><p");
   });

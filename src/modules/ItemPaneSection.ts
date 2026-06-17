@@ -3861,6 +3861,7 @@ async function startSidebarNoteEdit(
     const editableHtml = LLMNoteMetadataService.stripSidebarMetadata(
       selectedBlock ? selectedBlock.content : rawNoteHtml,
     );
+    const safeEditableHtml = normalizeHtmlFragmentForXhtml(doc, editableHtml);
 
     sidebarNoteEditState = {
       itemId: item.id,
@@ -3875,7 +3876,7 @@ async function startSidebarNoteEdit(
       isSaving: false,
     };
 
-    noteContent.innerHTML = editableHtml || "<p><br/></p>";
+    noteContent.innerHTML = safeEditableHtml || "<p><br/></p>";
     noteContent.contentEditable = "true";
     noteContent.dataset.aiButlerEditMode = "true";
     bindSidebarNoteEditEventGuards(noteContent);

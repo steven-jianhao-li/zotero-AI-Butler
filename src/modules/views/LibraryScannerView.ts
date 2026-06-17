@@ -18,9 +18,19 @@
  */
 
 import { BaseView } from "./BaseView";
-import { isRegularSummaryNote } from "../aiNoteClassifier";
+import { AiNoteService, type AiNoteKind } from "../aiNoteService";
 import { TaskQueueManager } from "../taskQueue";
 import { MainWindow } from "./MainWindow";
+
+export function getLibraryScannerTargetLabel(target: AiNoteKind): string {
+  return target === "summary" ? "AI 总结" : "AI 精读";
+}
+
+export function getLibraryScannerTaskType(
+  target: AiNoteKind,
+): "summary" | "deepRead" {
+  return target === "summary" ? "summary" : "deepRead";
+}
 
 /**
  * 树节点接口
@@ -38,6 +48,7 @@ interface TreeNode {
   element?: HTMLElement; // DOM 元素引用
   childrenContainer?: HTMLElement; // 子节点容器引用
   checkboxElement?: HTMLInputElement; // 复选框元素引用
+  expandIconElement?: HTMLElement; // 展开/折叠图标引用
   // 是否已将子节点渲染到 DOM (用于大数据量的懒渲染)
   childrenRendered?: boolean;
 }
@@ -53,6 +64,9 @@ export class LibraryScannerView extends BaseView {
   private selectedCountElement: HTMLElement | null = null;
   private taskQueueManager: TaskQueueManager;
   private activeScanId: number = 0;
+  private scanTarget: AiNoteKind = "summary";
+  private readonly scannerInfoId = "scanner-info";
+  private readonly scannerConfirmButtonId = "scanner-confirm-btn";
 
   /**
    * 构造函数
@@ -60,6 +74,16 @@ export class LibraryScannerView extends BaseView {
   constructor() {
     super("library-scanner-view");
     this.taskQueueManager = TaskQueueManager.getInstance();
+  }
+
+  public setScanTarget(target: AiNoteKind): void {
+    if (this.scanTarget === target) return;
+    this.scanTarget = target;
+    this.activeScanId++;
+  }
+
+  private getScanTargetLabel(): string {
+    return getLibraryScannerTargetLabel(this.scanTarget);
   }
 
   /**
@@ -92,16 +116,16 @@ export class LibraryScannerView extends BaseView {
             margin: "0 0 10px 0",
             fontSize: "18px",
           },
-          innerHTML: "📚 库扫描结果",
+          textContent: `📚 缺 ${this.getScanTargetLabel()} 文献`,
         }),
         this.createElement("p", {
-          id: "scanner-info",
+          id: this.scannerInfoId,
           styles: {
             margin: "0",
             fontSize: "14px",
             opacity: "0.9",
           },
-          innerHTML: "正在扫描...",
+          textContent: "正在扫描...",
         }),
       ],
     });
@@ -137,8 +161,8 @@ export class LibraryScannerView extends BaseView {
         fontSize: "14px",
         color: "#666",
       },
-      innerHTML: "已选择: <strong>0</strong> 篇",
     });
+    this.renderSelectedCountText(0);
 
     // 按钮容器
     const buttonContainer = this.createElement("div", {
@@ -167,7 +191,7 @@ export class LibraryScannerView extends BaseView {
 
     // 确认按钮
     const confirmButton = this.createElement("button", {
-      id: "scanner-confirm-btn",
+      id: this.scannerConfirmButtonId,
       styles: {
         padding: "8px 20px",
         border: "none",
@@ -209,7 +233,9 @@ export class LibraryScannerView extends BaseView {
 
     try {
       const startedAt = Date.now();
-      this.log(`[LibraryScanner] 开始扫描未分析文献 scanId=${scanId}`);
+      this.log(
+        `[LibraryScanner] 开始扫描缺 ${this.getScanTargetLabel()} 文献 scanId=${scanId}`,
+      );
 
       await this.scanLibrary(scanId);
       if (!this.isCurrentScan(scanId)) return;
@@ -435,25 +461,14 @@ export class LibraryScannerView extends BaseView {
   }
 
   /**
-   * 检查条目是否已有 AI 笔记
+   * 检查条目是否已有当前目标 AI 笔记
    */
   private async hasExistingAINote(item: Zotero.Item): Promise<boolean> {
     try {
-      const noteIDs: number[] = (item as any).getNotes?.() || [];
-      if (noteIDs.length === 0) return false;
-
-      const notes = await Zotero.Items.getAsync(noteIDs);
-      for (const n of notes) {
-        if (!n) continue;
-
-        const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-        const noteHtml: string = (n as any).getNote?.() || "";
-        if (isRegularSummaryNote(tags, noteHtml)) return true;
-      }
-      return false;
+      return await AiNoteService.hasNote(item, this.scanTarget);
     } catch (error) {
       this.log(
-        `[LibraryScanner] 检查 AI 笔记失败: item=${this.getItemDebugID(item)}, title="${this.getItemTitle(item)}"`,
+        `[LibraryScanner] 检查 ${this.getScanTargetLabel()} 失败: item=${this.getItemDebugID(item)}, title="${this.getItemTitle(item)}"`,
         error,
       );
       return false;
@@ -697,7 +712,11 @@ export class LibraryScannerView extends BaseView {
     this.treeRoot = [];
     this.totalUnprocessed = 0;
     this.selectedCount = 0;
-    this.setInfo("正在扫描 Zotero 库...");
+    const title = this.container?.querySelector("h2");
+    if (title) {
+      title.textContent = `📚 缺 ${this.getScanTargetLabel()} 文献`;
+    }
+    this.setInfo(`正在扫描缺 ${this.getScanTargetLabel()} 的 Zotero 文献...`);
     if (this.treeContainer) {
       this.treeContainer.innerHTML = "";
     }
@@ -800,6 +819,13 @@ export class LibraryScannerView extends BaseView {
         lines.push("cause:");
         lines.push(this.formatUnknownError(cause));
       }
+    } else if (this.isDomExceptionLike(error)) {
+      lines.push(`name: ${error.name || "DOMException"}`);
+      lines.push(`message: ${error.message || ""}`);
+      if (error.stack) {
+        lines.push("stack:");
+        lines.push(error.stack);
+      }
     } else {
       lines.push(this.formatUnknownError(error));
     }
@@ -809,6 +835,12 @@ export class LibraryScannerView extends BaseView {
 
   private formatUnknownError(error: unknown): string {
     if (error instanceof Error) {
+      return [error.name, error.message, error.stack]
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    if (this.isDomExceptionLike(error)) {
       return [error.name, error.message, error.stack]
         .filter(Boolean)
         .join("\n");
@@ -888,10 +920,69 @@ export class LibraryScannerView extends BaseView {
   }
 
   private setInfo(message: string): void {
-    const infoElement = this.container?.querySelector("#scanner-info");
+    const infoElement = this.getScannerInfoElement();
     if (infoElement) {
       infoElement.textContent = this.toSafeDOMText(message);
     }
+  }
+
+  private renderSelectedCountText(count: number): void {
+    if (!this.selectedCountElement) return;
+
+    const doc =
+      this.selectedCountElement.ownerDocument ||
+      Zotero.getMainWindow().document;
+    const countElement = this.createElement("strong", {
+      textContent: String(count),
+    });
+    this.selectedCountElement.replaceChildren(
+      doc.createTextNode("已选择: "),
+      countElement,
+      doc.createTextNode(" 篇"),
+    );
+  }
+
+  private createCheckbox(options: {
+    styles?: Partial<CSSStyleDeclaration>;
+  }): HTMLInputElement {
+    const doc =
+      this.container?.ownerDocument || Zotero.getMainWindow().document;
+    const checkbox = doc.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "input",
+    ) as HTMLInputElement;
+    checkbox.type = "checkbox";
+
+    if (options.styles) {
+      Object.assign(checkbox.style, options.styles);
+    }
+
+    return checkbox;
+  }
+
+  private getScannerInfoElement(): HTMLElement | null {
+    const doc =
+      this.container?.ownerDocument || Zotero.getMainWindow().document;
+    return doc.getElementById(this.scannerInfoId) as HTMLElement | null;
+  }
+
+  private getConfirmButton(): HTMLButtonElement | null {
+    const doc =
+      this.container?.ownerDocument || Zotero.getMainWindow().document;
+    return doc.getElementById(
+      this.scannerConfirmButtonId,
+    ) as HTMLButtonElement | null;
+  }
+
+  private isDomExceptionLike(
+    error: unknown,
+  ): error is { name?: string; message?: string; stack?: string } {
+    return (
+      typeof error === "object" &&
+      error !== null &&
+      "name" in error &&
+      "message" in error
+    );
   }
 
   private isCurrentScan(scanId: number): boolean {
@@ -940,12 +1031,21 @@ export class LibraryScannerView extends BaseView {
    */
   private updateUI(): void {
     // 更新头部信息
-    const infoElement = this.container?.querySelector("#scanner-info");
+    const infoElement = this.getScannerInfoElement();
     if (infoElement) {
       if (this.totalUnprocessed === 0) {
-        infoElement.innerHTML = "🎉 所有文献都已分析完成!";
+        infoElement.textContent = `🎉 所有文献都已有 ${this.getScanTargetLabel()}!`;
       } else {
-        infoElement.innerHTML = `发现 <strong>${this.totalUnprocessed}</strong> 篇文献未进行 AI 分析`;
+        const strong = this.createElement("strong", {
+          textContent: String(this.totalUnprocessed),
+        });
+        const doc =
+          infoElement.ownerDocument || Zotero.getMainWindow().document;
+        infoElement.replaceChildren(
+          doc.createTextNode("发现 "),
+          strong,
+          doc.createTextNode(` 篇文献缺 ${this.getScanTargetLabel()}`),
+        );
       }
     }
 
@@ -960,8 +1060,9 @@ export class LibraryScannerView extends BaseView {
             color: "#999",
             fontSize: "16px",
           },
-          innerHTML: "🎉<br><br>所有文献都已分析完成!",
+          textContent: `🎉\n\n所有文献都已有 ${this.getScanTargetLabel()}!`,
         });
+        emptyMessage.style.whiteSpace = "pre-line";
         this.treeContainer.appendChild(emptyMessage);
       } else {
         // 创建全选根节点
@@ -1002,17 +1103,14 @@ export class LibraryScannerView extends BaseView {
     });
 
     // 复选框
-    const checkbox = this.createElement("input", {
-      attributes: {
-        type: "checkbox",
-      },
+    const checkbox = this.createCheckbox({
       styles: {
         marginRight: "12px",
         cursor: "pointer",
         width: "18px",
         height: "18px",
       },
-    }) as HTMLInputElement;
+    });
 
     checkbox.addEventListener("change", () => {
       this.toggleAllNodes(checkbox.checked);
@@ -1027,7 +1125,7 @@ export class LibraryScannerView extends BaseView {
         fontWeight: "600",
         color: "#fff",
       },
-      innerHTML: `📚 全选/全不选 (共 ${this.totalUnprocessed} 篇未分析)`,
+      textContent: `📚 全选/全不选 (共 ${this.totalUnprocessed} 篇缺 ${this.getScanTargetLabel()})`,
     });
 
     content.appendChild(checkbox);
@@ -1225,6 +1323,7 @@ export class LibraryScannerView extends BaseView {
         },
         textContent: node.expanded ? "▼" : "▶",
       });
+      node.expandIconElement = expandIcon;
 
       expandIcon.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -1238,15 +1337,12 @@ export class LibraryScannerView extends BaseView {
     }
 
     // 复选框
-    const checkbox = this.createElement("input", {
-      attributes: {
-        type: "checkbox",
-      },
+    const checkbox = this.createCheckbox({
       styles: {
         marginRight: "10px",
         cursor: "pointer",
       },
-    }) as HTMLInputElement;
+    });
 
     checkbox.checked = node.checked;
     node.checkboxElement = checkbox; // 保存引用
@@ -1405,9 +1501,8 @@ export class LibraryScannerView extends BaseView {
       node.expanded = true;
       this.updateNodeVisibility(node);
       // 更新展开图标
-      const expandIcon = node.element?.querySelector("span") as HTMLElement;
-      if (expandIcon && expandIcon.textContent) {
-        expandIcon.textContent = "▼";
+      if (node.expandIconElement) {
+        node.expandIconElement.textContent = "▼";
       }
       // 展开时进行懒渲染
       this.renderChildren(node, this.getNodeDepth(node));
@@ -1458,14 +1553,10 @@ export class LibraryScannerView extends BaseView {
    */
   private updateSelectedCount(): void {
     this.selectedCount = this.countSelectedItems(this.treeRoot);
-    if (this.selectedCountElement) {
-      this.selectedCountElement.innerHTML = `已选择: <strong>${this.selectedCount}</strong> 篇`;
-    }
+    this.renderSelectedCountText(this.selectedCount);
 
     // 更新按钮状态
-    const confirmButton = this.container?.querySelector(
-      "#scanner-confirm-btn",
-    ) as HTMLButtonElement;
+    const confirmButton = this.getConfirmButton();
     if (confirmButton) {
       confirmButton.disabled = this.selectedCount === 0;
       confirmButton.style.opacity = this.selectedCount === 0 ? "0.5" : "1";
@@ -1510,14 +1601,20 @@ export class LibraryScannerView extends BaseView {
       return;
     }
 
-    // 批量添加到队列
+    // 批量添加到对应队列
     for (const item of selectedItems) {
-      this.taskQueueManager.addTask(item, false);
+      if (this.scanTarget === "summary") {
+        this.taskQueueManager.addTask(item, false, { summaryMode: "single" });
+      } else {
+        this.taskQueueManager.addDeepReadTask(item, false, {
+          summaryMode: "deepRead",
+        });
+      }
     }
 
     new ztoolkit.ProgressWindow("AI 管家")
       .createLine({
-        text: `✅ 已将 ${selectedItems.length} 篇文献添加到队列`,
+        text: `✅ 已将 ${selectedItems.length} 篇文献添加到 ${this.getScanTargetLabel()} 队列`,
         type: "success",
       })
       .show();

@@ -35,6 +35,7 @@ import {
   decodeMathHtmlEntities,
   normalizeFollowUpChatNoteHtml,
 } from "./noteMarkdown";
+import { AiNoteService, type AiNoteKind } from "./aiNoteService";
 import { SummaryView } from "./views/SummaryView";
 import katex from "katex";
 // 注意: 不在主进程中直接 import 思维导图库（如 markmap-view、simple-mind-map）
@@ -79,6 +80,7 @@ let currentChatState: ChatState = {
 
 type SidebarAutoRefreshTarget =
   | "summary"
+  | "deepRead"
   | "imageSummary"
   | "mindmap"
   | "table";
@@ -104,6 +106,7 @@ type SidebarSummaryNote = {
 type SidebarNoteEditState = {
   itemId: number;
   noteId: number;
+  noteKind: AiNoteKind;
   blockId: string | null;
   selectedBlockIndex: number;
   originalRawHtml: string;
@@ -143,9 +146,10 @@ function setSidebarNoteEditStatus(
   doc: Document,
   message: string,
   color = "rgba(128, 128, 128, 0.85)",
+  kind: AiNoteKind = "summary",
 ): void {
   const status = doc.getElementById(
-    "ai-butler-note-edit-status",
+    getSidebarNoteElementId("ai-butler-note-edit-status", kind),
   ) as HTMLElement | null;
   if (!status) return;
   status.textContent = message;
@@ -164,27 +168,28 @@ function updateSidebarNoteEditControls(
   mode: "missing" | "preview" | "editing" | "saving",
   message = "",
   messageColor?: string,
+  kind: AiNoteKind = "summary",
 ): void {
   const editBtn = doc.getElementById(
-    "ai-butler-edit-note-btn",
+    getSidebarNoteElementId("ai-butler-edit-note-btn", kind),
   ) as HTMLButtonElement | null;
   const saveBtn = doc.getElementById(
-    "ai-butler-save-note-btn",
+    getSidebarNoteElementId("ai-butler-save-note-btn", kind),
   ) as HTMLButtonElement | null;
   const cancelBtn = doc.getElementById(
-    "ai-butler-cancel-note-btn",
+    getSidebarNoteElementId("ai-butler-cancel-note-btn", kind),
   ) as HTMLButtonElement | null;
   const copyBtn = doc.getElementById(
-    "ai-butler-copy-note-btn",
+    getSidebarNoteElementId("ai-butler-copy-note-btn", kind),
   ) as HTMLButtonElement | null;
   const deleteBtn = doc.getElementById(
-    "ai-butler-delete-note-block-btn",
+    getSidebarNoteElementId("ai-butler-delete-note-block-btn", kind),
   ) as HTMLButtonElement | null;
   const metadataSelector = doc.getElementById(
-    "ai-butler-note-metadata-selector",
+    getSidebarNoteElementId("ai-butler-note-metadata-selector", kind),
   ) as HTMLSelectElement | null;
   const metadataButton = doc.getElementById(
-    "ai-butler-note-metadata-button",
+    getSidebarNoteElementId("ai-butler-note-metadata-button", kind),
   ) as HTMLButtonElement | null;
 
   const isEditing = mode === "editing" || mode === "saving";
@@ -212,10 +217,10 @@ function updateSidebarNoteEditControls(
     metadataButton.style.cursor = isEditing ? "not-allowed" : "pointer";
   }
   if (isEditing) {
-    hideSidebarMetadataMenu(doc);
+    hideSidebarMetadataMenu(doc, kind);
   }
 
-  setSidebarNoteEditStatus(doc, message, messageColor);
+  setSidebarNoteEditStatus(doc, message, messageColor, kind);
 }
 
 function resetSidebarNoteContentEditMode(noteContent: HTMLElement): void {
@@ -470,7 +475,10 @@ function parseTaskTarget(taskId: string): {
   itemId: number;
   target: SidebarAutoRefreshTarget;
 } | null {
-  const match = /^(task|img-task|mindmap-task|table-task)-(\d+)$/.exec(taskId);
+  const match =
+    /^(task|summary-task|deepread-task|img-task|mindmap-task|table-task)-(\d+)$/.exec(
+      taskId,
+    );
   if (!match) return null;
   const itemId = Number(match[2]);
   if (!Number.isFinite(itemId)) return null;
@@ -478,11 +486,13 @@ function parseTaskTarget(taskId: string): {
   const target: SidebarAutoRefreshTarget =
     match[1] === "img-task"
       ? "imageSummary"
-      : match[1] === "mindmap-task"
-        ? "mindmap"
-        : match[1] === "table-task"
-          ? "table"
-          : "summary";
+      : match[1] === "deepread-task"
+        ? "deepRead"
+        : match[1] === "mindmap-task"
+          ? "mindmap"
+          : match[1] === "table-task"
+            ? "table"
+            : "summary";
 
   return { itemId, target };
 }
@@ -518,14 +528,38 @@ async function runSidebarRefresh(): Promise<void> {
 
   if (targets.includes("summary")) {
     const noteContent = doc.getElementById(
-      "ai-butler-note-content",
+      getSidebarNoteElementId("ai-butler-note-content", "summary"),
     ) as HTMLElement | null;
     if (noteContent) {
       if (isSidebarNoteEditing(itemId)) {
-        setSidebarNoteEditStatus(doc, "编辑中，已跳过自动刷新。");
+        setSidebarNoteEditStatus(
+          doc,
+          "编辑中，已跳过自动刷新。",
+          undefined,
+          "summary",
+        );
       } else {
         noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-        await loadNoteContent(doc, item, noteContent);
+        await loadNoteContent(doc, item, noteContent, "summary");
+      }
+    }
+  }
+
+  if (targets.includes("deepRead")) {
+    const noteContent = doc.getElementById(
+      getSidebarNoteElementId("ai-butler-note-content", "deepRead"),
+    ) as HTMLElement | null;
+    if (noteContent) {
+      if (isSidebarNoteEditing(itemId)) {
+        setSidebarNoteEditStatus(
+          doc,
+          "编辑中，已跳过自动刷新。",
+          undefined,
+          "deepRead",
+        );
+      } else {
+        noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+        await loadNoteContent(doc, item, noteContent, "deepRead");
       }
     }
   }
@@ -630,7 +664,12 @@ export async function refreshCurrentItemPaneSection(): Promise<void> {
   if (sidebarNoteEditState) {
     const doc = sidebarRenderContext.body.ownerDocument;
     if (doc) {
-      setSidebarNoteEditStatus(doc, "编辑中，请先保存或取消。");
+      setSidebarNoteEditStatus(
+        doc,
+        "编辑中，请先保存或取消。",
+        undefined,
+        sidebarNoteEditState.noteKind,
+      );
     }
     return;
   }
@@ -726,7 +765,8 @@ function renderItemPaneSection(
   // 按用户配置的顺序渲染侧边栏功能区块
   const renderers: Record<SidebarModuleId, () => void> = {
     actionButtons: () => renderActionButtons(body, doc, item, handleOpenAIChat),
-    note: () => renderNoteSection(body, doc, item),
+    note: () => renderNoteSection(body, doc, item, "summary"),
+    deepRead: () => renderNoteSection(body, doc, item, "deepRead"),
     table: () => renderTableSection(body, doc, item),
     imageSummary: () => renderImageSummarySection(body, doc, item),
     mindmap: () => renderMindmapSection(body, doc, item),
@@ -923,6 +963,7 @@ function renderNoteSection(
   body: HTMLElement,
   doc: Document,
   item: Zotero.Item,
+  noteKind: AiNoteKind = "summary",
 ): void {
   const noteSection = doc.createElement("div");
   noteSection.className = "ai-butler-note-section";
@@ -964,10 +1005,14 @@ function renderNoteSection(
     gap: 6px;
     min-width: 0;
   `;
-  noteTitle.innerHTML = `📄 <span>AI 笔记</span>`;
+  const noteLabel = noteKind === "summary" ? "AI 总结" : "AI 精读";
+  noteTitle.innerHTML = `📄 <span>${noteLabel}</span>`;
 
   const metadataPicker = doc.createElement("span");
-  metadataPicker.id = "ai-butler-note-metadata-picker";
+  metadataPicker.id = getSidebarNoteElementId(
+    "ai-butler-note-metadata-picker",
+    noteKind,
+  );
   metadataPicker.style.cssText = `
     display: none;
     flex-shrink: 0;
@@ -975,11 +1020,17 @@ function renderNoteSection(
   metadataPicker.addEventListener("click", (e: Event) => e.stopPropagation());
 
   const metadataSelector = doc.createElement("select");
-  metadataSelector.id = "ai-butler-note-metadata-selector";
+  metadataSelector.id = getSidebarNoteElementId(
+    "ai-butler-note-metadata-selector",
+    noteKind,
+  );
   metadataSelector.style.display = "none";
 
   const metadataButton = doc.createElement("button");
-  metadataButton.id = "ai-butler-note-metadata-button";
+  metadataButton.id = getSidebarNoteElementId(
+    "ai-butler-note-metadata-button",
+    noteKind,
+  );
   metadataButton.type = "button";
   metadataButton.style.cssText = `
     display: inline-flex;
@@ -1001,7 +1052,10 @@ function renderNoteSection(
   `;
 
   const metadataMenu = doc.createElement("div");
-  metadataMenu.id = "ai-butler-note-metadata-menu";
+  metadataMenu.id = getSidebarNoteElementId(
+    "ai-butler-note-metadata-menu",
+    noteKind,
+  );
   metadataMenu.style.cssText = `
     display: none;
     margin: 6px 8px 0;
@@ -1058,8 +1112,13 @@ function renderNoteSection(
 
   // 高度控制
   const DEFAULT_NOTE_HEIGHT = 200;
+  const noteHeightPrefKey = getSidebarNoteHeightPrefKey(noteKind);
+  const noteCollapsedPrefKey = getSidebarNoteCollapsedPrefKey(noteKind);
   let savedNoteHeight = parseInt(
-    (getPref("sidebarNoteHeight" as any) as string) ||
+    (getPref(noteHeightPrefKey as any) as string) ||
+      (noteKind === "summary"
+        ? ""
+        : (getPref("sidebarNoteHeight" as any) as string) || "") ||
       String(DEFAULT_NOTE_HEIGHT),
     10,
   );
@@ -1084,7 +1143,7 @@ function renderNoteSection(
 
   const noteContent = doc.createElement("div");
   noteContent.className = "ai-butler-note-content markdown-body";
-  noteContent.id = "ai-butler-note-content";
+  noteContent.id = getSidebarNoteElementId("ai-butler-note-content", noteKind);
   noteContent.style.cssText = `
     padding: 10px;
     padding-bottom: 20px;
@@ -1210,7 +1269,7 @@ function renderNoteSection(
     e.stopPropagation();
     savedNoteHeight = DEFAULT_NOTE_HEIGHT;
     noteContentWrapper.style.height = `${DEFAULT_NOTE_HEIGHT}px`;
-    setPref("sidebarNoteHeight" as any, String(DEFAULT_NOTE_HEIGHT) as any);
+    setPref(noteHeightPrefKey as any, String(DEFAULT_NOTE_HEIGHT) as any);
   });
   resetHeightBtn.addEventListener("mouseenter", () => {
     resetHeightBtn.style.background = "#f0f0f0";
@@ -1253,8 +1312,11 @@ function renderNoteSection(
     return btn;
   };
 
-  const editBtn = createNoteActionBtn("✎", "编辑 AI 笔记");
-  editBtn.id = "ai-butler-edit-note-btn";
+  const editBtn = createNoteActionBtn(
+    "✎",
+    noteKind === "summary" ? "编辑 AI 总结" : "编辑 AI 精读",
+  );
+  editBtn.id = getSidebarNoteElementId("ai-butler-edit-note-btn", noteKind);
   editBtn.addEventListener("click", async (e: Event) => {
     e.stopPropagation();
     await startSidebarNoteEdit(doc, item, noteContent);
@@ -1262,15 +1324,24 @@ function renderNoteSection(
   fontSizeControl.appendChild(editBtn);
 
   const deleteBlockBtn = createNoteActionBtn("✕", "删除当前模型总结");
-  deleteBlockBtn.id = "ai-butler-delete-note-block-btn";
+  deleteBlockBtn.id = getSidebarNoteElementId(
+    "ai-butler-delete-note-block-btn",
+    noteKind,
+  );
   deleteBlockBtn.addEventListener("click", async (e: Event) => {
     e.stopPropagation();
     await deleteSidebarSummaryBlock(doc, item, noteContent);
   });
   fontSizeControl.appendChild(deleteBlockBtn);
 
-  const saveBtn = createNoteActionBtn("保存", "保存侧边栏内的 AI 笔记修改", 42);
-  saveBtn.id = "ai-butler-save-note-btn";
+  const saveBtn = createNoteActionBtn(
+    "保存",
+    noteKind === "summary"
+      ? "保存侧边栏内的 AI 总结修改"
+      : "保存侧边栏内的 AI 精读修改",
+    42,
+  );
+  saveBtn.id = getSidebarNoteElementId("ai-butler-save-note-btn", noteKind);
   saveBtn.style.display = "none";
   saveBtn.addEventListener("click", async (e: Event) => {
     e.stopPropagation();
@@ -1279,7 +1350,7 @@ function renderNoteSection(
   fontSizeControl.appendChild(saveBtn);
 
   const cancelBtn = createNoteActionBtn("取消", "取消编辑并恢复预览", 42);
-  cancelBtn.id = "ai-butler-cancel-note-btn";
+  cancelBtn.id = getSidebarNoteElementId("ai-butler-cancel-note-btn", noteKind);
   cancelBtn.style.display = "none";
   cancelBtn.addEventListener("click", (e: Event) => {
     e.stopPropagation();
@@ -1288,7 +1359,10 @@ function renderNoteSection(
   fontSizeControl.appendChild(cancelBtn);
 
   const editStatus = doc.createElement("span");
-  editStatus.id = "ai-butler-note-edit-status";
+  editStatus.id = getSidebarNoteElementId(
+    "ai-butler-note-edit-status",
+    noteKind,
+  );
   editStatus.style.cssText = `
     font-size: 10px;
     white-space: nowrap;
@@ -1303,7 +1377,7 @@ function renderNoteSection(
   const copyBtn = doc.createElement("button");
   copyBtn.textContent = "📋";
   copyBtn.title = "复制为 Markdown";
-  copyBtn.id = "ai-butler-copy-note-btn";
+  copyBtn.id = getSidebarNoteElementId("ai-butler-copy-note-btn", noteKind);
   copyBtn.style.cssText = `
     width: 20px;
     height: 20px;
@@ -1323,7 +1397,7 @@ function renderNoteSection(
     e.stopPropagation();
     try {
       // 获取当前笔记的 Markdown 内容
-      const markdownContent = await getNoteMarkdownContent(item);
+      const markdownContent = await getNoteMarkdownContent(item, noteKind);
       if (!markdownContent) {
         copyBtn.textContent = "❌";
         setTimeout(() => {
@@ -1377,11 +1451,11 @@ function renderNoteSection(
   const resizeHandle = createResizeHandle(
     doc,
     noteContentWrapper,
-    "sidebarNoteHeight",
+    noteHeightPrefKey,
   );
 
   // 折叠/展开功能 - 从首选项读取初始状态
-  let isCollapsed = getPref("sidebarNoteCollapsed" as any) === true;
+  let isCollapsed = getPref(noteCollapsedPrefKey as any) === true;
 
   // 根据初始状态设置UI
   if (isCollapsed) {
@@ -1393,12 +1467,17 @@ function renderNoteSection(
 
   noteHeader.addEventListener("click", () => {
     if (isSidebarNoteEditing(item.id)) {
-      setSidebarNoteEditStatus(doc, "编辑中，请先保存或取消。");
+      setSidebarNoteEditStatus(
+        doc,
+        "编辑中，请先保存或取消。",
+        undefined,
+        noteKind,
+      );
       return;
     }
     isCollapsed = !isCollapsed;
     // 保存折叠状态到首选项
-    setPref("sidebarNoteCollapsed" as any, isCollapsed as any);
+    setPref(noteCollapsedPrefKey as any, isCollapsed as any);
     if (isCollapsed) {
       noteContentWrapper.style.height = "0px";
       noteContentWrapper.style.overflow = "hidden";
@@ -1406,7 +1485,7 @@ function renderNoteSection(
       toggleIcon.style.transform = "rotate(-90deg)";
     } else {
       const restoreHeight = parseInt(
-        (getPref("sidebarNoteHeight" as any) as string) ||
+        (getPref(noteHeightPrefKey as any) as string) ||
           String(DEFAULT_NOTE_HEIGHT),
         10,
       );
@@ -1423,10 +1502,10 @@ function renderNoteSection(
   noteSection.appendChild(resizeHandle);
   body.appendChild(noteSection);
 
-  updateSidebarNoteEditControls(doc, "missing");
+  updateSidebarNoteEditControls(doc, "missing", "", undefined, noteKind);
 
   // 异步加载笔记内容
-  loadNoteContent(doc, item, noteContent);
+  loadNoteContent(doc, item, noteContent, noteKind);
 }
 
 /**
@@ -3472,79 +3551,48 @@ function createResizeHandle(
 
 async function resolveSidebarSummaryNote(
   item: Zotero.Item,
+  kind: AiNoteKind = "summary",
 ): Promise<SidebarSummaryNote | null> {
-  let targetItem: any = item;
-  if (item.isAttachment && item.isAttachment()) {
-    const parentId = item.parentItemID;
-    if (parentId) {
-      targetItem = await Zotero.Items.getAsync(parentId);
-    }
-  }
+  const record = await AiNoteService.findNoteRecord(item, kind);
+  return record ? { note: record.note, rawHtml: record.rawHtml } : null;
+}
 
-  const noteIDs = (targetItem as any).getNotes?.() || [];
-  let targetNote: Zotero.Item | null = null;
-  let targetRawHtml = "";
+function getNoteKindFromElement(element: HTMLElement): AiNoteKind {
+  return element.dataset.aiNoteKind === "deepRead" ? "deepRead" : "summary";
+}
 
-  for (const nid of noteIDs) {
-    try {
-      const n = await Zotero.Items.getAsync(nid);
-      if (!n) continue;
-      const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-      const noteHtml: string = (n as any).getNote?.() || "";
+export function getSidebarNoteElementId(
+  baseId: string,
+  kind: AiNoteKind,
+): string {
+  return kind === "summary" ? baseId : `${baseId}-${kind}`;
+}
 
-      // 检查是否是 AI-Butler 生成的摘要笔记，排除其他特殊类型。
-      const isMindmapNote =
-        tags.some((t) => t.tag === "AI-Mindmap") ||
-        /AI\s*管家思维导图\s*-/.test(noteHtml);
-      const isImageSummaryNote =
-        tags.some((t) => t.tag === "AI-Image-Summary") ||
-        /AI\s*管家一图总结\s*-/.test(noteHtml);
-      const isChatNote =
-        tags.some((t) => t.tag === "AI-Butler-Chat") ||
-        /<h2>\s*AI\s+管家\s*-\s*后续追问\s*-/.test(noteHtml);
-      const isTableNote = tags.some((t) => t.tag === "AI-Table");
-      const hasAiGeneratedTag = tags.some((t) => t.tag === "AI-Generated");
-      const isAiSummaryNote =
-        !isMindmapNote &&
-        !isImageSummaryNote &&
-        !isChatNote &&
-        !isTableNote &&
-        (hasAiGeneratedTag ||
-          noteHtml.includes("<h2>AI 管家 - ") ||
-          noteHtml.includes("[AI-Butler]"));
+export function getSidebarNoteHeightPrefKey(kind: AiNoteKind): string {
+  return kind === "summary" ? "sidebarNoteHeight" : "sidebarDeepReadHeight";
+}
 
-      if (!isAiSummaryNote) continue;
+export function getSidebarNoteCollapsedPrefKey(kind: AiNoteKind): string {
+  return kind === "summary"
+    ? "sidebarNoteCollapsed"
+    : "sidebarDeepReadCollapsed";
+}
 
-      if (!targetNote) {
-        targetNote = n as Zotero.Item;
-        targetRawHtml = noteHtml;
-        continue;
-      }
-
-      const a = (targetNote as any).dateModified || 0;
-      const b = (n as any).dateModified || 0;
-      if (b > a) {
-        targetNote = n as Zotero.Item;
-        targetRawHtml = noteHtml;
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  if (!targetNote) return null;
-  return {
-    note: targetNote,
-    rawHtml: targetRawHtml || (targetNote as any).getNote?.() || "",
-  };
+export function getSidebarMetadataSelectionKey(
+  itemId: number,
+  noteId: number,
+  kind: AiNoteKind,
+): string {
+  return `${kind}:${itemId}:${noteId}`;
 }
 
 function getSelectedMetadataBlockIndex(
   doc: Document,
   blockCount: number,
+  kind: AiNoteKind = "summary",
 ): number {
   const metadataSelector = doc.getElementById(
-    "ai-butler-note-metadata-selector",
+    getSidebarNoteElementId("ai-butler-note-metadata-selector", kind),
   ) as HTMLSelectElement | null;
   const requested = Number(
     metadataSelector?.dataset.selectedIndex || metadataSelector?.value || "",
@@ -3555,22 +3603,28 @@ function getSelectedMetadataBlockIndex(
   return Math.max(0, blockCount - 1);
 }
 
-function hideSidebarMetadataMenu(doc: Document): void {
+function hideSidebarMetadataMenu(
+  doc: Document,
+  kind: AiNoteKind = "summary",
+): void {
   const menu = doc.getElementById(
-    "ai-butler-note-metadata-menu",
+    getSidebarNoteElementId("ai-butler-note-metadata-menu", kind),
   ) as HTMLElement | null;
   if (menu) menu.style.display = "none";
 }
 
-function hideSidebarMetadataPicker(doc: Document): void {
+function hideSidebarMetadataPicker(
+  doc: Document,
+  kind: AiNoteKind = "summary",
+): void {
   const picker = doc.getElementById(
-    "ai-butler-note-metadata-picker",
+    getSidebarNoteElementId("ai-butler-note-metadata-picker", kind),
   ) as HTMLElement | null;
   const selector = doc.getElementById(
-    "ai-butler-note-metadata-selector",
+    getSidebarNoteElementId("ai-butler-note-metadata-selector", kind),
   ) as HTMLSelectElement | null;
   const menu = doc.getElementById(
-    "ai-butler-note-metadata-menu",
+    getSidebarNoteElementId("ai-butler-note-metadata-menu", kind),
   ) as HTMLElement | null;
   if (selector) {
     selector.innerHTML = "";
@@ -3595,12 +3649,13 @@ function getSummaryBlockShortLabel(
 
 function updateSidebarMetadataButtonLabel(
   doc: Document,
+  kind: AiNoteKind,
   selectedIndex: number,
   total: number,
   block: ReturnType<typeof LLMNoteMetadataService.parseSummaryBlocks>[number],
 ): void {
   const button = doc.getElementById(
-    "ai-butler-note-metadata-button",
+    getSidebarNoteElementId("ai-butler-note-metadata-button", kind),
   ) as HTMLButtonElement | null;
   if (!button) return;
 
@@ -3634,10 +3689,6 @@ function getDisplaySummaryBlocks(
   );
 }
 
-function getSidebarSummarySelectionKey(itemId: number, noteId: number): string {
-  return `${itemId}:${noteId}`;
-}
-
 function readSidebarSummarySelectionMap(): Record<string, string> {
   try {
     const raw = String(getPref(SIDEBAR_SUMMARY_SELECTION_PREF) || "{}");
@@ -3651,22 +3702,25 @@ function readSidebarSummarySelectionMap(): Record<string, string> {
 function getSavedSidebarSummaryBlockId(
   itemId: number,
   noteId: number,
+  kind: AiNoteKind = "summary",
 ): string | null {
+  const selections = readSidebarSummarySelectionMap();
   return (
-    readSidebarSummarySelectionMap()[
-      getSidebarSummarySelectionKey(itemId, noteId)
-    ] || null
+    selections[getSidebarMetadataSelectionKey(itemId, noteId, kind)] ||
+    (kind === "summary" ? selections[`${itemId}:${noteId}`] : null) ||
+    null
   );
 }
 
 function saveSidebarSummaryBlockSelection(
   itemId: number,
   noteId: number,
+  kind: AiNoteKind,
   blockId: string,
 ): void {
   try {
     const selections = readSidebarSummarySelectionMap();
-    selections[getSidebarSummarySelectionKey(itemId, noteId)] = blockId;
+    selections[getSidebarMetadataSelectionKey(itemId, noteId, kind)] = blockId;
     setPref(SIDEBAR_SUMMARY_SELECTION_PREF, JSON.stringify(selections) as any);
   } catch (err) {
     ztoolkit.log("[AI-Butler] Failed to save sidebar model selection:", err);
@@ -3781,9 +3835,16 @@ async function startSidebarNoteEdit(
   try {
     if (sidebarNoteEditState?.isSaving) return;
 
-    const resolvedNote = await resolveSidebarSummaryNote(item);
+    const noteKind = getNoteKindFromElement(noteContent);
+    const resolvedNote = await resolveSidebarSummaryNote(item, noteKind);
     if (!resolvedNote) {
-      updateSidebarNoteEditControls(doc, "missing", "暂无可编辑笔记。");
+      updateSidebarNoteEditControls(
+        doc,
+        "missing",
+        "暂无可编辑笔记。",
+        undefined,
+        noteKind,
+      );
       return;
     }
 
@@ -3793,17 +3854,19 @@ async function startSidebarNoteEdit(
     );
     const selectedBlockIndex =
       summaryBlocks.length > 0
-        ? getSelectedMetadataBlockIndex(doc, summaryBlocks.length)
+        ? getSelectedMetadataBlockIndex(doc, summaryBlocks.length, noteKind)
         : -1;
     const selectedBlock =
       selectedBlockIndex >= 0 ? summaryBlocks[selectedBlockIndex] : null;
     const editableHtml = LLMNoteMetadataService.stripSidebarMetadata(
       selectedBlock ? selectedBlock.content : rawNoteHtml,
     );
+    const safeEditableHtml = normalizeHtmlFragmentForXhtml(doc, editableHtml);
 
     sidebarNoteEditState = {
       itemId: item.id,
       noteId: resolvedNote.note.id,
+      noteKind,
       blockId: selectedBlock?.blockId || null,
       selectedBlockIndex,
       originalRawHtml: rawNoteHtml,
@@ -3813,7 +3876,7 @@ async function startSidebarNoteEdit(
       isSaving: false,
     };
 
-    noteContent.innerHTML = editableHtml || "<p><br/></p>";
+    noteContent.innerHTML = safeEditableHtml || "<p><br/></p>";
     noteContent.contentEditable = "true";
     noteContent.dataset.aiButlerEditMode = "true";
     bindSidebarNoteEditEventGuards(noteContent);
@@ -3821,7 +3884,13 @@ async function startSidebarNoteEdit(
     noteContent.style.background = "rgba(89, 192, 188, 0.06)";
     noteContent.style.borderRadius = "4px";
     noteContent.style.minHeight = "100%";
-    updateSidebarNoteEditControls(doc, "editing", "编辑中");
+    updateSidebarNoteEditControls(
+      doc,
+      "editing",
+      "编辑中",
+      undefined,
+      noteKind,
+    );
 
     try {
       noteContent.focus();
@@ -3835,6 +3904,7 @@ async function startSidebarNoteEdit(
       "preview",
       `编辑失败: ${err?.message || err}`,
       "#d32f2f",
+      getNoteKindFromElement(noteContent),
     );
   }
 }
@@ -3846,20 +3916,29 @@ async function saveSidebarNoteEdit(
 ): Promise<void> {
   const editState = sidebarNoteEditState;
   if (!editState || editState.itemId !== item.id || editState.isSaving) return;
+  const noteKind = getNoteKindFromElement(noteContent);
 
   editState.isSaving = true;
-  updateSidebarNoteEditControls(doc, "saving", "保存中...");
+  updateSidebarNoteEditControls(
+    doc,
+    "saving",
+    "保存中...",
+    undefined,
+    noteKind,
+  );
 
   try {
     const latestNote = await Zotero.Items.getAsync(editState.noteId);
     if (!latestNote) {
-      throw new Error("AI 笔记不存在或已被删除");
+      throw new Error("当前 AI 总结 / AI 精读不存在或已被删除");
     }
 
     const latestHtml: string = (latestNote as any).getNote?.() || "";
     const latestDateModified = String((latestNote as any).dateModified || "");
     if (latestHtml !== editState.originalRawHtml) {
-      throw new Error("AI 笔记已在其他地方更新，请复制草稿后刷新再编辑。");
+      throw new Error(
+        "当前 AI 总结 / AI 精读已在其他地方更新，请复制草稿后刷新再编辑。",
+      );
     }
     if (
       latestDateModified &&
@@ -3880,7 +3959,7 @@ async function saveSidebarNoteEdit(
         (block) => block.blockId === editState.blockId,
       );
       if (!expectedBlock) {
-        throw new Error("AI 笔记结构已变化，请刷新后再编辑。");
+        throw new Error("当前 AI 总结 / AI 精读结构已变化，请刷新后再编辑。");
       }
     }
 
@@ -3897,13 +3976,19 @@ async function saveSidebarNoteEdit(
 
     sidebarNoteEditState = null;
     resetSidebarNoteContentEditMode(noteContent);
-    updateSidebarNoteEditControls(doc, "preview", "已保存", "#4caf50");
+    updateSidebarNoteEditControls(
+      doc,
+      "preview",
+      "已保存",
+      "#4caf50",
+      noteKind,
+    );
     noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-    await loadNoteContent(doc, item, noteContent);
-    setSidebarNoteEditStatus(doc, "已保存", "#4caf50");
+    await loadNoteContent(doc, item, noteContent, noteKind);
+    setSidebarNoteEditStatus(doc, "已保存", "#4caf50", noteKind);
     setTimeout(() => {
       if (!isSidebarNoteEditing(item.id)) {
-        setSidebarNoteEditStatus(doc, "");
+        setSidebarNoteEditStatus(doc, "", undefined, noteKind);
       }
     }, 1500);
   } catch (err: any) {
@@ -3914,6 +3999,7 @@ async function saveSidebarNoteEdit(
       "editing",
       err?.message || "保存失败",
       "#d32f2f",
+      noteKind,
     );
   }
 }
@@ -3925,12 +4011,13 @@ function cancelSidebarNoteEdit(
 ): void {
   const editState = sidebarNoteEditState;
   if (!editState || editState.itemId !== item.id || editState.isSaving) return;
+  const noteKind = getNoteKindFromElement(noteContent);
 
   sidebarNoteEditState = null;
   resetSidebarNoteContentEditMode(noteContent);
-  updateSidebarNoteEditControls(doc, "preview", "已取消");
+  updateSidebarNoteEditControls(doc, "preview", "已取消", undefined, noteKind);
   noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在恢复...</div>`;
-  void loadNoteContent(doc, item, noteContent);
+  void loadNoteContent(doc, item, noteContent, noteKind);
 }
 
 async function deleteSidebarSummaryBlock(
@@ -3939,14 +4026,26 @@ async function deleteSidebarSummaryBlock(
   noteContent: HTMLElement,
 ): Promise<void> {
   if (isSidebarNoteEditing(item.id)) {
-    setSidebarNoteEditStatus(doc, "编辑中，不能删除模型总结。", "#d32f2f");
+    setSidebarNoteEditStatus(
+      doc,
+      "编辑中，不能删除模型总结。",
+      "#d32f2f",
+      getNoteKindFromElement(noteContent),
+    );
     return;
   }
 
   try {
-    const resolvedNote = await resolveSidebarSummaryNote(item);
+    const noteKind = getNoteKindFromElement(noteContent);
+    const resolvedNote = await resolveSidebarSummaryNote(item, noteKind);
     if (!resolvedNote) {
-      updateSidebarNoteEditControls(doc, "missing", "暂无可删除笔记。");
+      updateSidebarNoteEditControls(
+        doc,
+        "missing",
+        "暂无可删除笔记。",
+        undefined,
+        noteKind,
+      );
       return;
     }
 
@@ -3954,13 +4053,20 @@ async function deleteSidebarSummaryBlock(
       LLMNoteMetadataService.parseSummaryBlocks(resolvedNote.rawHtml),
     );
     if (summaryBlocks.length === 0) {
-      updateSidebarNoteEditControls(doc, "missing", "暂无可删除总结。");
+      updateSidebarNoteEditControls(
+        doc,
+        "missing",
+        "暂无可删除总结。",
+        undefined,
+        noteKind,
+      );
       return;
     }
 
     const selectedBlockIndex = getSelectedMetadataBlockIndex(
       doc,
       summaryBlocks.length,
+      noteKind,
     );
     const selectedBlock = summaryBlocks[selectedBlockIndex];
     const label =
@@ -3974,7 +4080,7 @@ async function deleteSidebarSummaryBlock(
 
     const latestNote = await Zotero.Items.getAsync(resolvedNote.note.id);
     if (!latestNote) {
-      throw new Error("AI 笔记不存在或已被删除");
+      throw new Error("当前 AI 总结 / AI 精读不存在或已被删除");
     }
 
     const latestHtml: string = (latestNote as any).getNote?.() || "";
@@ -3985,7 +4091,7 @@ async function deleteSidebarSummaryBlock(
       (block) => block.blockId === selectedBlock.blockId,
     );
     if (!latestBlock) {
-      throw new Error("AI 笔记结构已变化，请刷新后再删除。");
+      throw new Error("当前 AI 总结 / AI 精读结构已变化，请刷新后再删除。");
     }
 
     const nextHtml = LLMNoteMetadataService.removeSummaryBlock(
@@ -3994,10 +4100,15 @@ async function deleteSidebarSummaryBlock(
     );
     if (!LLMNoteMetadataService.hasSummaryBlocks(nextHtml)) {
       await (latestNote as any).eraseTx?.();
-      hideSidebarMetadataPicker(doc);
+      hideSidebarMetadataPicker(doc, noteKind);
       noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-      await loadNoteContent(doc, item, noteContent);
-      setSidebarNoteEditStatus(doc, "已删除 AI 笔记", "#4caf50");
+      await loadNoteContent(doc, item, noteContent, noteKind);
+      setSidebarNoteEditStatus(
+        doc,
+        `已删除 ${noteKind === "summary" ? "AI 总结" : "AI 精读"}`,
+        "#4caf50",
+        noteKind,
+      );
       return;
     }
 
@@ -4008,7 +4119,7 @@ async function deleteSidebarSummaryBlock(
       LLMNoteMetadataService.parseSummaryBlocks(nextHtml),
     ).length;
     const selector = doc.getElementById(
-      "ai-butler-note-metadata-selector",
+      getSidebarNoteElementId("ai-butler-note-metadata-selector", noteKind),
     ) as HTMLSelectElement | null;
     if (selector) {
       selector.dataset.selectedIndex = String(
@@ -4017,8 +4128,8 @@ async function deleteSidebarSummaryBlock(
     }
 
     noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
-    await loadNoteContent(doc, item, noteContent);
-    setSidebarNoteEditStatus(doc, "已删除当前总结", "#4caf50");
+    await loadNoteContent(doc, item, noteContent, noteKind);
+    setSidebarNoteEditStatus(doc, "已删除当前总结", "#4caf50", noteKind);
   } catch (err: any) {
     ztoolkit.log("[AI-Butler] 删除侧边栏总结失败:", err);
     updateSidebarNoteEditControls(
@@ -4026,6 +4137,7 @@ async function deleteSidebarSummaryBlock(
       "preview",
       err?.message || "删除失败",
       "#d32f2f",
+      getNoteKindFromElement(noteContent),
     );
   }
 }
@@ -4037,47 +4149,53 @@ async function loadNoteContent(
   doc: Document,
   item: Zotero.Item,
   noteContent: HTMLElement,
+  noteKind: AiNoteKind = "summary",
 ): Promise<void> {
   try {
     if (isSidebarNoteEditing(item.id)) {
-      setSidebarNoteEditStatus(doc, "编辑中，已跳过刷新。");
+      setSidebarNoteEditStatus(
+        doc,
+        "编辑中，已跳过刷新。",
+        undefined,
+        noteKind,
+      );
       return;
     }
 
     resetSidebarNoteContentEditMode(noteContent);
     let aiNoteContent = "";
-    const resolvedNote = await resolveSidebarSummaryNote(item);
+    const resolvedNote = await resolveSidebarSummaryNote(item, noteKind);
 
     if (!resolvedNote) {
-      hideSidebarMetadataPicker(doc);
+      hideSidebarMetadataPicker(doc, noteKind);
       noteContent.innerHTML = `
         <div style="text-align: center; color: #9e9e9e; padding: 16px;">
           <div style="font-size: 24px; margin-bottom: 8px;">📝</div>
-          <div>暂无 AI 笔记</div>
+          <div>暂无 ${noteKind === "summary" ? "AI 总结" : "AI 精读"}</div>
         </div>
       `;
-      updateSidebarNoteEditControls(doc, "missing");
+      updateSidebarNoteEditControls(doc, "missing", "", undefined, noteKind);
       return;
     }
 
-    updateSidebarNoteEditControls(doc, "preview");
+    updateSidebarNoteEditControls(doc, "preview", "", undefined, noteKind);
     const rawNoteHtml: string = resolvedNote.rawHtml;
     const summaryBlocks = getDisplaySummaryBlocks(
       LLMNoteMetadataService.parseSummaryBlocks(rawNoteHtml),
     );
     let selectedBlockIndex = resolveDefaultSummaryBlockIndex(
       summaryBlocks,
-      getSavedSidebarSummaryBlockId(item.id, resolvedNote.note.id),
+      getSavedSidebarSummaryBlockId(item.id, resolvedNote.note.id, noteKind),
     );
     const metadataSelector = doc.getElementById(
-      "ai-butler-note-metadata-selector",
+      getSidebarNoteElementId("ai-butler-note-metadata-selector", noteKind),
     ) as HTMLSelectElement | null;
     if (metadataSelector && summaryBlocks.length > 0) {
       const metadataPicker = doc.getElementById(
-        "ai-butler-note-metadata-picker",
+        getSidebarNoteElementId("ai-butler-note-metadata-picker", noteKind),
       ) as HTMLElement | null;
       const metadataMenu = doc.getElementById(
-        "ai-butler-note-metadata-menu",
+        getSidebarNoteElementId("ai-butler-note-metadata-menu", noteKind),
       ) as HTMLElement | null;
       const requested = Number(metadataSelector.dataset.selectedIndex || "");
       if (
@@ -4101,6 +4219,8 @@ async function loadNoteContent(
           setSidebarNoteEditStatus(
             doc,
             "\u7f16\u8f91\u4e2d\uff0c\u4e0d\u80fd\u5207\u6362\u6a21\u578b\u3002",
+            undefined,
+            noteKind,
           );
           return;
         }
@@ -4111,21 +4231,28 @@ async function loadNoteContent(
         saveSidebarSummaryBlockSelection(
           item.id,
           resolvedNote.note.id,
+          noteKind,
           selected.blockId,
         );
-        hideSidebarMetadataMenu(doc);
+        hideSidebarMetadataMenu(doc, noteKind);
         updateSidebarMetadataButtonLabel(
           doc,
+          noteKind,
           index,
           summaryBlocks.length,
           selected,
         );
         const contentEl = doc.getElementById(
-          "ai-butler-note-content",
+          getSidebarNoteElementId("ai-butler-note-content", noteKind),
         ) as HTMLElement | null;
         if (contentEl) {
           contentEl.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">\u6b63\u5728\u5207\u6362\u6a21\u578b...</div>`;
-          void loadNoteContent(doc, item, contentEl);
+          void loadNoteContent(
+            doc,
+            item,
+            contentEl,
+            getNoteKindFromElement(contentEl),
+          );
         }
       };
 
@@ -4196,6 +4323,7 @@ async function loadNoteContent(
       }
       updateSidebarMetadataButtonLabel(
         doc,
+        noteKind,
         selectedBlockIndex,
         summaryBlocks.length,
         summaryBlocks[selectedBlockIndex],
@@ -4203,10 +4331,11 @@ async function loadNoteContent(
       saveSidebarSummaryBlockSelection(
         item.id,
         resolvedNote.note.id,
+        noteKind,
         summaryBlocks[selectedBlockIndex].blockId,
       );
     } else {
-      hideSidebarMetadataPicker(doc);
+      hideSidebarMetadataPicker(doc, noteKind);
     }
 
     aiNoteContent =
@@ -5040,9 +5169,10 @@ function openImageOverlayFallback(doc: Document, imageDataUri: string): void {
  */
 async function getNoteMarkdownContent(
   item: Zotero.Item,
+  noteKind: AiNoteKind = "summary",
 ): Promise<string | null> {
   try {
-    const resolvedNote = await resolveSidebarSummaryNote(item);
+    const resolvedNote = await resolveSidebarSummaryNote(item, noteKind);
     if (!resolvedNote) {
       return null;
     }
@@ -5053,7 +5183,7 @@ async function getNoteMarkdownContent(
     );
     const selectedBlockIndex =
       summaryBlocks.length > 0
-        ? getSelectedMetadataBlockIndex(doc, summaryBlocks.length)
+        ? getSelectedMetadataBlockIndex(doc, summaryBlocks.length, noteKind)
         : -1;
     const selectedBlock =
       selectedBlockIndex >= 0 ? summaryBlocks[selectedBlockIndex] : null;

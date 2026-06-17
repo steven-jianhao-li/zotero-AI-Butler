@@ -732,6 +732,17 @@ export class ApiSettingsPage {
       ),
     );
 
+    form.appendChild(
+      this.createFormGroup(
+        "上下文缓存优化（实验性）",
+        this.createCheckbox(
+          "enablePromptCacheOptimization",
+          (getPref("enablePromptCacheOptimization" as any) as boolean) === true,
+        ),
+        "开启后，多轮精读将复用 AI 服务商的上下文缓存，大幅降低 token 费用——以 DeepSeek 为例，从第 2 轮对话起，论文全文部分约按原价 1/10 计费。对 DeepSeek、OpenAI、Claude 官方接口及大多数兼容服务有效；不支持缓存的服务开启后无收益、也不受影响。\n\n这是实验性功能：极少数第三方服务可能不兼容。若开启后总结或精读功能报错，关闭本开关即可完全恢复原有行为，已生成的笔记不受影响。",
+      ),
+    );
+
     // 请求超时配置
     form.appendChild(
       this.createFormGroup(
@@ -2422,6 +2433,10 @@ export class ApiSettingsPage {
       setPref("enableMaxTokens", checkboxValue("enableMaxTokens", true) as any);
       setPref("enableTopP", checkboxValue("enableTopP", true) as any);
       setPref("stream", checkboxValue("stream", true));
+      setPref(
+        "enablePromptCacheOptimization" as any,
+        checkboxValue("enablePromptCacheOptimization", false),
+      );
       setPref("requestTimeout", inputValue("requestTimeout", "300000"));
       setPref("batchSize", inputValue("batchSize", "1"));
       setPref("batchInterval", inputValue("batchInterval", "60"));
@@ -2570,6 +2585,9 @@ export class ApiSettingsPage {
       const streamEl = this.container.querySelector(
         "#setting-stream",
       ) as HTMLInputElement;
+      const promptCacheEl = this.container.querySelector(
+        "#setting-enablePromptCacheOptimization",
+      ) as HTMLInputElement;
       // 调度配置
       const batchSizeEl = this.container.querySelector(
         "#setting-batchSize",
@@ -2629,6 +2647,7 @@ export class ApiSettingsPage {
         enableMaxTokens: enableMaxEl?.checked ?? true,
         enableTopP: enableTopPEl?.checked ?? true,
         stream: streamEl?.checked ?? true,
+        enablePromptCacheOptimization: promptCacheEl?.checked ?? false,
         requestTimeout:
           (
             this.container.querySelector(
@@ -2744,6 +2763,10 @@ export class ApiSettingsPage {
       setPref("enableMaxTokens", values.enableMaxTokens as any);
       setPref("enableTopP", values.enableTopP as any);
       setPref("stream", values.stream);
+      setPref(
+        "enablePromptCacheOptimization" as any,
+        values.enablePromptCacheOptimization,
+      );
       setPref("requestTimeout", values.requestTimeout);
       // 调度配置
       setPref("batchSize", values.batchSize);
@@ -3172,6 +3195,7 @@ export class ApiSettingsPage {
     setPref("enableMaxTokens", true as any);
     setPref("enableTopP", true as any);
     setPref("stream", true);
+    setPref("enablePromptCacheOptimization" as any, false);
     setPref("requestTimeout", "300000");
     setPref("batchSize", "1");
     setPref("batchInterval", "60");
@@ -3251,6 +3275,7 @@ export class ApiSettingsPage {
     setPref("enableMaxTokens", true as any);
     setPref("enableTopP", true as any);
     setPref("stream", true);
+    setPref("enablePromptCacheOptimization" as any, false);
     setPref("requestTimeout", "300000");
 
     // 重新渲染

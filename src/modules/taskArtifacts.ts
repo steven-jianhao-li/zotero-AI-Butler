@@ -2,9 +2,11 @@ import { ImageNoteGenerator } from "./imageNoteGenerator";
 import { LiteratureReviewService } from "./literatureReviewService";
 import { MindmapService } from "./mindmapService";
 import { NoteGenerator } from "./noteGenerator";
+import { AiNoteService } from "./aiNoteService";
 
 export type FixedTaskArtifactType =
   | "summary"
+  | "deepRead"
   | "imageSummary"
   | "mindmap"
   | "tableFill";
@@ -24,6 +26,8 @@ export class TaskArtifacts {
       switch (taskType) {
         case "summary":
           return this.probeSummary(item);
+        case "deepRead":
+          return this.probeDeepRead(item);
         case "imageSummary":
           return this.probeImageSummary(item);
         case "mindmap":
@@ -61,6 +65,19 @@ export class TaskArtifacts {
     return this.noteHasUsableContent(note)
       ? { exists: true }
       : { exists: false, reason: "summary-note-empty" };
+  }
+
+  private static async probeDeepRead(
+    item: Zotero.Item,
+  ): Promise<TaskArtifactProbeResult> {
+    const note = await AiNoteService.findNote(item, "deepRead");
+    if (!note) {
+      return { exists: false, reason: "deep-read-note-missing" };
+    }
+
+    return this.noteHasUsableContent(note)
+      ? { exists: true }
+      : { exists: false, reason: "deep-read-note-empty" };
   }
 
   private static async probeImageSummary(

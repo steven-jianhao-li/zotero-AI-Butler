@@ -1,4 +1,4 @@
-menuitem-generateSummary = Summon AI Butler for Analysis
+menuitem-generateSummary = Generate AI Summary
 menuitem-chatWithAI = AI Butler - Follow-up Questions
 menuitem-imageSummary = AI Butler One-Image Summary
 menuitem-mindmap = AI Butler Generate Mind Map

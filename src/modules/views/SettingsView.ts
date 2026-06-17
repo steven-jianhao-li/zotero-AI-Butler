@@ -29,7 +29,9 @@ import {
 type SettingCategory =
   | "modelPlatform"
   | "api"
-  | "prompts"
+  | "summaryPrompt"
+  | "deepReadPrompt"
+  | "tablePrompt"
   | "mindmap"
   | "imageSummary"
   | "ui"
@@ -87,7 +89,18 @@ export class SettingsView extends BaseView {
     const categories: Array<SettingsNavDescriptor<SettingCategory>> = [
       { id: "modelPlatform", label: "🧩 模型平台" },
       { id: "api", label: "🔌 API 配置" },
-      { id: "prompts", label: "📝 提示词模板" },
+      {
+        id: "summaryPrompt",
+        label: "\u{1f4dd} AI \u603b\u7ed3\u63d0\u793a\u8bcd",
+      },
+      {
+        id: "deepReadPrompt",
+        label: "\u{1f4da} AI \u7cbe\u8bfb\u63d0\u793a\u8bcd",
+      },
+      {
+        id: "tablePrompt",
+        label: "\u{1f4ca} \u8868\u683c\u603b\u7ed3\u63d0\u793a\u8bcd",
+      },
       { id: "mindmap", label: "🧠 思维导图" },
       { id: "imageSummary", label: "🖼️ 一图总结" },
       { id: "ui", label: "🎨 界面设置" },
@@ -145,8 +158,14 @@ export class SettingsView extends BaseView {
         case "api":
           page = new ApiSettingsPage(this.settingsContainer);
           break;
-        case "prompts":
-          page = new PromptsSettingsPage(this.settingsContainer);
+        case "summaryPrompt":
+          page = new PromptsSettingsPage(this.settingsContainer, "summary");
+          break;
+        case "deepReadPrompt":
+          page = new PromptsSettingsPage(this.settingsContainer, "deepRead");
+          break;
+        case "tablePrompt":
+          page = new PromptsSettingsPage(this.settingsContainer, "table");
           break;
         case "mindmap":
           page = new MindmapSettingsPage(this.settingsContainer);

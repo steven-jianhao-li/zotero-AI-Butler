@@ -44,6 +44,7 @@ import {
   normalizeFollowUpChatNoteHtml,
   parseFollowUpChatPairsFromNoteHtml,
 } from "../noteMarkdown";
+import { AiNoteService } from "../aiNoteService";
 
 /**
  * AI 总结视图类
@@ -60,6 +61,17 @@ export class SummaryView extends BaseView {
 
   /** 当前条目的内容缓冲区 */
   private currentItemBuffer: string = "";
+
+  /** Deep-read progress tree container */
+  private deepReadProgressContainer: HTMLElement | null = null;
+
+  /** Deep-read slot status rows */
+  private deepReadProgressRows: Map<string, HTMLElement> = new Map();
+
+  /** Deep-read single-slot retry handler */
+  private deepReadRetryHandler:
+    | ((slotId: string) => void | Promise<void>)
+    | null = null;
 
   /** 返回任务队列按钮回调函数 (支持 Promise, 以便外部执行异步逻辑) */
   private onQueueButtonCallback: (() => void | Promise<void>) | null = null;
@@ -817,7 +829,7 @@ export class SummaryView extends BaseView {
     userMessage: string,
     assistantMessage: string,
   ): Promise<void> {
-    // 为兼容旧方法保留，但不再使用。后续追问改为保存到独立笔记。
+    // 为兼容旧方法保留，但不再使用。后续追问改为保存到 AI 精读笔记。
     if (!this.currentItemId) return;
     try {
       await this.saveChatPairToSeparateNote(
@@ -880,7 +892,7 @@ export class SummaryView extends BaseView {
   }
 
   /**
-   * 将对话对追加到独立笔记（带可解析标记，便于恢复）
+   * 将对话对追加到 AI 精读笔记（带可解析标记，便于恢复）
    */
   private async saveChatPairToSeparateNote(
     pairId: string,
@@ -908,9 +920,9 @@ export class SummaryView extends BaseView {
       noteHtml += block;
       (note as any).setNote(noteHtml);
       await (note as any).saveTx();
-      ztoolkit.log("[AI-Butler] 追问对已保存到独立笔记");
+      ztoolkit.log("[AI-Butler] 追问对已保存到 AI 精读笔记");
     } catch (e) {
-      ztoolkit.log("[AI-Butler] 保存追问对到独立笔记失败:", e);
+      ztoolkit.log("[AI-Butler] 保存追问对到 AI 精读笔记失败:", e);
     }
   }
 
@@ -1336,7 +1348,7 @@ export class SummaryView extends BaseView {
                 </div>
                 <div style="font-size: 13px; color: var(--ai-text-muted); line-height: 1.6;">
                   该文献尚未生成 AI 总结。您可以直接在下方输入问题与 AI 对话，
-                  或者先右键该文献选择"召唤 AI 管家进行分析"生成完整总结。
+                  或者先右键该文献选择“AI 管家生成 AI 总结”生成完整总结。
                 </div>
               `;
               this.outputContainer.appendChild(welcomeHint);
@@ -1463,7 +1475,7 @@ export class SummaryView extends BaseView {
       this.hideLoading();
 
       if (!targetNote) {
-        // 没有找到匹配的 AI 笔记
+        // 没有找到匹配的 AI 总结
         this.startItem(title);
         this.appendContent("未找到已保存的 AI 总结笔记。");
         this.finishItem();
@@ -2083,6 +2095,10 @@ export class SummaryView extends BaseView {
       },
     });
 
+    this.deepReadProgressContainer = null;
+    this.deepReadProgressRows = new Map();
+    this.deepReadRetryHandler = null;
+
     this.currentItemContainer.appendChild(titleElement);
     this.currentItemContainer.appendChild(contentElement);
     this.outputContainer.appendChild(this.currentItemContainer);
@@ -2102,6 +2118,148 @@ export class SummaryView extends BaseView {
    *
    * @param chunk 增量文本
    */
+  public setDeepReadRetryHandler(
+    handler: ((slotId: string) => void | Promise<void>) | null,
+  ): void {
+    this.deepReadRetryHandler = handler;
+  }
+
+  public setDeepReadProgressSlots(
+    slots: Array<{
+      id: string;
+      title: string;
+      phaseTitle?: string;
+      status?: string;
+    }>,
+  ): void {
+    if (!this.currentItemContainer) return;
+
+    let container = this.deepReadProgressContainer;
+    if (!container) {
+      container = this.createElement("div", {
+        className: "deep-read-progress-tree",
+        styles: {
+          margin: "0 0 16px 0",
+          padding: "12px",
+          border: "1px solid rgba(89, 192, 188, 0.25)",
+          borderRadius: "10px",
+          background: "rgba(89, 192, 188, 0.06)",
+        },
+      });
+      const heading = this.createElement("div", {
+        textContent: "AI Deep Read Progress",
+        styles: {
+          fontWeight: "700",
+          marginBottom: "8px",
+          color: "var(--ai-text)",
+        },
+      });
+      container.appendChild(heading);
+      const contentElement =
+        this.currentItemContainer.querySelector(".item-content");
+      this.currentItemContainer.insertBefore(container, contentElement);
+      this.deepReadProgressContainer = container;
+    }
+
+    slots.forEach((slot) =>
+      this.updateDeepReadProgressSlot(
+        slot.id,
+        slot.title,
+        slot.status || "pending",
+        slot.phaseTitle,
+      ),
+    );
+  }
+
+  public updateDeepReadProgressSlot(
+    slotId: string,
+    title: string,
+    status: string,
+    phaseTitle?: string,
+  ): void {
+    if (!this.deepReadProgressContainer) {
+      this.setDeepReadProgressSlots([
+        { id: slotId, title, status, phaseTitle },
+      ]);
+      return;
+    }
+
+    let row = this.deepReadProgressRows.get(slotId);
+    if (!row) {
+      row = this.createElement("div", {
+        styles: {
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "5px 0",
+          fontSize: "13px",
+          color: "var(--ai-text)",
+        },
+      });
+      this.deepReadProgressRows.set(slotId, row);
+      this.deepReadProgressContainer.appendChild(row);
+    }
+
+    const icon =
+      status === "done"
+        ? "[done]"
+        : status === "error"
+          ? "[error]"
+          : status === "running"
+            ? "[running]"
+            : "[pending]";
+    const label =
+      status === "done"
+        ? "done"
+        : status === "error"
+          ? "error"
+          : status === "running"
+            ? "running"
+            : "pending";
+
+    row.textContent = "";
+    const text = this.createElement("span", {
+      textContent:
+        icon +
+        " " +
+        (phaseTitle ? phaseTitle + " - " : "") +
+        title +
+        " - " +
+        label,
+      styles: { flex: "1 1 auto" },
+    });
+    row.appendChild(text);
+
+    if (
+      (status === "error" || status === "pending") &&
+      this.deepReadRetryHandler
+    ) {
+      const retryButton = this.createElement("button", {
+        textContent: "Retry",
+        styles: {
+          flex: "0 0 auto",
+          padding: "2px 8px",
+          borderRadius: "6px",
+          border: "1px solid rgba(89, 192, 188, 0.45)",
+          background: "rgba(89, 192, 188, 0.12)",
+          color: "var(--ai-text)",
+          cursor: "pointer",
+        },
+      }) as HTMLButtonElement;
+      retryButton.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        retryButton.disabled = true;
+        try {
+          await this.deepReadRetryHandler?.(slotId);
+        } finally {
+          retryButton.disabled = false;
+        }
+      });
+      row.appendChild(retryButton);
+    }
+  }
+
   public appendContent(chunk: string): void {
     if (!this.currentItemContainer) return;
 

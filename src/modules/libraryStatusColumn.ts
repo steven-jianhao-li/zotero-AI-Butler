@@ -1,13 +1,34 @@
 ﻿import { config } from "../../package.json";
-import { isRegularSummaryNote, type NoteTag } from "./aiNoteClassifier";
+import {
+  isDeepReadNote,
+  isRegularSummaryNote,
+  type NoteTag,
+} from "./aiNoteClassifier";
 import { TaskQueueManager, TaskStatus, type TaskItem } from "./taskQueue";
 
-const COLUMN_DATA_KEY = "aiButlerSummaryStatus";
-const COLUMN_LABEL = "AI 状态";
+type AiStatusColumnKind = "summary" | "deepRead";
+
+const COLUMN_CONFIGS = [
+  {
+    kind: "summary",
+    dataKey: "aiButlerSummaryStatus",
+    label: "AI总结",
+  },
+  {
+    kind: "deepRead",
+    dataKey: "aiButlerDeepReadStatus",
+    label: "AI精读",
+  },
+] as const satisfies Array<{
+  kind: AiStatusColumnKind;
+  dataKey: string;
+  label: string;
+}>;
+
 const DEFAULT_STATUS_JSON = JSON.stringify({
   status: "idle",
   progress: 0,
-  tooltip: "未精读",
+  tooltip: "",
 } satisfies LibraryStatusColumnData);
 
 type SummaryColumnStatus =
@@ -35,7 +56,7 @@ export type SummaryTaskLike = Pick<
   | "taskType"
 >;
 
-let registeredDataKey: string | null = null;
+let registeredDataKeys: string[] = [];
 let notifierID: string | null = null;
 let unsubscribeProgress: (() => void) | null = null;
 let unsubscribeComplete: (() => void) | null = null;
@@ -43,6 +64,7 @@ let refreshTimer: number | null = null;
 const pendingRefreshItemIDs = new Set<number>();
 let forceRefreshAll = false;
 const summaryNoteCache = new Map<number, boolean>();
+const deepReadNoteCache = new Map<number, boolean>();
 
 function logLibraryStatusColumn(...args: Parameters<ZToolkit["log"]>): void {
   try {
@@ -58,69 +80,122 @@ export function isSummaryTask(task: SummaryTaskLike): boolean {
   return !task.taskType || task.taskType === "summary";
 }
 
+export function isDeepReadTask(task: SummaryTaskLike): boolean {
+  return task.taskType === "deepRead";
+}
+
 export function resolveSummaryStatusFromTasks(
   tasks: SummaryTaskLike[],
   hasSummaryNote: boolean,
 ): LibraryStatusColumnData {
-  const summaryTasks = tasks.filter(isSummaryTask);
-  const activeTask = pickLatestTaskByStatus(summaryTasks, [
+  return resolveKindStatus(tasks, hasSummaryNote, "summary", "AI 总结");
+}
+
+export function resolveDeepReadStatusFromTasks(
+  tasks: SummaryTaskLike[],
+  hasDeepReadNote: boolean,
+): LibraryStatusColumnData {
+  return resolveKindStatus(tasks, hasDeepReadNote, "deepRead", "AI 精读");
+}
+
+export function resolveCombinedAiStatusFromTasks(
+  tasks: SummaryTaskLike[],
+  hasSummaryNote: boolean,
+  hasDeepReadNote: boolean,
+): LibraryStatusColumnData {
+  const summary = resolveKindStatus(
+    tasks,
+    hasSummaryNote,
+    "summary",
+    "AI 总结",
+  );
+  const deepRead = resolveKindStatus(
+    tasks,
+    hasDeepReadNote,
+    "deepRead",
+    "AI 精读",
+  );
+  const parts = [summary.tooltip, deepRead.tooltip];
+
+  if (summary.status === "processing" || deepRead.status === "processing") {
+    const active = summary.status === "processing" ? summary : deepRead;
+    return {
+      status: "processing",
+      progress: active.progress,
+      tooltip: parts.join("\n"),
+    };
+  }
+  if (summary.status === "queued" || deepRead.status === "queued") {
+    const active = summary.status === "queued" ? summary : deepRead;
+    return {
+      status: "queued",
+      progress: active.progress,
+      tooltip: parts.join("\n"),
+    };
+  }
+  if (summary.status === "failed" || deepRead.status === "failed") {
+    const active = summary.status === "failed" ? summary : deepRead;
+    return {
+      status: "failed",
+      progress: active.progress,
+      tooltip: parts.join("\n"),
+    };
+  }
+  if (summary.status === "completed" && deepRead.status === "completed") {
+    return { status: "completed", progress: 100, tooltip: parts.join("\n") };
+  }
+  return { status: "idle", progress: 0, tooltip: parts.join("\n") };
+}
+
+function resolveKindStatus(
+  tasks: SummaryTaskLike[],
+  hasNote: boolean,
+  taskType: "summary" | "deepRead",
+  label: string,
+): LibraryStatusColumnData {
+  const kindTasks = tasks.filter((task) =>
+    taskType === "summary" ? isSummaryTask(task) : isDeepReadTask(task),
+  );
+  const activeTask = pickLatestTaskByStatus(kindTasks, [
     TaskStatus.PROCESSING,
     TaskStatus.PRIORITY,
     TaskStatus.PENDING,
   ]);
-
   if (activeTask) {
+    const progress = clampProgress(activeTask.progress);
     if (activeTask.status === TaskStatus.PROCESSING) {
-      const progress = clampProgress(activeTask.progress);
       return {
         status: "processing",
         progress,
-        tooltip: `正在精读：${progress}%`,
+        tooltip: `${label}处理中 ${progress}%`,
       };
     }
-
     return {
       status: "queued",
-      progress: clampProgress(activeTask.progress),
+      progress,
       tooltip:
         activeTask.status === TaskStatus.PRIORITY
-          ? "等待精读（优先）"
-          : "等待精读",
+          ? `${label}排队（优先）`
+          : `${label}排队`,
     };
   }
-
-  if (hasSummaryNote) {
-    return {
-      status: "completed",
-      progress: 100,
-      tooltip: "已精读",
-    };
+  if (hasNote || pickLatestTaskByStatus(kindTasks, [TaskStatus.COMPLETED])) {
+    return { status: "completed", progress: 100, tooltip: `${label}已完成` };
   }
-
-  const completedTask = pickLatestTaskByStatus(summaryTasks, [
-    TaskStatus.COMPLETED,
-  ]);
-  if (completedTask) {
-    return {
-      status: "completed",
-      progress: 100,
-      tooltip: "已精读",
-    };
-  }
-
-  const failedTask = pickLatestTaskByStatus(summaryTasks, [TaskStatus.FAILED]);
+  const failedTask = pickLatestTaskByStatus(kindTasks, [TaskStatus.FAILED]);
   if (failedTask) {
     return {
       status: "failed",
       progress: clampProgress(failedTask.progress),
-      tooltip: failedTask.error ? `精读失败：${failedTask.error}` : "精读失败",
+      tooltip: failedTask.error
+        ? `${label}失败：${failedTask.error}`
+        : `${label}失败`,
     };
   }
-
   return {
     status: "idle",
     progress: 0,
-    tooltip: "未精读",
+    tooltip: `未${label.replace("AI ", "")}`,
   };
 }
 
@@ -128,37 +203,57 @@ export function serializeStatusData(data: LibraryStatusColumnData): string {
   return JSON.stringify(data);
 }
 
+export function isAiStatusTrackedNote(
+  tags: NoteTag[],
+  noteHtml: string,
+): boolean {
+  return isRegularSummaryNote(tags, noteHtml) || isDeepReadNote(tags, noteHtml);
+}
+
 export function registerLibraryStatusColumn(): void {
-  if (registeredDataKey || typeof Zotero === "undefined") {
+  if (registeredDataKeys.length || typeof Zotero === "undefined") {
     return;
   }
 
   try {
-    const result = Zotero.ItemTreeManager.registerColumn({
-      dataKey: COLUMN_DATA_KEY,
-      label: COLUMN_LABEL,
-      pluginID: config.addonID,
-      enabledTreeIDs: ["main"],
-      width: "42",
-      minWidth: 32,
-      fixedWidth: true,
-      staticWidth: true,
-      showInColumnPicker: true,
-      columnPickerSubMenu: true,
-      zoteroPersist: ["width", "hidden"],
-      dataProvider: provideStatusData,
-      renderCell: renderStatusCell,
-    });
+    for (const columnConfig of COLUMN_CONFIGS) {
+      const result = Zotero.ItemTreeManager.registerColumn({
+        dataKey: columnConfig.dataKey,
+        label: columnConfig.label,
+        pluginID: config.addonID,
+        enabledTreeIDs: ["main"],
+        width: "64",
+        minWidth: 52,
+        fixedWidth: false,
+        staticWidth: false,
+        showInColumnPicker: true,
+        columnPickerSubMenu: true,
+        zoteroPersist: ["width", "hidden"],
+        dataProvider: (item) => provideStatusData(item, columnConfig.kind),
+        renderCell: renderStatusCell,
+      });
 
-    if (!result) {
-      logLibraryStatusColumn("[AI-Butler] AI 状态列注册失败");
+      if (!result) {
+        logLibraryStatusColumn(
+          "[AI-Butler] AI 状态列注册失败",
+          columnConfig.label,
+        );
+        continue;
+      }
+
+      registeredDataKeys.push(result);
+    }
+
+    if (!registeredDataKeys.length) {
       return;
     }
 
-    registeredDataKey = result;
     bindQueueRefreshCallbacks();
     bindNoteRefreshNotifier();
-    logLibraryStatusColumn("[AI-Butler] AI 状态列已注册", registeredDataKey);
+    logLibraryStatusColumn(
+      "[AI-Butler] AI 状态列已注册",
+      registeredDataKeys.join(", "),
+    );
   } catch (error) {
     logLibraryStatusColumn("[AI-Butler] AI 状态列注册失败", error);
   }
@@ -184,21 +279,25 @@ export function unregisterLibraryStatusColumn(): void {
     notifierID = null;
   }
 
-  if (registeredDataKey) {
+  for (const dataKey of registeredDataKeys) {
     try {
-      Zotero.ItemTreeManager.unregisterColumn(registeredDataKey);
+      Zotero.ItemTreeManager.unregisterColumn(dataKey);
     } catch (error) {
-      logLibraryStatusColumn("[AI-Butler] 注销 AI 状态列失败", error);
+      logLibraryStatusColumn("[AI-Butler] 注销 AI 状态列失败", dataKey, error);
     }
-    registeredDataKey = null;
   }
+  registeredDataKeys = [];
 
   pendingRefreshItemIDs.clear();
   forceRefreshAll = false;
   summaryNoteCache.clear();
+  deepReadNoteCache.clear();
 }
 
-function provideStatusData(item: Zotero.Item): string {
+function provideStatusData(
+  item: Zotero.Item,
+  kind: AiStatusColumnKind,
+): string {
   try {
     const itemId = getRegularItemId(item);
     if (!itemId) {
@@ -213,10 +312,13 @@ function provideStatusData(item: Zotero.Item): string {
     const tasks = manager
       .getAllTasks()
       .filter((task) => task.itemId === itemId);
-    const data = resolveSummaryStatusFromTasks(
-      tasks,
-      hasRegularSummaryNote(item, itemId),
-    );
+    const data =
+      kind === "summary"
+        ? resolveSummaryStatusFromTasks(
+            tasks,
+            hasRegularSummaryNote(item, itemId),
+          )
+        : resolveDeepReadStatusFromTasks(tasks, hasDeepReadNote(item, itemId));
     return serializeStatusData(data);
   } catch (error) {
     logLibraryStatusColumn("[AI-Butler] 读取 AI 状态列失败", error);
@@ -236,13 +338,15 @@ function renderStatusCell(
   const parsed = parseStatusData(data);
   const cell = doc.createElement("span");
   cell.className = `cell ${column.className}`;
-  if (parsed.status === "idle") {
+  if (parsed.status === "idle" && !parsed.tooltip) {
     cell.title = "";
     return cell;
   }
 
   cell.title = parsed.tooltip;
-  cell.setAttribute("aria-label", parsed.tooltip);
+  if (parsed.tooltip) {
+    cell.setAttribute("aria-label", parsed.tooltip);
+  }
   cell.style.display = "flex";
   cell.style.alignItems = "center";
   cell.style.justifyContent = "center";
@@ -296,7 +400,9 @@ function applyCircleStyle(
     return;
   }
 
-  circle.style.display = "none";
+  circle.style.background = "transparent";
+  circle.style.border = "1px solid rgba(95, 99, 104, 0.42)";
+  circle.style.boxShadow = "none";
 }
 
 function parseStatusData(data: string): LibraryStatusColumnData {
@@ -311,7 +417,7 @@ function parseStatusData(data: string): LibraryStatusColumnData {
     return {
       status,
       progress: clampProgress(parsed.progress || 0),
-      tooltip: parsed.tooltip || "未精读",
+      tooltip: parsed.tooltip || "",
     };
   } catch {
     return JSON.parse(DEFAULT_STATUS_JSON) as LibraryStatusColumnData;
@@ -319,23 +425,36 @@ function parseStatusData(data: string): LibraryStatusColumnData {
 }
 
 function hasRegularSummaryNote(item: Zotero.Item, itemId: number): boolean {
-  const cached = summaryNoteCache.get(itemId);
-  if (cached !== undefined) {
-    return cached;
-  }
+  return hasAiNoteKind(item, itemId, "summary", summaryNoteCache);
+}
+
+function hasDeepReadNote(item: Zotero.Item, itemId: number): boolean {
+  return hasAiNoteKind(item, itemId, "deepRead", deepReadNoteCache);
+}
+
+function hasAiNoteKind(
+  item: Zotero.Item,
+  itemId: number,
+  kind: "summary" | "deepRead",
+  cache: Map<number, boolean>,
+): boolean {
+  const cached = cache.get(itemId);
+  if (cached !== undefined) return cached;
 
   const noteIDs = getNoteIds(item);
   for (const noteID of noteIDs) {
     try {
       const note = Zotero.Items.get(noteID);
-      if (!note?.isNote?.()) {
-        continue;
-      }
+      if (!note?.isNote?.()) continue;
 
       const tags = ((note as any).getTags?.() || []) as NoteTag[];
       const noteHtml = ((note as any).getNote?.() || "") as string;
-      if (isRegularSummaryNote(tags, noteHtml)) {
-        summaryNoteCache.set(itemId, true);
+      const matches =
+        kind === "summary"
+          ? isRegularSummaryNote(tags, noteHtml)
+          : isDeepReadNote(tags, noteHtml);
+      if (matches) {
+        cache.set(itemId, true);
         return true;
       }
     } catch {
@@ -343,7 +462,7 @@ function hasRegularSummaryNote(item: Zotero.Item, itemId: number): boolean {
     }
   }
 
-  summaryNoteCache.set(itemId, false);
+  cache.set(itemId, false);
   return false;
 }
 
@@ -381,6 +500,7 @@ function bindNoteRefreshNotifier(): void {
 
         if (type === "item-tag") {
           summaryNoteCache.clear();
+          deepReadNoteCache.clear();
           scheduleRefreshAll();
           return;
         }
@@ -400,10 +520,11 @@ function bindNoteRefreshNotifier(): void {
 
 function refreshTaskRow(taskId: string): void {
   const task = TaskQueueManager.getInstance().getTask(taskId);
-  if (!task || !isSummaryTask(task)) {
+  if (!task || (!isSummaryTask(task) && !isDeepReadTask(task))) {
     return;
   }
   summaryNoteCache.delete(task.itemId);
+  deepReadNoteCache.delete(task.itemId);
   scheduleItemRefresh(task.itemId);
 }
 
@@ -414,6 +535,7 @@ async function refreshItemsAndParents(itemIDs: number[]): Promise<void> {
 
   for (const itemID of itemIDs) {
     summaryNoteCache.delete(itemID);
+    deepReadNoteCache.delete(itemID);
     try {
       const item = await Zotero.Items.getAsync(itemID);
       const parentID = Number(
@@ -421,7 +543,10 @@ async function refreshItemsAndParents(itemIDs: number[]): Promise<void> {
       );
       if (Number.isInteger(parentID) && parentID > 0) {
         summaryNoteCache.delete(parentID);
-        scheduleItemRefresh(parentID);
+        deepReadNoteCache.delete(parentID);
+        if (shouldRefreshParentForChildItem(item)) {
+          scheduleItemRefresh(parentID);
+        }
       }
       if (item?.isRegularItem?.()) {
         scheduleItemRefresh(itemID);
@@ -430,6 +555,20 @@ async function refreshItemsAndParents(itemIDs: number[]): Promise<void> {
       scheduleRefreshAll();
     }
   }
+}
+
+function shouldRefreshParentForChildItem(item: Zotero.Item | false): boolean {
+  if (!item) {
+    return true;
+  }
+
+  if (item.isNote?.()) {
+    const tags = ((item as any).getTags?.() || []) as NoteTag[];
+    const noteHtml = ((item as any).getNote?.() || "") as string;
+    return isAiStatusTrackedNote(tags, noteHtml);
+  }
+
+  return false;
 }
 
 function scheduleItemRefresh(itemId: number): void {

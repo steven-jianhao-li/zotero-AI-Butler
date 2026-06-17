@@ -176,7 +176,7 @@ export class OpenAIProvider implements ILlmProvider {
                         const delta = parseOpenAIResponsesDelta(evt);
                         if (delta) {
                           gotAnyDelta = true;
-                          chunks.push(delta.replace(/\n+/g, "\n"));
+                          chunks.push(delta);
                           const current = chunks.join("");
                           if (onProgress && current.length > delivered) {
                             const newChunk = current.slice(delivered);
@@ -398,7 +398,7 @@ export class OpenAIProvider implements ILlmProvider {
                       const delta = json?.choices?.[0]?.delta?.content;
                       if (typeof delta === "string" && delta.length > 0) {
                         gotAnyDelta = true;
-                        chunks.push(delta.replace(/\n+/g, "\n"));
+                        chunks.push(delta);
                         const current = chunks.join("");
                         if (onProgress && current.length > delivered) {
                           const newChunk = current.slice(delivered);
@@ -689,7 +689,7 @@ export class OpenAIProvider implements ILlmProvider {
                       const delta = parseOpenAIResponsesDelta(evt);
                       if (delta) {
                         gotAnyDelta = true;
-                        chunks.push(delta.replace(/\n+/g, "\n"));
+                        chunks.push(delta);
                         const current = chunks.join("");
                         if (onProgress && current.length > delivered) {
                           const newChunk = current.slice(delivered);
@@ -877,7 +877,7 @@ export class OpenAIProvider implements ILlmProvider {
                     const delta = json?.choices?.[0]?.delta?.content;
                     if (delta) {
                       gotAnyDelta = true;
-                      chunks.push(delta.replace(/\n+/g, "\n"));
+                      chunks.push(delta);
                       const current = chunks.join("");
                       if (onProgress && current.length > delivered) {
                         const newChunk = current.slice(delivered);
@@ -1256,7 +1256,7 @@ export class OpenAIProvider implements ILlmProvider {
                       typeof evt.delta === "string"
                     ) {
                       gotAnyDelta = true;
-                      chunks.push(evt.delta.replace(/\n+/g, "\n"));
+                      chunks.push(evt.delta);
                       const current = chunks.join("");
                       if (onProgress && current.length > delivered) {
                         const newChunk = current.slice(delivered);

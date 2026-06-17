@@ -158,7 +158,7 @@ export class GeminiProvider implements ILlmProvider {
                     const text = this.extractGeminiText(json);
                     if (text) {
                       gotAnyDelta = true;
-                      chunks.push(text.replace(/\n+/g, "\n"));
+                      chunks.push(text);
                       const current = chunks.join("");
                       if (onProgress && current.length > delivered) {
                         const newChunk = current.slice(delivered);
@@ -354,7 +354,7 @@ export class GeminiProvider implements ILlmProvider {
                     const text = this.extractGeminiText(json);
                     if (text) {
                       gotAnyDelta = true;
-                      chunks.push(text.replace(/\n+/g, "\n"));
+                      chunks.push(text);
                       const current = chunks.join("");
                       if (onProgress && current.length > delivered) {
                         const newChunk = current.slice(delivered);
@@ -840,7 +840,7 @@ export class GeminiProvider implements ILlmProvider {
                     const text = this.extractGeminiText(json);
                     if (text) {
                       gotAnyDelta = true;
-                      chunks.push(text.replace(/\n+/g, "\n"));
+                      chunks.push(text);
                       const current = chunks.join("");
                       if (onProgress && current.length > delivered) {
                         const newChunk = current.slice(delivered);

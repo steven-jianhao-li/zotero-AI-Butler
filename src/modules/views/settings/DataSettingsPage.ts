@@ -9,7 +9,8 @@ import {
   createNotice,
   createCard,
 } from "../ui/components";
-import { isRegularSummaryNote } from "../../aiNoteClassifier";
+import { isDeepReadNote, isRegularSummaryNote } from "../../aiNoteClassifier";
+import type { AiNoteKind } from "../../aiNoteService";
 import { TaskQueueManager } from "../../taskQueue";
 import { getDefaultSummaryPrompt } from "../../../utils/prompts";
 
@@ -97,11 +98,24 @@ export class DataSettingsPage {
         .createLine({ text: "所有任务已清空", type: "success" })
         .show();
     });
-    const btnClearEmptyNotes = createStyledButton("🧹 清空空笔记", "#ff9800");
-    btnClearEmptyNotes.addEventListener("click", () => this.clearEmptyNotes());
+    const btnClearEmptySummaryNotes = createStyledButton(
+      "🧹 清空空 AI 总结",
+      "#ff9800",
+    );
+    btnClearEmptySummaryNotes.addEventListener("click", () =>
+      this.clearEmptyNotes("summary"),
+    );
+    const btnClearEmptyDeepReadNotes = createStyledButton(
+      "🧹 清空空 AI 精读",
+      "#ff9800",
+    );
+    btnClearEmptyDeepReadNotes.addEventListener("click", () =>
+      this.clearEmptyNotes("deepRead"),
+    );
     row1.appendChild(btnClearDone);
     row1.appendChild(btnClearAll);
-    row1.appendChild(btnClearEmptyNotes);
+    row1.appendChild(btnClearEmptySummaryNotes);
+    row1.appendChild(btnClearEmptyDeepReadNotes);
     section.appendChild(row1);
 
     // 设置导出/导入
@@ -169,6 +183,8 @@ export class DataSettingsPage {
       "stream",
       "summaryPrompt",
       "customPrompts",
+      "multiRoundPromptTemplates",
+      "multiRoundPromptTemplateId",
       "maxRetries",
       "batchSize",
       "batchInterval",
@@ -298,6 +314,8 @@ export class DataSettingsPage {
     setPref("batchSize", "1");
     setPref("batchInterval", "60");
     clearPref("customPrompts");
+    clearPref("multiRoundPromptTemplates");
+    clearPref("multiRoundPromptTemplateId");
 
     // 任务队列本地存储
     Zotero.Prefs.clear("extensions.zotero.aibutler.taskQueue", true);
@@ -309,15 +327,16 @@ export class DataSettingsPage {
   }
 
   /**
-   * 清空所有空的 AI 笔记
+   * 清空指定类型的空 AI 笔记
    *
    * 扫描库中所有论文，删除只有标题没有实际内容的 AI 笔记
    */
-  private async clearEmptyNotes(): Promise<void> {
+  private async clearEmptyNotes(kind: AiNoteKind): Promise<void> {
+    const label = kind === "summary" ? "AI 总结" : "AI 精读";
     const ok = Services.prompt.confirm(
       Zotero.getMainWindow() as any,
-      "清空空笔记",
-      "此操作将扫描库中所有论文，删除只有标题没有实际内容的 AI 笔记。\n\n确定继续吗？",
+      `清空空 ${label}`,
+      `此操作将扫描库中所有论文，删除只有标题没有实际内容的空 ${label} 笔记。\n\n确定继续吗？`,
     );
     if (!ok) return;
 
@@ -344,7 +363,11 @@ export class DataSettingsPage {
           const tags: Array<{ tag: string }> = (note as any).getTags?.() || [];
           const noteHtml: string = (note as any).getNote?.() || "";
 
-          if (!isRegularSummaryNote(tags, noteHtml)) continue;
+          const isTargetNote =
+            kind === "summary"
+              ? isRegularSummaryNote(tags, noteHtml)
+              : isDeepReadNote(tags, noteHtml);
+          if (!isTargetNote) continue;
 
           // 检查笔记内容是否为空
           // 移除标题和包装标签后检查剩余内容
@@ -364,12 +387,12 @@ export class DataSettingsPage {
 
       new ztoolkit.ProgressWindow("数据管理")
         .createLine({
-          text: `✅ 已扫描 ${scannedCount} 篇论文，删除 ${deletedCount} 个空笔记`,
+          text: `✅ 已扫描 ${scannedCount} 篇论文，删除 ${deletedCount} 个空 ${label}`,
           type: "success",
         })
         .show();
     } catch (error: any) {
-      ztoolkit.log("[AI Butler] 清空空笔记失败:", error);
+      ztoolkit.log(`[AI Butler] 清空空 ${label} 失败:`, error);
       new ztoolkit.ProgressWindow("数据管理")
         .createLine({
           text: `❌ 操作失败: ${error.message}`,

@@ -1,6 +1,10 @@
 import { expect } from "chai";
 import {
+  isDeepReadTask,
+  isAiStatusTrackedNote,
   isSummaryTask,
+  resolveCombinedAiStatusFromTasks,
+  resolveDeepReadStatusFromTasks,
   resolveSummaryStatusFromTasks,
   type SummaryTaskLike,
 } from "../src/modules/libraryStatusColumn";
@@ -46,6 +50,7 @@ describe("library status column", function () {
 
     expect(status.status).to.equal("idle");
     expect(status.progress).to.equal(0);
+    expect(status.tooltip).to.equal("\u672a\u603b\u7ed3");
   });
 
   it("uses active task status before existing summary notes", function () {
@@ -56,6 +61,7 @@ describe("library status column", function () {
 
     expect(status.status).to.equal("processing");
     expect(status.progress).to.equal(43);
+    expect(status.tooltip).to.equal("AI \u603b\u7ed3\u5904\u7406\u4e2d 43%");
   });
 
   it("shows queued state for pending and priority summary tasks", function () {
@@ -73,6 +79,7 @@ describe("library status column", function () {
 
     expect(status.status).to.equal("completed");
     expect(status.progress).to.equal(100);
+    expect(status.tooltip).to.equal("AI \u603b\u7ed3\u5df2\u5b8c\u6210");
   });
 
   it("keeps completed green when a failed task has an existing summary note", function () {
@@ -97,5 +104,85 @@ describe("library status column", function () {
     );
 
     expect(status.status).to.equal("idle");
+    expect(status.tooltip).to.equal("\u672a\u603b\u7ed3");
+  });
+
+  it("resolves deep-read task status independently", function () {
+    const summaryStatus = resolveSummaryStatusFromTasks(
+      [
+        createTask(TaskStatus.PROCESSING, {
+          progress: 80,
+          taskType: "deepRead",
+        }),
+      ],
+      false,
+    );
+    const deepReadStatus = resolveDeepReadStatusFromTasks(
+      [
+        createTask(TaskStatus.PROCESSING, {
+          progress: 80,
+          taskType: "deepRead",
+        }),
+      ],
+      false,
+    );
+
+    expect(summaryStatus.status).to.equal("idle");
+    expect(summaryStatus.tooltip).to.equal("\u672a\u603b\u7ed3");
+    expect(deepReadStatus.status).to.equal("processing");
+    expect(deepReadStatus.progress).to.equal(80);
+    expect(deepReadStatus.tooltip).to.equal(
+      "AI \u7cbe\u8bfb\u5904\u7406\u4e2d 80%",
+    );
+  });
+
+  it("returns idle when there is no deep-read task or note", function () {
+    const status = resolveDeepReadStatusFromTasks([], false);
+
+    expect(status.status).to.equal("idle");
+    expect(status.progress).to.equal(0);
+    expect(status.tooltip).to.equal("\u672a\u7cbe\u8bfb");
+  });
+
+  it("shows completed when a deep-read note exists", function () {
+    const status = resolveDeepReadStatusFromTasks([], true);
+
+    expect(status.status).to.equal("completed");
+    expect(status.progress).to.equal(100);
+    expect(status.tooltip).to.equal("AI \u7cbe\u8bfb\u5df2\u5b8c\u6210");
+  });
+
+  it("treats deepRead as its own task type", function () {
+    const task = createTask(TaskStatus.PENDING, { taskType: "deepRead" });
+    expect(isSummaryTask(task)).to.equal(false);
+    expect(isDeepReadTask(task)).to.equal(true);
+  });
+
+  it("tracks only AI status notes for parent refreshes", function () {
+    expect(isAiStatusTrackedNote([], "<p>regular note</p>")).to.equal(false);
+    expect(
+      isAiStatusTrackedNote([{ tag: "AI-Generated" }], "<p>summary</p>"),
+    ).to.equal(true);
+    expect(
+      isAiStatusTrackedNote([{ tag: "AI-DeepRead" }], "<p>deep</p>"),
+    ).to.equal(true);
+  });
+
+  it("combines summary and deep-read status in one tooltip", function () {
+    const status = resolveCombinedAiStatusFromTasks(
+      [
+        createTask(TaskStatus.PROCESSING, {
+          progress: 42,
+          taskType: "deepRead",
+        }),
+      ],
+      true,
+      false,
+    );
+
+    expect(status.status).to.equal("processing");
+    expect(status.progress).to.equal(42);
+    expect(status.tooltip).to.contain("AI 总结已完成");
+    expect(status.tooltip).to.contain("AI 精读处理中 42%");
   });
 });

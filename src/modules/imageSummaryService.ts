@@ -85,12 +85,12 @@ export class ImageSummaryService {
       let isBase64 = false;
       const pdfMode = LLMService.getEffectivePdfProcessMode();
 
-      // 检查是否使用已有 AI 笔记
+      // 检查是否使用已有 AI 总结
       const useExistingNote =
         (getPref("imageSummaryUseExistingNote" as any) as boolean) || false;
 
       if (useExistingNote) {
-        // 尝试获取已有的 AI 笔记内容
+        // 尝试获取已有的 AI 总结内容
         const existingNote = await NoteGenerator.findExistingNote(item);
         if (existingNote) {
           const noteHtml = (existingNote as any).getNote?.() || "";
@@ -100,11 +100,11 @@ export class ImageSummaryService {
             .replace(/\s+/g, " ")
             .trim();
           ztoolkit.log(
-            `[AI-Butler] 使用已有 AI 笔记，长度: ${pdfContent.length}`,
+            `[AI-Butler] 使用已有 AI 总结，长度: ${pdfContent.length}`,
           );
         } else {
           // 没有已有笔记，回退到 PDF 提取
-          ztoolkit.log("[AI-Butler] 未找到已有 AI 笔记，使用 PDF 提取");
+          ztoolkit.log("[AI-Butler] 未找到已有 AI 总结，使用 PDF 提取");
           pdfContent = await this.extractPdfContent(item, pdfMode);
           isBase64 = pdfMode === "base64";
         }

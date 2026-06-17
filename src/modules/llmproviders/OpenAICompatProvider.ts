@@ -7,7 +7,7 @@ import {
   ProgressCb,
 } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
-import { getRequestTimeoutMs } from "./shared/llmutils";
+import { getRequestTimeoutMs, logPromptCacheUsage } from "./shared/llmutils";
 import {
   getConnectionTestInput,
   getConnectionTestModeLabel,
@@ -214,7 +214,7 @@ export class OpenAICompatProvider implements ILlmProvider {
                       const delta = evt?.choices?.[0]?.delta?.content;
                       if (typeof delta === "string" && delta.length > 0) {
                         gotAnyDelta = true;
-                        chunks.push(delta.replace(/\n+/g, "\n"));
+                        chunks.push(delta);
                         const current = chunks.join("");
                         if (onProgress && current.length > delivered) {
                           const newChunk = current.slice(delivered);
@@ -394,6 +394,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     let processedLength = 0;
     let partialLine = "";
     let gotAnyDelta = false;
+    let lastUsage: any;
     let abortError: Error | null = null;
     let cleanupAbortSignal: (() => void) | undefined;
 
@@ -448,10 +449,13 @@ export class OpenAICompatProvider implements ILlmProvider {
                   if (!jsonStr || jsonStr === "[DONE]") continue;
                   try {
                     const evt = JSON.parse(jsonStr);
+                    if (options.enablePromptCache && evt?.usage) {
+                      lastUsage = evt.usage;
+                    }
                     const delta = evt?.choices?.[0]?.delta?.content;
                     if (typeof delta === "string" && delta.length > 0) {
                       gotAnyDelta = true;
-                      chunks.push(delta.replace(/\n+/g, "\n"));
+                      chunks.push(delta);
                       const current = chunks.join("");
                       if (onProgress && current.length > delivered) {
                         const newChunk = current.slice(delivered);
@@ -522,6 +526,9 @@ export class OpenAICompatProvider implements ILlmProvider {
       cleanupAbortSignal?.();
     }
 
+    if (options.enablePromptCache) {
+      logPromptCacheUsage("OpenAI-Compat chat", lastUsage);
+    }
     return chunks.join("");
   }
 
@@ -790,7 +797,7 @@ export class OpenAICompatProvider implements ILlmProvider {
                     const delta = evt?.choices?.[0]?.delta?.content;
                     if (typeof delta === "string" && delta.length > 0) {
                       gotAnyDelta = true;
-                      chunks.push(delta.replace(/\n+/g, "\n"));
+                      chunks.push(delta);
                       const current = chunks.join("");
                       if (onProgress && current.length > delivered) {
                         const newChunk = current.slice(delivered);

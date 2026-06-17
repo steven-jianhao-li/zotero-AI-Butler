@@ -291,6 +291,8 @@ export class LLMService {
       stream: transport?.stream ?? getPref("stream") ?? true,
       requestTimeoutMs: transport?.timeoutMs ?? this.getRequestTimeout(),
       abortSignal: transport?.abortSignal,
+      enablePromptCache:
+        (getPref("enablePromptCacheOptimization" as any) as boolean) === true,
     };
 
     if (enableTemperature) {
@@ -418,6 +420,21 @@ export class LLMService {
   static async chat(request: LLMChatRequest): Promise<LLMResponse> {
     const route = LLMEndpointManager.prepareRoute();
     return this.chatWithEndpointRouting(request, route);
+  }
+
+  /**
+   * 为一次多轮对话会话挑选并固定一个端点。
+   *
+   * `chat()` 每次调用都会重新执行端点路由。轮询策略下，游标随每个真实请求推进，
+   * 会让同一篇论文的多轮精读被分发到不同端点，导致服务端上下文缓存按账号失效。
+   * 本方法在会话开始时按当前路由策略选出端点，并仅推进一次游标；会话内后续轮次
+   * 通过 `chatWithEndpoint()` 复用该端点。
+   */
+  static acquireChatSessionEndpoint(): LLMEndpoint {
+    const route = LLMEndpointManager.prepareRoute();
+    const endpoint = route.endpoints[0];
+    LLMEndpointManager.markEndpointAttempted(endpoint.id);
+    return endpoint;
   }
 
   static async chatWithEndpoint(

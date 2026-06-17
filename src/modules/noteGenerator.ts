@@ -38,21 +38,50 @@ import {
 } from "./llmNoteMetadata";
 import { markdownToZoteroNoteHtml } from "./noteMarkdown";
 import type { LLMAbortSignal, LLMResponse } from "./llmproviders/types";
-import { throwIfAborted } from "./llmproviders/shared/requestAbort";
+import {
+  isAbortError,
+  throwIfAborted,
+} from "./llmproviders/shared/requestAbort";
 import { SummaryView } from "./views/SummaryView";
 import { getPref } from "../utils/prefs";
 import { MainWindow } from "./views/MainWindow";
 import { marked } from "marked";
 import {
-  parseMultiRoundPrompts,
-  getDefaultMultiRoundFinalPrompt,
-  DEFAULT_TABLE_TEMPLATE,
   DEFAULT_TABLE_FILL_PROMPT,
-  type MultiRoundPromptItem,
+  DEFAULT_TABLE_TEMPLATE,
+  DEFAULT_MULTI_ROUND_PLANNING_PROMPT,
+  getBuiltinMultiRoundPromptTemplates,
+  getDefaultMultiRoundPromptTemplate,
+  mergeMultiRoundPromptTemplates,
+  parseChapterStructureResult,
+  parseManualChapterStructure,
+  parseMultiRoundPromptTemplates,
+  type MultiRoundPromptTemplate,
   type SummaryMode,
 } from "../utils/prompts";
-import { isRegularSummaryNote } from "./aiNoteClassifier";
+import {
+  buildDeepReadSkeletonHtml,
+  extractDeepReadPlanMetadata,
+  fillDeepReadSlot,
+  hasDeepReadV2Slots,
+  hasRunnableDeepReadSlots,
+  isDeepReadSlotDone,
+  markDeepReadSlotRunning,
+  planDeepReadSlots,
+  resetRunningDeepReadSlots,
+  shouldRunDeepReadSlot,
+  type DeepReadSlot,
+} from "./deepReadEngine";
 import { isTableFeatureEnabled } from "./uiCustomization";
+import { AiNoteService, type AiNoteKind } from "./aiNoteService";
+
+/** 多轮精读会话的端点状态 */
+type DeepReadSession = {
+  /** 本会话固定使用的端点 ID；undefined 时退化为现状逐轮路由 */
+  endpointId?: string;
+  /** 端点重试耗尽后是否允许回退全局路由换端点续跑 */
+  allowFallback: boolean;
+};
 
 type MultiModelSummaryResult = {
   endpoint: LLMEndpoint;
@@ -121,11 +150,35 @@ export class NoteGenerator {
       const policy = (
         (getPref("noteStrategy" as any) as string) || "skip"
       ).toLowerCase();
-      const existing = await this.findExistingNote(item);
-      // 如果不是强制覆盖，且已存在笔记，则检查策略
-      if (existing && !options?.forceOverwrite) {
+      const requestedSummaryMode =
+        options?.summaryMode ||
+        (getPref("summaryMode" as any) as string) ||
+        "single";
+      const summaryMode: SummaryMode =
+        requestedSummaryMode === "single" ? "single" : "deepRead";
+      const multiModelEndpoints =
+        LLMEndpointManager.isMultiModelSummaryEnabled()
+          ? LLMEndpointManager.getMultiModelSummaryEndpoints()
+          : [];
+      const useMultiModelSummary =
+        summaryMode === "single" && multiModelEndpoints.length > 0;
+      const noteKind: AiNoteKind =
+        summaryMode === "single" && !useMultiModelSummary
+          ? "summary"
+          : "deepRead";
+      const existingRecord = await AiNoteService.findNoteRecord(item, noteKind);
+      const existing = existingRecord?.note || null;
+      const canResumeDeepRead =
+        noteKind === "deepRead" &&
+        !!existingRecord?.rawHtml &&
+        hasDeepReadV2Slots(existingRecord.rawHtml) &&
+        hasRunnableDeepReadSlots(existingRecord.rawHtml);
+      if (existing && !options?.forceOverwrite && !canResumeDeepRead) {
         if (policy === "skip") {
-          progressCallback?.("已存在AI笔记，跳过", 100);
+          progressCallback?.(
+            `\u5df2\u5b58\u5728${AiNoteService.getTitle(noteKind)}\uff0c\u8df3\u8fc7`,
+            100,
+          );
           return {
             note: existing as Zotero.Item,
             content: ((existing as any).getNote?.() as string) || "",
@@ -133,7 +186,7 @@ export class NoteGenerator {
         }
       }
 
-      // 步骤 1: PDF 处理
+      // Step 1: PDF processing
       throwIfAborted(options?.abortSignal);
       progressCallback?.("正在处理PDF...", 10);
 
@@ -156,14 +209,6 @@ export class NoteGenerator {
       const prefMode = LLMService.getEffectivePdfProcessMode();
       const pdfAttachmentMode =
         (getPref("pdfAttachmentMode" as any) as string) || "default";
-      const summaryMode = (options?.summaryMode ||
-        (getPref("summaryMode" as any) as string) ||
-        "single") as SummaryMode;
-      const multiModelEndpoints =
-        LLMEndpointManager.isMultiModelSummaryEnabled()
-          ? LLMEndpointManager.getMultiModelSummaryEndpoints()
-          : [];
-      const useMultiModelSummary = multiModelEndpoints.length > 0;
       if (
         LLMEndpointManager.isMultiModelSummaryEnabled() &&
         multiModelEndpoints.length === 0
@@ -219,7 +264,7 @@ export class NoteGenerator {
         }
       }
 
-      // 多轮总结会复用同一份 PDF 内容；单次总结交给 LLMService 统一解析，避免 MinerU 重复处理。
+      // AI 精读会复用同一份 PDF 内容；单次总结交给 LLMService 统一解析，避免 MinerU 重复处理。
       if (summaryMode !== "single" && !useMultiModelSummary) {
         const extracted = await this.extractPdfContentForMode(item, prefMode);
         pdfContent = extracted.content;
@@ -232,7 +277,7 @@ export class NoteGenerator {
       progressCallback?.(
         summaryMode === "single"
           ? "正在生成AI总结..."
-          : `正在进行多轮对话分析 (模式: ${summaryMode === "multi_concat" ? "拼接" : "总结"})...`,
+          : "正在进行 AI 精读分析...",
         40,
       );
 
@@ -306,29 +351,39 @@ export class NoteGenerator {
         fullContent = response.text;
         llmMetadata = LLMNoteMetadataService.fromResponse("summary", response);
       } else {
-        // 多轮对话模式
-        const multiRoundResult = await this.generateMultiRoundContent(
+        const deepReadResult = await this.generateDeepReadContent({
+          item,
+          existing,
+          existingHtml: existingRecord?.rawHtml || "",
+          policy,
           pdfContent,
           isBase64,
           itemTitle,
-          summaryMode,
           outputWindow,
           progressCallback,
           streamCallback,
-          undefined,
-          options?.abortSignal,
-        );
-        fullContent = multiRoundResult.content;
+          abortSignal: options?.abortSignal,
+        });
+        note = deepReadResult.note;
+        fullContent = deepReadResult.content;
+        noteContentOverride = deepReadResult.noteHtml;
         llmMetadata = LLMNoteMetadataService.fromResponse(
           "summary",
-          multiRoundResult.response,
+          deepReadResult.response,
         );
       }
 
-      // 步骤 3: 创建/更新笔记
-      // 通知进度回调开始创建笔记 (80% 完成)
+      if (note && noteContentOverride) {
+        progressCallback?.(
+          "AI \u7cbe\u8bfb\u7b14\u8bb0\u5df2\u66f4\u65b0",
+          100,
+        );
+        return { note, content: fullContent };
+      }
+
+      // Step 3: create or update note
       throwIfAborted(options?.abortSignal);
-      progressCallback?.("正在创建笔记...", 80);
+      progressCallback?.(`正在创建${AiNoteService.getTitle(noteKind)}...`, 80);
 
       // 检查内容是否为空，防止创建空笔记
       if (!fullContent || !fullContent.trim()) {
@@ -338,26 +393,22 @@ export class NoteGenerator {
       // 格式化笔记内容,添加标题和样式
       let noteContent =
         noteContentOverride ||
-        this.formatNoteContent(itemTitle, fullContent, "AI 管家");
+        this.formatNoteContent(
+          itemTitle,
+          fullContent,
+          AiNoteService.getTitle(noteKind),
+        );
       if (!noteContentOverride && llmMetadata) {
         noteContent = LLMNoteMetadataService.wrapHtml(noteContent, llmMetadata);
       }
 
-      if (existing) {
-        // 覆盖或追加到已有笔记
-        const oldHtml = (existing as any).getNote?.() || "";
-        let finalHtml = noteContent;
-        if (policy === "append") {
-          finalHtml = `${oldHtml}\n<hr/>\n${noteContent}`;
-        }
-        (existing as any).setNote?.(finalHtml);
-        await (existing as any).saveTx?.();
-        note = existing;
-      } else {
-        // 创建新笔记
-        note = await this.createNote(item, noteContent);
-        await note.saveTx();
-      }
+      note = await AiNoteService.saveGeneratedNote({
+        item,
+        kind: noteKind,
+        html: noteContent,
+        existing,
+        policy,
+      });
 
       // 如果有输出窗口,标记当前条目完成
       if (outputWindow) {
@@ -438,23 +489,7 @@ export class NoteGenerator {
     item: Zotero.Item,
   ): Promise<Zotero.Item | null> {
     try {
-      const noteIDs = (item as any).getNotes?.() || [];
-      let target: any = null;
-      for (const nid of noteIDs) {
-        const n = await Zotero.Items.getAsync(nid);
-        if (!n) continue;
-        const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-        const noteHtml: string = (n as any).getNote?.() || "";
-        if (isRegularSummaryNote(tags, noteHtml)) {
-          if (!target) target = n;
-          else {
-            const a = (target as any).dateModified || 0;
-            const b = (n as any).dateModified || 0;
-            if (b > a) target = n;
-          }
-        }
-      }
-      return target;
+      return await AiNoteService.findNote(item, "summary");
     } catch {
       return null;
     }
@@ -655,49 +690,28 @@ export class NoteGenerator {
       abortSignal,
     } = params;
 
-    let content = "";
-    let response: LLMResponse | undefined;
-
-    if (summaryMode === "single") {
-      const endpointPdfMode = LLMService.getEffectivePdfProcessMode(endpoint);
-      const attachmentMode = this.resolveEndpointAttachmentMode(
-        endpoint,
-        pdfAttachmentMode,
-        endpointPdfMode,
+    if (summaryMode !== "single") {
+      throw new Error(
+        "Multi-model summary only supports normal AI summary; use deepRead v2 for AI deep read.",
       );
-      response = await LLMService.generateWithEndpoint(endpoint.id, {
-        task: "summary",
-        content: {
-          kind: "zotero-item",
-          item,
-          attachmentMode,
-        },
-        transport: { abortSignal },
-      });
-      content = response.text;
-    } else {
-      const endpointPdfMode = LLMService.getEffectivePdfProcessMode(endpoint);
-      const extracted =
-        pdfContent && prefMode === endpointPdfMode
-          ? { content: pdfContent, isBase64 }
-          : await this.extractPdfContentForMode(item, endpointPdfMode);
-      const multiRoundResult = await this.generateMultiRoundContent(
-        extracted.content,
-        extracted.isBase64,
-        itemTitle,
-        summaryMode,
-        undefined,
-        undefined,
-        undefined,
-        endpoint.id,
-        abortSignal,
-      );
-      if (!multiRoundResult.response) {
-        throw new Error("该供应商未成功完成任何一轮总结");
-      }
-      content = multiRoundResult.content;
-      response = multiRoundResult.response;
     }
+
+    const endpointPdfMode = LLMService.getEffectivePdfProcessMode(endpoint);
+    const attachmentMode = this.resolveEndpointAttachmentMode(
+      endpoint,
+      pdfAttachmentMode,
+      endpointPdfMode,
+    );
+    const response = await LLMService.generateWithEndpoint(endpoint.id, {
+      task: "summary",
+      content: {
+        kind: "zotero-item",
+        item,
+        attachmentMode,
+      },
+      transport: { abortSignal },
+    });
+    const content = response.text;
 
     if (!content || !content.trim()) {
       throw new Error("AI 返回内容为空");
@@ -978,8 +992,8 @@ export class NoteGenerator {
     // 设置笔记内容
     note.setNote(initialContent);
 
-    // 添加 AI 生成标签,便于用户筛选和识别
-    note.addTag("AI-Generated");
+    // 添加 AI 总结标签,便于用户筛选和识别
+    note.addTag(AiNoteService.getTag("summary"));
 
     // 保存到数据库
     await note.saveTx();
@@ -988,237 +1002,570 @@ export class NoteGenerator {
   }
 
   /**
-   * 执行多轮对话并生成内容
-   *
-   * 根据配置的多轮提示词依次进行对话，支持两种模式：
-   * - multi_concat: 将所有对话内容拼接（最详细）
-   * - multi_summarize: 基于对话生成最终总结（均衡）
-   *
-   * @param pdfContent PDF内容（Base64或文本）
-   * @param isBase64 是否为Base64编码
-   * @param itemTitle 文献标题
-   * @param mode 总结模式
-   * @param outputWindow 输出窗口
-   * @param progressCallback 进度回调
-   * @param streamCallback 流式输出回调
-   * @returns 生成的内容
+   * Execute the AI deep read v2 two-phase workflow.
    */
-  private static async generateMultiRoundContent(
-    pdfContent: string,
-    isBase64: boolean,
-    itemTitle: string,
-    mode: SummaryMode,
-    outputWindow?: SummaryView,
-    progressCallback?: (message: string, progress: number) => void,
-    streamCallback?: (chunk: string) => void,
-    endpointId?: string,
-    abortSignal?: LLMAbortSignal,
-  ): Promise<{ content: string; response?: LLMResponse }> {
-    // 读取多轮提示词配置
-    const multiRoundPromptsJson = getPref("multiRoundPrompts" as any) as string;
-    const prompts = parseMultiRoundPrompts(multiRoundPromptsJson);
-    const totalRounds = prompts.length;
-
-    // 存储每轮对话的问答内容
-    const roundResults: Array<{
-      title: string;
-      question: string;
-      answer: string;
-    }> = [];
-
-    // 维护对话历史（用于上下文）
-    const conversationHistory: Array<{
-      role: "user" | "assistant";
-      content: string;
-    }> = [];
-    let lastResponse: LLMResponse | undefined;
-
-    // 显示标题
-    if (outputWindow) {
-      outputWindow.startItem(itemTitle);
-      outputWindow.appendContent(
-        `**[多轮对话模式: ${mode === "multi_concat" ? "拼接" : "总结"}]**\n\n`,
+  private static async generateDeepReadContent(params: {
+    item: Zotero.Item;
+    existing: Zotero.Item | null;
+    existingHtml: string;
+    policy: string;
+    pdfContent: string;
+    isBase64: boolean;
+    itemTitle: string;
+    outputWindow?: SummaryView;
+    progressCallback?: (message: string, progress: number) => void;
+    streamCallback?: (chunk: string) => void;
+    abortSignal?: LLMAbortSignal;
+  }): Promise<{
+    note: Zotero.Item;
+    content: string;
+    noteHtml: string;
+    response?: LLMResponse;
+  }> {
+    const currentTemplate = this.getActiveDeepReadTemplate();
+    const shouldResume =
+      params.existing &&
+      hasDeepReadV2Slots(params.existingHtml) &&
+      hasRunnableDeepReadSlots(params.existingHtml);
+    const restoredPlan = shouldResume
+      ? extractDeepReadPlanMetadata(params.existingHtml)
+      : null;
+    const templateChanged =
+      !!restoredPlan?.templateId &&
+      restoredPlan.templateId !== currentTemplate.id;
+    const template =
+      templateChanged && restoredPlan?.template
+        ? restoredPlan.template
+        : currentTemplate;
+    if (templateChanged) {
+      this.showDeepReadNotice(
+        restoredPlan?.template
+          ? "Template changed; resuming with the template saved in the note."
+          : "Template changed; saved note has no template snapshot, resuming with the current template.",
+        "warning",
       );
     }
 
-    // 依次执行每轮对话
-    for (let i = 0; i < totalRounds; i++) {
-      const currentPrompt = prompts[i];
-      const roundNum = i + 1;
-      const progressPercent = 40 + Math.floor((i / totalRounds) * 40); // 40% - 80%
-
-      throwIfAborted(abortSignal);
-      progressCallback?.(
-        `正在进行第 ${roundNum}/${totalRounds} 轮对话: ${currentPrompt.title}`,
-        progressPercent,
+    const sequentialPhase = template.phases.find(
+      (phase) => phase.type === "sequential_dynamic",
+    );
+    if (!sequentialPhase || sequentialPhase.type !== "sequential_dynamic") {
+      throw new Error(
+        "AI \u7cbe\u8bfb\u6a21\u677f\u7f3a\u5c11 sequential_dynamic \u9636\u6bb5",
       );
+    }
 
-      // 在输出窗口显示当前轮次标题
-      if (outputWindow) {
-        outputWindow.appendContent(
-          `\n## 第 ${roundNum} 轮: ${currentPrompt.title}\n\n`,
+    const session: DeepReadSession = { allowFallback: false };
+    const cacheOptEnabled =
+      (getPref("enablePromptCacheOptimization" as any) as boolean) === true;
+    if (cacheOptEnabled) {
+      try {
+        session.endpointId = LLMService.acquireChatSessionEndpoint().id;
+        session.allowFallback = true;
+      } catch (error) {
+        ztoolkit.log(
+          "[AI-Butler] Failed to acquire deep-read cache session endpoint; falling back to per-call routing:",
+          error,
         );
-        outputWindow.appendContent(`**提问:** ${currentPrompt.prompt}\n\n`);
-        outputWindow.appendContent(`**回答:**\n`);
-      }
-
-      // 构建当前对话消息
-      conversationHistory.push({
-        role: "user",
-        content: currentPrompt.prompt,
-      });
-
-      // 收集当前轮次的回答
-      let currentAnswer = "";
-      const onRoundProgress = async (chunk: string) => {
-        currentAnswer += chunk;
-        streamCallback?.(chunk);
-        if (outputWindow) {
-          outputWindow.appendContent(chunk);
-        }
-      };
-
-      try {
-        // 调用 LLM 进行对话（带自动 API 密钥轮换）
-        const chatRequest: LLMChatRequest = {
-          content: {
-            kind: "legacy",
-            content: pdfContent,
-            isBase64,
-            policy: isBase64 ? "pdf-base64" : "text",
-          },
-          conversation: conversationHistory,
-          transport: { abortSignal },
-          onProgress: onRoundProgress,
-        };
-        const response = endpointId
-          ? await LLMService.chatWithEndpoint(endpointId, chatRequest)
-          : await LLMService.chat(chatRequest);
-        const answer = response.text;
-        lastResponse = response;
-        currentAnswer = answer;
-
-        // 将助手回复加入对话历史
-        conversationHistory.push({
-          role: "assistant",
-          content: answer,
-        });
-
-        // 记录本轮结果
-        roundResults.push({
-          title: currentPrompt.title,
-          question: currentPrompt.prompt,
-          answer: answer,
-        });
-
-        if (outputWindow) {
-          outputWindow.appendContent("\n\n---\n");
-        }
-      } catch (error: any) {
-        ztoolkit.log(`[AI Butler] 第 ${roundNum} 轮对话失败:`, error);
-        if (this.shouldStopMultiRoundOnError(error)) {
-          throw error;
-        }
-        // 如果某轮对话失败，记录错误但继续
-        roundResults.push({
-          title: currentPrompt.title,
-          question: currentPrompt.prompt,
-          answer: `[错误: ${error.message}]`,
-        });
-
-        if (outputWindow) {
-          outputWindow.appendContent(
-            `\n\n❌ **对话失败:** ${error.message}\n\n---\n`,
-          );
-        }
       }
     }
 
-    // 根据模式生成最终内容
-    if (mode === "multi_concat") {
-      // 拼接模式：直接拼接每轮回答内容
-      return {
-        content: this.formatMultiRoundConcat(roundResults),
-        response: lastResponse,
-      };
-    } else {
-      // 总结模式：基于所有对话进行最终总结
-      throwIfAborted(abortSignal);
-      progressCallback?.("正在生成最终总结...", 85);
+    let lastResponse: LLMResponse | undefined;
+    let chapters = restoredPlan?.chapters || [];
+    if (params.outputWindow) {
+      params.outputWindow.startItem(params.itemTitle);
+      params.outputWindow.appendContent(
+        "## AI 精读：双阶段逐章阅读\n\nAI 会先解析章节结构，再按章节顺序逐章精读，最后执行重点追问。\n\n",
+      );
+    }
 
-      if (outputWindow) {
-        outputWindow.appendContent("\n## 📝 最终总结\n\n");
-      }
-
-      // 读取最终总结提示词
-      const finalPromptConfig = getPref(
-        "multiRoundFinalPrompt" as any,
-      ) as string;
-      const finalPrompt =
-        finalPromptConfig?.trim() || getDefaultMultiRoundFinalPrompt();
-
-      // 将最终总结提示词加入对话
-      conversationHistory.push({
-        role: "user",
-        content: finalPrompt,
+    if (!chapters.length) {
+      const planningPrompt = DEFAULT_MULTI_ROUND_PLANNING_PROMPT;
+      params.outputWindow?.appendContent("### 正在解析章节结构\n\n");
+      params.outputWindow?.appendContent(
+        `**章节解析提示词：**\n\n${planningPrompt}\n\n`,
+      );
+      params.progressCallback?.("正在解析章节结构...", 45);
+      const planningResponse = await this.callDeepReadChat({
+        session,
+        pdfContent: params.pdfContent,
+        isBase64: params.isBase64,
+        conversation: [{ role: "user", content: planningPrompt }],
+        abortSignal: params.abortSignal,
       });
+      lastResponse = planningResponse;
+      const parsedChapters = parseChapterStructureResult(planningResponse.text);
+      chapters =
+        parsedChapters.source === "fallback"
+          ? this.promptManualChapterStructure() || parsedChapters.chapters
+          : parsedChapters.chapters;
+      if (parsedChapters.source === "regex") {
+        this.showDeepReadNotice(
+          "章节 JSON 解析失败，已使用正则兜底识别章节。",
+          "warning",
+        );
+      }
+      if (parsedChapters.source === "fallback") {
+        this.showDeepReadNotice(
+          "章节解析失败，已使用手动输入或默认章节兜底。",
+          "warning",
+        );
+      }
+    } else {
+      params.outputWindow?.appendContent("### 从现有精读笔记恢复章节结构\n\n");
+      params.progressCallback?.("正在从已有笔记恢复精读进度...", 45);
+    }
 
-      let finalSummary = "";
-      const onFinalProgress = async (chunk: string) => {
-        finalSummary += chunk;
-        streamCallback?.(chunk);
-        if (outputWindow) {
-          outputWindow.appendContent(chunk);
+    const planned = planDeepReadSlots(template, chapters);
+
+    if (params.outputWindow) {
+      params.outputWindow.appendContent(
+        `识别到章节：${chapters
+          .map(
+            (chapter) =>
+              `${chapter.title_zh}（${chapter.title_en || "无英文标题"}）`,
+          )
+          .join("、")}\n\n`,
+      );
+    }
+
+    const progressSlots = planned.slots;
+    params.outputWindow?.setDeepReadProgressSlots?.(progressSlots);
+
+    const skeleton = buildDeepReadSkeletonHtml(
+      params.itemTitle,
+      template,
+      planned,
+    );
+    const note = shouldResume
+      ? (params.existing as Zotero.Item)
+      : await AiNoteService.saveGeneratedNote({
+          item: params.item,
+          kind: "deepRead",
+          html: skeleton,
+          existing: params.existing,
+          policy: params.policy === "append" ? "append" : "overwrite",
+        });
+
+    let writeQueue = Promise.resolve();
+    const updateSlot = async (
+      slot: DeepReadSlot,
+      markdown: string,
+      status: "done" | "error" = "done",
+    ) => {
+      params.outputWindow?.updateDeepReadProgressSlot?.(
+        slot.id,
+        slot.title,
+        status,
+        slot.phaseTitle,
+      );
+      writeQueue = writeQueue.then(async () => {
+        const currentHtml = ((note as any).getNote?.() as string) || "";
+        const nextHtml = fillDeepReadSlot(
+          currentHtml,
+          slot.id,
+          markdown,
+          slot.title,
+          status,
+        );
+        if (nextHtml !== currentHtml) {
+          (note as any).setNote?.(nextHtml);
+          await (note as any).saveTx?.();
+        }
+      });
+      await writeQueue;
+    };
+
+    const markSlotRunning = async (slot: DeepReadSlot) => {
+      params.outputWindow?.updateDeepReadProgressSlot?.(
+        slot.id,
+        slot.title,
+        "running",
+        slot.phaseTitle,
+      );
+      writeQueue = writeQueue.then(async () => {
+        const currentHtml = ((note as any).getNote?.() as string) || "";
+        const nextHtml = markDeepReadSlotRunning(
+          currentHtml,
+          slot.id,
+          slot.title,
+        );
+        if (nextHtml !== currentHtml) {
+          (note as any).setNote?.(nextHtml);
+          await (note as any).saveTx?.();
+        }
+      });
+      await writeQueue;
+    };
+
+    const retryableSlots = progressSlots as DeepReadSlot[];
+    params.outputWindow?.setDeepReadRetryHandler?.(async (slotId) => {
+      const slot = retryableSlots.find((candidate) => candidate.id === slotId);
+      if (!slot) return;
+      const currentHtml = ((note as any).getNote?.() as string) || "";
+      if (isDeepReadSlotDone(currentHtml, slot.id)) {
+        this.showDeepReadNotice(
+          "This slot is already done; retry skipped.",
+          "success",
+        );
+        return;
+      }
+      await markSlotRunning(slot);
+      try {
+        const response = await this.callDeepReadChat({
+          session,
+          item: params.item,
+          pdfContent: params.pdfContent,
+          isBase64: params.isBase64,
+          conversation: [{ role: "user", content: slot.prompt }],
+          abortSignal: params.abortSignal,
+          onProgress: (chunk) => {
+            params.streamCallback?.(chunk);
+            params.outputWindow?.appendContent(chunk);
+          },
+        });
+        lastResponse = response;
+        await updateSlot(slot, response.text, "done");
+      } catch (error: any) {
+        if (isAbortError(error, params.abortSignal)) throw error;
+        await updateSlot(slot, error?.message || String(error), "error");
+      }
+    });
+
+    const collected: string[] = [];
+
+    try {
+      const fullHistory: Array<{
+        role: "user" | "assistant";
+        content: string;
+      }> = [];
+      let previousAnswer = "";
+
+      for (let index = 0; index < planned.sequentialSlots.length; index++) {
+        const slot = planned.sequentialSlots[index];
+        const currentHtml = ((note as any).getNote?.() as string) || "";
+        if (!shouldRunDeepReadSlot(currentHtml, slot.id)) continue;
+
+        throwIfAborted(params.abortSignal);
+        params.progressCallback?.(
+          `\u6b63\u5728\u7cbe\u8bfb\uff1a${slot.title}`,
+          55 +
+            Math.floor(
+              (index / Math.max(1, planned.sequentialSlots.length)) * 20,
+            ),
+        );
+        params.outputWindow?.appendContent(
+          `### \u6b63\u5728\u7cbe\u8bfb\uff1a${slot.title}\n\n`,
+        );
+        params.outputWindow?.appendContent(
+          `**\u672c\u7ae0\u63d0\u793a\u8bcd\uff1a**\n\n${slot.prompt}\n\n`,
+        );
+
+        const userPrompt =
+          sequentialPhase.contextStrategy === "full_history"
+            ? slot.prompt
+            : previousAnswer
+              ? `\u4e0a\u4e00\u8f6e\u7cbe\u8bfb\u5185\u5bb9\u4f9b\u53c2\u8003\uff1a\n${previousAnswer}\n\n\u672c\u8f6e\u4efb\u52a1\uff1a\n${slot.prompt}`
+              : slot.prompt;
+        const conversation =
+          sequentialPhase.contextStrategy === "full_history"
+            ? [...fullHistory, { role: "user" as const, content: userPrompt }]
+            : [{ role: "user" as const, content: userPrompt }];
+
+        await markSlotRunning(slot);
+        try {
+          const response = await this.callDeepReadChat({
+            session,
+            item: params.item,
+            pdfContent: params.pdfContent,
+            isBase64: params.isBase64,
+            conversation,
+            abortSignal: params.abortSignal,
+            onProgress: (chunk) => {
+              params.streamCallback?.(chunk);
+              params.outputWindow?.appendContent(chunk);
+            },
+          });
+          lastResponse = response;
+          previousAnswer = response.text;
+          collected.push(`# ${slot.title}\n\n${response.text}`);
+          fullHistory.push({ role: "user", content: userPrompt });
+          fullHistory.push({ role: "assistant", content: response.text });
+          await updateSlot(slot, response.text, "done");
+        } catch (error: any) {
+          if (
+            isAbortError(error, params.abortSignal) ||
+            this.shouldStopDeepReadOnError(error)
+          )
+            throw error;
+          await updateSlot(slot, error?.message || String(error), "error");
+        }
+      }
+
+      const runIndependentSlot = async (
+        slot: DeepReadSlot,
+        index: number,
+        streamLive: boolean,
+      ) => {
+        const currentHtml = ((note as any).getNote?.() as string) || "";
+        if (!shouldRunDeepReadSlot(currentHtml, slot.id)) return;
+
+        throwIfAborted(params.abortSignal);
+        params.progressCallback?.(
+          `\u6b63\u5728\u8ffd\u95ee\uff1a${slot.title}`,
+          78 +
+            Math.floor(
+              (index / Math.max(1, planned.independentSlots.length)) * 12,
+            ),
+        );
+        params.outputWindow?.appendContent(
+          `### \u6b63\u5728\u8ffd\u95ee\uff1a${slot.title}\n\n`,
+        );
+        params.outputWindow?.appendContent(
+          `**\u8ffd\u95ee\u63d0\u793a\u8bcd\uff1a**\n\n${slot.prompt}\n\n`,
+        );
+
+        await markSlotRunning(slot);
+        try {
+          const response = await this.callDeepReadChat({
+            session,
+            item: params.item,
+            pdfContent: params.pdfContent,
+            isBase64: params.isBase64,
+            conversation: [{ role: "user", content: slot.prompt }],
+            abortSignal: params.abortSignal,
+            onProgress: streamLive
+              ? (chunk) => {
+                  params.streamCallback?.(chunk);
+                  params.outputWindow?.appendContent(chunk);
+                }
+              : undefined,
+          });
+          lastResponse = response;
+          collected.push(`# ${slot.title}\n\n${response.text}`);
+          if (!streamLive) {
+            params.streamCallback?.(response.text);
+            params.outputWindow?.appendContent(response.text);
+          }
+          await updateSlot(slot, response.text, "done");
+        } catch (error: any) {
+          if (
+            isAbortError(error, params.abortSignal) ||
+            this.shouldStopDeepReadOnError(error)
+          )
+            throw error;
+          await updateSlot(slot, error?.message || String(error), "error");
         }
       };
 
-      try {
-        // 调用 LLM 生成最终总结（带自动 API 密钥轮换）
-        const chatRequest: LLMChatRequest = {
-          content: {
-            kind: "legacy",
-            content: pdfContent,
-            isBase64,
-            policy: isBase64 ? "pdf-base64" : "text",
-          },
-          conversation: conversationHistory,
-          transport: { abortSignal },
-          onProgress: onFinalProgress,
-        };
-        const response = endpointId
-          ? await LLMService.chatWithEndpoint(endpointId, chatRequest)
-          : await LLMService.chat(chatRequest);
-        const summary = response.text;
-        lastResponse = response;
-
-        // 检查是否需要保存中间对话内容
-        const saveIntermediate =
-          (getPref("multiSummarySaveIntermediate" as any) as boolean) ?? false;
-        if (saveIntermediate) {
-          // 拼接中间内容和最终总结
-          const intermediateContent = this.formatMultiRoundConcat(roundResults);
-          return {
-            content: `${intermediateContent}\n---\n\n# 📝 最终总结\n\n${summary}`,
-            response,
-          };
+      let independentIndex = 0;
+      for (const phase of template.phases) {
+        if (phase.type !== "independent") continue;
+        const phaseSlots = planned.independentSlots.filter(
+          (slot) => slot.phaseId === phase.id,
+        );
+        const maxConcurrency = phase.parallelizable ? phase.maxConcurrency : 1;
+        for (
+          let start = 0;
+          start < phaseSlots.length;
+          start += maxConcurrency
+        ) {
+          const batch = phaseSlots.slice(start, start + maxConcurrency);
+          const batchStartIndex = independentIndex;
+          independentIndex += batch.length;
+          if (maxConcurrency === 1) {
+            await runIndependentSlot(batch[0], batchStartIndex, true);
+            continue;
+          }
+          const results = await Promise.allSettled(
+            batch.map((slot, offset) =>
+              runIndependentSlot(slot, batchStartIndex + offset, false),
+            ),
+          );
+          const aborted = results.find(
+            (result) =>
+              result.status === "rejected" &&
+              this.shouldStopDeepReadOnError(result.reason),
+          );
+          if (aborted?.status === "rejected") throw aborted.reason;
         }
-
-        return { content: summary, response };
-      } catch (error: any) {
-        ztoolkit.log("[AI Butler] 最终总结生成失败:", error);
-        if (this.shouldStopMultiRoundOnError(error)) {
-          throw error;
-        }
-        // 如果最终总结失败，回退到拼接模式
-        return {
-          content: this.formatMultiRoundConcat(roundResults),
-          response: lastResponse,
-        };
       }
+    } catch (error) {
+      if (isAbortError(error, params.abortSignal)) {
+        writeQueue = writeQueue.then(async () => {
+          const currentHtml = ((note as any).getNote?.() as string) || "";
+          const nextHtml = resetRunningDeepReadSlots(currentHtml);
+          if (nextHtml !== currentHtml) {
+            (note as any).setNote?.(nextHtml);
+            await (note as any).saveTx?.();
+          }
+        });
+        await writeQueue;
+        for (const slot of progressSlots) {
+          const status = ((note as any).getNote?.() as string) || "";
+          if (shouldRunDeepReadSlot(status, slot.id)) {
+            params.outputWindow?.updateDeepReadProgressSlot?.(
+              slot.id,
+              slot.title,
+              "pending",
+              slot.phaseTitle,
+            );
+          }
+        }
+      }
+      throw error;
+    }
+
+    await writeQueue;
+    const noteHtml = ((note as any).getNote?.() as string) || skeleton;
+    return {
+      note,
+      content: collected.join("\n\n---\n\n") || noteHtml,
+      noteHtml,
+      response: lastResponse,
+    };
+  }
+
+  private static promptManualChapterStructure(): ReturnType<
+    typeof parseManualChapterStructure
+  > | null {
+    const win = Zotero.getMainWindow() as any;
+    const text = { value: "" } as any;
+    const ok = Services.prompt.prompt(
+      win,
+      "手动输入章节结构",
+      "章节解析失败。请每行输入一个章节，例如：第1章：Introduction",
+      text,
+      "",
+      { value: false },
+    );
+    if (!ok || !text.value?.trim()) return null;
+    const chapters = parseManualChapterStructure(text.value);
+    return chapters.length ? chapters : null;
+  }
+
+  private static showDeepReadNotice(
+    text: string,
+    type: "success" | "warning" | "fail" = "warning",
+  ): void {
+    try {
+      new ztoolkit.ProgressWindow("AI 精读").createLine({ text, type }).show();
+    } catch {
+      ztoolkit.log(`[AI-Butler] ${text}`);
     }
   }
 
-  private static shouldStopMultiRoundOnError(error: unknown): boolean {
+  private static getActiveDeepReadTemplate(): MultiRoundPromptTemplate {
+    const selectedTemplateId = (
+      (getPref("multiRoundPromptTemplateId" as any) as string) || ""
+    ).trim();
+    const customTemplates = parseMultiRoundPromptTemplates(
+      (getPref("multiRoundPromptTemplates" as any) as string) || "[]",
+    );
+    const templates = mergeMultiRoundPromptTemplates(
+      getBuiltinMultiRoundPromptTemplates(),
+      customTemplates,
+    );
+    return (
+      templates.find((template) => template.id === selectedTemplateId) ||
+      getDefaultMultiRoundPromptTemplate()
+    );
+  }
+
+  private static async callDeepReadChat(params: {
+    session?: DeepReadSession;
+    item?: Zotero.Item;
+    pdfContent: string;
+    isBase64: boolean;
+    conversation: Array<{ role: "user" | "assistant"; content: string }>;
+    abortSignal?: LLMAbortSignal;
+    onProgress?: (chunk: string) => void;
+  }): Promise<LLMResponse> {
+    const content = params.item
+      ? {
+          kind: "zotero-item" as const,
+          item: params.item,
+          attachmentMode: "default" as const,
+        }
+      : {
+          kind: "legacy" as const,
+          content: params.pdfContent,
+          isBase64: params.isBase64,
+          policy: params.isBase64 ? ("pdf-base64" as const) : ("text" as const),
+        };
+    let conversation = params.conversation;
+    let response = await this.chatWithDeepReadSession(params.session, {
+      content,
+      conversation,
+      transport: { abortSignal: params.abortSignal },
+      onProgress: params.onProgress,
+    });
+    let text = response.text;
+
+    for (
+      let attempt = 0;
+      attempt < 2 && this.isLikelyTruncated(response);
+      attempt++
+    ) {
+      throwIfAborted(params.abortSignal);
+      const continuePrompt =
+        "The previous answer appears to be truncated. Continue exactly from where it stopped. Do not repeat earlier content.";
+      conversation = [
+        ...conversation,
+        { role: "assistant", content: response.text },
+        { role: "user", content: continuePrompt },
+      ];
+      const continuation = await this.chatWithDeepReadSession(params.session, {
+        content,
+        conversation,
+        transport: { abortSignal: params.abortSignal },
+        onProgress: params.onProgress,
+      });
+      response = { ...continuation, text: text + "\n\n" + continuation.text };
+      text = response.text;
+    }
+
+    return response;
+  }
+
+  private static async chatWithDeepReadSession(
+    session: DeepReadSession | undefined,
+    chatRequest: LLMChatRequest,
+  ): Promise<LLMResponse> {
+    if (!session?.endpointId) {
+      return LLMService.chat(chatRequest);
+    }
+
+    const fixedEndpointId = session.endpointId;
+    try {
+      return await LLMService.chatWithEndpoint(fixedEndpointId, chatRequest);
+    } catch (error) {
+      if (
+        !session.allowFallback ||
+        isAbortError(error, chatRequest.transport?.abortSignal)
+      ) {
+        throw error;
+      }
+
+      const response = await LLMService.chat(chatRequest);
+      if (response.endpointId) {
+        session.endpointId = response.endpointId;
+        ztoolkit.log(
+          `[AI-Butler] Deep-read session endpoint ${fixedEndpointId} unavailable; fell back and pinned to ${response.endpointId}`,
+        );
+      }
+      return response;
+    }
+  }
+
+  private static isLikelyTruncated(response: LLMResponse): boolean {
+    const reason = (response.finishReason || "").toLowerCase();
+    return ["length", "max_tokens", "max_output_tokens", "content_filter"].some(
+      (value) => reason.includes(value),
+    );
+  }
+
+  private static shouldStopDeepReadOnError(error: unknown): boolean {
     const value = error as
       | {
           name?: string;
@@ -1232,70 +1579,6 @@ export class NoteGenerator {
     );
   }
 
-  /**
-   * 格式化多轮回答拼接内容
-   *
-   * @param roundResults 各轮对话结果
-   * @returns 格式化后的 Markdown 内容
-   */
-  private static formatMultiRoundConcat(
-    roundResults: Array<{ title: string; question: string; answer: string }>,
-  ): string {
-    let content = "# 多轮对话分析\n\n";
-
-    for (let i = 0; i < roundResults.length; i++) {
-      const result = roundResults[i];
-      content += `## 第 ${i + 1} 轮: ${result.title}\n\n`;
-      content += `${result.answer}\n\n`;
-      content += "---\n\n";
-    }
-
-    return content;
-  }
-
-  /**
-   * 为多个文献条目批量生成 AI 总结笔记
-   *
-   * 这是批量处理的核心函数,提供完整的用户交互和进度管理
-   *
-   * 功能特性:
-   * 1. 自动创建输出窗口显示实时进度
-   * 2. 支持用户中途停止处理
-   * 3. 详细的成功/失败统计
-   * 4. 每个条目独立处理,单个失败不影响后续条目
-   *
-   * 处理流程:
-   * 1. 创建并打开主窗口
-   * 2. 切换到 AI 总结视图
-   * 3. 设置用户停止回调
-   * 4. 依次处理每个条目
-   * 5. 实时更新进度和统计
-   * 6. 显示最终处理结果
-   *
-   * 错误处理策略:
-   * - 单个条目失败:记录日志,继续处理下一个
-   * - 用户停止:立即中断,显示已完成和未处理统计
-   * - 系统错误:抛出异常,停止所有处理
-   *
-   * 进度回调参数说明:
-   * - current: 当前处理到第几个条目 (1-based)
-   * - total: 总共要处理的条目数
-   * - progress: 当前条目的处理进度 (0-100)
-   * - message: 进度描述消息
-   *
-   * @param items Zotero 文献条目数组
-   * @param progressCallback 可选的进度回调函数
-   *
-   * @example
-   * ```typescript
-   * await generateNotesForItems(
-   *   selectedItems,
-   *   (current, total, progress, message) => {
-   *     console.log(`[${current}/${total}] ${progress}% - ${message}`);
-   *   }
-   * );
-   * ```
-   */
   public static async generateNotesForItems(
     items: Zotero.Item[],
     progressCallback?: (

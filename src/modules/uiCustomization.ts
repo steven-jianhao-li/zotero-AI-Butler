@@ -9,14 +9,14 @@ import { getPref, setPref } from "../utils/prefs";
 export const CONTEXT_MENU_ITEMS = [
   {
     id: "generateSummary",
-    label: "召唤 AI 管家进行分析",
+    label: "AI 管家生成 AI 总结",
     description: "文献右键：加入 AI 总结任务队列",
     scope: "item",
   },
   {
     id: "multiRoundReanalyze",
-    label: "多轮对话重新精读",
-    description: "文献右键：多轮拼接 / 多轮总结子菜单",
+    label: "AI 管家生成 AI 精读",
+    description: "文献右键：加入 AI 精读任务队列",
     scope: "item",
   },
   {
@@ -28,7 +28,7 @@ export const CONTEXT_MENU_ITEMS = [
   {
     id: "chatWithAI",
     label: "AI 管家-后续追问",
-    description: "AI 笔记右键：打开后续追问界面",
+    description: "AI 总结或 AI 精读右键：打开后续追问界面",
     scope: "item",
   },
   {
@@ -75,8 +75,13 @@ export const SIDEBAR_MODULES = [
   },
   {
     id: "note",
-    label: "AI 笔记",
+    label: "AI 总结",
     description: "展示 AI 总结笔记、复制 Markdown、切换笔记主题",
+  },
+  {
+    id: "deepRead",
+    label: "AI 精读",
+    description: "展示 AI 精读笔记和保存的追问沉淀",
   },
   {
     id: "table",
@@ -121,6 +126,7 @@ export const DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY: ContextMenuVisibility = {
 export const DEFAULT_SIDEBAR_MODULE_VISIBILITY: SidebarModuleVisibility = {
   actionButtons: true,
   note: true,
+  deepRead: true,
   table: true,
   imageSummary: true,
   mindmap: true,
@@ -130,6 +136,7 @@ export const DEFAULT_SIDEBAR_MODULE_VISIBILITY: SidebarModuleVisibility = {
 export const DEFAULT_SIDEBAR_MODULE_ORDER: SidebarModuleId[] = [
   "actionButtons",
   "note",
+  "deepRead",
   "table",
   "imageSummary",
   "mindmap",

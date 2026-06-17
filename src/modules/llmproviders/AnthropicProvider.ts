@@ -7,7 +7,7 @@ import {
   ProgressCb,
 } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
-import { getRequestTimeoutMs } from "./shared/llmutils";
+import { getRequestTimeoutMs, logPromptCacheUsage } from "./shared/llmutils";
 import {
   getConnectionTestInput,
   getConnectionTestModeLabel,
@@ -163,7 +163,7 @@ export class AnthropicProvider implements ILlmProvider {
                       const text = json?.delta?.text;
                       if (text) {
                         gotAnyDelta = true;
-                        chunks.push(text.replace(/\n+/g, "\n"));
+                        chunks.push(text);
                         const current = chunks.join("");
                         if (onProgress && current.length > delivered) {
                           const newChunk = current.slice(delivered);
@@ -282,6 +282,16 @@ export class AnthropicProvider implements ILlmProvider {
       }
     }
 
+    if (options.enablePromptCache && messages.length > 0) {
+      this.attachCacheBreakpoint(messages[0]);
+      for (let i = messages.length - 1; i > 0; i--) {
+        if (messages[i].role === "assistant") {
+          this.attachCacheBreakpoint(messages[i]);
+          break;
+        }
+      }
+    }
+
     const payload: any = {
       model,
       max_tokens: maxTokens,
@@ -295,6 +305,7 @@ export class AnthropicProvider implements ILlmProvider {
     let delivered = 0;
     let processedLength = 0;
     let partialLine = "";
+    let lastUsage: any;
     let abortError: Error | null = null;
     let cleanupAbortSignal: (() => void) | undefined;
 
@@ -366,10 +377,17 @@ export class AnthropicProvider implements ILlmProvider {
 
                   try {
                     const json = JSON.parse(jsonStr);
+                    if (
+                      options.enablePromptCache &&
+                      json.type === "message_start" &&
+                      json?.message?.usage
+                    ) {
+                      lastUsage = json.message.usage;
+                    }
                     if (json.type === "content_block_delta") {
                       const text = json?.delta?.text;
                       if (text) {
-                        chunks.push(text.replace(/\n+/g, "\n"));
+                        chunks.push(text);
                         const current = chunks.join("");
                         if (onProgress && current.length > delivered) {
                           const newChunk = current.slice(delivered);
@@ -422,7 +440,26 @@ export class AnthropicProvider implements ILlmProvider {
       cleanupAbortSignal?.();
     }
 
+    if (options.enablePromptCache) {
+      logPromptCacheUsage("Anthropic chat", lastUsage);
+    }
     return chunks.join("");
+  }
+
+  /**
+   * 在消息最后一个内容块标注 Anthropic prompt caching 断点。
+   * 字符串 content 仅在开关开启时规范化为内容块数组，关闭路径保持原请求体不变。
+   */
+  private attachCacheBreakpoint(message: any): void {
+    if (!message) return;
+    if (typeof message.content === "string") {
+      message.content = [{ type: "text", text: message.content }];
+    }
+    if (!Array.isArray(message.content) || message.content.length === 0) return;
+    const last = message.content[message.content.length - 1];
+    if (last && typeof last === "object") {
+      last.cache_control = { type: "ephemeral" };
+    }
   }
 
   async listModels(options: LLMOptions): Promise<LLMModelInfo[]> {
@@ -725,7 +762,7 @@ export class AnthropicProvider implements ILlmProvider {
                       const text = json?.delta?.text;
                       if (text) {
                         gotAnyDelta = true;
-                        chunks.push(text.replace(/\n+/g, "\n"));
+                        chunks.push(text);
                         const current = chunks.join("");
                         if (onProgress && current.length > delivered) {
                           const newChunk = current.slice(delivered);

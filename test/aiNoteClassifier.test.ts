@@ -1,5 +1,9 @@
 import { expect } from "chai";
-import { isRegularSummaryNote } from "../src/modules/aiNoteClassifier";
+import {
+  classifyAiButlerNote,
+  isDeepReadNote,
+  isRegularSummaryNote,
+} from "../src/modules/aiNoteClassifier";
 
 describe("AI note classifier", function () {
   it("does not treat saved follow-up chat notes as summary notes", function () {
@@ -26,5 +30,29 @@ describe("AI note classifier", function () {
     expect(isRegularSummaryNote([{ tag: "AI-Generated" }], noteHtml)).to.equal(
       true,
     );
+  });
+
+  it("recognizes AI summary and deep-read tags separately", function () {
+    expect(isRegularSummaryNote([{ tag: "AI-Summary" }], "")).to.equal(true);
+    expect(isRegularSummaryNote([{ tag: "AI-DeepRead" }], "")).to.equal(false);
+    expect(isDeepReadNote([{ tag: "AI-DeepRead" }], "")).to.equal(true);
+    expect(classifyAiButlerNote([{ tag: "AI-Summary" }], "")).to.equal(
+      "summary",
+    );
+    expect(classifyAiButlerNote([{ tag: "AI-DeepRead" }], "")).to.equal(
+      "deepRead",
+    );
+  });
+
+  it("recognizes deep-read notes by heading and excludes them from summaries", function () {
+    const deepReadHtml = "<h2>AI \u7cbe\u8bfb - Paper</h2><p>Detail</p>";
+    const legacyDeepReadHtml =
+      "<h2>AI \u7ba1\u5bb6 - \u7cbe\u8bfb - Paper</h2><p>Detail</p>";
+
+    expect(isDeepReadNote([], deepReadHtml)).to.equal(true);
+    expect(isDeepReadNote([], legacyDeepReadHtml)).to.equal(true);
+    expect(isRegularSummaryNote([], deepReadHtml)).to.equal(false);
+    expect(isRegularSummaryNote([], legacyDeepReadHtml)).to.equal(false);
+    expect(classifyAiButlerNote([], deepReadHtml)).to.equal("deepRead");
   });
 });

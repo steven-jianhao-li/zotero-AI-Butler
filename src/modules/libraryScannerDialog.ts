@@ -17,7 +17,7 @@
  * @author AI-Butler Team
  */
 
-import { isRegularSummaryNote } from "./aiNoteClassifier";
+import { AiNoteService, type AiNoteKind } from "./aiNoteService";
 import { TaskQueueManager } from "./taskQueue";
 
 /**
@@ -42,13 +42,22 @@ export class LibraryScannerDialog {
   private treeRoot: TreeNode[] = [];
   private totalUnprocessed: number = 0;
   private selectedCount: number = 0;
+  private scanTarget: AiNoteKind;
+
+  private constructor(scanTarget: AiNoteKind = "summary") {
+    this.scanTarget = scanTarget;
+  }
 
   /**
    * 打开扫描对话框
    */
-  public static async open(): Promise<void> {
-    const scanner = new LibraryScannerDialog();
+  public static async open(scanTarget: AiNoteKind = "summary"): Promise<void> {
+    const scanner = new LibraryScannerDialog(scanTarget);
     await scanner.show();
+  }
+
+  private getScanTargetLabel(): string {
+    return this.scanTarget === "summary" ? "AI 总结" : "AI 精读";
   }
 
   /**
@@ -64,7 +73,7 @@ export class LibraryScannerDialog {
         closeTime: 3000,
       })
         .createLine({
-          text: "🎉 所有文献都已分析完成！",
+          text: `🎉 所有文献都已有 ${this.getScanTargetLabel()}！`,
           type: "success",
         })
         .show();
@@ -262,20 +271,11 @@ export class LibraryScannerDialog {
   }
 
   /**
-   * 检查条目是否已有 AI 笔记
+   * 检查条目是否已有当前目标 AI 笔记
    */
   private async hasExistingAINote(item: Zotero.Item): Promise<boolean> {
     try {
-      const noteIDs = (item as any).getNotes?.() || [];
-      for (const nid of noteIDs) {
-        const n = await Zotero.Items.getAsync(nid);
-        if (!n) continue;
-
-        const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-        const noteHtml: string = (n as any).getNote?.() || "";
-        if (isRegularSummaryNote(tags, noteHtml)) return true;
-      }
-      return false;
+      return await AiNoteService.hasNote(item, this.scanTarget);
     } catch {
       return false;
     }
@@ -289,7 +289,7 @@ export class LibraryScannerDialog {
 
     // 设置窗口标题
     if (doc.title) {
-      doc.title = "扫描未分析文献 - AI 管家";
+      doc.title = `扫描缺 ${this.getScanTargetLabel()} 文献 - AI 管家`;
     }
 
     // 创建根容器
@@ -322,9 +322,9 @@ export class LibraryScannerDialog {
       border-radius: 8px 8px 0 0;
     `;
     header.innerHTML = `
-      <h2 style="margin: 0 0 10px 0; font-size: 18px;">📚 库扫描结果</h2>
+      <h2 style="margin: 0 0 10px 0; font-size: 18px;">📚 缺 ${this.getScanTargetLabel()} 文献</h2>
       <p style="margin: 0; font-size: 14px; opacity: 0.9;">
-        发现 <strong>${this.totalUnprocessed}</strong> 篇文献未进行 AI 分析
+        发现 <strong>${this.totalUnprocessed}</strong> 篇文献缺 ${this.getScanTargetLabel()}
       </p>
     `;
     root.appendChild(header);
@@ -568,9 +568,16 @@ export class LibraryScannerDialog {
     }
 
     try {
-      // 加入任务队列
       const manager = TaskQueueManager.getInstance();
-      await manager.addTasks(selectedItems, false);
+      for (const item of selectedItems) {
+        if (this.scanTarget === "summary") {
+          await manager.addTask(item, false, { summaryMode: "single" });
+        } else {
+          await manager.addDeepReadTask(item, false, {
+            summaryMode: "deepRead",
+          });
+        }
+      }
 
       // 关闭对话框
       win.close();
@@ -580,7 +587,7 @@ export class LibraryScannerDialog {
         closeTime: 3000,
       })
         .createLine({
-          text: `✅ 已将 ${selectedItems.length} 篇文献加入分析队列`,
+          text: `✅ 已将 ${selectedItems.length} 篇文献加入 ${this.getScanTargetLabel()} 队列`,
           type: "success",
         })
         .show();

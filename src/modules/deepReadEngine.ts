@@ -299,13 +299,19 @@ function promptToSlot(
 ): DeepReadSlot {
   return {
     id: prompt.id,
-    title: prompt.title,
+    title: normalizeDeepReadPromptTitle(prompt.title),
     prompt: prompt.prompt,
     phaseId: phase.id,
     phaseTitle: phase.title,
     phaseType: phase.type,
     status: "pending",
   };
+}
+
+function normalizeDeepReadPromptTitle(title: string): string {
+  return title.trim() === "\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb"
+    ? "\u6587\u7ae0\u6574\u4f53\u901a\u8bfb"
+    : title;
 }
 
 function buildPendingSlotHtml(slot: DeepReadSlot): string {

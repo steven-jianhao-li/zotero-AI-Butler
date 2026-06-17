@@ -12,6 +12,7 @@ import {
   getDefaultTableReviewPrompt,
   PROMPT_VERSION,
   getDefaultMultiRoundPromptTemplate,
+  DEFAULT_MULTI_ROUND_PLANNING_PROMPT,
   getBuiltinMultiRoundPromptTemplates,
   parseMultiRoundPromptTemplates,
   mergeMultiRoundPromptTemplates,
@@ -652,17 +653,16 @@ export class PromptsSettingsPage {
         this.createContextStrategySelector(sequential.contextStrategy),
       );
       card.appendChild(
-        this.createPromptDetails(
+        this.createBuiltinPromptHelp(
           "\u89e3\u6790\u7ae0\u8282\u7ed3\u6784",
-          sequential.planningPrompt,
-          "deep-read-planning-prompt",
-          "\u8fd9\u4e00\u8f6e\u8981\u6c42 AI \u4ece\u8bba\u6587\u4e2d\u8bc6\u522b\u7ae0\u8282\u7ed3\u6784\uff0c\u5e76\u8fd4\u56de chapters JSON\u3002",
+          DEFAULT_MULTI_ROUND_PLANNING_PROMPT,
+          "\u5185\u7f6e\u63d0\u793a\u8bcd\uff0c\u7528\u4e8e\u8ba9 AI \u8bc6\u522b\u8bba\u6587\u7ae0\u8282\u5e76\u8fd4\u56de chapters JSON\u3002\u60ac\u505c\u95ee\u53f7\u53ef\u67e5\u770b\u5b8c\u6574\u5185\u7f6e\u63d0\u793a\u8bcd\u3002",
         ),
       );
       card.appendChild(this.renderFixedPromptCards(sequential.fixedPrompts));
       card.appendChild(
         this.createPromptDetails(
-          "\u7ae0\u8282\u7cbe\u8bfb\u63d0\u793a\u8bcd\u6a21\u677f",
+          "\u9010\u7ae0\u7cbe\u8bfb\u63d0\u793a\u8bcd\u6a21\u677f",
           sequential.chapterTemplate,
           "deep-read-chapter-template",
           "\u89e3\u6790\u51fa\u7684\u6bcf\u4e2a\u7ae0\u8282\u90fd\u4f1a\u5957\u7528\u8fd9\u4e2a\u6a21\u677f\u751f\u6210\u9010\u7ae0\u7cbe\u8bfb\u4efb\u52a1\u3002",
@@ -812,9 +812,16 @@ export class PromptsSettingsPage {
     notice.innerHTML =
       "<strong>\u53d8\u91cf\u8bf4\u660e</strong>\uff1a" +
       "<code>{{chapter_index}}</code> \u4f1a\u66ff\u6362\u4e3a\u7ae0\u8282\u5e8f\u53f7\uff1b" +
-      "<code>{{chapter_title_zh}}</code> \u4f1a\u66ff\u6362\u4e3a\u4e2d\u6587\u7ae0\u8282\u540d\uff1b" +
-      "<code>{{chapter_title_en}}</code> \u4f1a\u66ff\u6362\u4e3a\u82f1\u6587\u7ae0\u8282\u540d\u3002";
+      "<code>{{title_zh}}</code> \u4f1a\u66ff\u6362\u4e3a JSON \u91cc\u7684 <code>title_zh</code>\uff1b" +
+      "<code>{{title_en}}</code> \u4f1a\u66ff\u6362\u4e3a JSON \u91cc\u7684 <code>title_en</code>\uff1b" +
+      "<code>id</code> \u4ec5\u7528\u4e8e\u5185\u90e8\u7ae0\u8282\u6807\u8bc6\u3002";
     return notice;
+  }
+
+  private normalizeOverallReadingTitle(title: string): string {
+    return title.trim() === "\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb"
+      ? "\u6587\u7ae0\u6574\u4f53\u901a\u8bfb"
+      : title;
   }
 
   private createContextStrategySelector(value: string): HTMLElement {
@@ -851,7 +858,7 @@ export class PromptsSettingsPage {
       this.createDeepReadFlow(
         [
           "\u89e3\u6790\u7ae0\u8282\u7ed3\u6784",
-          "\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb",
+          "\u6587\u7ae0\u6574\u4f53\u901a\u8bfb",
           "\u9010\u7ae0\u7cbe\u8bfb",
         ],
         "phase",
@@ -872,7 +879,7 @@ export class PromptsSettingsPage {
     });
 
     const heading = doc.createElement("div");
-    heading.textContent = "\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb";
+    heading.textContent = "\u6587\u7ae0\u6574\u4f53\u901a\u8bfb";
     Object.assign(heading.style, {
       fontWeight: "700",
       marginBottom: "8px",
@@ -882,7 +889,7 @@ export class PromptsSettingsPage {
 
     const desc = doc.createElement("p");
     desc.textContent =
-      "\u8fd9\u4e9b\u8f6e\u6b21\u4f1a\u5728\u9010\u7ae0\u7cbe\u8bfb\u524d\u5148\u6267\u884c\uff0c\u9002\u5408\u7efc\u8ff0\u3001\u6458\u8981\u7b49\u4e0d\u4f9d\u8d56\u5355\u4e2a\u7ae0\u8282\u7684\u4efb\u52a1\u3002";
+      "\u8fd9\u4e9b\u8f6e\u6b21\u4f1a\u5728\u9010\u7ae0\u7cbe\u8bfb\u524d\u5148\u6267\u884c\uff0c\u9002\u5408\u6574\u4f53\u901a\u8bfb\u3001\u6458\u8981\u7b49\u4e0d\u4f9d\u8d56\u5355\u4e2a\u7ae0\u8282\u7684\u4efb\u52a1\u3002";
     Object.assign(desc.style, {
       margin: "0 0 10px 0",
       opacity: "0.78",
@@ -893,7 +900,7 @@ export class PromptsSettingsPage {
     if (!prompts.length) {
       const empty = doc.createElement("p");
       empty.textContent =
-        "\u5f53\u524d\u6ca1\u6709\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb\u8f6e\u6b21\u3002";
+        "\u5f53\u524d\u6ca1\u6709\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u8f6e\u6b21\u3002";
       Object.assign(empty.style, { margin: "0 0 10px 0", opacity: "0.72" });
       wrapper.appendChild(empty);
     }
@@ -916,10 +923,10 @@ export class PromptsSettingsPage {
         marginBottom: "8px",
       });
       const rowTitle = doc.createElement("div");
-      rowTitle.textContent = `\u7efc\u8ff0\u6458\u8981\u8f6e\u6b21 ${index + 1}`;
+      rowTitle.textContent = `\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u8f6e\u6b21 ${index + 1}`;
       Object.assign(rowTitle.style, { fontWeight: "700" });
       const deleteButton = createStyledButton(
-        "\u5220\u9664\u7efc\u8ff0\u8f6e",
+        "\u5220\u9664\u901a\u8bfb\u8f6e",
         "#e53935",
         "small",
       );
@@ -933,25 +940,25 @@ export class PromptsSettingsPage {
       promptCard.appendChild(
         this.createLabeledInput(
           `deep-read-fixed-title-${index}`,
-          `\u7efc\u8ff0\u6458\u8981\u8f6e\u6b21 ${index + 1} \u6807\u9898`,
-          "\u7528\u4e8e\u5728 UI \u548c\u7b14\u8bb0\u4e2d\u6807\u8bc6\u8fd9\u4e2a\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb\u4efb\u52a1\u3002",
-          prompt.title,
-          "\u7efc\u8ff0\u6458\u8981\u8f6e\u6b21\u6807\u9898",
+          `\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u8f6e\u6b21 ${index + 1} \u6807\u9898`,
+          "\u7528\u4e8e\u5728 UI \u548c\u7b14\u8bb0\u4e2d\u6807\u8bc6\u8fd9\u4e2a\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u4efb\u52a1\u3002",
+          this.normalizeOverallReadingTitle(prompt.title),
+          "\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u8f6e\u6b21\u6807\u9898",
         ),
       );
       promptCard.appendChild(
         this.createPromptDetails(
-          "\u7efc\u8ff0\u6458\u8981\u63d0\u793a\u8bcd",
+          "\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u63d0\u793a\u8bcd",
           prompt.prompt,
           `deep-read-fixed-prompt-${index}`,
-          "\u8fd9\u91cc\u662f\u5728\u9010\u7ae0\u7cbe\u8bfb\u524d\u53d1\u7ed9 AI \u7684\u7efc\u8ff0\u3001\u6458\u8981\u6216\u5168\u6587\u7406\u89e3\u4efb\u52a1\u3002",
+          "\u8fd9\u91cc\u662f\u5728\u9010\u7ae0\u7cbe\u8bfb\u524d\u53d1\u7ed9 AI \u7684\u6574\u4f53\u901a\u8bfb\u3001\u6458\u8981\u6216\u5168\u6587\u7406\u89e3\u4efb\u52a1\u3002",
         ),
       );
       wrapper.appendChild(promptCard);
     });
 
     const addButton = createStyledButton(
-      "+ \u6dfb\u52a0\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb\u8f6e\u6b21",
+      "+ \u6dfb\u52a0\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u8f6e\u6b21",
       "#4caf50",
       "small",
     );
@@ -1118,6 +1125,40 @@ export class PromptsSettingsPage {
     });
     details.appendChild(editor);
     return details;
+  }
+
+  private createBuiltinPromptHelp(
+    title: string,
+    content: string,
+    helpText: string,
+  ): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const wrapper = doc.createElement("div");
+    Object.assign(wrapper.style, {
+      marginTop: "8px",
+      padding: "10px 12px",
+      borderRadius: "8px",
+      border: "1px solid rgba(0,0,0,0.12)",
+      background: "var(--ai-bg, #f7f9fb)",
+      color: "var(--ai-text, #333)",
+      fontSize: "13px",
+      lineHeight: "1.5",
+    });
+
+    const label = doc.createElement("span");
+    label.textContent = `${title} \u24d8`;
+    label.title = `${helpText}\n\n${content}`;
+    Object.assign(label.style, {
+      fontWeight: "600",
+      cursor: "help",
+    });
+    wrapper.appendChild(label);
+
+    const description = doc.createElement("div");
+    description.textContent = helpText;
+    Object.assign(description.style, { marginTop: "6px" });
+    wrapper.appendChild(description);
+    return wrapper;
   }
 
   private renderMultiRoundTemplateControls(
@@ -1439,13 +1480,15 @@ export class PromptsSettingsPage {
         return {
           ...phase,
           contextStrategy: getContextStrategy(phase.contextStrategy),
-          planningPrompt: getValue(
-            "deep-read-planning-prompt",
-            phase.planningPrompt,
-          ),
+          planningPrompt: DEFAULT_MULTI_ROUND_PLANNING_PROMPT,
           fixedPrompts: phase.fixedPrompts.map((prompt, index) => ({
             ...prompt,
-            title: getValue(`deep-read-fixed-title-${index}`, prompt.title),
+            title: this.normalizeOverallReadingTitle(
+              getValue(
+                `deep-read-fixed-title-${index}`,
+                this.normalizeOverallReadingTitle(prompt.title),
+              ),
+            ),
             prompt: getValue(`deep-read-fixed-prompt-${index}`, prompt.prompt),
             order: index + 1,
           })),
@@ -1705,9 +1748,9 @@ export class PromptsSettingsPage {
             ...phase.fixedPrompts,
             {
               id: `fixed_custom_${Date.now()}`,
-              title: `\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb ${nextIndex}`,
+              title: `\u6587\u7ae0\u6574\u4f53\u901a\u8bfb ${nextIndex}`,
               prompt:
-                "\u8bf7\u57fa\u4e8e\u8bba\u6587\u5168\u6587\u5b8c\u6210\u4e00\u4e2a\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb\u4efb\u52a1\uff0c\u8f93\u51fa Markdown\u3002",
+                "\u8bf7\u57fa\u4e8e\u8bba\u6587\u5168\u6587\u5b8c\u6210\u4e00\u4e2a\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u4efb\u52a1\uff0c\u8f93\u51fa Markdown\u3002",
               order: nextIndex,
             },
           ],

@@ -49,6 +49,7 @@ import { marked } from "marked";
 import {
   DEFAULT_TABLE_FILL_PROMPT,
   DEFAULT_TABLE_TEMPLATE,
+  DEFAULT_MULTI_ROUND_PLANNING_PROMPT,
   getBuiltinMultiRoundPromptTemplates,
   getDefaultMultiRoundPromptTemplate,
   mergeMultiRoundPromptTemplates,
@@ -1079,18 +1080,17 @@ export class NoteGenerator {
     }
 
     if (!chapters.length) {
+      const planningPrompt = DEFAULT_MULTI_ROUND_PLANNING_PROMPT;
       params.outputWindow?.appendContent("### 正在解析章节结构\n\n");
       params.outputWindow?.appendContent(
-        `**章节解析提示词：**\n\n${sequentialPhase.planningPrompt}\n\n`,
+        `**章节解析提示词：**\n\n${planningPrompt}\n\n`,
       );
       params.progressCallback?.("正在解析章节结构...", 45);
       const planningResponse = await this.callDeepReadChat({
         session,
         pdfContent: params.pdfContent,
         isBase64: params.isBase64,
-        conversation: [
-          { role: "user", content: sequentialPhase.planningPrompt },
-        ],
+        conversation: [{ role: "user", content: planningPrompt }],
         abortSignal: params.abortSignal,
       });
       lastResponse = planningResponse;

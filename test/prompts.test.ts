@@ -39,7 +39,7 @@ function v2Template(id = "custom"): MultiRoundPromptTemplate {
         contextStrategy: "last_round",
         planningPrompt: "Return JSON chapters.",
         fixedPrompts: [],
-        chapterTemplate: "Read {{chapter_title_zh}} / {{chapter_title_en}}",
+        chapterTemplate: "Read {{title_zh}} / {{title_en}}",
         maxChapters: 2,
       },
       {
@@ -183,7 +183,7 @@ describe("multi-round prompt templates v2", function () {
         { id: "ch2", title_zh: "方法", title_en: "Method" },
         { id: "ch3", title_zh: "实验", title_en: "Experiments" },
       ],
-      "Read {{chapter_index}}. {{chapter_title_zh}} / {{chapter_title_en}}",
+      "Read {{chapter_index}}. {{title_zh}} / {{title_en}}",
       0,
       2,
     );

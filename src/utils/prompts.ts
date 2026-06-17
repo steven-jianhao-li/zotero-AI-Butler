@@ -294,9 +294,10 @@ export const DEFAULT_MULTI_ROUND_PLANNING_PROMPT = `\u8bf7\u9605\u8bfb\u8bba\u65
 \u8981\u6c42\uff1a
 1. \u4f18\u5148\u4f7f\u7528\u8bba\u6587\u539f\u6587\u4e2d\u7684\u7ae0\u8282\u6807\u9898\u3002
 2. \u5982\u679c\u8bba\u6587\u6807\u9898\u4e0d\u662f\u4e2d\u6587\uff0c\u8bf7\u7ed9\u51fa\u7b80\u77ed\u4e2d\u6587\u8bd1\u540d\u548c\u82f1\u6587\u539f\u540d\u3002
-3. \u81f3\u5c11\u8fd4\u56de\u4e24\u4e2a\u7ae0\u8282\uff1b\u5982\u679c\u7ed3\u6784\u4e0d\u6e05\u6670\uff0c\u5c31\u8fd4\u56de\u201c\u5f15\u8a00\u201d\u548c\u201c\u7b2c\u4e8c\u7ae0\u201d\u3002`;
+3. \u81f3\u5c11\u8fd4\u56de\u4e24\u4e2a\u7ae0\u8282\uff1b\u5982\u679c\u7ed3\u6784\u4e0d\u6e05\u6670\uff0c\u5c31\u8fd4\u56de\u201c\u5f15\u8a00\u201d\u548c\u201c\u7b2c\u4e8c\u7ae0\u201d\u3002
+4. JSON \u5b57\u6bb5\u4f1a\u76f4\u63a5\u7528\u4e8e\u9010\u7ae0\u7cbe\u8bfb\u63d0\u793a\u8bcd\u6a21\u677f\uff1atitle_zh \u5bf9\u5e94 {{title_zh}}\uff0ctitle_en \u5bf9\u5e94 {{title_en}}\uff0cid \u4ec5\u7528\u4e8e\u5185\u90e8\u6807\u8bc6\u3002`;
 
-export const DEFAULT_MULTI_ROUND_CHAPTER_TEMPLATE = `\u8bf7\u7cbe\u8bfb\u8bba\u6587\u4e2d\u7684\u201c{{chapter_title_zh}}\uff08{{chapter_title_en}}\uff09\u201d\u8fd9\u4e00\u7ae0\u3002
+export const DEFAULT_MULTI_ROUND_CHAPTER_TEMPLATE = `\u8bf7\u7cbe\u8bfb\u8bba\u6587\u4e2d\u7684\u201c{{title_zh}}\uff08{{title_en}}\uff09\u201d\u8fd9\u4e00\u7ae0\u3002
 
 \u8bf7\u56f4\u7ed5\u4e0b\u9762\u95ee\u9898\u7ec4\u7ec7\u56de\u7b54\uff1a
 1. \u8fd9\u4e00\u7ae0\u5728\u5168\u6587\u4e2d\u7684\u4f5c\u7528\u662f\u4ec0\u4e48\uff1f
@@ -632,6 +633,8 @@ export function generateChapterPrompts(
     title: chapter.title_zh || chapter.title_en || `\u7b2c ${index + 1} \u7ae0`,
     prompt: chapterTemplate
       .replace(/\{\{chapter_index\}\}/g, String(index + 1))
+      .replace(/\{\{title_zh\}\}/g, chapter.title_zh || "")
+      .replace(/\{\{title_en\}\}/g, chapter.title_en || "")
       .replace(/\{\{chapter_title_zh\}\}/g, chapter.title_zh || "")
       .replace(/\{\{chapter_title_en\}\}/g, chapter.title_en || ""),
     order: fixedPromptsCount + index + 1,

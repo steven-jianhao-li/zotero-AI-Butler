@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import {
   isDeepReadTask,
+  isAiStatusTrackedNote,
   isSummaryTask,
   resolveCombinedAiStatusFromTasks,
   resolveDeepReadStatusFromTasks,
@@ -155,6 +156,16 @@ describe("library status column", function () {
     const task = createTask(TaskStatus.PENDING, { taskType: "deepRead" });
     expect(isSummaryTask(task)).to.equal(false);
     expect(isDeepReadTask(task)).to.equal(true);
+  });
+
+  it("tracks only AI status notes for parent refreshes", function () {
+    expect(isAiStatusTrackedNote([], "<p>regular note</p>")).to.equal(false);
+    expect(
+      isAiStatusTrackedNote([{ tag: "AI-Generated" }], "<p>summary</p>"),
+    ).to.equal(true);
+    expect(
+      isAiStatusTrackedNote([{ tag: "AI-DeepRead" }], "<p>deep</p>"),
+    ).to.equal(true);
   });
 
   it("combines summary and deep-read status in one tooltip", function () {

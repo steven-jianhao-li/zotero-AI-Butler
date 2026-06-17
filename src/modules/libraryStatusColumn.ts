@@ -203,6 +203,13 @@ export function serializeStatusData(data: LibraryStatusColumnData): string {
   return JSON.stringify(data);
 }
 
+export function isAiStatusTrackedNote(
+  tags: NoteTag[],
+  noteHtml: string,
+): boolean {
+  return isRegularSummaryNote(tags, noteHtml) || isDeepReadNote(tags, noteHtml);
+}
+
 export function registerLibraryStatusColumn(): void {
   if (registeredDataKeys.length || typeof Zotero === "undefined") {
     return;
@@ -537,7 +544,9 @@ async function refreshItemsAndParents(itemIDs: number[]): Promise<void> {
       if (Number.isInteger(parentID) && parentID > 0) {
         summaryNoteCache.delete(parentID);
         deepReadNoteCache.delete(parentID);
-        scheduleItemRefresh(parentID);
+        if (shouldRefreshParentForChildItem(item)) {
+          scheduleItemRefresh(parentID);
+        }
       }
       if (item?.isRegularItem?.()) {
         scheduleItemRefresh(itemID);
@@ -546,6 +555,20 @@ async function refreshItemsAndParents(itemIDs: number[]): Promise<void> {
       scheduleRefreshAll();
     }
   }
+}
+
+function shouldRefreshParentForChildItem(item: Zotero.Item | false): boolean {
+  if (!item) {
+    return true;
+  }
+
+  if (item.isNote?.()) {
+    const tags = ((item as any).getTags?.() || []) as NoteTag[];
+    const noteHtml = ((item as any).getNote?.() || "") as string;
+    return isAiStatusTrackedNote(tags, noteHtml);
+  }
+
+  return false;
 }
 
 function scheduleItemRefresh(itemId: number): void {

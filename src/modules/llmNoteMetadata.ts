@@ -11,6 +11,7 @@ export interface LLMNoteMetadata {
   providerName: string;
   modelId?: string;
   generatedAt: string;
+  warnings?: string[];
 }
 
 export interface ParsedLLMNoteBlock {
@@ -90,12 +91,18 @@ function renderVisibleMetadata(
   const generatedAtRaw = escapeHtml(metadata.generatedAt);
   const blockId = escapeHtml(metadata.blockId);
   const encoded = escapeHtml(encodedMetadata);
+  const warnings = (metadata.warnings || [])
+    .map((warning) => warning.trim())
+    .filter((warning) => warning.length > 0);
+  const warningHtml =
+    warnings.length > 0 ? ` · 提示：${escapeHtml(warnings.join("；"))}` : "";
   return [
     `<p data-ai-butler-llm-source="v1" data-ai-butler-llm-block-id="${blockId}" data-ai-butler-llm-meta="${encoded}" style="margin: 0 0 12px 0; padding: 6px 8px; border-left: 3px solid #59c0bc; background: #f4fbfb; color: #3d5f5d; font-size: 12px; line-height: 1.45;">`,
     `<strong>AI 来源：</strong>`,
     `供应商：${providerName}`,
     ` · 模型：${modelId}`,
     ` · 生成时间：<span title="${generatedAtRaw}">${generatedAt}</span>`,
+    warningHtml,
     `</p>`,
   ].join("");
 }
@@ -326,6 +333,7 @@ export class LLMNoteMetadataService {
         response?.providerName || response?.providerId || "Unknown provider",
       modelId: response?.model,
       generatedAt: response?.generatedAt || new Date().toISOString(),
+      warnings: response?.warnings,
     };
   }
 
@@ -558,6 +566,9 @@ export class LLMNoteMetadataService {
       `Provider: ${metadata.providerName}`,
       `Model: ${metadata.modelId || "(unknown)"}`,
       `Generated: ${generatedText}`,
+      ...(metadata.warnings && metadata.warnings.length > 0
+        ? [`Warnings: ${metadata.warnings.join("; ")}`]
+        : []),
     ].join("\n");
   }
 

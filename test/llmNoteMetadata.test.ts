@@ -24,6 +24,26 @@ function compactInterTagWhitespace(html: string): string {
 }
 
 describe("LLMNoteMetadataService", function () {
+  it("renders response warnings in visible metadata", function () {
+    const wrapped = LLMNoteMetadataService.wrapHtml(
+      "<h2>AI 总结</h2><p>body</p>",
+      LLMNoteMetadataService.fromResponse("summary", {
+        text: "summary",
+        providerId: "test",
+        providerName: "Test Provider",
+        generatedAt: "2026-01-01T00:00:00.000Z",
+        warnings: ["已使用网页快照文本作为本次分析内容。"],
+      }),
+    );
+
+    const stripped = LLMNoteMetadataService.stripMetadataComments(wrapped);
+
+    expect(stripped).to.contain("提示：已使用网页快照文本作为本次分析内容。");
+    expect(
+      LLMNoteMetadataService.parseAll(wrapped)[0].metadata.warnings,
+    ).to.deep.equal(["已使用网页快照文本作为本次分析内容。"]);
+  });
+
   it("wraps, parses, and strips metadata blocks", function () {
     const html = "<h2>AI 总结</h2><div>Visible content</div>";
     const wrapped = LLMNoteMetadataService.wrapHtml(html, metadata("block-a"));

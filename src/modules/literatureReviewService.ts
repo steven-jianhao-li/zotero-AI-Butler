@@ -596,7 +596,7 @@ ${entryList}
       task: "table",
       prompt: actualPrompt,
       content: {
-        kind: "pdf-attachment",
+        kind: "analyzable-attachment",
         item,
         attachment: sourceAttachment,
       },
@@ -1175,42 +1175,42 @@ ${entryList}
 
     progressCallback?.("正在调用 AI 生成综述...", 60);
 
-    const hasTextSource = sourceContents.some((source) => !source.isBase64);
-    if (hasTextSource) {
-      const combinedText = sourceContents
-        .map((source) => {
-          if (source.isBase64) {
-            return `\n\n=== ${source.title} ===\n[PDF 内容源: ${source.filePath}]`;
-          }
-          return `\n\n=== ${source.title} ===\n${source.content}`;
-        })
-        .join("\n");
+    const pdfSources = sourceContents.filter((source) => source.isBase64);
+    const textSources = sourceContents.filter((source) => !source.isBase64);
+    const textSourceContent = textSources
+      .map((source) => `\n\n=== ${source.title} ===\n${source.content}`)
+      .join("\n");
 
-      const fullPrompt = `${prompt}\n\n以下是需要综述的内容源:\n${combinedText}`;
-
+    if (pdfSources.length === 0) {
       return LLMService.generateText({
         task: "literature-review",
-        prompt: fullPrompt,
+        prompt,
         content: {
           kind: "text",
-          text: combinedText,
+          text: textSourceContent,
           policy: "text",
         },
       });
     }
 
-    const files = sourceContents.map((source, index) => ({
+    const files = pdfSources.map((source, index) => ({
       filePath: source.filePath,
       displayName: `${index + 1}_${source.title.slice(0, 50)}`,
       base64Content: source.content,
     }));
 
+    const fullPrompt =
+      textSources.length > 0
+        ? `${prompt}\n\n以下是额外的文本内容源:\n${textSourceContent}`
+        : prompt;
+
     return LLMService.generateText({
       task: "literature-review",
-      prompt,
+      prompt: fullPrompt,
       content: {
         kind: "pdf-files",
         files,
+        policy: "pdf-base64",
       },
     });
   }

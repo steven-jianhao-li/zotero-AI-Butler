@@ -75,6 +75,13 @@ export type LLMPdfAttachmentContent = {
   policy?: LLMContentPolicy;
 };
 
+export type LLMAnalyzableAttachmentContent = {
+  kind: "analyzable-attachment";
+  item?: Zotero.Item;
+  attachment: Zotero.Item;
+  policy?: LLMContentPolicy;
+};
+
 export type LLMPdfFileInput = PdfFileInfo & {
   textContent?: string;
 };
@@ -97,6 +104,7 @@ export type LLMContentInput =
   | LLMTextContent
   | LLMZoteroItemContent
   | LLMPdfAttachmentContent
+  | LLMAnalyzableAttachmentContent
   | LLMPdfFilesContent
   | LLMLegacyContent;
 
@@ -887,6 +895,10 @@ export class LLMService {
       return this.resolvePdfAttachmentContent(input, policy, warnings);
     }
 
+    if (input.kind === "analyzable-attachment") {
+      return this.resolveAnalyzableAttachmentContent(input, policy, warnings);
+    }
+
     return this.resolvePdfFilesContent(
       provider,
       input,
@@ -1016,6 +1028,22 @@ export class LLMService {
 
   private static async resolvePdfAttachmentContent(
     input: LLMPdfAttachmentContent,
+    policy: LLMContentPolicy,
+    warnings: string[],
+  ): Promise<ResolvedContent> {
+    return this.resolveAttachmentContent(input, policy, warnings);
+  }
+
+  private static async resolveAnalyzableAttachmentContent(
+    input: LLMAnalyzableAttachmentContent,
+    policy: LLMContentPolicy,
+    warnings: string[],
+  ): Promise<ResolvedContent> {
+    return this.resolveAttachmentContent(input, policy, warnings);
+  }
+
+  private static async resolveAttachmentContent(
+    input: Pick<LLMPdfAttachmentContent, "item" | "attachment">,
     policy: LLMContentPolicy,
     warnings: string[],
   ): Promise<ResolvedContent> {

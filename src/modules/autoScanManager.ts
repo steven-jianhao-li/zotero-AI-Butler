@@ -188,7 +188,22 @@ export class AutoScanManager {
   private async hasUsableAnalyzableAttachment(
     item: Zotero.Item,
   ): Promise<boolean> {
-    return ContentExtractor.hasAnalyzableAttachment(item);
+    try {
+      const attachments =
+        await ContentExtractor.getAllAnalyzableAttachments(item);
+      for (const attachment of attachments) {
+        const filePath =
+          (await (attachment as any).getFilePathAsync?.()) ||
+          (attachment as any).getFilePath?.() ||
+          "";
+        if (filePath && (await IOUtils.exists(filePath))) {
+          return true;
+        }
+      }
+    } catch (error) {
+      ztoolkit.log("[AutoScan] 检查可分析附件文件时出错:", error);
+    }
+    return false;
   }
 
   /** 如果条目附件已就绪且需要 AI，则入队；否则进入待观察并轮询重试 */

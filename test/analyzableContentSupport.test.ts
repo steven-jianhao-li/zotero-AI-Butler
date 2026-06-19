@@ -5,6 +5,7 @@ import { LiteratureReviewService } from "../src/modules/literatureReviewService"
 import { NoteGenerator } from "../src/modules/noteGenerator";
 import { PDFExtractor } from "../src/modules/pdfExtractor";
 import { SnapshotExtractor } from "../src/modules/snapshotExtractor";
+import { AutoScanManager } from "../src/modules/autoScanManager";
 import {
   TaskQueueManager,
   TaskStatus,
@@ -306,12 +307,14 @@ describe("analyzable content source support", function () {
   describe("LiteratureReviewService", function () {
     let originalIsPdfAttachment: typeof PDFExtractor.isPdfAttachment;
     let originalExtractTextFromAnalyzableAttachment: typeof ContentExtractor.extractTextFromAnalyzableAttachment;
+    let originalGenerate: typeof LLMService.generate;
     let originalGenerateText: typeof LLMService.generateText;
 
     beforeEach(function () {
       originalIsPdfAttachment = PDFExtractor.isPdfAttachment;
       originalExtractTextFromAnalyzableAttachment =
         ContentExtractor.extractTextFromAnalyzableAttachment;
+      originalGenerate = LLMService.generate;
       originalGenerateText = LLMService.generateText;
     });
 
@@ -319,6 +322,7 @@ describe("analyzable content source support", function () {
       PDFExtractor.isPdfAttachment = originalIsPdfAttachment;
       ContentExtractor.extractTextFromAnalyzableAttachment =
         originalExtractTextFromAnalyzableAttachment;
+      LLMService.generate = originalGenerate;
       LLMService.generateText = originalGenerateText;
     });
 
@@ -345,7 +349,7 @@ describe("analyzable content source support", function () {
       });
     });
 
-    it("uses text content for multi-source summaries when any source is not base64", async function () {
+    it("keeps PDF uploads and injects text sources into the prompt for mixed-source summaries", async function () {
       let capturedRequest: any = null;
       LLMService.generateText = (async (request: any) => {
         capturedRequest = request;
@@ -373,13 +377,81 @@ describe("analyzable content source support", function () {
 
       expect(result).to.equal("Generated review");
       expect(capturedRequest.content).to.deep.include({
-        kind: "text",
-        policy: "text",
+        kind: "pdf-files",
+        policy: "pdf-base64",
       });
-      expect(capturedRequest.content.text).to.contain("Snapshot Paper");
-      expect(capturedRequest.content.text).to.contain("Snapshot readable text");
-      expect(capturedRequest.content.text).to.contain("PDF Paper");
-      expect(capturedRequest.content.text).not.to.contain("JVBERi0x");
+      expect(capturedRequest.content.files).to.have.length(1);
+      expect(capturedRequest.content.files[0]).to.deep.include({
+        filePath: "/tmp/paper.pdf",
+        base64Content: "JVBERi0x",
+      });
+      expect(capturedRequest.prompt).to.contain("Snapshot Paper");
+      expect(capturedRequest.prompt).to.contain("Snapshot readable text");
+      expect(capturedRequest.prompt).not.to.contain("JVBERi0x");
+    });
+
+    it("routes fill-table source attachments through analyzable-attachment content", async function () {
+      let capturedRequest: any = null;
+      LLMService.generate = (async (request: any) => {
+        capturedRequest = request;
+        return {
+          text: "| 维度 | 内容 |\n|---|---|\n| 快照 | 支持 |",
+          providerId: "test",
+          providerName: "Test Provider",
+          generatedAt: "2026-01-01T00:00:00.000Z",
+        };
+      }) as any;
+
+      await LiteratureReviewService.fillTableForSingleAttachment(
+        {
+          id: 1,
+          getField: () => "Snapshot Paper",
+        } as Zotero.Item,
+        {
+          id: 2,
+          attachmentContentType: "text/html",
+        } as Zotero.Item,
+        "| 维度 | 内容 |",
+        "fill ${tableTemplate}",
+      );
+
+      expect(capturedRequest.content).to.deep.include({
+        kind: "analyzable-attachment",
+      });
+    });
+  });
+
+  describe("AutoScanManager", function () {
+    let originalHasAnalyzableAttachment: typeof ContentExtractor.hasAnalyzableAttachment;
+    let originalGetAllAnalyzableAttachments: typeof ContentExtractor.getAllAnalyzableAttachments;
+
+    beforeEach(function () {
+      originalHasAnalyzableAttachment =
+        ContentExtractor.hasAnalyzableAttachment;
+      originalGetAllAnalyzableAttachments =
+        ContentExtractor.getAllAnalyzableAttachments;
+    });
+
+    afterEach(function () {
+      ContentExtractor.hasAnalyzableAttachment =
+        originalHasAnalyzableAttachment;
+      ContentExtractor.getAllAnalyzableAttachments =
+        originalGetAllAnalyzableAttachments;
+    });
+
+    it("does not enqueue analyzable attachments before the local file is available", async function () {
+      ContentExtractor.hasAnalyzableAttachment = async () => true;
+      ContentExtractor.getAllAnalyzableAttachments = async () => [
+        {
+          getFilePathAsync: async () => "",
+        } as Zotero.Item,
+      ];
+
+      const manager = Object.create(AutoScanManager.prototype) as any;
+
+      expect(
+        await manager.hasUsableAnalyzableAttachment({} as Zotero.Item),
+      ).to.equal(false);
     });
   });
 

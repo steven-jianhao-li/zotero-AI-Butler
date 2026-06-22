@@ -82,7 +82,7 @@ pref("__prefsPrefix__.batchSize", "1");
 pref("__prefsPrefix__.batchInterval", "60");
 pref("__prefsPrefix__.autoScan", false);
 pref("__prefsPrefix__.autoScanSummaryEnabled", true);
-pref("__prefsPrefix__.autoScanDeepReadEnabled", true);
+pref("__prefsPrefix__.autoScanDeepReadEnabled", false);
 pref("__prefsPrefix__.scanInterval", "300");
 pref("__prefsPrefix__.pdfProcessMode", "base64"); // "text"、"base64" 或 "mineru"
 pref("__prefsPrefix__.pdfAttachmentMode", "default"); // "default" 或 "all"

@@ -273,7 +273,7 @@ function initializeDefaultPrefsOnStartup() {
     sidebarModuleOrder: DEFAULT_SIDEBAR_MODULE_ORDER_PREF,
     openTaskPanelOnSummon: false,
     autoScanSummaryEnabled: true,
-    autoScanDeepReadEnabled: true,
+    autoScanDeepReadEnabled: false,
   };
 
   // 遍历所有配置项,确保每项都有有效值

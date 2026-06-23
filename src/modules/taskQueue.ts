@@ -330,6 +330,36 @@ export class TaskQueueManager {
     }
 
     if (task.status === TaskStatus.FAILED) {
+      if (
+        await this.shouldSkipNewFixedTaskForExistingArtifact(
+          item,
+          artifactType,
+          options,
+        )
+      ) {
+        logTaskQueue(
+          `失败任务已有可用产物且当前策略为跳过，标记完成: ${task.id}`,
+        );
+        task.status = TaskStatus.COMPLETED;
+        task.progress = 100;
+        task.error = undefined;
+        task.errorDetails = undefined;
+        task.retryCount = 0;
+        task.startedAt = undefined;
+        task.completedAt = new Date();
+        task.duration = 0;
+        task.options = options;
+        task.workflowStage = "已存在，跳过生成";
+        await this.saveToStorage();
+        this.notifyProgress(
+          task.id,
+          100,
+          "AI artifact already exists; skipped",
+        );
+        this.notifyComplete(task.id, true);
+        return false;
+      }
+
       logTaskQueue(`失败任务重新入队: ${task.id}`);
       this.resetTaskForEnqueue(task, priority, options, workflowStage);
       await this.saveToStorage();
@@ -404,6 +434,29 @@ export class TaskQueueManager {
     }
 
     return false;
+  }
+
+  private async shouldSkipNewFixedTaskForExistingArtifact(
+    item: Zotero.Item,
+    artifactType: FixedTaskArtifactType,
+    options?: TaskItem["options"],
+  ): Promise<boolean> {
+    const artifact = await TaskArtifacts.probe(artifactType, item);
+    if (artifact.probeFailed || !artifact.exists) {
+      return false;
+    }
+
+    return !this.shouldRegenerateWhenArtifactExists(artifactType, options);
+  }
+
+  private async recordSkippedCompletedTask(
+    task: TaskItem,
+    message: string,
+  ): Promise<void> {
+    this.tasks.set(task.id, task);
+    await this.saveToStorage();
+    this.notifyProgress(task.id, 100, message);
+    this.notifyComplete(task.id, true);
   }
 
   private resetTaskForEnqueue(
@@ -490,6 +543,35 @@ export class TaskQueueManager {
       return taskId;
     }
 
+    if (
+      await this.shouldSkipNewFixedTaskForExistingArtifact(
+        item,
+        "summary",
+        options,
+      )
+    ) {
+      logTaskQueue(`AI 总结已存在且当前策略为跳过，跳过入队: ${taskId}`);
+      await this.recordSkippedCompletedTask(
+        {
+          id: taskId,
+          itemId: item.id,
+          title: item.getField("title") as string,
+          status: TaskStatus.COMPLETED,
+          progress: 100,
+          createdAt: new Date(),
+          completedAt: new Date(),
+          retryCount: 0,
+          maxRetries: parseInt(getPref("maxRetries") as string) || 3,
+          taskType: "summary",
+          workflowStage: "已存在，跳过生成",
+          options,
+          duration: 0,
+        },
+        "AI summary already exists; skipped",
+      );
+      return taskId;
+    }
+
     // 创建任务项
     const task: TaskItem = {
       id: taskId,
@@ -555,6 +637,35 @@ export class TaskQueueManager {
           logTaskQueue(`AI 精读优先任务立即执行失败: ${e}`);
         });
       }
+      return taskId;
+    }
+
+    if (
+      await this.shouldSkipNewFixedTaskForExistingArtifact(
+        item,
+        "deepRead",
+        deepReadOptions,
+      )
+    ) {
+      logTaskQueue(`AI 精读已存在且当前策略为跳过，跳过入队: ${taskId}`);
+      await this.recordSkippedCompletedTask(
+        {
+          id: taskId,
+          itemId: item.id,
+          title: item.getField("title") as string,
+          status: TaskStatus.COMPLETED,
+          progress: 100,
+          createdAt: new Date(),
+          completedAt: new Date(),
+          retryCount: 0,
+          maxRetries: parseInt(getPref("maxRetries") as string) || 3,
+          taskType: "deepRead",
+          workflowStage: "已存在，跳过生成",
+          options: deepReadOptions,
+          duration: 0,
+        },
+        "AI deep read already exists; skipped",
+      );
       return taskId;
     }
 
@@ -704,6 +815,9 @@ export class TaskQueueManager {
     task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
+    this.abortingTasks.delete(taskId);
+    const abortController = createTaskAbortController();
+    this.taskAbortControllers.set(taskId, abortController);
     await this.saveToStorage();
 
     logTaskQueue(`开始执行一图总结任务: ${task.title}`);
@@ -731,6 +845,7 @@ export class TaskQueueManager {
             this.saveToStorage().catch(() => {});
           }
         },
+        abortController.signal,
       );
 
       // 任务成功完成
@@ -767,6 +882,8 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
+      this.taskAbortControllers.delete(taskId);
+      this.abortingTasks.delete(taskId);
       await this.saveToStorage();
     }
   }
@@ -873,6 +990,9 @@ export class TaskQueueManager {
     task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
+    this.abortingTasks.delete(taskId);
+    const abortController = createTaskAbortController();
+    this.taskAbortControllers.set(taskId, abortController);
     await this.saveToStorage();
 
     logTaskQueue(`开始执行思维导图任务: ${task.title}`);
@@ -888,16 +1008,20 @@ export class TaskQueueManager {
       const { MindmapService } = await import("./mindmapService");
 
       // 执行思维导图生成
-      await MindmapService.generateForItem(item, (stage, message, progress) => {
-        // 更新任务进度
-        task.progress = progress;
-        task.workflowStage = message;
-        this.notifyProgress(taskId, progress, message);
-        // 保存进度（但不要太频繁）
-        if (progress % 20 === 0 || progress === 100) {
-          this.saveToStorage().catch(() => {});
-        }
-      });
+      await MindmapService.generateForItem(
+        item,
+        (stage, message, progress) => {
+          // 更新任务进度
+          task.progress = progress;
+          task.workflowStage = message;
+          this.notifyProgress(taskId, progress, message);
+          // 保存进度（但不要太频繁）
+          if (progress % 20 === 0 || progress === 100) {
+            this.saveToStorage().catch(() => {});
+          }
+        },
+        abortController.signal,
+      );
 
       // 任务成功完成
       task.status = TaskStatus.COMPLETED;
@@ -933,6 +1057,8 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
+      this.taskAbortControllers.delete(taskId);
+      this.abortingTasks.delete(taskId);
       await this.saveToStorage();
     }
   }
@@ -1042,6 +1168,9 @@ export class TaskQueueManager {
     task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
+    this.abortingTasks.delete(taskId);
+    const abortController = createTaskAbortController();
+    this.taskAbortControllers.set(taskId, abortController);
     await this.saveToStorage();
 
     try {
@@ -1086,6 +1215,8 @@ export class TaskQueueManager {
         pdfAtt,
         tableTemplate,
         fillPrompt,
+        undefined,
+        abortController.signal,
       );
 
       task.workflowStage = "正在保存";
@@ -1120,6 +1251,8 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
+      this.taskAbortControllers.delete(taskId);
+      this.abortingTasks.delete(taskId);
       await this.saveToStorage();
     }
   }
@@ -1199,6 +1332,9 @@ export class TaskQueueManager {
     task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
+    this.abortingTasks.delete(taskId);
+    const abortController = createTaskAbortController();
+    this.taskAbortControllers.set(taskId, abortController);
     await this.saveToStorage();
 
     try {
@@ -1240,6 +1376,7 @@ export class TaskQueueManager {
             this.saveToStorage().catch(() => {});
           }
         },
+        abortController.signal,
       );
 
       task.status = TaskStatus.COMPLETED;
@@ -1261,6 +1398,8 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
+      this.taskAbortControllers.delete(taskId);
+      this.abortingTasks.delete(taskId);
       await this.saveToStorage();
     }
   }
@@ -1350,6 +1489,9 @@ export class TaskQueueManager {
     task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
+    this.abortingTasks.delete(taskId);
+    const abortController = createTaskAbortController();
+    this.taskAbortControllers.set(taskId, abortController);
     await this.saveToStorage();
 
     try {
@@ -1397,6 +1539,7 @@ export class TaskQueueManager {
             this.saveToStorage().catch(() => {});
           }
         },
+        abortController.signal,
       );
 
       task.status = TaskStatus.COMPLETED;
@@ -1420,6 +1563,8 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
+      this.taskAbortControllers.delete(taskId);
+      this.abortingTasks.delete(taskId);
       await this.saveToStorage();
     }
   }
@@ -1497,12 +1642,15 @@ export class TaskQueueManager {
       return;
     }
 
-    // 不能删除处理中的任务
     if (task.status === TaskStatus.PROCESSING) {
-      throw new Error("无法删除处理中的任务");
+      this.abortingTasks.add(taskId);
+      const controller = this.taskAbortControllers.get(taskId);
+      controller?.abort(LLM_REQUEST_ABORT_MESSAGE);
     }
 
     this.tasks.delete(taskId);
+    this.processingTasks.delete(taskId);
+    this.taskAbortControllers.delete(taskId);
     await this.saveToStorage();
 
     logTaskQueue(`删除任务: ${taskId}`);
@@ -1620,10 +1768,17 @@ export class TaskQueueManager {
     }
 
     this.abortingTasks.add(taskId);
-    task.workflowStage = "正在终止";
+    const completedAt = new Date();
+    task.status = TaskStatus.FAILED;
+    task.workflowStage = "已终止";
     task.error = LLM_REQUEST_ABORT_MESSAGE;
     task.errorDetails = TASK_ABORT_DETAIL;
-    this.notifyProgress(taskId, task.progress, "正在终止");
+    task.completedAt = completedAt;
+    if (task.startedAt) {
+      task.duration = Math.floor(
+        (completedAt.getTime() - task.startedAt.getTime()) / 1000,
+      );
+    }
 
     const controller = this.taskAbortControllers.get(taskId);
     if (controller) {
@@ -1631,6 +1786,7 @@ export class TaskQueueManager {
     }
 
     await this.saveToStorage();
+    this.notifyProgress(taskId, task.progress, "已终止");
     logTaskQueue(`用户终止任务: ${task.title} (${taskId})`);
   }
 
@@ -1985,6 +2141,17 @@ export class TaskQueueManager {
         },
         { ...(task.options || {}), abortSignal: abortController.signal },
       );
+
+      const artifactType: FixedTaskArtifactType =
+        task.taskType === "deepRead" ? "deepRead" : "summary";
+      const artifact = await TaskArtifacts.probe(artifactType, item);
+      if (!artifact.exists) {
+        throw new Error(
+          artifactType === "deepRead"
+            ? `AI 精读尚未完整生成（${artifact.reason || "incomplete"}），已重新加入队列补全未完成轮次`
+            : `AI 总结尚未完整生成（${artifact.reason || "incomplete"}）`,
+        );
+      }
 
       if (this.abortingTasks.has(taskId) || abortController.signal.aborted) {
         throw new Error(LLM_REQUEST_ABORT_MESSAGE);

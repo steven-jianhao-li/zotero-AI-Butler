@@ -247,6 +247,57 @@ export function extractDeepReadPlanMetadata(
   }
 }
 
+export function extractDeepReadChaptersFromHtml(
+  noteHtml: string,
+): ChapterInfo[] {
+  const chapters: ChapterInfo[] = [];
+  const seen = new Set<string>();
+  const pattern = /第\s*(\d+)\s*章\s*[：:]\s*([^<\n\r]+)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(noteHtml))) {
+    const index = Number(match[1]);
+    const rawTitle = decodeBasicHtmlEntities(stripHtml(match[2])).trim();
+    if (!Number.isInteger(index) || index <= 0 || !rawTitle) continue;
+
+    const parsed = parseRenderedChapterTitle(rawTitle);
+    const id = `ch${index}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    chapters.push({ id, ...parsed });
+  }
+
+  return chapters;
+}
+
+function parseRenderedChapterTitle(title: string): {
+  title_zh: string;
+  title_en: string;
+} {
+  const normalized = title.replace(/\s+/g, " ").trim();
+  const pair = normalized.match(/^(.+?)（(.+?)）$/);
+  if (pair) {
+    return { title_zh: pair[1].trim(), title_en: pair[2].trim() };
+  }
+
+  const asciiPair = normalized.match(/^(.+?)\((.+?)\)$/);
+  if (asciiPair) {
+    return { title_zh: asciiPair[1].trim(), title_en: asciiPair[2].trim() };
+  }
+
+  return { title_zh: normalized, title_en: "" };
+}
+
+function decodeBasicHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
 function buildPlanMetadataComment(
   template: MultiRoundPromptTemplate,
   chapters: ChapterInfo[],

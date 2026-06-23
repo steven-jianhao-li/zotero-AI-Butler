@@ -29,6 +29,15 @@ const FOLLOW_UP_CHAT_ASSISTANT_STYLE =
 const FOLLOW_UP_CHAT_TIME_STYLE =
   "font-size:11px; color:inherit; opacity:0.65; margin-top:6px;";
 
+const NOTE_PRE_STYLE =
+  "max-width:100%; overflow-x:auto; overflow-y:hidden; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; box-sizing:border-box;";
+const NOTE_CODE_STYLE =
+  "white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word;";
+const NOTE_TABLE_STYLE =
+  "max-width:100%; width:auto; table-layout:auto; overflow-wrap:anywhere; word-break:break-word;";
+const NOTE_MATH_BLOCK_STYLE =
+  "text-align:center; max-width:100%; overflow-x:auto; overflow-y:hidden; overflow-wrap:anywhere; word-break:break-word; box-sizing:border-box;";
+
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -109,7 +118,7 @@ export function markdownToZoteroNoteHtml(markdown: string): string {
   let html = marked.parse(processedMarkdown) as string;
   html = html.replace(/\s+style="[^"]*"/g, "");
 
-  return html.replace(
+  html = html.replace(
     /<p>\s*FORMULA_BLOCK_(\d+)_END\s*<\/p>|FORMULA_(BLOCK|INLINE)_(\d+)_END/g,
     (_match, blockIndex, _type, inlineIndex) => {
       const formulaData = formulas[parseInt(blockIndex ?? inlineIndex)];
@@ -122,6 +131,38 @@ export function markdownToZoteroNoteHtml(markdown: string): string {
       return `<span class="math">$${escapedContent}$</span>`;
     },
   );
+
+  return addZoteroNoteOverflowGuards(html);
+}
+
+function mergeStyleAttribute(tag: string, style: string): string {
+  if (tag.includes(style)) return tag;
+  const styleMatch = tag.match(/\sstyle="([^"]*)"/i);
+  if (styleMatch) {
+    return tag.replace(
+      styleMatch[0],
+      ` style="${styleMatch[1].trim().replace(/;?\s*$/, "; ")}${style}"`,
+    );
+  }
+  return tag.replace(/>$/, ` style="${style}">`);
+}
+
+export function addZoteroNoteOverflowGuards(html: string): string {
+  return html
+    .replace(/<pre\b([^>]*)>/gi, (tag) =>
+      mergeStyleAttribute(tag, NOTE_PRE_STYLE),
+    )
+    .replace(/<code\b([^>]*)>/gi, (tag) =>
+      mergeStyleAttribute(tag, NOTE_CODE_STYLE),
+    )
+    .replace(/<table\b([^>]*)>/gi, (tag) =>
+      mergeStyleAttribute(tag, NOTE_TABLE_STYLE),
+    )
+    .replace(
+      /(<p\b[^>]*>)(\s*<span class="math">[\s\S]*?<\/span>\s*)<\/p>/gi,
+      (_match, openingTag, inner) =>
+        `${mergeStyleAttribute(openingTag, NOTE_MATH_BLOCK_STYLE)}${inner}</p>`,
+    );
 }
 
 function normalizeMarkdownBlockBoundaries(markdown: string): string {

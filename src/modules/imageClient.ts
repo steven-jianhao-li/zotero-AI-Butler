@@ -19,6 +19,13 @@
  */
 
 import { getPref } from "../utils/prefs";
+import type { LLMAbortSignal } from "./llmproviders/types";
+import {
+  bindAbortSignal,
+  isAbortError,
+  normalizeAbortError,
+  throwIfAborted,
+} from "./llmproviders/shared/requestAbort";
 
 export type ImageSummaryRequestMode = "gemini" | "openai";
 export type ImageSummaryCustomHeadersInput =
@@ -1280,6 +1287,7 @@ export class ImageClient {
       resolution: string;
       customHeaders?: ImageSummaryCustomHeadersInput;
       requestTimeoutMs: number;
+      abortSignal?: LLMAbortSignal;
     },
   ): Promise<ImageGenerationResult> {
     const apiUrl = this.normalizeApiUrl(config.apiUrl);
@@ -1323,15 +1331,32 @@ export class ImageClient {
     ztoolkit.log(`[AI-Butler] 调用 OpenAI 兼容生图 API: ${endpoint}`);
     ztoolkit.log(`[AI-Butler] 生图提示词长度: ${prompt.length} 字符`);
 
+    throwIfAborted(config.abortSignal);
+
     let response: any;
+    let abortError: Error | null = null;
+    let cleanupAbortSignal: (() => void) | undefined;
     try {
       response = await Zotero.HTTP.request("POST", endpoint, {
         headers,
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: config.requestTimeoutMs,
+        requestObserver: (xmlhttp: XMLHttpRequest) => {
+          cleanupAbortSignal = bindAbortSignal(
+            config.abortSignal,
+            xmlhttp,
+            (error) => {
+              abortError = error;
+            },
+          );
+        },
       });
     } catch (error: any) {
+      if (abortError || isAbortError(error, config.abortSignal)) {
+        throw normalizeAbortError(abortError || error, config.abortSignal);
+      }
+
       const statusCode = error?.xmlhttp?.status;
       const responseBody =
         error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
@@ -1388,6 +1413,8 @@ export class ImageClient {
             ? responseBody
             : JSON.stringify(responseBody),
       });
+    } finally {
+      cleanupAbortSignal?.();
     }
 
     if (response.status !== 200) {
@@ -1466,6 +1493,7 @@ export class ImageClient {
       requestMode?: ImageSummaryRequestMode;
       customHeaders?: ImageSummaryCustomHeadersInput;
       requestTimeoutMs?: number;
+      abortSignal?: LLMAbortSignal;
     },
   ): Promise<ImageGenerationResult> {
     const requestMode = this.resolveRequestMode(
@@ -1527,6 +1555,7 @@ export class ImageClient {
         resolution: resolutionEnabled ? resolution : "",
         customHeaders,
         requestTimeoutMs,
+        abortSignal: options?.abortSignal,
       });
     }
 
@@ -1618,15 +1647,32 @@ export class ImageClient {
     tuneIntPref("network.http.response.timeout", networkTimeoutSeconds);
     tuneIntPref("network.http.connection-timeout", networkTimeoutSeconds);
 
+    throwIfAborted(options?.abortSignal);
+
     let response: any;
+    let abortError: Error | null = null;
+    let cleanupAbortSignal: (() => void) | undefined;
     try {
       response = await Zotero.HTTP.request("POST", endpoint, {
         headers,
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: requestTimeoutMs,
+        requestObserver: (xmlhttp: XMLHttpRequest) => {
+          cleanupAbortSignal = bindAbortSignal(
+            options?.abortSignal,
+            xmlhttp,
+            (error) => {
+              abortError = error;
+            },
+          );
+        },
       });
     } catch (error: any) {
+      if (abortError || isAbortError(error, options?.abortSignal)) {
+        throw normalizeAbortError(abortError || error, options?.abortSignal);
+      }
+
       const statusCode = error?.xmlhttp?.status;
       const responseBody =
         error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
@@ -1677,6 +1723,8 @@ export class ImageClient {
             : JSON.stringify(responseBody),
       });
     } finally {
+      cleanupAbortSignal?.();
+
       // 恢复所有 Gecko 偏好
       for (const { key, type, val } of savedPrefs) {
         try {

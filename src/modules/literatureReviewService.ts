@@ -23,6 +23,7 @@ import {
   LLMNoteMetadataService,
   type LLMNoteMetadata,
 } from "./llmNoteMetadata";
+import type { LLMAbortSignal } from "./llmproviders/types";
 import { getPref } from "../utils/prefs";
 import { marked } from "marked";
 import {
@@ -82,6 +83,7 @@ export class LiteratureReviewService {
     prompt: string,
     tableTemplateOverride?: string,
     progressCallback?: (message: string, progress: number) => void,
+    abortSignal?: LLMAbortSignal,
   ): Promise<Zotero.Item> {
     // 1. 逐篇填表阶段
     const tableTemplate =
@@ -120,6 +122,7 @@ export class LiteratureReviewService {
         const progress = 10 + Math.floor((done / total) * 50);
         progressCallback?.(`正在填表 (${done}/${total})...`, progress);
       },
+      abortSignal,
     );
 
     // 2. 汇总表格并生成综述
@@ -139,6 +142,7 @@ export class LiteratureReviewService {
       task: "literature-review",
       prompt: fullPrompt,
       content: { kind: "text", text: aggregated, policy: "text" },
+      transport: { abortSignal },
     });
     let summaryContent = reviewResponse.text;
 
@@ -193,6 +197,7 @@ export class LiteratureReviewService {
     tableTemplateOverride?: string,
     options?: TargetedAnswerOptions,
     progressCallback?: (message: string, progress: number) => void,
+    abortSignal?: LLMAbortSignal,
   ): Promise<Zotero.Item> {
     const tableTemplate =
       tableTemplateOverride ||
@@ -238,6 +243,7 @@ export class LiteratureReviewService {
             const progress = 10 + Math.floor((done / total) * 50);
             progressCallback?.(`正在追加填表 (${done}/${total})...`, progress);
           },
+          abortSignal,
         )
       : await this.fillTablesInParallel(
           itemPdfPairs,
@@ -249,6 +255,7 @@ export class LiteratureReviewService {
             const progress = 10 + Math.floor((done / total) * 50);
             progressCallback?.(`正在填表 (${done}/${total})...`, progress);
           },
+          abortSignal,
         );
 
     const selectedTableEntries = Array.from(
@@ -281,6 +288,7 @@ export class LiteratureReviewService {
       task: "literature-review",
       prompt: fullPrompt,
       content: { kind: "text", text: aggregated, policy: "text" },
+      transport: { abortSignal },
     });
     let answerContent = answerResponse.text;
     answerContent = await this.postProcessCitations(
@@ -512,6 +520,7 @@ ${entryList}
     fillPrompt: string,
     concurrency: number,
     progressCallback?: (done: number, total: number) => void,
+    abortSignal?: LLMAbortSignal,
   ): Promise<Map<number, string>> {
     const results = new Map<number, string>();
     let completed = 0;
@@ -534,6 +543,8 @@ ${entryList}
             task.pdfAttachment,
             appendTemplate,
             appendPrompt,
+            undefined,
+            abortSignal,
           );
           const mergedTable = this.mergeAppendRowsIntoExistingTable(
             existingTable,
@@ -584,6 +595,7 @@ ${entryList}
     tableTemplate: string,
     fillPrompt: string,
     progressCallback?: (message: string, progress: number) => void,
+    abortSignal?: LLMAbortSignal,
   ): Promise<string> {
     const itemTitle = (item.getField("title") as string) || "未知标题";
 
@@ -609,6 +621,7 @@ ${entryList}
       onProgress: () => {
         /* dummy callback to trigger streaming */
       },
+      transport: { abortSignal },
     });
     const result = response.text;
     this.lastTableMetadataByItemId.set(
@@ -927,6 +940,7 @@ ${entryList}
       forceOverwriteSave?: boolean;
     },
     progressCallback?: (done: number, total: number) => void,
+    abortSignal?: LLMAbortSignal,
   ): Promise<Map<number, string>> {
     const results = new Map<number, string>();
     let completed = 0;
@@ -958,6 +972,8 @@ ${entryList}
             task.pdfAttachment,
             tableTemplate,
             fillPrompt,
+            undefined,
+            abortSignal,
           );
           await this.saveTableNote(task.parentItem, table, forceOverwriteSave);
           results.set(task.parentItem.id, table);

@@ -88,6 +88,34 @@ export class UiSettingsPage {
       ),
     );
 
+    const autoScanSummary =
+      (getPref("autoScanSummaryEnabled" as any) as boolean) ?? true;
+    const autoScanSummaryBox = createCheckbox(
+      "autoScanSummaryEnabled",
+      !!autoScanSummary,
+    );
+    form.appendChild(
+      createFormGroup(
+        "自动扫描时生成 AI 总结",
+        autoScanSummaryBox,
+        "开启后，自动扫描到的新文献会加入 AI 总结队列。",
+      ),
+    );
+
+    const autoScanDeepRead =
+      (getPref("autoScanDeepReadEnabled" as any) as boolean) ?? false;
+    const autoScanDeepReadBox = createCheckbox(
+      "autoScanDeepReadEnabled",
+      !!autoScanDeepRead,
+    );
+    form.appendChild(
+      createFormGroup(
+        "自动扫描时生成 AI 精读",
+        autoScanDeepReadBox,
+        "开启后，自动扫描到的新文献会加入 AI 精读队列；可关闭以节省 token。",
+      ),
+    );
+
     // 保存对话历史
     const saveChatHistory = (getPref("saveChatHistory") as boolean) ?? true;
     const saveChatHistoryBox = createCheckbox(
@@ -242,13 +270,17 @@ export class UiSettingsPage {
           form.querySelector(
             "#setting-autoScanSummaryEnabled",
           ) as HTMLInputElement
-        )?.checked ?? true;
+        )?.checked ??
+        (getPref("autoScanSummaryEnabled" as any) as boolean) ??
+        true;
       const autoScanDeepReadVal =
         (
           form.querySelector(
             "#setting-autoScanDeepReadEnabled",
           ) as HTMLInputElement
-        )?.checked ?? true;
+        )?.checked ??
+        (getPref("autoScanDeepReadEnabled" as any) as boolean) ??
+        false;
       const saveChatHistoryVal =
         (form.querySelector("#setting-saveChatHistory") as HTMLInputElement)
           ?.checked ?? true;
@@ -310,7 +342,7 @@ export class UiSettingsPage {
       setPref("autoScroll", true as any);
       setPref("autoScan", true as any);
       setPref("autoScanSummaryEnabled" as any, true as any);
-      setPref("autoScanDeepReadEnabled" as any, true as any);
+      setPref("autoScanDeepReadEnabled" as any, false as any);
       setPref("saveChatHistory", true as any);
       setPref("openTaskPanelOnSummon" as any, false as any);
       setPref("enableTableFeature", true);

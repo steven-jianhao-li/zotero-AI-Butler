@@ -4,6 +4,7 @@ import {
   isRegularSummaryNote,
   type NoteTag,
 } from "./aiNoteClassifier";
+import { hasRunnableDeepReadSlots } from "./deepReadEngine";
 import { TaskQueueManager, TaskStatus, type TaskItem } from "./taskQueue";
 
 type AiStatusColumnKind = "summary" | "deepRead";
@@ -179,7 +180,7 @@ function resolveKindStatus(
           : `${label}排队`,
     };
   }
-  if (hasNote || pickLatestTaskByStatus(kindTasks, [TaskStatus.COMPLETED])) {
+  if (hasNote) {
     return { status: "completed", progress: 100, tooltip: `${label}已完成` };
   }
   const failedTask = pickLatestTaskByStatus(kindTasks, [TaskStatus.FAILED]);
@@ -452,7 +453,8 @@ function hasAiNoteKind(
       const matches =
         kind === "summary"
           ? isRegularSummaryNote(tags, noteHtml)
-          : isDeepReadNote(tags, noteHtml);
+          : isDeepReadNote(tags, noteHtml) &&
+            !hasRunnableDeepReadSlots(noteHtml);
       if (matches) {
         cache.set(itemId, true);
         return true;

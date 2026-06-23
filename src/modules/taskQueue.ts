@@ -1701,10 +1701,17 @@ export class TaskQueueManager {
     }
 
     this.abortingTasks.add(taskId);
-    task.workflowStage = "正在终止";
+    const completedAt = new Date();
+    task.status = TaskStatus.FAILED;
+    task.workflowStage = "已终止";
     task.error = LLM_REQUEST_ABORT_MESSAGE;
     task.errorDetails = TASK_ABORT_DETAIL;
-    this.notifyProgress(taskId, task.progress, "正在终止");
+    task.completedAt = completedAt;
+    if (task.startedAt) {
+      task.duration = Math.floor(
+        (completedAt.getTime() - task.startedAt.getTime()) / 1000,
+      );
+    }
 
     const controller = this.taskAbortControllers.get(taskId);
     if (controller) {
@@ -1712,6 +1719,7 @@ export class TaskQueueManager {
     }
 
     await this.saveToStorage();
+    this.notifyProgress(taskId, task.progress, "已终止");
     logTaskQueue(`用户终止任务: ${task.title} (${taskId})`);
   }
 

@@ -1293,6 +1293,12 @@ export class TaskQueueView extends BaseView {
     // 注册回调
     this.unsubscribeProgress = this.manager.onProgress(
       (taskId, progress, message) => {
+        const currentTask = this.manager?.getTask(taskId);
+        if (currentTask && currentTask.status !== TaskStatus.PROCESSING) {
+          this.syncFromManager();
+          return;
+        }
+
         const t = this.tasks.find((t) => t.id === taskId);
         if (t) {
           t.status = TaskStatus.PROCESSING;

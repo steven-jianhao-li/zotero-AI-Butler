@@ -2092,11 +2092,11 @@ async function handleMultiRoundSummary() {
     const taskQueue = TaskQueueManager.getInstance();
     const priority = items.length === 1;
 
-    // 批量添加任务，带有特定选项
+    // 批量添加任务，遵守“已有 AI 总结 / AI 精读时的策略”。
+    // 若设置为 skip 且已有完整 AI 精读，任务队列会跳过；若精读半成品，仍会补跑未完成轮次。
     for (const item of items) {
       await taskQueue.addDeepReadTask(item, priority, {
         summaryMode: "deepRead",
-        forceOverwrite: true,
       });
     }
 

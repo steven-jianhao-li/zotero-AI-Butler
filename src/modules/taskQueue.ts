@@ -406,6 +406,29 @@ export class TaskQueueManager {
     return false;
   }
 
+  private async shouldSkipNewFixedTaskForExistingArtifact(
+    item: Zotero.Item,
+    artifactType: FixedTaskArtifactType,
+    options?: TaskItem["options"],
+  ): Promise<boolean> {
+    const artifact = await TaskArtifacts.probe(artifactType, item);
+    if (artifact.probeFailed || !artifact.exists) {
+      return false;
+    }
+
+    return !this.shouldRegenerateWhenArtifactExists(artifactType, options);
+  }
+
+  private async recordSkippedCompletedTask(
+    task: TaskItem,
+    message: string,
+  ): Promise<void> {
+    this.tasks.set(task.id, task);
+    await this.saveToStorage();
+    this.notifyProgress(task.id, 100, message);
+    this.notifyComplete(task.id, true);
+  }
+
   private resetTaskForEnqueue(
     task: TaskItem,
     priority: boolean,
@@ -490,6 +513,35 @@ export class TaskQueueManager {
       return taskId;
     }
 
+    if (
+      await this.shouldSkipNewFixedTaskForExistingArtifact(
+        item,
+        "summary",
+        options,
+      )
+    ) {
+      logTaskQueue(`AI 总结已存在且当前策略为跳过，跳过入队: ${taskId}`);
+      await this.recordSkippedCompletedTask(
+        {
+          id: taskId,
+          itemId: item.id,
+          title: item.getField("title") as string,
+          status: TaskStatus.COMPLETED,
+          progress: 100,
+          createdAt: new Date(),
+          completedAt: new Date(),
+          retryCount: 0,
+          maxRetries: parseInt(getPref("maxRetries") as string) || 3,
+          taskType: "summary",
+          workflowStage: "已存在，跳过生成",
+          options,
+          duration: 0,
+        },
+        "AI summary already exists; skipped",
+      );
+      return taskId;
+    }
+
     // 创建任务项
     const task: TaskItem = {
       id: taskId,
@@ -555,6 +607,35 @@ export class TaskQueueManager {
           logTaskQueue(`AI 精读优先任务立即执行失败: ${e}`);
         });
       }
+      return taskId;
+    }
+
+    if (
+      await this.shouldSkipNewFixedTaskForExistingArtifact(
+        item,
+        "deepRead",
+        deepReadOptions,
+      )
+    ) {
+      logTaskQueue(`AI 精读已存在且当前策略为跳过，跳过入队: ${taskId}`);
+      await this.recordSkippedCompletedTask(
+        {
+          id: taskId,
+          itemId: item.id,
+          title: item.getField("title") as string,
+          status: TaskStatus.COMPLETED,
+          progress: 100,
+          createdAt: new Date(),
+          completedAt: new Date(),
+          retryCount: 0,
+          maxRetries: parseInt(getPref("maxRetries") as string) || 3,
+          taskType: "deepRead",
+          workflowStage: "已存在，跳过生成",
+          options: deepReadOptions,
+          duration: 0,
+        },
+        "AI deep read already exists; skipped",
+      );
       return taskId;
     }
 
@@ -1985,6 +2066,17 @@ export class TaskQueueManager {
         },
         { ...(task.options || {}), abortSignal: abortController.signal },
       );
+
+      const artifactType: FixedTaskArtifactType =
+        task.taskType === "deepRead" ? "deepRead" : "summary";
+      const artifact = await TaskArtifacts.probe(artifactType, item);
+      if (!artifact.exists) {
+        throw new Error(
+          artifactType === "deepRead"
+            ? `AI 精读尚未完整生成（${artifact.reason || "incomplete"}），已重新加入队列补全未完成轮次`
+            : `AI 总结尚未完整生成（${artifact.reason || "incomplete"}）`,
+        );
+      }
 
       if (this.abortingTasks.has(taskId) || abortController.signal.aborted) {
         throw new Error(LLM_REQUEST_ABORT_MESSAGE);

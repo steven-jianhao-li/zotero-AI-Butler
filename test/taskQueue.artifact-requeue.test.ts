@@ -12,8 +12,17 @@ import {
   type TaskArtifactProbeResult,
   type FixedTaskArtifactType,
 } from "../src/modules/taskArtifacts";
+import { AiNoteService } from "../src/modules/aiNoteService";
 
 type QueueInternals = {
+  tasks: Map<string, TaskItem>;
+  progressCallbacks: Set<(...args: any[]) => void>;
+  completeCallbacks: Set<(...args: any[]) => void>;
+  addDeepReadTask(
+    item: Zotero.Item,
+    priority?: boolean,
+    options?: { summaryMode?: string; forceOverwrite?: boolean },
+  ): Promise<string>;
   requeueExistingFixedTask(
     task: TaskItem,
     item: Zotero.Item,
@@ -21,6 +30,11 @@ type QueueInternals = {
     priority: boolean,
     options?: TaskItem["options"],
     workflowStage?: string,
+  ): Promise<boolean>;
+  shouldSkipNewFixedTaskForExistingArtifact(
+    item: Zotero.Item,
+    artifactType: FixedTaskArtifactType,
+    options?: TaskItem["options"],
   ): Promise<boolean>;
   saveToStorage(): Promise<void>;
 };
@@ -30,6 +44,9 @@ const tableStrategyPref = `${config.prefsPrefix}.tableStrategy`;
 
 function createQueueInternals(): QueueInternals {
   const manager = Object.create(TaskQueueManager.prototype) as QueueInternals;
+  manager.tasks = new Map();
+  manager.progressCallbacks = new Set();
+  manager.completeCallbacks = new Set();
   manager.saveToStorage = async () => {};
   return manager;
 }
@@ -52,13 +69,15 @@ function createTask(status: TaskStatus): TaskItem {
 }
 
 describe("TaskQueue artifact-aware requeue", function () {
-  const item = { id: 1 } as Zotero.Item;
+  const item = { id: 1, getField: () => "Paper" } as unknown as Zotero.Item;
   let originalProbe: typeof TaskArtifacts.probe;
+  let originalFindNote: typeof AiNoteService.findNote;
   let originalNoteStrategy: string | number | boolean | null | undefined;
   let originalTableStrategy: string | number | boolean | null | undefined;
 
   beforeEach(function () {
     originalProbe = TaskArtifacts.probe;
+    originalFindNote = AiNoteService.findNote;
     originalNoteStrategy = Zotero.Prefs.get(noteStrategyPref, true) as
       | string
       | number
@@ -77,6 +96,7 @@ describe("TaskQueue artifact-aware requeue", function () {
 
   afterEach(function () {
     TaskArtifacts.probe = originalProbe;
+    AiNoteService.findNote = originalFindNote;
     if (originalNoteStrategy == null) {
       Zotero.Prefs.clear(noteStrategyPref, true);
     } else {
@@ -126,6 +146,81 @@ describe("TaskQueue artifact-aware requeue", function () {
 
     expect(shouldRun).to.equal(false);
     expect(task.status).to.equal(TaskStatus.COMPLETED);
+  });
+
+  it("skips creating a new deep-read task when a complete artifact exists and strategy is skip", async function () {
+    const manager = createQueueInternals();
+    stubProbe({ exists: true });
+
+    const shouldSkip = await manager.shouldSkipNewFixedTaskForExistingArtifact(
+      item,
+      "deepRead",
+      { summaryMode: "deepRead" },
+    );
+
+    expect(shouldSkip).to.equal(true);
+  });
+
+  it("records a completed deep-read task when an existing complete artifact is skipped", async function () {
+    const manager = createQueueInternals();
+    stubProbe({ exists: true });
+
+    const taskId = await manager.addDeepReadTask(item, true, {
+      summaryMode: "deepRead",
+    });
+    const task = manager.tasks.get(taskId);
+
+    expect(taskId).to.equal(getDeepReadTaskId(1));
+    expect(task?.status).to.equal(TaskStatus.COMPLETED);
+    expect(task?.progress).to.equal(100);
+    expect(task?.taskType).to.equal("deepRead");
+  });
+
+  it("does not skip creating a new deep-read task when the artifact is incomplete", async function () {
+    const manager = createQueueInternals();
+    stubProbe({ exists: false, reason: "deep-read-slots-incomplete" });
+
+    const shouldSkip = await manager.shouldSkipNewFixedTaskForExistingArtifact(
+      item,
+      "deepRead",
+      { summaryMode: "deepRead" },
+    );
+
+    expect(shouldSkip).to.equal(false);
+  });
+
+  it("does not skip creating a new deep-read task when overwrite is configured", async function () {
+    const manager = createQueueInternals();
+    stubProbe({ exists: true });
+    Zotero.Prefs.set(noteStrategyPref, "overwrite", true);
+
+    const shouldSkip = await manager.shouldSkipNewFixedTaskForExistingArtifact(
+      item,
+      "deepRead",
+      { summaryMode: "deepRead" },
+    );
+
+    expect(shouldSkip).to.equal(false);
+  });
+
+  it("requeues a completed deep-read task when slots are incomplete", async function () {
+    const manager = createQueueInternals();
+    const task = createTask(TaskStatus.COMPLETED);
+    task.taskType = "deepRead";
+    stubProbe({ exists: false, reason: "deep-read-slots-incomplete" });
+
+    const shouldRun = await manager.requeueExistingFixedTask(
+      task,
+      item,
+      "deepRead",
+      true,
+      { summaryMode: "deepRead" },
+    );
+
+    expect(shouldRun).to.equal(true);
+    expect(task.status).to.equal(TaskStatus.PRIORITY);
+    expect(task.progress).to.equal(0);
+    expect(task.completedAt).to.equal(undefined);
   });
 
   it("requeues a completed summary task when append is configured", async function () {
@@ -196,5 +291,26 @@ describe("TaskQueue artifact-aware requeue", function () {
     expect(getSummaryTaskId(1)).to.equal("summary-task-1");
     expect(getDeepReadTaskId(1)).to.equal("deepread-task-1");
     expect(getSummaryTaskId(1)).to.not.equal(getDeepReadTaskId(1));
+  });
+
+  it("treats deep-read notes with runnable slots as incomplete artifacts", async function () {
+    AiNoteService.findNote = async () =>
+      ({
+        getNote: () =>
+          [
+            "<h1>AI 精读 - Paper</h1>",
+            "<!-- zab:slot:method:done -->",
+            "<p>已生成</p>",
+            "<!-- zab:slot:method:end -->",
+            "<!-- zab:slot:result:pending -->",
+            "<p>⏳ 等待生成...</p>",
+            "<!-- zab:slot:result:end -->",
+          ].join("\n"),
+      }) as Zotero.Item;
+
+    const result = await TaskArtifacts.probe("deepRead", item);
+
+    expect(result.exists).to.equal(false);
+    expect(result.reason).to.equal("deep-read-slots-incomplete");
   });
 });

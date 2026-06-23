@@ -3,6 +3,7 @@ import { LiteratureReviewService } from "./literatureReviewService";
 import { MindmapService } from "./mindmapService";
 import { NoteGenerator } from "./noteGenerator";
 import { AiNoteService } from "./aiNoteService";
+import { hasRunnableDeepReadSlots } from "./deepReadEngine";
 
 export type FixedTaskArtifactType =
   | "summary"
@@ -75,9 +76,16 @@ export class TaskArtifacts {
       return { exists: false, reason: "deep-read-note-missing" };
     }
 
-    return this.noteHasUsableContent(note)
-      ? { exists: true }
-      : { exists: false, reason: "deep-read-note-empty" };
+    if (!this.noteHasUsableContent(note)) {
+      return { exists: false, reason: "deep-read-note-empty" };
+    }
+
+    const noteHtml: string = (note as any).getNote?.() || "";
+    if (hasRunnableDeepReadSlots(noteHtml)) {
+      return { exists: false, reason: "deep-read-slots-incomplete" };
+    }
+
+    return { exists: true };
   }
 
   private static async probeImageSummary(

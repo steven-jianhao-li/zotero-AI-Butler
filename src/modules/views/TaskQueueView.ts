@@ -33,6 +33,7 @@
 import { BaseView } from "./BaseView";
 import { MainWindow } from "./MainWindow";
 import { TaskQueueManager, TaskItem, TaskStatus, TaskType } from "../taskQueue";
+import { TaskArtifacts } from "../taskArtifacts";
 import { createCard } from "./ui/components";
 
 // 使用任务队列模块中定义的类型,避免重复定义导致的偏差
@@ -832,6 +833,39 @@ export class TaskQueueView extends BaseView {
       actions.appendChild(copyErrorBtn);
     }
 
+    if (task.taskType === "deepRead" && task.status === TaskStatus.COMPLETED) {
+      const completeDeepReadBtn = this.createElement("button", {
+        styles: {
+          padding: "6px 12px",
+          border: "1px solid #2196f3",
+          borderRadius: "4px",
+          backgroundColor: "transparent",
+          color: "#2196f3",
+          cursor: "pointer",
+          fontSize: "12px",
+        },
+        textContent: "🔁 补全精读",
+      }) as HTMLButtonElement;
+      completeDeepReadBtn.title =
+        "重新检查 AI 精读笔记，并补跑仍在等待/生成中/失败的轮次";
+
+      completeDeepReadBtn.addEventListener("click", async (event: Event) => {
+        event.stopPropagation();
+        completeDeepReadBtn.disabled = true;
+        completeDeepReadBtn.style.cursor = "wait";
+        completeDeepReadBtn.textContent = "⏳ 检查中";
+        try {
+          await this.requeueDeepReadTask(task);
+        } finally {
+          completeDeepReadBtn.disabled = false;
+          completeDeepReadBtn.style.cursor = "pointer";
+          completeDeepReadBtn.textContent = "🔁 补全精读";
+        }
+      });
+
+      actions.appendChild(completeDeepReadBtn);
+    }
+
     if (
       task.status === TaskStatus.PENDING ||
       task.status === TaskStatus.FAILED
@@ -1087,6 +1121,65 @@ export class TaskQueueView extends BaseView {
       if (this.manager) {
         await this.manager.retryTask(taskId);
       }
+    } finally {
+      this.syncFromManager();
+    }
+  }
+
+  public async requeueDeepReadTask(task: TaskItem): Promise<void> {
+    try {
+      if (!this.manager) {
+        this.manager = TaskQueueManager.getInstance();
+      }
+
+      const item = await Zotero.Items.getAsync(task.itemId);
+      if (!item) {
+        throw new Error("找不到该 AI 精读任务对应的文献条目");
+      }
+
+      const artifact = await TaskArtifacts.probe("deepRead", item);
+      if (artifact.probeFailed) {
+        throw new Error(
+          `无法确认 AI 精读是否完整（${artifact.reason || "probe-failed"}），已取消补全`,
+        );
+      }
+
+      if (artifact.exists) {
+        new ztoolkit.ProgressWindow("AI Butler", {
+          closeOnClick: true,
+          closeTime: 3000,
+        })
+          .createLine({
+            text: "AI 精读已完整，无需补全",
+            type: "success",
+          })
+          .show();
+        return;
+      }
+
+      await this.manager.addDeepReadTask(item, true, {
+        summaryMode: "deepRead",
+      });
+
+      new ztoolkit.ProgressWindow("AI Butler", {
+        closeOnClick: true,
+        closeTime: 3000,
+      })
+        .createLine({
+          text: "已检查 AI 精读完整性；如有未完成轮次，将优先补跑",
+          type: "success",
+        })
+        .show();
+    } catch (error: any) {
+      new ztoolkit.ProgressWindow("AI Butler", {
+        closeOnClick: true,
+        closeTime: 5000,
+      })
+        .createLine({
+          text: error?.message || String(error),
+          type: "error",
+        })
+        .show();
     } finally {
       this.syncFromManager();
     }

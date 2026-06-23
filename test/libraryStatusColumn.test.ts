@@ -152,6 +152,21 @@ describe("library status column", function () {
     expect(status.tooltip).to.equal("AI \u7cbe\u8bfb\u5df2\u5b8c\u6210");
   });
 
+  it("does not treat stale completed deep-read tasks as complete without a usable note", function () {
+    const status = resolveDeepReadStatusFromTasks(
+      [
+        createTask(TaskStatus.COMPLETED, {
+          taskType: "deepRead",
+          completedAt: new Date("2026-01-01T00:00:10Z"),
+        }),
+      ],
+      false,
+    );
+
+    expect(status.status).to.equal("idle");
+    expect(status.tooltip).to.equal("\u672a\u7cbe\u8bfb");
+  });
+
   it("treats deepRead as its own task type", function () {
     const task = createTask(TaskStatus.PENDING, { taskType: "deepRead" });
     expect(isSummaryTask(task)).to.equal(false);

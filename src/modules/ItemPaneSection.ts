@@ -31,6 +31,7 @@ import {
   type ChatAbortControllerLike,
 } from "./chatContext";
 import {
+  addZoteroNoteOverflowGuards,
   buildFollowUpChatPairNoteHtml,
   decodeMathHtmlEntities,
   normalizeFollowUpChatNoteHtml,
@@ -66,6 +67,64 @@ let quickChatPairIdCounter = 0;
  */
 const INLINE_FORMULA_TO_BLOCK_THRESHOLD = 2000;
 const SIDEBAR_HEADING_TO_BLOCKQUOTE_TEXT_THRESHOLD = 36;
+const SIDEBAR_NOTE_OVERFLOW_GUARD_CSS = `
+.ai-butler-note-section,
+.ai-butler-note-section *,
+.ai-butler-note-content-wrapper,
+.ai-butler-note-content-wrapper * {
+  box-sizing: border-box;
+}
+.ai-butler-note-section,
+.ai-butler-note-content-wrapper,
+.ai-butler-note-content {
+  min-width: 0;
+  max-width: 100%;
+}
+.ai-butler-note-content,
+.ai-butler-note-content p,
+.ai-butler-note-content li,
+.ai-butler-note-content blockquote,
+.ai-butler-note-content h1,
+.ai-butler-note-content h2,
+.ai-butler-note-content h3,
+.ai-butler-note-content h4,
+.ai-butler-note-content h5,
+.ai-butler-note-content h6,
+.ai-butler-note-content td,
+.ai-butler-note-content th {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.ai-butler-note-content pre,
+.ai-butler-note-content code,
+.ai-butler-note-content .math-fallback {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.ai-butler-note-content pre,
+.ai-butler-note-content table,
+.ai-butler-note-content .katex-display,
+.ai-butler-note-content .katex-scroll-container {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.ai-butler-note-content table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  border-collapse: collapse;
+}
+.ai-butler-note-content img,
+.ai-butler-note-content svg,
+.ai-butler-note-content canvas,
+.ai-butler-note-content video {
+  max-width: 100%;
+  height: auto;
+}
+`;
 
 // 当前聊天状态
 let currentChatState: ChatState = {
@@ -715,7 +774,7 @@ function renderItemPaneSection(
     font-size: 13px;
     width: 100%;
     max-width: 100%;
-    overflow-x: hidden;
+    overflow-x: auto;
     box-sizing: border-box;
   `;
 
@@ -1149,8 +1208,9 @@ function renderNoteSection(
     padding-bottom: 20px;
     font-size: ${currentFontSize}px;
     line-height: 1.6;
-    overflow-wrap: break-word;
+    overflow-wrap: anywhere;
     word-wrap: break-word;
+    word-break: break-word;
     overflow-x: hidden;
     width: 100%;
     max-width: 100%;
@@ -1242,7 +1302,8 @@ function renderNoteSection(
       "ai-butler-note-theme",
     ) as HTMLStyleElement;
     if (styleEl) {
-      styleEl.textContent = katexCss + "\n" + adaptedCss;
+      styleEl.textContent =
+        katexCss + "\n" + adaptedCss + "\n" + SIDEBAR_NOTE_OVERFLOW_GUARD_CSS;
     }
   });
   fontSizeControl.appendChild(themeSelect);
@@ -4179,7 +4240,17 @@ async function loadNoteContent(
     }
 
     updateSidebarNoteEditControls(doc, "preview", "", undefined, noteKind);
-    const rawNoteHtml: string = resolvedNote.rawHtml;
+    let rawNoteHtml: string = resolvedNote.rawHtml;
+    const guardedNoteHtml = addZoteroNoteOverflowGuards(rawNoteHtml);
+    if (guardedNoteHtml !== rawNoteHtml) {
+      rawNoteHtml = guardedNoteHtml;
+      try {
+        (resolvedNote.note as any).setNote?.(guardedNoteHtml);
+        await (resolvedNote.note as any).saveTx?.();
+      } catch (error) {
+        ztoolkit.log("[AI-Butler] 修复 AI 笔记溢出样式失败:", error);
+      }
+    }
     const summaryBlocks = getDisplaySummaryBlocks(
       LLMNoteMetadataService.parseSummaryBlocks(rawNoteHtml),
     );
@@ -4362,7 +4433,8 @@ async function loadNoteContent(
         insertTarget.appendChild(styleEl);
       }
     }
-    styleEl.textContent = katexCss + "\n" + adaptedCss;
+    styleEl.textContent =
+      katexCss + "\n" + adaptedCss + "\n" + SIDEBAR_NOTE_OVERFLOW_GUARD_CSS;
 
     /**
      * 清理 LaTeX 公式中的 HTML 标签

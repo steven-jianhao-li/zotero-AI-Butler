@@ -18,7 +18,7 @@ import {
   LLMNoteMetadataService,
   type LLMNoteMetadata,
 } from "./llmNoteMetadata";
-import type { LLMResponse } from "./llmproviders/types";
+import type { LLMAbortSignal, LLMResponse } from "./llmproviders/types";
 import { getPref } from "../utils/prefs";
 import { getDefaultMindmapPrompt } from "../utils/prompts";
 
@@ -55,6 +55,7 @@ export class MindmapService {
   public static async generateForItem(
     item: Zotero.Item,
     progressCallback?: MindmapProgressCallback,
+    abortSignal?: LLMAbortSignal,
   ): Promise<Zotero.Item> {
     const itemTitle = item.getField("title") as string;
 
@@ -80,7 +81,11 @@ export class MindmapService {
       // ========== 阶段 2: 生成思维导图 Markdown ==========
       progressCallback?.("generating", "正在生成思维导图...", 40);
 
-      const mindmapResult = await this.generateMindmapMarkdown(item, itemTitle);
+      const mindmapResult = await this.generateMindmapMarkdown(
+        item,
+        itemTitle,
+        abortSignal,
+      );
       const mindmapMarkdown = mindmapResult.markdown;
 
       ztoolkit.log(
@@ -114,6 +119,7 @@ export class MindmapService {
   private static async generateMindmapMarkdown(
     item: Zotero.Item,
     itemTitle: string,
+    abortSignal?: LLMAbortSignal,
   ): Promise<{ markdown: string; response: LLMResponse }> {
     // 获取思维导图提示词
     const prompt =
@@ -128,6 +134,7 @@ export class MindmapService {
         item,
       },
       output: { format: "markdown" },
+      transport: { abortSignal },
     });
     const mindmapContent = response.text;
 

@@ -815,6 +815,9 @@ export class TaskQueueManager {
     task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
+    this.abortingTasks.delete(taskId);
+    const abortController = createTaskAbortController();
+    this.taskAbortControllers.set(taskId, abortController);
     await this.saveToStorage();
 
     logTaskQueue(`开始执行一图总结任务: ${task.title}`);
@@ -842,6 +845,7 @@ export class TaskQueueManager {
             this.saveToStorage().catch(() => {});
           }
         },
+        abortController.signal,
       );
 
       // 任务成功完成
@@ -878,6 +882,8 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
+      this.taskAbortControllers.delete(taskId);
+      this.abortingTasks.delete(taskId);
       await this.saveToStorage();
     }
   }
@@ -984,6 +990,9 @@ export class TaskQueueManager {
     task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
+    this.abortingTasks.delete(taskId);
+    const abortController = createTaskAbortController();
+    this.taskAbortControllers.set(taskId, abortController);
     await this.saveToStorage();
 
     logTaskQueue(`开始执行思维导图任务: ${task.title}`);
@@ -999,16 +1008,20 @@ export class TaskQueueManager {
       const { MindmapService } = await import("./mindmapService");
 
       // 执行思维导图生成
-      await MindmapService.generateForItem(item, (stage, message, progress) => {
-        // 更新任务进度
-        task.progress = progress;
-        task.workflowStage = message;
-        this.notifyProgress(taskId, progress, message);
-        // 保存进度（但不要太频繁）
-        if (progress % 20 === 0 || progress === 100) {
-          this.saveToStorage().catch(() => {});
-        }
-      });
+      await MindmapService.generateForItem(
+        item,
+        (stage, message, progress) => {
+          // 更新任务进度
+          task.progress = progress;
+          task.workflowStage = message;
+          this.notifyProgress(taskId, progress, message);
+          // 保存进度（但不要太频繁）
+          if (progress % 20 === 0 || progress === 100) {
+            this.saveToStorage().catch(() => {});
+          }
+        },
+        abortController.signal,
+      );
 
       // 任务成功完成
       task.status = TaskStatus.COMPLETED;
@@ -1044,6 +1057,8 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
+      this.taskAbortControllers.delete(taskId);
+      this.abortingTasks.delete(taskId);
       await this.saveToStorage();
     }
   }
@@ -1153,6 +1168,9 @@ export class TaskQueueManager {
     task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
+    this.abortingTasks.delete(taskId);
+    const abortController = createTaskAbortController();
+    this.taskAbortControllers.set(taskId, abortController);
     await this.saveToStorage();
 
     try {
@@ -1197,6 +1215,8 @@ export class TaskQueueManager {
         pdfAtt,
         tableTemplate,
         fillPrompt,
+        undefined,
+        abortController.signal,
       );
 
       task.workflowStage = "正在保存";
@@ -1231,6 +1251,8 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
+      this.taskAbortControllers.delete(taskId);
+      this.abortingTasks.delete(taskId);
       await this.saveToStorage();
     }
   }
@@ -1310,6 +1332,9 @@ export class TaskQueueManager {
     task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
+    this.abortingTasks.delete(taskId);
+    const abortController = createTaskAbortController();
+    this.taskAbortControllers.set(taskId, abortController);
     await this.saveToStorage();
 
     try {
@@ -1351,6 +1376,7 @@ export class TaskQueueManager {
             this.saveToStorage().catch(() => {});
           }
         },
+        abortController.signal,
       );
 
       task.status = TaskStatus.COMPLETED;
@@ -1372,6 +1398,8 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
+      this.taskAbortControllers.delete(taskId);
+      this.abortingTasks.delete(taskId);
       await this.saveToStorage();
     }
   }
@@ -1461,6 +1489,9 @@ export class TaskQueueManager {
     task.errorDetails = undefined;
     task.workflowStage = "正在初始化";
     this.processingTasks.add(taskId);
+    this.abortingTasks.delete(taskId);
+    const abortController = createTaskAbortController();
+    this.taskAbortControllers.set(taskId, abortController);
     await this.saveToStorage();
 
     try {
@@ -1508,6 +1539,7 @@ export class TaskQueueManager {
             this.saveToStorage().catch(() => {});
           }
         },
+        abortController.signal,
       );
 
       task.status = TaskStatus.COMPLETED;
@@ -1531,6 +1563,8 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
+      this.taskAbortControllers.delete(taskId);
+      this.abortingTasks.delete(taskId);
       await this.saveToStorage();
     }
   }

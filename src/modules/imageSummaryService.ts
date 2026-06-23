@@ -20,6 +20,7 @@ import { ImageNoteGenerator } from "./imageNoteGenerator";
 import { NoteGenerator } from "./noteGenerator";
 import { getPref } from "../utils/prefs";
 import type { LLMPdfProcessMode } from "./llmEndpointManager";
+import type { LLMAbortSignal } from "./llmproviders/types";
 import {
   getDefaultImageSummaryPrompt,
   getDefaultImageGenerationPrompt,
@@ -59,6 +60,7 @@ export class ImageSummaryService {
   public static async generateForItem(
     item: Zotero.Item,
     progressCallback?: WorkflowProgressCallback,
+    abortSignal?: LLMAbortSignal,
   ): Promise<Zotero.Item> {
     const itemTitle = item.getField("title") as string;
 
@@ -121,6 +123,7 @@ export class ImageSummaryService {
         pdfContent,
         isBase64,
         itemTitle,
+        abortSignal,
       );
 
       ztoolkit.log(
@@ -132,7 +135,9 @@ export class ImageSummaryService {
 
       const imagePrompt = this.buildImagePrompt(visualSummary, itemTitle);
 
-      const imageResult = await ImageClient.generateImage(imagePrompt);
+      const imageResult = await ImageClient.generateImage(imagePrompt, {
+        abortSignal,
+      });
 
       ztoolkit.log(
         `[AI-Butler] 图片生成完成，大小: ${Math.round(imageResult.imageBase64.length / 1024)} KB`,
@@ -190,6 +195,7 @@ export class ImageSummaryService {
     pdfContent: string,
     isBase64: boolean,
     itemTitle: string,
+    abortSignal?: LLMAbortSignal,
   ): Promise<string> {
     // 获取视觉提取提示词
     let prompt =
@@ -213,6 +219,7 @@ export class ImageSummaryService {
         isBase64,
         policy: isBase64 ? "pdf-base64" : "text",
       },
+      transport: { abortSignal },
     });
 
     return summary;

@@ -13,6 +13,7 @@ import {
 } from "../src/utils/prompts";
 import {
   buildDeepReadSkeletonHtml,
+  extractDeepReadChaptersFromHtml,
   extractDeepReadPlanMetadata,
   fillDeepReadSlot,
   getDeepReadSlotStatus,
@@ -232,6 +233,22 @@ describe("multi-round prompt templates v2", function () {
     const reset = resetRunningDeepReadSlots(running);
     expect(getDeepReadSlotStatus(reset, "chapter_ch1")).to.equal("pending");
     expect(reset).to.include("<!-- zab:slot:chapter_ch1:pending -->");
+  });
+
+  it("recovers chapters from rendered deep-read notes when metadata is missing", function () {
+    const template = v2Template();
+    const planned = planDeepReadSlots(template, DEFAULT_CHAPTER_FALLBACKS);
+    const html = buildDeepReadSkeletonHtml("Paper", template, planned).replace(
+      /<!-- zab:deep-read-plan:[\s\S]*? -->\n?/,
+      "",
+    );
+
+    const chapters = extractDeepReadChaptersFromHtml(html);
+
+    expect(chapters).to.deep.equal(DEFAULT_CHAPTER_FALLBACKS);
+    expect(planDeepReadSlots(template, chapters).slots[0].id).to.equal(
+      "chapter_ch1",
+    );
   });
 
   it("rejects duplicate dynamically planned slot ids", function () {

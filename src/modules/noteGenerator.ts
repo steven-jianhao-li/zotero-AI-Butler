@@ -61,6 +61,7 @@ import {
 } from "../utils/prompts";
 import {
   buildDeepReadSkeletonHtml,
+  extractDeepReadChaptersFromHtml,
   extractDeepReadPlanMetadata,
   fillDeepReadSlot,
   hasDeepReadV2Slots,
@@ -1071,7 +1072,11 @@ export class NoteGenerator {
     }
 
     let lastResponse: LLMResponse | undefined;
-    let chapters = restoredPlan?.chapters || [];
+    let chapters =
+      restoredPlan?.chapters ||
+      (shouldResume
+        ? extractDeepReadChaptersFromHtml(params.existingHtml)
+        : []);
     if (params.outputWindow) {
       params.outputWindow.startItem(params.itemTitle);
       params.outputWindow.appendContent(

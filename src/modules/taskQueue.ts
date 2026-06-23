@@ -330,6 +330,36 @@ export class TaskQueueManager {
     }
 
     if (task.status === TaskStatus.FAILED) {
+      if (
+        await this.shouldSkipNewFixedTaskForExistingArtifact(
+          item,
+          artifactType,
+          options,
+        )
+      ) {
+        logTaskQueue(
+          `失败任务已有可用产物且当前策略为跳过，标记完成: ${task.id}`,
+        );
+        task.status = TaskStatus.COMPLETED;
+        task.progress = 100;
+        task.error = undefined;
+        task.errorDetails = undefined;
+        task.retryCount = 0;
+        task.startedAt = undefined;
+        task.completedAt = new Date();
+        task.duration = 0;
+        task.options = options;
+        task.workflowStage = "已存在，跳过生成";
+        await this.saveToStorage();
+        this.notifyProgress(
+          task.id,
+          100,
+          "AI artifact already exists; skipped",
+        );
+        this.notifyComplete(task.id, true);
+        return false;
+      }
+
       logTaskQueue(`失败任务重新入队: ${task.id}`);
       this.resetTaskForEnqueue(task, priority, options, workflowStage);
       await this.saveToStorage();
@@ -1578,12 +1608,15 @@ export class TaskQueueManager {
       return;
     }
 
-    // 不能删除处理中的任务
     if (task.status === TaskStatus.PROCESSING) {
-      throw new Error("无法删除处理中的任务");
+      this.abortingTasks.add(taskId);
+      const controller = this.taskAbortControllers.get(taskId);
+      controller?.abort(LLM_REQUEST_ABORT_MESSAGE);
     }
 
     this.tasks.delete(taskId);
+    this.processingTasks.delete(taskId);
+    this.taskAbortControllers.delete(taskId);
     await this.saveToStorage();
 
     logTaskQueue(`删除任务: ${taskId}`);

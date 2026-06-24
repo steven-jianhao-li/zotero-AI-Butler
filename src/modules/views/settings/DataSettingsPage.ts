@@ -297,12 +297,12 @@ export class DataSettingsPage {
     setPref("openaiApiKey", "");
     setPref("openaiApiModel", "gpt-5");
     setPref("temperature", "0.7");
-    setPref("maxTokens", "4096");
+    setPref("maxTokens", "81920");
     setPref("topP", "1.0");
     setPref("reasoningEffort", "default");
-    setPref("enableTemperature", true as any);
-    setPref("enableMaxTokens", true as any);
-    setPref("enableTopP", true as any);
+    setPref("enableTemperature", false as any);
+    setPref("enableMaxTokens", false as any);
+    setPref("enableTopP", false as any);
     setPref("stream", true as any);
     setPref("theme", "system");
     setPref("fontSize", "14");

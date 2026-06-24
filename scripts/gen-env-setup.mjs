@@ -41,7 +41,7 @@ const provider = env.AIBUTLER_PROVIDER || "google";
 const stream = String(env.STREAM || "true").toLowerCase() === "true";
 const temperature = env.TEMPERATURE || "0.7";
 const topP = env.TOP_P || "1.0";
-const maxTokens = env.MAX_TOKENS || "4096";
+const maxTokens = env.MAX_TOKENS || "81920";
 const requestTimeoutMs = env.REQUEST_TIMEOUT_MS || "15000";
 
 // Map env -> prefs keys expected by LLMClient

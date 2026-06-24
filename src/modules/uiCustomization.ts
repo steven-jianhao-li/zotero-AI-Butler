@@ -26,14 +26,8 @@ export const CONTEXT_MENU_ITEMS = [
     scope: "item",
   },
   {
-    id: "chatWithAI",
-    label: "AI 管家-后续追问",
-    description: "AI 总结或 AI 精读右键：打开后续追问界面",
-    scope: "item",
-  },
-  {
     id: "imageSummary",
-    label: "召唤 AI 管家一图总结",
+    label: "AI 管家生成一图总结",
     description: "文献右键：加入一图总结任务队列",
     scope: "item",
   },
@@ -44,9 +38,9 @@ export const CONTEXT_MENU_ITEMS = [
     scope: "item",
   },
   {
-    id: "fillTable",
-    label: "AI 管家填表",
-    description: "文献右键：加入填表任务队列",
+    id: "chatWithAI",
+    label: "AI 管家-后续追问",
+    description: "文献右键：打开当前文献的后续追问界面",
     scope: "item",
   },
   {
@@ -115,10 +109,9 @@ export const DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY: ContextMenuVisibility = {
   generateSummary: true,
   multiRoundReanalyze: true,
   dashboard: true,
-  chatWithAI: true,
   imageSummary: true,
   mindmap: true,
-  fillTable: true,
+  chatWithAI: true,
   literatureReview: true,
   clearCollectionAiNotes: true,
 };
@@ -147,10 +140,9 @@ export const DEFAULT_CONTEXT_MENU_ITEM_ORDER: ContextMenuItemId[] = [
   "generateSummary",
   "multiRoundReanalyze",
   "dashboard",
-  "chatWithAI",
   "imageSummary",
   "mindmap",
-  "fillTable",
+  "chatWithAI",
   "literatureReview",
   "clearCollectionAiNotes",
 ];
@@ -258,7 +250,6 @@ export function getContextMenuItemVisibility(): ContextMenuVisibility {
 }
 
 export function isContextMenuItemEnabled(id: ContextMenuItemId): boolean {
-  if (id === "fillTable" && !isTableFeatureEnabled()) return false;
   return getContextMenuItemVisibility()[id];
 }
 

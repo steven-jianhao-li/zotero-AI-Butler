@@ -1,7 +1,7 @@
 menuitem-generateSummary = Generate AI Summary
-menuitem-chatWithAI = AI Butler - Follow-up Questions
-menuitem-imageSummary = AI Butler One-Image Summary
+menuitem-imageSummary = AI Butler Generate One-Image Summary
 menuitem-mindmap = AI Butler Generate Mind Map
+menuitem-chatWithAI = AI Butler - Follow-up Questions
 error-noItemsSelected = Sorry, you haven't selected any literature to analyze.
 error-noApiKey = Sorry, the API key is not configured.
 success-allComplete = All tasks have been processed!

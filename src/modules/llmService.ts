@@ -283,9 +283,9 @@ export class LLMService {
     const id = (
       typeof providerId === "string" ? providerId : providerId.providerType
     ).toLowerCase();
-    const enableTemperature = getPref("enableTemperature") ?? true;
-    const enableMaxTokens = getPref("enableMaxTokens") ?? true;
-    const enableTopP = getPref("enableTopP") ?? true;
+    const enableTemperature = getPref("enableTemperature") ?? false;
+    const enableMaxTokens = getPref("enableMaxTokens") ?? false;
+    const enableTopP = getPref("enableTopP") ?? false;
 
     const common: LLMOptions = {
       stream: transport?.stream ?? getPref("stream") ?? true,
@@ -308,7 +308,7 @@ export class LLMService {
     if (enableMaxTokens) {
       common.maxTokens =
         generation?.maxOutputTokens ??
-        (parseInt((getPref("maxTokens") as string) || "4096", 10) || 4096);
+        (parseInt((getPref("maxTokens") as string) || "81920", 10) || 81920);
     }
     const reasoningEffort = resolveReasoningEffort(
       normalizeReasoningEffortSetting(

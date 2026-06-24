@@ -508,6 +508,11 @@ export class TaskQueueManager {
       return this.addDeepReadTask(item, priority, options);
     }
 
+    const summaryOptions = {
+      ...(options || {}),
+      summaryMode: "single",
+    };
+
     const taskId = getSummaryTaskId(item.id);
     const legacyTaskId = getLegacySummaryTaskId(item.id);
     if (!this.tasks.has(taskId) && this.tasks.has(legacyTaskId)) {
@@ -526,7 +531,7 @@ export class TaskQueueManager {
         item,
         "summary",
         priority,
-        options,
+        summaryOptions,
       );
       if (!shouldRun) {
         return taskId;
@@ -547,7 +552,7 @@ export class TaskQueueManager {
       await this.shouldSkipNewFixedTaskForExistingArtifact(
         item,
         "summary",
-        options,
+        summaryOptions,
       )
     ) {
       logTaskQueue(`AI 总结已存在且当前策略为跳过，跳过入队: ${taskId}`);
@@ -564,7 +569,7 @@ export class TaskQueueManager {
           maxRetries: parseInt(getPref("maxRetries") as string) || 3,
           taskType: "summary",
           workflowStage: "已存在，跳过生成",
-          options,
+          options: summaryOptions,
           duration: 0,
         },
         "AI summary already exists; skipped",
@@ -584,7 +589,7 @@ export class TaskQueueManager {
       maxRetries: parseInt(getPref("maxRetries") as string) || 3,
       taskType: "summary",
       workflowStage: "等待 AI 总结",
-      options,
+      options: summaryOptions,
     };
 
     this.tasks.set(taskId, task);

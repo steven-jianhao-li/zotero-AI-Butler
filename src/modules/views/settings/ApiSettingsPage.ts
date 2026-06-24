@@ -606,7 +606,7 @@ export class ApiSettingsPage {
       styles: { display: "flex", alignItems: "center", gap: "12px" },
     });
     const enableTemp = ((getPref("enableTemperature") as any) ??
-      true) as boolean;
+      false) as boolean;
     const tempToggle = this.createCheckbox("enableTemperature", enableTemp);
     const tempSlider = this.createSlider(
       "temperature",
@@ -649,13 +649,13 @@ export class ApiSettingsPage {
         flexWrap: "nowrap",
       },
     });
-    const enableMax = ((getPref("enableMaxTokens") as any) ?? true) as boolean;
+    const enableMax = ((getPref("enableMaxTokens") as any) ?? false) as boolean;
     const maxToggle = this.createCheckbox("enableMaxTokens", enableMax);
     const maxInput = this.createInput(
       "maxTokens",
       "number",
-      ((getPref("maxTokens") as string) || "4096") as string,
-      "4096",
+      ((getPref("maxTokens") as string) || "81920") as string,
+      "81920",
     );
     // 缩短输入框，保持与 Temperature 行一致的紧凑布局
     Object.assign(maxInput.style, {
@@ -690,7 +690,7 @@ export class ApiSettingsPage {
     const topPContainer = this.createElement("div", {
       styles: { display: "flex", alignItems: "center", gap: "12px" },
     });
-    const enableTopP = ((getPref("enableTopP") as any) ?? true) as boolean;
+    const enableTopP = ((getPref("enableTopP") as any) ?? false) as boolean;
     const topPToggle = this.createCheckbox("enableTopP", enableTopP);
     const topPSlider = this.createSlider(
       "topP",
@@ -2424,14 +2424,17 @@ export class ApiSettingsPage {
       };
 
       setPref("temperature", inputValue("temperature", "0.7"));
-      setPref("maxTokens", inputValue("maxTokens", "4096"));
+      setPref("maxTokens", inputValue("maxTokens", "81920"));
       setPref("topP", inputValue("topP", "1.0"));
       setPref(
         "enableTemperature",
-        checkboxValue("enableTemperature", true) as any,
+        checkboxValue("enableTemperature", false) as any,
       );
-      setPref("enableMaxTokens", checkboxValue("enableMaxTokens", true) as any);
-      setPref("enableTopP", checkboxValue("enableTopP", true) as any);
+      setPref(
+        "enableMaxTokens",
+        checkboxValue("enableMaxTokens", false) as any,
+      );
+      setPref("enableTopP", checkboxValue("enableTopP", false) as any);
       setPref("stream", checkboxValue("stream", true));
       setPref(
         "enablePromptCacheOptimization" as any,
@@ -2641,11 +2644,11 @@ export class ApiSettingsPage {
         ollamaApiKey: ollamaKeyEl?.value?.trim() || "",
         ollamaModel: ollamaModelEl?.value?.trim() || "",
         temperature: temperatureEl?.value || "0.7",
-        maxTokens: maxTokensEl?.value?.trim() || "4096",
+        maxTokens: maxTokensEl?.value?.trim() || "81920",
         topP: topPEl?.value || "1.0",
-        enableTemperature: enableTempEl?.checked ?? true,
-        enableMaxTokens: enableMaxEl?.checked ?? true,
-        enableTopP: enableTopPEl?.checked ?? true,
+        enableTemperature: enableTempEl?.checked ?? false,
+        enableMaxTokens: enableMaxEl?.checked ?? false,
+        enableTopP: enableTopPEl?.checked ?? false,
         stream: streamEl?.checked ?? true,
         enablePromptCacheOptimization: promptCacheEl?.checked ?? false,
         requestTimeout:
@@ -3189,11 +3192,11 @@ export class ApiSettingsPage {
     }
 
     setPref("temperature", "0.7");
-    setPref("maxTokens", "8192");
+    setPref("maxTokens", "81920");
     setPref("topP", "1.0");
-    setPref("enableTemperature", true as any);
-    setPref("enableMaxTokens", true as any);
-    setPref("enableTopP", true as any);
+    setPref("enableTemperature", false as any);
+    setPref("enableMaxTokens", false as any);
+    setPref("enableTopP", false as any);
     setPref("stream", true);
     setPref("enablePromptCacheOptimization" as any, false);
     setPref("requestTimeout", "300000");
@@ -3268,12 +3271,12 @@ export class ApiSettingsPage {
     setPref("multiModelSummaryEnabled", false);
     setPref("multiModelSummaryEndpointIds", "[]");
     setPref("temperature", "0.7");
-    setPref("maxTokens", "8192");
+    setPref("maxTokens", "81920");
     setPref("topP", "1.0");
     setPref("reasoningEffort", "default");
-    setPref("enableTemperature", true as any);
-    setPref("enableMaxTokens", true as any);
-    setPref("enableTopP", true as any);
+    setPref("enableTemperature", false as any);
+    setPref("enableMaxTokens", false as any);
+    setPref("enableTopP", false as any);
     setPref("stream", true);
     setPref("enablePromptCacheOptimization" as any, false);
     setPref("requestTimeout", "300000");

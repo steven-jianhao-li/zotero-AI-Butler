@@ -1408,14 +1408,16 @@ export class PromptsSettingsPage {
       return;
     }
 
-    const saveTarget = this.createWritableMultiRoundPromptTemplate(template);
+    const saveTarget = this.collectDeepReadTemplateFromEditor(
+      this.createWritableMultiRoundPromptTemplate(template),
+    );
     this.showInlineConfirm({
       title: "\u4fdd\u5b58\u63d0\u793a\u8bcd\u6a21\u677f\uff1f",
       message: `\u5c06\u4fdd\u5b58\u5f53\u524d\u9875\u9762\u4e2d\u7684\u9636\u6bb5\u63d0\u793a\u8bcd\u5230\u300c${saveTarget.name}\u300d\u6a21\u677f\u3002`,
       confirmText: "\u4fdd\u5b58\u6a21\u677f",
       confirmColor: "#4caf50",
       onConfirm: () => {
-        const savedTemplate = this.saveCurrentMultiRoundTemplate(saveTarget);
+        const savedTemplate = this.saveMultiRoundTemplate(saveTarget);
         this.render();
         new ztoolkit.ProgressWindow("\u63d0\u793a\u8bcd")
           .createLine({
@@ -1431,6 +1433,12 @@ export class PromptsSettingsPage {
     template: MultiRoundPromptTemplate,
   ): MultiRoundPromptTemplate {
     const updatedTemplate = this.collectDeepReadTemplateFromEditor(template);
+    return this.saveMultiRoundTemplate(updatedTemplate);
+  }
+
+  private saveMultiRoundTemplate(
+    updatedTemplate: MultiRoundPromptTemplate,
+  ): MultiRoundPromptTemplate {
     const customTemplates = parseMultiRoundPromptTemplates(
       (getPref("multiRoundPromptTemplates") as string) || "[]",
     );
@@ -1446,14 +1454,17 @@ export class PromptsSettingsPage {
   private collectDeepReadTemplateFromEditor(
     template: MultiRoundPromptTemplate,
   ): MultiRoundPromptTemplate {
-    const doc = Zotero.getMainWindow().document;
+    const findEditorElement = <T extends HTMLElement>(id: string): T | null =>
+      (this.container.querySelector(`[id="${id}"]`) as T | null) ||
+      (this.container.querySelector(`[id="setting-${id}"]`) as T | null);
     const getValue = (id: string, fallback: string) => {
-      const value = (doc.getElementById(id) as HTMLTextAreaElement | null)
-        ?.value;
+      const value = findEditorElement<HTMLInputElement | HTMLTextAreaElement>(
+        id,
+      )?.value;
       return value && value.trim() ? value.trim() : fallback;
     };
     const getSelectValue = (id: string, fallback: string) => {
-      const value = (doc.getElementById(id) as any)?.getValue?.();
+      const value = (findEditorElement(id) as any)?.getValue?.();
       return typeof value === "string" && value.trim() ? value : fallback;
     };
     const getContextStrategy = (
@@ -1469,9 +1480,7 @@ export class PromptsSettingsPage {
       return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
     };
     const getCheckboxValue = (id: string, fallback: boolean) => {
-      const checkbox = doc.getElementById(
-        `setting-${id}`,
-      ) as HTMLInputElement | null;
+      const checkbox = findEditorElement<HTMLInputElement>(id);
       return checkbox ? checkbox.checked : fallback;
     };
 

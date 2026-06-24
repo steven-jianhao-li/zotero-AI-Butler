@@ -18,6 +18,12 @@ type QueueInternals = {
   tasks: Map<string, TaskItem>;
   progressCallbacks: Set<(...args: any[]) => void>;
   completeCallbacks: Set<(...args: any[]) => void>;
+  isRunning: boolean;
+  addTask(
+    item: Zotero.Item,
+    priority?: boolean,
+    options?: { summaryMode?: string; forceOverwrite?: boolean },
+  ): Promise<string>;
   addDeepReadTask(
     item: Zotero.Item,
     priority?: boolean,
@@ -47,6 +53,7 @@ function createQueueInternals(): QueueInternals {
   manager.tasks = new Map();
   manager.progressCallbacks = new Set();
   manager.completeCallbacks = new Set();
+  manager.isRunning = true;
   manager.saveToStorage = async () => {};
   return manager;
 }
@@ -112,6 +119,33 @@ describe("TaskQueue artifact-aware requeue", function () {
   function stubProbe(result: TaskArtifactProbeResult): void {
     TaskArtifacts.probe = async () => result;
   }
+
+  it("queues normal summaries with single mode by default", async function () {
+    const manager = createQueueInternals();
+    stubProbe({ exists: false, reason: "summary-note-missing" });
+
+    const taskId = await manager.addTask(item);
+    const task = manager.tasks.get(taskId);
+
+    expect(taskId).to.equal(getSummaryTaskId(item.id));
+    expect(task?.taskType).to.equal("summary");
+    expect(task?.options?.summaryMode).to.equal("single");
+  });
+
+  it("routes explicit deep-read mode away from normal summary tasks", async function () {
+    const manager = createQueueInternals();
+    stubProbe({ exists: false, reason: "deep-read-note-missing" });
+
+    const taskId = await manager.addTask(item, false, {
+      summaryMode: "deepRead",
+    });
+    const task = manager.tasks.get(taskId);
+
+    expect(taskId).to.equal(getDeepReadTaskId(item.id));
+    expect(task?.taskType).to.equal("deepRead");
+    expect(task?.options?.summaryMode).to.equal("deepRead");
+    expect(manager.tasks.has(getSummaryTaskId(item.id))).to.equal(false);
+  });
 
   it("requeues a completed summary task when the artifact is missing", async function () {
     const manager = createQueueInternals();

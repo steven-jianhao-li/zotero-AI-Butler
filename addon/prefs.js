@@ -107,11 +107,11 @@ pref("__prefsPrefix__.enableTableFeature", true);
 pref("__prefsPrefix__.contextMenuCollapsed", false);
 pref(
   "__prefsPrefix__.contextMenuItemVisibility",
-  '{"generateSummary":true,"multiRoundReanalyze":true,"dashboard":true,"chatWithAI":true,"imageSummary":true,"mindmap":true,"fillTable":true,"literatureReview":true,"clearCollectionAiNotes":true}',
+  '{"generateSummary":true,"multiRoundReanalyze":true,"dashboard":true,"imageSummary":true,"mindmap":true,"chatWithAI":true,"literatureReview":true,"clearCollectionAiNotes":true}',
 );
 pref(
   "__prefsPrefix__.contextMenuItemOrder",
-  '["generateSummary","multiRoundReanalyze","dashboard","chatWithAI","imageSummary","mindmap","fillTable","literatureReview","clearCollectionAiNotes"]',
+  '["generateSummary","multiRoundReanalyze","dashboard","imageSummary","mindmap","chatWithAI","literatureReview","clearCollectionAiNotes"]',
 );
 pref(
   "__prefsPrefix__.sidebarModuleVisibility",

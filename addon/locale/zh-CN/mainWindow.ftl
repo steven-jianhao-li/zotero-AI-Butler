@@ -1,8 +1,8 @@
 menuitem-generateSummary = AI 管家生成 AI 总结
-menuitem-chatWithAI = AI管家-后续追问
 menuitem-multiRoundReanalyze = AI 管家生成 AI 精读
-menuitem-imageSummary = 召唤AI管家一图总结
-menuitem-mindmap = AI管家生成思维导图
+menuitem-imageSummary = AI 管家生成一图总结
+menuitem-mindmap = AI 管家生成思维导图
+menuitem-chatWithAI = AI 管家-后续追问
 error-noItemsSelected = 抱歉,您尚未选择需要分析的文献。
 error-noApiKey = 抱歉,尚未配置API密钥,我无法开始工作。
 success-allComplete = 所有任务已处理完毕！

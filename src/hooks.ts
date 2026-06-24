@@ -342,10 +342,9 @@ const CONTEXT_MENU_DOM_IDS: Record<ContextMenuItemId, string> = {
   generateSummary: "zotero-itemmenu-ai-butler-summary",
   multiRoundReanalyze: "zotero-itemmenu-ai-butler-multi-round",
   dashboard: "zotero-itemmenu-ai-butler-dashboard",
-  chatWithAI: "zotero-itemmenu-ai-butler-chat",
   imageSummary: "zotero-itemmenu-ai-butler-image-summary",
   mindmap: "zotero-itemmenu-ai-butler-mindmap",
-  fillTable: "zotero-itemmenu-ai-butler-fill-table",
+  chatWithAI: "zotero-itemmenu-ai-butler-chat",
   literatureReview: "zotero-collectionmenu-ai-butler-literature-review",
   clearCollectionAiNotes:
     "zotero-collectionmenu-ai-butler-clear-collection-ai-notes",
@@ -1010,32 +1009,6 @@ function registerContextMenuItem() {
         getVisibility: () => isContextMenuItemEnabled("dashboard"),
       },
     },
-    chatWithAI: {
-      scope: "item",
-      options: {
-        tag: "menuitem",
-        id: CONTEXT_MENU_DOM_IDS.chatWithAI,
-        label: getString("menuitem-chatWithAI"),
-        icon: menuIcon,
-        commandListener: async (_ev: Event) => {
-          await handleChatWithAI();
-        },
-        getVisibility: () => {
-          if (!isContextMenuItemEnabled("chatWithAI")) return false;
-          const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
-          if (!selectedItems || selectedItems.length !== 1) return false;
-
-          const item = selectedItems[0];
-          if (!item.isNote()) return false;
-
-          const tags: Array<{ tag: string }> = (item as any).getTags?.() || [];
-          const hasTag = tags.some((t: any) => t.tag === "AI-Generated");
-          const noteHtml: string = (item as any).getNote?.() || "";
-          const titleMatch = /<h2>\s*AI 管家\s*-/.test(noteHtml);
-          return hasTag || titleMatch;
-        },
-      },
-    },
     imageSummary: {
       scope: "item",
       options: {
@@ -1064,18 +1037,24 @@ function registerContextMenuItem() {
           isContextMenuItemEnabled("mindmap") && isRegularItemSelection(),
       },
     },
-    fillTable: {
+    chatWithAI: {
       scope: "item",
       options: {
         tag: "menuitem",
-        id: CONTEXT_MENU_DOM_IDS.fillTable,
-        label: getString("menuitem-fillTable" as any),
+        id: CONTEXT_MENU_DOM_IDS.chatWithAI,
+        label: getString("menuitem-chatWithAI"),
         icon: menuIcon,
         commandListener: async () => {
-          await handleFillTable();
+          const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
+          const item = selectedItems?.[0];
+          if (item?.isRegularItem()) {
+            await handleOpenAIChat(item.id);
+          }
         },
         getVisibility: () =>
-          isContextMenuItemEnabled("fillTable") && isRegularItemSelection(),
+          isContextMenuItemEnabled("chatWithAI") &&
+          Zotero.getActiveZoteroPane().getSelectedItems()?.length === 1 &&
+          isRegularItemSelection(),
       },
     },
     literatureReview: {
@@ -1427,91 +1406,6 @@ async function handleOpenAIChat(itemId: number): Promise<void> {
     })
       .createLine({
         text: `打开 AI 追问失败: ${error.message || error}`,
-        type: "error",
-      })
-      .show();
-  }
-}
-
-/**
- * 处理 AI 总结 / AI 精读的后续追问
- *
- * 当用户在 AI 总结或 AI 精读上右键点击"后续追问"时触发
- *
- * 执行流程:
- * 1. 获取选中的 AI 总结或 AI 精读
- * 2. 找到笔记对应的父文献条目
- * 3. 打开主窗口并切换到摘要视图
- * 4. 加载该文献的 AI 总结并显示聊天界面
- *
- * 错误处理:
- * - 笔记无父条目:提示用户笔记已损坏
- * - 找不到父条目:提示用户数据异常
- */
-async function handleChatWithAI() {
-  try {
-    const selectedItems = Zotero.getActiveZoteroPane().getSelectedItems();
-    if (!selectedItems || selectedItems.length !== 1) {
-      new ztoolkit.ProgressWindow("AI Butler", {
-        closeOnClick: true,
-        closeTime: 3000,
-      })
-        .createLine({
-          text: "请选择一个 AI 总结或 AI 精读笔记",
-          type: "error",
-        })
-        .show();
-      return;
-    }
-
-    const note = selectedItems[0];
-    const parentItemID = (note as any).parentItemID;
-
-    if (!parentItemID) {
-      new ztoolkit.ProgressWindow("AI Butler", {
-        closeOnClick: true,
-        closeTime: 3000,
-      })
-        .createLine({
-          text: "找不到笔记对应的文献条目",
-          type: "error",
-        })
-        .show();
-      return;
-    }
-
-    const parentItem = await Zotero.Items.getAsync(parentItemID);
-    if (!parentItem) {
-      new ztoolkit.ProgressWindow("AI Butler", {
-        closeOnClick: true,
-        closeTime: 3000,
-      })
-        .createLine({
-          text: "无法加载文献条目",
-          type: "error",
-        })
-        .show();
-      return;
-    }
-
-    // 打开主窗口并切换到摘要视图
-    const mainWin = MainWindow.getInstance();
-    await mainWin.open("summary");
-
-    // 通过 SummaryView 加载该文献的笔记(会自动显示聊天界面)
-    const summaryView = mainWin.getSummaryView();
-    if (summaryView) {
-      // 使用统一聊天入口；它会加载已有总结和后续追问历史。
-      await (summaryView as any).loadItemForChat(parentItemID);
-    }
-  } catch (error: any) {
-    ztoolkit.log("[AI-Butler] 打开聊天失败:", error);
-    new ztoolkit.ProgressWindow("AI Butler", {
-      closeOnClick: true,
-      closeTime: 3000,
-    })
-      .createLine({
-        text: `打开聊天失败: ${error.message || error}`,
         type: "error",
       })
       .show();

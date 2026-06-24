@@ -24,6 +24,26 @@ import {
   throwIfAborted,
 } from "./shared/requestAbort";
 
+export function shouldOmitAnthropicTemperature(model: string): boolean {
+  const normalized = model.trim().toLowerCase();
+  if (!/claude[-_/]opus[-_/]4/.test(normalized)) return false;
+  if (/(^|[-_/])latest($|[-_/])/.test(normalized)) return true;
+
+  const opus4Minor = normalized.match(/claude[-_/]opus[-_/]4[-_/.](\d+)/);
+  if (!opus4Minor) return false;
+
+  return Number(opus4Minor[1]) >= 7;
+}
+
+function buildAnthropicTemperatureParam(
+  model: string,
+  options: LLMOptions,
+): { temperature?: number } {
+  if (options.temperature === undefined) return {};
+  if (shouldOmitAnthropicTemperature(model)) return {};
+  return { temperature: options.temperature };
+}
+
 export class AnthropicProvider implements ILlmProvider {
   readonly id = "anthropic";
   readonly capabilities: LLMProviderCapabilities = {
@@ -48,7 +68,6 @@ export class AnthropicProvider implements ILlmProvider {
     );
     const apiKey = (options.apiKey || "").trim();
     const model = (options.model || "claude-3-5-sonnet-20241022").trim();
-    const temperature = options.temperature ?? 0.7;
     const maxTokens = options.maxTokens ?? 4096; // Anthropic 必填
 
     if (!baseUrl) throw new Error("Anthropic API URL 未配置");
@@ -62,7 +81,7 @@ export class AnthropicProvider implements ILlmProvider {
       payload = {
         model,
         max_tokens: maxTokens,
-        ...(options.temperature !== undefined ? { temperature } : {}),
+        ...buildAnthropicTemperatureParam(model, options),
         system: SYSTEM_ROLE_PROMPT,
         messages: [
           {
@@ -87,7 +106,7 @@ export class AnthropicProvider implements ILlmProvider {
       payload = {
         model,
         max_tokens: maxTokens,
-        ...(options.temperature !== undefined ? { temperature } : {}),
+        ...buildAnthropicTemperatureParam(model, options),
         system: SYSTEM_ROLE_PROMPT,
         messages: [
           { role: "user", content: [{ type: "text", text: userContent }] },
@@ -233,7 +252,6 @@ export class AnthropicProvider implements ILlmProvider {
     );
     const apiKey = (options.apiKey || "").trim();
     const model = (options.model || "claude-3-5-sonnet-20241022").trim();
-    const temperature = options.temperature ?? 0.7;
     const maxTokens = options.maxTokens ?? 4096;
 
     if (!baseUrl) throw new Error("Anthropic API URL 未配置");
@@ -295,7 +313,7 @@ export class AnthropicProvider implements ILlmProvider {
     const payload: any = {
       model,
       max_tokens: maxTokens,
-      ...(options.temperature !== undefined ? { temperature } : {}),
+      ...buildAnthropicTemperatureParam(model, options),
       system: SYSTEM_ROLE_PROMPT,
       messages,
       stream: true,
@@ -640,7 +658,6 @@ export class AnthropicProvider implements ILlmProvider {
     );
     const apiKey = (options.apiKey || "").trim();
     const model = (options.model || "claude-3-5-sonnet-20241022").trim();
-    const temperature = options.temperature ?? 0.7;
     const maxTokens = options.maxTokens ?? 8192;
 
     if (!baseUrl) throw new Error("Anthropic API URL 未配置");
@@ -684,7 +701,7 @@ export class AnthropicProvider implements ILlmProvider {
     const payload = {
       model,
       max_tokens: maxTokens,
-      ...(options.temperature !== undefined ? { temperature } : {}),
+      ...buildAnthropicTemperatureParam(model, options),
       system: SYSTEM_ROLE_PROMPT,
       messages: [
         {

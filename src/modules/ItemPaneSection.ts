@@ -849,9 +849,22 @@ function createButton(
   isPrimary: boolean,
 ): HTMLButtonElement {
   const btn = doc.createElement("button");
-  btn.textContent = text;
+  const label = doc.createElement("span");
+  label.textContent = text;
+  label.style.cssText = `
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    line-height: 1.2;
+    text-align: center;
+    overflow-wrap: anywhere;
+  `;
+  btn.appendChild(label);
   btn.style.cssText = `
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 100%;
     padding: 8px 12px;
     border: ${isPrimary ? "none" : "1px solid #59c0bc"};
     border-radius: 4px;
@@ -863,8 +876,14 @@ function createButton(
     transition: all 0.15s ease;
     display: flex;
     align-items: center;
+    align-content: center;
     justify-content: center;
+    flex-wrap: wrap;
     gap: 6px;
+    line-height: 1.2;
+    text-align: center;
+    white-space: normal;
+    overflow-wrap: anywhere;
   `;
   btn.addEventListener("mouseenter", () => {
     if (isPrimary) {
@@ -925,8 +944,12 @@ function renderActionButtons(
   const btnContainer = doc.createElement("div");
   btnContainer.style.cssText = `
     display: flex;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     gap: 8px;
     margin-bottom: 10px;
+    box-sizing: border-box;
   `;
 
   // 完整追问按钮
@@ -987,6 +1010,7 @@ function renderActionButtons(
     justify-content: center;
     transition: all 0.15s ease;
     flex-shrink: 0;
+    min-width: 0;
   `;
   refreshBtn.addEventListener("mouseenter", () => {
     refreshBtn.style.background = "rgba(89, 192, 188, 0.1)";
@@ -1041,8 +1065,9 @@ function renderNoteSection(
   noteHeader.className = "ai-butler-note-header";
   noteHeader.style.cssText = `
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
     padding: 8px 10px;
     background: rgba(128, 128, 128, 0.1);
     cursor: pointer;
@@ -1056,6 +1081,7 @@ function renderNoteSection(
 
   const noteTitle = doc.createElement("span");
   noteTitle.style.cssText = `
+    flex: 1 1 auto;
     font-weight: 500;
     font-size: 12px;
     color: inherit;
@@ -1063,9 +1089,20 @@ function renderNoteSection(
     align-items: center;
     gap: 6px;
     min-width: 0;
+    overflow-wrap: anywhere;
   `;
   const noteLabel = noteKind === "summary" ? "AI 总结" : "AI 精读";
   noteTitle.innerHTML = `📄 <span>${noteLabel}</span>`;
+
+  const headerTopRow = doc.createElement("div");
+  headerTopRow.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+  `;
 
   const metadataPicker = doc.createElement("span");
   metadataPicker.id = getSidebarNoteElementId(
@@ -1074,6 +1111,8 @@ function renderNoteSection(
   );
   metadataPicker.style.cssText = `
     display: none;
+    align-items: center;
+    gap: 4px;
     flex-shrink: 0;
   `;
   metadataPicker.addEventListener("click", (e: Event) => e.stopPropagation());
@@ -1139,16 +1178,33 @@ function renderNoteSection(
   metadataPicker.appendChild(metadataButton);
   noteTitle.appendChild(metadataPicker);
 
-  // 字体大小控制
-  const fontSizeControl = doc.createElement("div");
-  fontSizeControl.style.cssText = `
+  const mainControls = doc.createElement("div");
+  mainControls.style.cssText = `
     display: flex;
     align-items: center;
+    justify-content: flex-end;
+    flex: 0 1 auto;
     gap: 4px;
     margin-left: auto;
     margin-right: 8px;
+    min-width: 0;
   `;
-  fontSizeControl.addEventListener("click", (e: Event) => e.stopPropagation());
+  mainControls.addEventListener("click", (e: Event) => e.stopPropagation());
+
+  const personalizationRow = doc.createElement("div");
+  personalizationRow.style.cssText = `
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+    padding-top: 2px;
+  `;
+  personalizationRow.addEventListener("click", (e: Event) =>
+    e.stopPropagation(),
+  );
 
   // 从设置加载字体大小，默认12px
   let currentFontSize = parseInt(
@@ -1203,6 +1259,7 @@ function renderNoteSection(
   const noteContent = doc.createElement("div");
   noteContent.className = "ai-butler-note-content markdown-body";
   noteContent.id = getSidebarNoteElementId("ai-butler-note-content", noteKind);
+  noteContent.dataset.aiNoteKind = noteKind;
   noteContent.style.cssText = `
     padding: 10px;
     padding-bottom: 20px;
@@ -1254,9 +1311,9 @@ function renderNoteSection(
     return btn;
   };
 
-  fontSizeControl.appendChild(createFontBtn("−", -1));
-  fontSizeControl.appendChild(fontSizeLabel);
-  fontSizeControl.appendChild(createFontBtn("+", 1));
+  personalizationRow.appendChild(createFontBtn("−", -1));
+  personalizationRow.appendChild(fontSizeLabel);
+  personalizationRow.appendChild(createFontBtn("+", 1));
 
   // 主题选择器
   const themeSelect = doc.createElement("select");
@@ -1306,7 +1363,7 @@ function renderNoteSection(
         katexCss + "\n" + adaptedCss + "\n" + SIDEBAR_NOTE_OVERFLOW_GUARD_CSS;
     }
   });
-  fontSizeControl.appendChild(themeSelect);
+  personalizationRow.appendChild(themeSelect);
 
   // 恢复默认高度按钮
   const resetHeightBtn = doc.createElement("button");
@@ -1338,7 +1395,7 @@ function renderNoteSection(
   resetHeightBtn.addEventListener("mouseleave", () => {
     resetHeightBtn.style.background = "white";
   });
-  fontSizeControl.appendChild(resetHeightBtn);
+  personalizationRow.appendChild(resetHeightBtn);
 
   const createNoteActionBtn = (text: string, title: string, minWidth = 20) => {
     const btn = doc.createElement("button");
@@ -1358,6 +1415,7 @@ function renderNoteSection(
       display: flex;
       align-items: center;
       justify-content: center;
+      flex: 0 0 auto;
       opacity: 0.75;
     `;
     btn.addEventListener("click", (e: Event) => e.stopPropagation());
@@ -1382,7 +1440,7 @@ function renderNoteSection(
     e.stopPropagation();
     await startSidebarNoteEdit(doc, item, noteContent);
   });
-  fontSizeControl.appendChild(editBtn);
+  mainControls.appendChild(editBtn);
 
   const deleteBlockBtn = createNoteActionBtn("✕", "删除当前模型总结");
   deleteBlockBtn.id = getSidebarNoteElementId(
@@ -1393,7 +1451,7 @@ function renderNoteSection(
     e.stopPropagation();
     await deleteSidebarSummaryBlock(doc, item, noteContent);
   });
-  fontSizeControl.appendChild(deleteBlockBtn);
+  metadataPicker.appendChild(deleteBlockBtn);
 
   const saveBtn = createNoteActionBtn(
     "保存",
@@ -1408,7 +1466,7 @@ function renderNoteSection(
     e.stopPropagation();
     await saveSidebarNoteEdit(doc, item, noteContent);
   });
-  fontSizeControl.appendChild(saveBtn);
+  mainControls.appendChild(saveBtn);
 
   const cancelBtn = createNoteActionBtn("取消", "取消编辑并恢复预览", 42);
   cancelBtn.id = getSidebarNoteElementId("ai-butler-cancel-note-btn", noteKind);
@@ -1417,7 +1475,7 @@ function renderNoteSection(
     e.stopPropagation();
     cancelSidebarNoteEdit(doc, item, noteContent);
   });
-  fontSizeControl.appendChild(cancelBtn);
+  mainControls.appendChild(cancelBtn);
 
   const editStatus = doc.createElement("span");
   editStatus.id = getSidebarNoteElementId(
@@ -1425,14 +1483,58 @@ function renderNoteSection(
     noteKind,
   );
   editStatus.style.cssText = `
+    flex: 1 1 72px;
     font-size: 10px;
-    white-space: nowrap;
-    max-width: 140px;
+    min-width: 0;
+    max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
     opacity: 0.85;
   `;
-  fontSizeControl.appendChild(editStatus);
+  mainControls.appendChild(editStatus);
+
+  const personalizeBtn = doc.createElement("button");
+  personalizeBtn.textContent = "🎛️";
+  personalizeBtn.title = "个性化";
+  personalizeBtn.type = "button";
+  personalizeBtn.setAttribute("aria-label", "个性化");
+  personalizeBtn.style.cssText = `
+    width: 20px;
+    height: 20px;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+    color: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 4px;
+    opacity: 0.7;
+  `;
+  let isPersonalizationOpen = false;
+  personalizeBtn.addEventListener("click", (e: Event) => {
+    e.stopPropagation();
+    isPersonalizationOpen = !isPersonalizationOpen;
+    personalizationRow.style.display = isPersonalizationOpen ? "flex" : "none";
+    personalizeBtn.style.background = isPersonalizationOpen
+      ? "rgba(128, 128, 128, 0.2)"
+      : "transparent";
+    personalizeBtn.style.opacity = isPersonalizationOpen ? "1" : "0.7";
+  });
+  personalizeBtn.addEventListener("mouseenter", () => {
+    personalizeBtn.style.opacity = "1";
+    personalizeBtn.style.background = "rgba(128, 128, 128, 0.2)";
+  });
+  personalizeBtn.addEventListener("mouseleave", () => {
+    personalizeBtn.style.opacity = isPersonalizationOpen ? "1" : "0.7";
+    personalizeBtn.style.background = isPersonalizationOpen
+      ? "rgba(128, 128, 128, 0.2)"
+      : "transparent";
+  });
+  mainControls.appendChild(personalizeBtn);
 
   // 复制 Markdown 按钮
   const copyBtn = doc.createElement("button");
@@ -1451,7 +1553,6 @@ function renderNoteSection(
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-left: 4px;
     opacity: 0.7;
   `;
   copyBtn.addEventListener("click", async (e: Event) => {
@@ -1491,7 +1592,7 @@ function renderNoteSection(
     copyBtn.style.opacity = "0.7";
     copyBtn.style.background = "transparent";
   });
-  fontSizeControl.appendChild(copyBtn);
+  personalizationRow.appendChild(copyBtn);
 
   const toggleIcon = doc.createElement("span");
   toggleIcon.textContent = "▼";
@@ -1502,9 +1603,11 @@ function renderNoteSection(
     transition: transform 0.2s ease;
   `;
 
-  noteHeader.appendChild(noteTitle);
-  noteHeader.appendChild(fontSizeControl);
-  noteHeader.appendChild(toggleIcon);
+  headerTopRow.appendChild(noteTitle);
+  headerTopRow.appendChild(mainControls);
+  headerTopRow.appendChild(toggleIcon);
+  noteHeader.appendChild(headerTopRow);
+  noteHeader.appendChild(personalizationRow);
 
   noteContentWrapper.appendChild(noteContent);
 
@@ -3977,7 +4080,7 @@ async function saveSidebarNoteEdit(
 ): Promise<void> {
   const editState = sidebarNoteEditState;
   if (!editState || editState.itemId !== item.id || editState.isSaving) return;
-  const noteKind = getNoteKindFromElement(noteContent);
+  const noteKind = editState.noteKind;
 
   editState.isSaving = true;
   updateSidebarNoteEditControls(
@@ -4072,7 +4175,7 @@ function cancelSidebarNoteEdit(
 ): void {
   const editState = sidebarNoteEditState;
   if (!editState || editState.itemId !== item.id || editState.isSaving) return;
-  const noteKind = getNoteKindFromElement(noteContent);
+  const noteKind = editState.noteKind;
 
   sidebarNoteEditState = null;
   resetSidebarNoteContentEditMode(noteContent);
@@ -4390,7 +4493,7 @@ async function loadNoteContent(
         summaryBlocks[selectedBlockIndex],
       );
       if (metadataPicker) {
-        metadataPicker.style.display = "inline-block";
+        metadataPicker.style.display = "inline-flex";
       }
       updateSidebarMetadataButtonLabel(
         doc,

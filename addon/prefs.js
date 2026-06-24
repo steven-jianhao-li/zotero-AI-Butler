@@ -107,11 +107,11 @@ pref("__prefsPrefix__.enableTableFeature", true);
 pref("__prefsPrefix__.contextMenuCollapsed", false);
 pref(
   "__prefsPrefix__.contextMenuItemVisibility",
-  '{"generateSummary":true,"multiRoundReanalyze":true,"dashboard":true,"imageSummary":true,"mindmap":true,"chatWithAI":true,"literatureReview":true,"clearCollectionAiNotes":true}',
+  '{"generateSummary":true,"multiRoundReanalyze":true,"dashboard":true,"imageSummary":true,"mindmap":true,"chatWithAI":true,"literatureReview":true,"clearCollectionAiNotes":true,"exportCollectionNotes":true}',
 );
 pref(
   "__prefsPrefix__.contextMenuItemOrder",
-  '["generateSummary","multiRoundReanalyze","dashboard","imageSummary","mindmap","chatWithAI","literatureReview","clearCollectionAiNotes"]',
+  '["generateSummary","multiRoundReanalyze","dashboard","imageSummary","mindmap","chatWithAI","literatureReview","clearCollectionAiNotes","exportCollectionNotes"]',
 );
 pref(
   "__prefsPrefix__.sidebarModuleVisibility",
@@ -127,6 +127,18 @@ pref("__prefsPrefix__.sidebarImageCollapsed", false);
 // ==================== 数据管理 ====================
 pref("__prefsPrefix__.notePrefix", "[AI-Butler]");
 pref("__prefsPrefix__.noteStrategy", "skip");
+
+// ==================== AI 笔记导出配置 ====================
+pref("__prefsPrefix__.noteExportEnabled", false);
+pref("__prefsPrefix__.noteExportRootPath", "");
+pref("__prefsPrefix__.noteExportWatchedCollections", "[]");
+pref("__prefsPrefix__.noteExportIncludeSubcollections", true);
+pref(
+  "__prefsPrefix__.noteExportFormats",
+  '{"summaryDocx":true,"deepReadDocx":true,"summaryMd":true,"deepReadMd":true}',
+);
+pref("__prefsPrefix__.noteExportConflictStrategy", "skip");
+pref("__prefsPrefix__.noteExportSuppressDirectoryPrompt", false);
 
 // ==================== 思维导图配置 ====================
 pref("__prefsPrefix__.mindmapPrompt", ""); // 空表示使用默认提示词

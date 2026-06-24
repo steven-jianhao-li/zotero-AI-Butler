@@ -40,6 +40,7 @@ import {
 } from "./modules/collectionAiNoteCleaner";
 import { MainWindow } from "./modules/views/MainWindow";
 import { AutoScanManager } from "./modules/autoScanManager";
+import { AutoNoteExportManager } from "./modules/autoNoteExportManager";
 import {
   CONTEXT_MENU_ITEMS,
   DEFAULT_CONTEXT_MENU_COLLAPSED,
@@ -117,6 +118,8 @@ async function onStartup() {
   // 启动自动扫描管理器
   const autoScanManager = AutoScanManager.getInstance();
   autoScanManager.start();
+
+  AutoNoteExportManager.getInstance().start();
 
   // 标记插件初始化完成
   // 某些功能依赖此标志来判断插件是否已准备好
@@ -274,6 +277,14 @@ function initializeDefaultPrefsOnStartup() {
     openTaskPanelOnSummon: false,
     autoScanSummaryEnabled: true,
     autoScanDeepReadEnabled: false,
+    noteExportEnabled: false,
+    noteExportRootPath: "",
+    noteExportWatchedCollections: "[]",
+    noteExportIncludeSubcollections: true,
+    noteExportFormats:
+      '{"summaryDocx":true,"deepReadDocx":true,"summaryMd":true,"deepReadMd":true}',
+    noteExportConflictStrategy: "skip",
+    noteExportSuppressDirectoryPrompt: false,
   };
 
   // 遍历所有配置项,确保每项都有有效值
@@ -348,6 +359,7 @@ const CONTEXT_MENU_DOM_IDS: Record<ContextMenuItemId, string> = {
   literatureReview: "zotero-collectionmenu-ai-butler-literature-review",
   clearCollectionAiNotes:
     "zotero-collectionmenu-ai-butler-clear-collection-ai-notes",
+  exportCollectionNotes: "zotero-collectionmenu-ai-butler-export-notes",
 };
 
 type ContextMenuScope = "item" | "collection";
@@ -417,6 +429,11 @@ function showAIButlerToast(
   })
     .createLine({ text, type })
     .show();
+}
+
+async function pickFolderPath(title: string): Promise<string | null> {
+  const { pickFolder } = await import("./modules/folderPicker");
+  return pickFolder(title);
 }
 
 function createModalButton(
@@ -1083,6 +1100,19 @@ function registerContextMenuItem() {
         getVisibility: () => isContextMenuItemEnabled("clearCollectionAiNotes"),
       },
     },
+    exportCollectionNotes: {
+      scope: "collection",
+      options: {
+        tag: "menuitem",
+        id: CONTEXT_MENU_DOM_IDS.exportCollectionNotes,
+        label: "导出该分类 AI 笔记",
+        icon: menuIcon,
+        commandListener: async () => {
+          await handleExportCollectionNotes();
+        },
+        getVisibility: () => isContextMenuItemEnabled("exportCollectionNotes"),
+      },
+    },
   };
 
   const orderedDefinitions = getContextMenuItemOrder()
@@ -1574,6 +1604,8 @@ async function onMainWindowUnload(win: Window): Promise<void> {
  * - 需要重启 Zotero 才能重新加载插件
  */
 function onShutdown(): void {
+  AutoNoteExportManager.getInstance().stop();
+
   // 注销文献库 AI 精读状态列和相关监听
   unregisterLibraryStatusColumn();
 
@@ -1888,6 +1920,199 @@ async function handleClearCollectionAiNotes() {
     ztoolkit.log("[AI-Butler] 清空分类 AI 管家笔记失败:", error);
     showAIButlerToast(`清空失败: ${error.message || error}`, "error", 5000);
   }
+}
+
+type CollectionExportDialogChoice = {
+  rootPath: string;
+  suppressDirectoryPrompt: boolean;
+  addToAutoWatch: boolean;
+  conflictStrategy: "skip" | "overwrite";
+};
+
+async function handleExportCollectionNotes() {
+  try {
+    const collection = Zotero.getActiveZoteroPane().getSelectedCollection();
+    if (!collection) {
+      showAIButlerToast("请先选择一个分类", "error");
+      return;
+    }
+
+    const { getNoteExportConfig, setNoteExportConfig, addWatchedCollection } =
+      await import("./modules/noteExportConfig");
+    const { NoteExportService } = await import("./modules/noteExportService");
+    const config = getNoteExportConfig();
+    let rootPath = config.rootPath;
+    let conflictStrategy = config.conflictStrategy;
+
+    if (!rootPath || !config.suppressDirectoryPrompt) {
+      const choice = await showCollectionExportDialog(collection.name, config);
+      if (!choice) return;
+      rootPath = choice.rootPath;
+      conflictStrategy = choice.conflictStrategy;
+      setNoteExportConfig({
+        rootPath,
+        conflictStrategy,
+        suppressDirectoryPrompt: choice.suppressDirectoryPrompt,
+      });
+      if (choice.addToAutoWatch) {
+        addWatchedCollection(collection.id);
+        showAIButlerToast("已加入自动导出监听分类", "success", 2200);
+      }
+    }
+
+    const progressWindow = new ztoolkit.ProgressWindow("AI 笔记导出", {
+      closeOnClick: true,
+      closeTime: 6000,
+    });
+    progressWindow
+      .createLine({ text: `开始导出分类：${collection.name}`, type: "default" })
+      .show();
+
+    const result = await NoteExportService.exportCollection({
+      collection,
+      rootPath,
+      conflictStrategy,
+      config: { ...config, rootPath, conflictStrategy },
+    });
+
+    showAIButlerToast(
+      `导出完成：成功 ${result.exportedItems} 篇，跳过 ${result.skippedItems} 篇，失败 ${result.failedItems} 篇；写入 ${result.exportedFiles} 个文件，跳过 ${result.skippedFiles} 个文件`,
+      result.failedItems > 0 ? "warning" : "success",
+      7000,
+    );
+    if (result.warnings.length) {
+      ztoolkit.log(
+        "[AI-Butler][NoteExport] 分类导出警告/失败详情:",
+        result.warnings,
+      );
+      showAIButlerToast(
+        `导出详情：${result.warnings.slice(0, 2).join("；")}${
+          result.warnings.length > 2 ? "；更多详情见日志" : ""
+        }`,
+        "warning",
+        9000,
+      );
+    }
+  } catch (error: any) {
+    ztoolkit.log("[AI-Butler] 分类 AI 笔记导出失败:", error);
+    showAIButlerToast(`导出失败：${error?.message || error}`, "error", 7000);
+  }
+}
+
+function showCollectionExportDialog(
+  collectionName: string,
+  config: {
+    rootPath: string;
+    conflictStrategy: "skip" | "overwrite";
+  },
+): Promise<CollectionExportDialogChoice | null> {
+  return new Promise((resolve) => {
+    const shell = createModalShell("导出该分类 AI 笔记");
+    const { doc, body, actions, close } = shell;
+
+    const description = doc.createElement("div");
+    description.textContent = `将导出分类“${collectionName}”及子分类中的论文附件、AI 总结和 AI 精读。`;
+    body.appendChild(description);
+
+    const pathRow = doc.createElement("div");
+    Object.assign(pathRow.style, { display: "flex", gap: "8px" });
+    const pathInput = doc.createElement("input");
+    pathInput.type = "text";
+    pathInput.value = config.rootPath || "";
+    pathInput.placeholder = "选择或输入导出目录...";
+    Object.assign(pathInput.style, {
+      flex: "1",
+      padding: "8px 10px",
+      border: "1px solid rgba(128,128,128,0.35)",
+      borderRadius: "6px",
+    });
+    const browseButton = createModalButton(doc, "选择目录", "#2196f3");
+    browseButton.addEventListener("click", async () => {
+      try {
+        const selected = await pickFolderPath("选择 AI 笔记导出目录");
+        if (selected) pathInput.value = selected;
+      } catch (error) {
+        ztoolkit.log("[AI-Butler] 选择导出目录失败:", error);
+        showAIButlerToast("选择目录失败，请手动输入目录", "error");
+      }
+    });
+    pathRow.appendChild(pathInput);
+    pathRow.appendChild(browseButton);
+    body.appendChild(pathRow);
+
+    const suppressLabel = createDialogCheckbox(
+      doc,
+      "不再提醒，保持该目录（可在快捷设置 -> 自动导出中修改）",
+      false,
+    );
+    body.appendChild(suppressLabel.wrapper);
+    const watchLabel = createDialogCheckbox(
+      doc,
+      "将该分类加入自动导出监听分类",
+      false,
+    );
+    body.appendChild(watchLabel.wrapper);
+
+    const strategyLabel = doc.createElement("label");
+    strategyLabel.textContent = "遇到已导出文件时：";
+    const strategySelect = doc.createElement("select");
+    for (const [value, label] of [
+      ["skip", "跳过已有文件"],
+      ["overwrite", "覆盖已有文件"],
+    ] as const) {
+      const option = doc.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      option.selected = value === config.conflictStrategy;
+      strategySelect.appendChild(option);
+    }
+    Object.assign(strategySelect.style, { marginLeft: "8px", padding: "6px" });
+    strategyLabel.appendChild(strategySelect);
+    body.appendChild(strategyLabel);
+
+    const cancelButton = createModalButton(doc, "取消", "#9e9e9e");
+    cancelButton.addEventListener("click", () => {
+      close();
+      resolve(null);
+    });
+    const confirmButton = createModalButton(doc, "开始导出", "#4caf50");
+    confirmButton.addEventListener("click", () => {
+      const rootPath = pathInput.value.trim();
+      if (!rootPath) {
+        showAIButlerToast("请先选择导出目录", "warning");
+        return;
+      }
+      close();
+      resolve({
+        rootPath,
+        suppressDirectoryPrompt: suppressLabel.checkbox.checked,
+        addToAutoWatch: watchLabel.checkbox.checked,
+        conflictStrategy:
+          strategySelect.value === "overwrite" ? "overwrite" : "skip",
+      });
+    });
+    actions.appendChild(cancelButton);
+    actions.appendChild(confirmButton);
+  });
+}
+
+function createDialogCheckbox(
+  doc: Document,
+  label: string,
+  checked: boolean,
+): { wrapper: HTMLLabelElement; checkbox: HTMLInputElement } {
+  const wrapper = doc.createElement("label");
+  Object.assign(wrapper.style, {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  });
+  const checkbox = doc.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = checked;
+  wrapper.appendChild(checkbox);
+  wrapper.appendChild(doc.createTextNode(label));
+  return { wrapper, checkbox };
 }
 
 /**

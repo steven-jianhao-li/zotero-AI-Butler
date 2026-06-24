@@ -34,6 +34,7 @@
     "update-deps": "npm update --save"
   },
   "dependencies": {
+    "@turbodocx/html-to-docx": "^1.22.0",
     "@types/marked": "^5.0.2",
     "d3": "^7.9.0",
     "jszip": "^3.10.1",
@@ -43,12 +44,15 @@
     "markmap-view": "^0.18.12",
     "mathjax": "^3.2.2",
     "simple-mind-map": "^0.14.0-fix.1",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2",
     "zotero-plugin-toolkit": "5.1.0-beta.13"
   },
   "devDependencies": {
     "@types/chai": "^5.2.3",
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.2.0",
+    "@types/turndown": "^5.0.6",
     "@zotero-plugin/eslint-config": "^0.6.7",
     "chai": "^6.2.2",
     "eslint": "^9.39.2",

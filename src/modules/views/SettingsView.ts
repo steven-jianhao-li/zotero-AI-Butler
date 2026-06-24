@@ -17,6 +17,7 @@ import { DataSettingsPage } from "./settings/DataSettingsPage";
 import { AboutPage } from "./settings/AboutPage";
 import { ImageSummarySettingsPage } from "./settings/ImageSummarySettingsPage";
 import { MindmapSettingsPage } from "./settings/MindmapSettingsPage";
+import { NoteExportSettingsPage } from "./settings/NoteExportSettingsPage";
 import {
   createSettingsScaffold,
   type SettingsNavDescriptor,
@@ -34,6 +35,7 @@ type SettingCategory =
   | "tablePrompt"
   | "mindmap"
   | "imageSummary"
+  | "noteExport"
   | "ui"
   | "data"
   | "about";
@@ -103,6 +105,7 @@ export class SettingsView extends BaseView {
       },
       { id: "mindmap", label: "🧠 思维导图" },
       { id: "imageSummary", label: "🖼️ 一图总结" },
+      { id: "noteExport", label: "📤 自动导出" },
       { id: "ui", label: "🎨 界面设置" },
       { id: "data", label: "💾 数据管理" },
       { id: "about", label: "ℹ️ 关于" },
@@ -172,6 +175,9 @@ export class SettingsView extends BaseView {
           break;
         case "imageSummary":
           page = new ImageSummarySettingsPage(this.settingsContainer);
+          break;
+        case "noteExport":
+          page = new NoteExportSettingsPage(this.settingsContainer);
           break;
         case "ui":
           page = new UiSettingsPage(this.settingsContainer);

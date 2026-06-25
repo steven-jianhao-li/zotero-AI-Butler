@@ -3,6 +3,7 @@ import {
   BorderStyle,
   Document as DocxDocument,
   HeadingLevel,
+  ImageRun,
   Packer,
   Paragraph,
   Table,
@@ -11,16 +12,32 @@ import {
   TextRun,
   UnderlineType,
   WidthType,
+  type ParagraphChild,
 } from "docx";
 import JSZip from "jszip";
+import { liteAdaptor } from "mathjax-full/js/adaptors/liteAdaptor.js";
+import { RegisterHTMLHandler } from "mathjax-full/js/handlers/html.js";
+import { TeX } from "mathjax-full/js/input/tex.js";
+import { AllPackages } from "mathjax-full/js/input/tex/AllPackages.js";
+import { mathjax } from "mathjax-full/js/mathjax.js";
+import { SVG } from "mathjax-full/js/output/svg.js";
 import { withZoteroBrowserGlobals } from "./noteExportBrowserGlobals";
 
 type DocxBlock = Paragraph | Table;
+type InlineDocxChild = ParagraphChild;
 
 const BODY_FONT_SIZE = 24;
 const HEADING_1_FONT_SIZE = 36;
 const HEADING_2_FONT_SIZE = 32;
 const HEADING_SMALL_FONT_SIZE = 24;
+const MATH_EX_TO_PX = 7.5;
+const MAX_MATH_IMAGE_WIDTH = 520;
+const TRANSPARENT_PNG = Uint8Array.from([
+  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0,
+  0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 10, 73, 68, 65, 84, 120,
+  156, 99, 0, 1, 0, 0, 5, 0, 1, 13, 10, 45, 180, 0, 0, 0, 0, 73, 69, 78, 68,
+  174, 66, 96, 130,
+]);
 
 type RunStyle = {
   bold?: boolean;
@@ -366,8 +383,11 @@ function tableBorder(): {
   return { style: BorderStyle.SINGLE, size: 1, color: "D9D9D9" };
 }
 
-function inlineRuns(element: Element, inherited: RunStyle = {}): TextRun[] {
-  const runs: TextRun[] = [];
+function inlineRuns(
+  element: Element,
+  inherited: RunStyle = {},
+): InlineDocxChild[] {
+  const runs: InlineDocxChild[] = [];
   for (const child of Array.from(element.childNodes) as Node[]) {
     appendInlineRuns(child, runs, inherited);
   }
@@ -377,8 +397,8 @@ function inlineRuns(element: Element, inherited: RunStyle = {}): TextRun[] {
 function inlineRunGroups(
   element: Element,
   inherited: RunStyle = {},
-): TextRun[][] {
-  const groups: TextRun[][] = [[]];
+): InlineDocxChild[][] {
+  const groups: InlineDocxChild[][] = [[]];
   for (const child of Array.from(element.childNodes) as Node[]) {
     appendInlineRunGroups(child, groups, inherited);
   }
@@ -387,12 +407,15 @@ function inlineRunGroups(
 
 function appendInlineRunGroups(
   node: Node,
-  groups: TextRun[][],
+  groups: InlineDocxChild[][],
   inherited: RunStyle,
 ): void {
   if (node.nodeType === 3) {
-    const text = normalizeText(node.textContent || "");
-    if (text) groups[groups.length - 1].push(textRun(text, inherited));
+    appendTextAsInlineChildren(
+      node.textContent || "",
+      groups[groups.length - 1],
+      inherited,
+    );
     return;
   }
   if (!isElement(node)) return;
@@ -400,6 +423,16 @@ function appendInlineRunGroups(
   const tag = node.tagName.toLowerCase();
   if (tag === "br") {
     groups.push([]);
+    return;
+  }
+  if (isMathElement(node)) {
+    const mathRun = latexToImageRun(
+      node.textContent || "",
+      isDisplayMath(node),
+    );
+    groups[groups.length - 1].push(
+      mathRun || textRun(node.textContent || "", inherited),
+    );
     return;
   }
   const style = getInlineStyle(tag, inherited);
@@ -410,12 +443,11 @@ function appendInlineRunGroups(
 
 function appendInlineRuns(
   node: Node,
-  runs: TextRun[],
+  runs: InlineDocxChild[],
   inherited: RunStyle,
 ): void {
   if (node.nodeType === 3) {
-    const text = normalizeText(node.textContent || "");
-    if (text) runs.push(textRun(text, inherited));
+    appendTextAsInlineChildren(node.textContent || "", runs, inherited);
     return;
   }
   if (!isElement(node)) return;
@@ -425,12 +457,68 @@ function appendInlineRuns(
     runs.push(textRun(" ", inherited));
     return;
   }
+  if (isMathElement(node)) {
+    runs.push(
+      latexToImageRun(node.textContent || "", isDisplayMath(node)) ||
+        textRun(node.textContent || "", inherited),
+    );
+    return;
+  }
   const style = getInlineStyle(tag, inherited);
   for (const child of Array.from(node.childNodes) as Node[]) {
     appendInlineRuns(child, runs, style);
   }
 }
 
+function appendTextAsInlineChildren(
+  text: string,
+  children: InlineDocxChild[],
+  style: RunStyle,
+): void {
+  const pattern =
+    /(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\])/g;
+  let lastIndex = 0;
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index || 0;
+    appendPlainTextRun(text.slice(lastIndex, index), children, style);
+    const token = match[0];
+    children.push(
+      latexToImageRun(token, isDisplayMathToken(token)) ||
+        textRun(token, style),
+    );
+    lastIndex = index + token.length;
+  }
+  appendPlainTextRun(text.slice(lastIndex), children, style);
+}
+
+function appendPlainTextRun(
+  text: string,
+  children: InlineDocxChild[],
+  style: RunStyle,
+): void {
+  const normalized = normalizeText(text);
+  if (normalized) children.push(textRun(normalized, style));
+}
+
+function isMathElement(element: Element): boolean {
+  return (
+    element.classList.contains("math") || element.classList.contains("katex")
+  );
+}
+
+function isDisplayMath(element: Element): boolean {
+  const text = element.textContent || "";
+  return isDisplayMathToken(text) || element.classList.contains("display-math");
+}
+
+function isDisplayMathToken(text: string): boolean {
+  const trimmed = text.trim();
+  return (
+    trimmed.startsWith("$") ||
+    trimmed.startsWith("\\[") ||
+    trimmed.includes("\\displaystyle")
+  );
+}
 function getInlineStyle(tag: string, inherited: RunStyle): RunStyle {
   return {
     ...inherited,
@@ -456,6 +544,92 @@ function normalizeText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+let mathAdaptor: ReturnType<typeof liteAdaptor> | undefined;
+let mathDocument: ReturnType<typeof mathjax.document> | undefined;
+
+function latexToImageRun(rawLatex: string, display: boolean): ImageRun | null {
+  const latex = normalizeLatex(rawLatex);
+  if (!latex) return null;
+  try {
+    const { adaptor, document } = getMathRenderer();
+    const node = document.convert(latex, { display });
+    const outer = adaptor.outerHTML(node);
+    const svg = extractSvg(outer);
+    if (!svg) return null;
+    const size = parseSvgSize(svg);
+    return new ImageRun({
+      type: "svg",
+      data: utf8Bytes(svg),
+      transformation: size,
+      fallback: { type: "png", data: TRANSPARENT_PNG },
+      altText: { name: "formula", title: latex, description: latex },
+    });
+  } catch (error) {
+    ztoolkit.log(
+      "[AI-Butler][NoteExport] 公式渲染失败，使用 LaTeX 文本兜底:",
+      error,
+    );
+    return null;
+  }
+}
+
+function getMathRenderer(): {
+  adaptor: NonNullable<typeof mathAdaptor>;
+  document: NonNullable<typeof mathDocument>;
+} {
+  if (!mathAdaptor || !mathDocument) {
+    mathAdaptor = liteAdaptor();
+    RegisterHTMLHandler(mathAdaptor);
+    const tex = new TeX({ packages: AllPackages });
+    const svg = new SVG({ fontCache: "none" });
+    mathDocument = mathjax.document("", { InputJax: tex, OutputJax: svg });
+  }
+  return { adaptor: mathAdaptor, document: mathDocument };
+}
+
+function normalizeLatex(rawLatex: string): string {
+  let latex = rawLatex.trim();
+  latex = latex.replace(/^\$\$([\s\S]*)\$\$/, "$1");
+  latex = latex.replace(/^\$([\s\S]*)\$/, "$1");
+  latex = latex.replace(/^\\\(([\s\S]*)\\\)$/, "$1");
+  latex = latex.replace(/^\\\[([\s\S]*)\\\]$/, "$1");
+  latex = latex.replace(/^\\displaystyle\s*/, "");
+  return latex.trim();
+}
+
+function extractSvg(html: string): string | null {
+  const match = html.match(/<svg[\s\S]*<\/svg>/);
+  if (!match) return null;
+  const svg = match[0].replace(/currentColor/g, "#000000");
+  return svg.includes("xmlns=")
+    ? svg
+    : svg.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
+}
+
+function parseSvgSize(svg: string): { width: number; height: number } {
+  const width = parseSvgLength(svg.match(/\swidth="([^"]+)"/)?.[1], 300);
+  const height = parseSvgLength(svg.match(/\sheight="([^"]+)"/)?.[1], 48);
+  const scale = width > MAX_MATH_IMAGE_WIDTH ? MAX_MATH_IMAGE_WIDTH / width : 1;
+  return {
+    width: Math.max(16, Math.round(width * scale)),
+    height: Math.max(12, Math.round(height * scale)),
+  };
+}
+
+function parseSvgLength(length: string | undefined, fallback: number): number {
+  if (!length) return fallback;
+  const match = length.match(/^([\d.]+)(ex|em|px)?$/);
+  if (!match) return fallback;
+  const value = Number(match[1]);
+  const unit = match[2] || "px";
+  if (!Number.isFinite(value)) return fallback;
+  if (unit === "px") return value;
+  return value * MATH_EX_TO_PX;
+}
+
+function utf8Bytes(text: string): Uint8Array {
+  return new TextEncoder().encode(text);
+}
 function getHeadingFontSize(level: number): number {
   if (level === 1) return HEADING_1_FONT_SIZE;
   if (level === 2) return HEADING_2_FONT_SIZE;

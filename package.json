@@ -43,6 +43,7 @@
     "markmap-lib": "^0.18.12",
     "markmap-view": "^0.18.12",
     "mathjax": "^3.2.2",
+    "mathjax-full": "^3.2.2",
     "simple-mind-map": "^0.14.0-fix.1",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2",

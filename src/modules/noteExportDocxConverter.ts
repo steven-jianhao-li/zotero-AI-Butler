@@ -1,4 +1,5 @@
 import {
+  AlignmentType,
   BorderStyle,
   Document as DocxDocument,
   HeadingLevel,
@@ -16,11 +17,17 @@ import { withZoteroBrowserGlobals } from "./noteExportBrowserGlobals";
 
 type DocxBlock = Paragraph | Table;
 
+const BODY_FONT_SIZE = 24;
+const HEADING_1_FONT_SIZE = 36;
+const HEADING_2_FONT_SIZE = 32;
+const HEADING_SMALL_FONT_SIZE = 24;
+
 type RunStyle = {
   bold?: boolean;
   italics?: boolean;
   underline?: boolean;
   code?: boolean;
+  size?: number;
 };
 
 export async function noteHtmlToDocxBytes(options: {
@@ -36,7 +43,7 @@ export async function noteHtmlToDocxBytes(options: {
         styles: {
           default: {
             document: {
-              run: { font: "Microsoft YaHei", size: 22 },
+              run: { font: "Microsoft YaHei", size: BODY_FONT_SIZE },
               paragraph: { spacing: { after: 120, line: 360 } },
             },
           },
@@ -73,6 +80,7 @@ function buildDocxBlocks(options: {
     "text/html",
   );
   const root = doc.getElementById("ai-butler-export-root");
+  if (root) applyHeadingNumbering(doc, root);
   const blocks: DocxBlock[] = [];
 
   if (root) {
@@ -294,8 +302,12 @@ function buildHeading(element: Element, level: number): Paragraph {
   ] as const;
   return new Paragraph({
     heading: headingMap[Math.max(0, Math.min(5, level - 1))],
+    alignment: level === 1 ? AlignmentType.CENTER : undefined,
     spacing: { before: 240, after: 120 },
-    children: inlineRuns(element, { bold: level <= 3 }),
+    children: inlineRuns(element, {
+      bold: true,
+      size: getHeadingFontSize(level),
+    }),
   });
 }
 
@@ -436,7 +448,7 @@ function textRun(text: string, style: RunStyle = {}): TextRun {
     italics: style.italics,
     underline: style.underline ? { type: UnderlineType.SINGLE } : undefined,
     font: style.code ? "Consolas" : "Microsoft YaHei",
-    size: 22,
+    size: style.size || BODY_FONT_SIZE,
   });
 }
 
@@ -444,6 +456,72 @@ function normalizeText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+function getHeadingFontSize(level: number): number {
+  if (level === 1) return HEADING_1_FONT_SIZE;
+  if (level === 2) return HEADING_2_FONT_SIZE;
+  return HEADING_SMALL_FONT_SIZE;
+}
+
+function applyHeadingNumbering(doc: Document, root: Element): void {
+  const counters = { h2: 0, h3: 0, h4: 0, h5: 0 };
+  for (const heading of Array.from(
+    root.querySelectorAll("h2,h3,h4,h5"),
+  ) as Element[]) {
+    const tagName = heading.tagName.toLowerCase() as "h2" | "h3" | "h4" | "h5";
+    counters[tagName] += 1;
+    if (tagName === "h2") {
+      counters.h3 = 0;
+      counters.h4 = 0;
+      counters.h5 = 0;
+    } else if (tagName === "h3") {
+      counters.h4 = 0;
+      counters.h5 = 0;
+    } else if (tagName === "h4") {
+      counters.h5 = 0;
+    }
+
+    const text = normalizeText(heading.textContent || "");
+    if (hasHeadingNumberPrefix(text, tagName)) continue;
+    heading.insertBefore(
+      doc.createTextNode(`${formatHeadingNumber(tagName, counters[tagName])} `),
+      heading.firstChild,
+    );
+  }
+}
+
+function hasHeadingNumberPrefix(
+  text: string,
+  tagName: "h2" | "h3" | "h4" | "h5",
+): boolean {
+  if (tagName === "h2")
+    return /^[一二三四五六七八九十百千零〇两]+[、.．]/.test(text);
+  if (tagName === "h3")
+    return /^（[一二三四五六七八九十百千零〇两]+）/.test(text);
+  if (tagName === "h4") return /^\d+[、.．]/.test(text);
+  return /^（\d+）/.test(text);
+}
+
+function formatHeadingNumber(
+  tagName: "h2" | "h3" | "h4" | "h5",
+  value: number,
+): string {
+  if (tagName === "h2") return `${toChineseNumber(value)}、`;
+  if (tagName === "h3") return `（${toChineseNumber(value)}）`;
+  if (tagName === "h4") return `${value}、`;
+  return `（${value}）`;
+}
+
+function toChineseNumber(value: number): string {
+  const digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+  if (value <= 10) return value === 10 ? "十" : digits[value];
+  if (value < 20) return `十${digits[value % 10]}`;
+  if (value < 100) {
+    const tens = Math.floor(value / 10);
+    const ones = value % 10;
+    return `${digits[tens]}十${ones ? digits[ones] : ""}`;
+  }
+  return String(value);
+}
 async function buildSimpleDocx(options: {
   html: string;
   title: string;
@@ -482,6 +560,7 @@ function htmlToWordParagraphs(html: string): string[] {
   );
   const root = doc.getElementById("ai-butler-export-root");
   if (!root) return [];
+  applyHeadingNumbering(doc, root);
   const paragraphs: string[] = [];
   for (const child of Array.from(root.childNodes) as Node[]) {
     appendNodeParagraphs(child, paragraphs);
@@ -505,7 +584,8 @@ function appendNodeParagraphs(node: Node, paragraphs: string[]): void {
     paragraphs.push(
       buildXmlParagraph(node.textContent || "", {
         bold: true,
-        size: Math.max(22, 34 - level * 2),
+        size: getHeadingFontSize(level),
+        alignCenter: level === 1,
       }),
     );
     return;
@@ -571,7 +651,12 @@ function appendTextLinesByBreak(node: Node, lines: string[]): void {
 
 function buildXmlParagraph(
   text: string,
-  options: { bold?: boolean; size?: number; monospace?: boolean } = {},
+  options: {
+    bold?: boolean;
+    size?: number;
+    monospace?: boolean;
+    alignCenter?: boolean;
+  } = {},
 ): string {
   const runProps = [
     options.bold ? "<w:b/>" : "",
@@ -581,7 +666,10 @@ function buildXmlParagraph(
       : "",
   ].join("");
   const props = runProps ? `<w:rPr>${runProps}</w:rPr>` : "";
-  return `<w:p><w:r>${props}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+  const paragraphProps = options.alignCenter
+    ? '<w:pPr><w:jc w:val="center"/></w:pPr>'
+    : "";
+  return `<w:p>${paragraphProps}<w:r>${props}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
 }
 
 function escapeXml(text: string): string {
@@ -603,4 +691,4 @@ const DOCUMENT_RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`;
 
 const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:rFonts w:ascii="Microsoft YaHei" w:hAnsi="Microsoft YaHei"/><w:sz w:val="22"/></w:rPr></w:style></w:styles>`;
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:rFonts w:ascii="Microsoft YaHei" w:hAnsi="Microsoft YaHei"/><w:sz w:val="24"/></w:rPr></w:style></w:styles>`;

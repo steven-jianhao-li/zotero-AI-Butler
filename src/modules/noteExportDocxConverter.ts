@@ -73,21 +73,7 @@ function buildDocxBlocks(options: {
     "text/html",
   );
   const root = doc.getElementById("ai-butler-export-root");
-  const generatedTitle = getGeneratedTitle(options);
-  if (root) removeDuplicateLeadingHeading(root, generatedTitle);
-  const blocks: DocxBlock[] = [
-    new Paragraph({
-      heading: HeadingLevel.TITLE,
-      spacing: { after: 240 },
-      children: [
-        new TextRun({
-          text: generatedTitle,
-          bold: true,
-          size: 32,
-        }),
-      ],
-    }),
-  ];
+  const blocks: DocxBlock[] = [];
 
   if (root) {
     for (const child of Array.from(root.childNodes) as Node[]) {
@@ -96,39 +82,10 @@ function buildDocxBlocks(options: {
   }
 
   const remainingText = normalizeText(root?.textContent || "");
-  if (blocks.length === 1 && remainingText) {
+  if (!blocks.length && remainingText) {
     blocks.push(new Paragraph({ text: remainingText }));
   }
   return blocks;
-}
-
-function getGeneratedTitle(options: {
-  title: string;
-  kindLabel: string;
-}): string {
-  return `${options.kindLabel} - ${options.title}`;
-}
-
-function removeDuplicateLeadingHeading(
-  root: Element,
-  generatedTitle: string,
-): void {
-  const firstContent = Array.from(root.childNodes).find(
-    (node) => !!node && normalizeText(node.textContent || "").length > 0,
-  );
-  if (!firstContent || !isElement(firstContent)) return;
-  if (!/^h[1-6]$/i.test(firstContent.tagName)) return;
-
-  const headingText = normalizeComparableTitle(firstContent.textContent || "");
-  if (headingText === normalizeComparableTitle(generatedTitle)) {
-    firstContent.remove();
-  }
-}
-
-function normalizeComparableTitle(text: string): string {
-  return normalizeText(text)
-    .replace(/[\uFF1A:]+$/, "")
-    .toLowerCase();
 }
 
 export function sanitizeNoteHtmlForDocx(html: string): string {
@@ -507,14 +464,7 @@ function buildDocumentXml(options: {
   title: string;
   kindLabel: string;
 }): string {
-  const generatedTitle = getGeneratedTitle(options);
-  const paragraphs = [
-    buildXmlParagraph(generatedTitle, {
-      bold: true,
-      size: 32,
-    }),
-    ...htmlToWordParagraphs(options.html, generatedTitle),
-  ];
+  const paragraphs = htmlToWordParagraphs(options.html);
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
@@ -525,14 +475,13 @@ function buildDocumentXml(options: {
 </w:document>`;
 }
 
-function htmlToWordParagraphs(html: string, generatedTitle: string): string[] {
+function htmlToWordParagraphs(html: string): string[] {
   const doc = new DOMParser().parseFromString(
     `<div id="ai-butler-export-root">${sanitizeNoteHtmlForDocx(html)}</div>`,
     "text/html",
   );
   const root = doc.getElementById("ai-butler-export-root");
   if (!root) return [];
-  removeDuplicateLeadingHeading(root, generatedTitle);
   const paragraphs: string[] = [];
   for (const child of Array.from(root.childNodes) as Node[]) {
     appendNodeParagraphs(child, paragraphs);

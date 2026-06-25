@@ -11,11 +11,14 @@ import {
   TextRun,
   UnderlineType,
   WidthType,
+  type ParagraphChild,
 } from "docx";
 import JSZip from "jszip";
+import { latexToDocxMath, splitTextWithMath } from "./noteExportMath";
 import { withZoteroBrowserGlobals } from "./noteExportBrowserGlobals";
 
 type DocxBlock = Paragraph | Table;
+type InlineDocxChild = ParagraphChild;
 
 const BODY_FONT_SIZE = 24;
 const HEADING_1_FONT_SIZE = 36;
@@ -366,8 +369,11 @@ function tableBorder(): {
   return { style: BorderStyle.SINGLE, size: 1, color: "D9D9D9" };
 }
 
-function inlineRuns(element: Element, inherited: RunStyle = {}): TextRun[] {
-  const runs: TextRun[] = [];
+function inlineRuns(
+  element: Element,
+  inherited: RunStyle = {},
+): InlineDocxChild[] {
+  const runs: InlineDocxChild[] = [];
   for (const child of Array.from(element.childNodes) as Node[]) {
     appendInlineRuns(child, runs, inherited);
   }
@@ -377,8 +383,8 @@ function inlineRuns(element: Element, inherited: RunStyle = {}): TextRun[] {
 function inlineRunGroups(
   element: Element,
   inherited: RunStyle = {},
-): TextRun[][] {
-  const groups: TextRun[][] = [[]];
+): InlineDocxChild[][] {
+  const groups: InlineDocxChild[][] = [[]];
   for (const child of Array.from(element.childNodes) as Node[]) {
     appendInlineRunGroups(child, groups, inherited);
   }
@@ -387,12 +393,15 @@ function inlineRunGroups(
 
 function appendInlineRunGroups(
   node: Node,
-  groups: TextRun[][],
+  groups: InlineDocxChild[][],
   inherited: RunStyle,
 ): void {
   if (node.nodeType === 3) {
-    const text = normalizeText(node.textContent || "");
-    if (text) groups[groups.length - 1].push(textRun(text, inherited));
+    appendTextAsInlineChildren(
+      node.textContent || "",
+      groups[groups.length - 1],
+      inherited,
+    );
     return;
   }
   if (!isElement(node)) return;
@@ -400,6 +409,13 @@ function appendInlineRunGroups(
   const tag = node.tagName.toLowerCase();
   if (tag === "br") {
     groups.push([]);
+    return;
+  }
+  if (isMathElement(node)) {
+    groups[groups.length - 1].push(
+      latexToDocxMath(node.textContent || "") ||
+        textRun(node.textContent || "", inherited),
+    );
     return;
   }
   const style = getInlineStyle(tag, inherited);
@@ -410,12 +426,11 @@ function appendInlineRunGroups(
 
 function appendInlineRuns(
   node: Node,
-  runs: TextRun[],
+  runs: InlineDocxChild[],
   inherited: RunStyle,
 ): void {
   if (node.nodeType === 3) {
-    const text = normalizeText(node.textContent || "");
-    if (text) runs.push(textRun(text, inherited));
+    appendTextAsInlineChildren(node.textContent || "", runs, inherited);
     return;
   }
   if (!isElement(node)) return;
@@ -425,12 +440,39 @@ function appendInlineRuns(
     runs.push(textRun(" ", inherited));
     return;
   }
+  if (isMathElement(node)) {
+    runs.push(
+      latexToDocxMath(node.textContent || "") ||
+        textRun(node.textContent || "", inherited),
+    );
+    return;
+  }
   const style = getInlineStyle(tag, inherited);
   for (const child of Array.from(node.childNodes) as Node[]) {
     appendInlineRuns(child, runs, style);
   }
 }
 
+function appendTextAsInlineChildren(
+  text: string,
+  children: InlineDocxChild[],
+  style: RunStyle,
+): void {
+  for (const part of splitTextWithMath(text)) {
+    if (typeof part !== "string") {
+      children.push(part);
+      continue;
+    }
+    const normalized = normalizeText(part);
+    if (normalized) children.push(textRun(normalized, style));
+  }
+}
+
+function isMathElement(element: Element): boolean {
+  return (
+    element.classList.contains("math") || element.classList.contains("katex")
+  );
+}
 function getInlineStyle(tag: string, inherited: RunStyle): RunStyle {
   return {
     ...inherited,

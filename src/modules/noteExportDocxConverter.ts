@@ -275,8 +275,9 @@ function appendParagraphLike(element: Element, blocks: DocxBlock[]): void {
     }
     return;
   }
-  const children = inlineRuns(element);
-  if (children.length) blocks.push(new Paragraph({ children }));
+  for (const children of inlineRunGroups(element)) {
+    if (children.length) blocks.push(new Paragraph({ children }));
+  }
 }
 
 function appendList(
@@ -311,17 +312,18 @@ function appendPreformatted(element: Element, blocks: DocxBlock[]): void {
 }
 
 function appendBlockquote(element: Element, blocks: DocxBlock[]): void {
-  const children = inlineRuns(element);
-  if (!children.length) return;
-  blocks.push(
-    new Paragraph({
-      indent: { left: 360 },
-      border: {
-        left: { style: BorderStyle.SINGLE, size: 12, color: "CBD5E1" },
-      },
-      children,
-    }),
-  );
+  for (const children of inlineRunGroups(element)) {
+    if (!children.length) continue;
+    blocks.push(
+      new Paragraph({
+        indent: { left: 360 },
+        border: {
+          left: { style: BorderStyle.SINGLE, size: 12, color: "CBD5E1" },
+        },
+        children,
+      }),
+    );
+  }
 }
 
 function buildHeading(element: Element, level: number): Paragraph {
@@ -403,6 +405,40 @@ function inlineRuns(element: Element, inherited: RunStyle = {}): TextRun[] {
   return runs;
 }
 
+function inlineRunGroups(
+  element: Element,
+  inherited: RunStyle = {},
+): TextRun[][] {
+  const groups: TextRun[][] = [[]];
+  for (const child of Array.from(element.childNodes) as Node[]) {
+    appendInlineRunGroups(child, groups, inherited);
+  }
+  return groups.filter((group) => group.length > 0);
+}
+
+function appendInlineRunGroups(
+  node: Node,
+  groups: TextRun[][],
+  inherited: RunStyle,
+): void {
+  if (node.nodeType === 3) {
+    const text = normalizeText(node.textContent || "");
+    if (text) groups[groups.length - 1].push(textRun(text, inherited));
+    return;
+  }
+  if (!isElement(node)) return;
+
+  const tag = node.tagName.toLowerCase();
+  if (tag === "br") {
+    groups.push([]);
+    return;
+  }
+  const style = getInlineStyle(tag, inherited);
+  for (const child of Array.from(node.childNodes) as Node[]) {
+    appendInlineRunGroups(child, groups, style);
+  }
+}
+
 function appendInlineRuns(
   node: Node,
   runs: TextRun[],
@@ -417,19 +453,23 @@ function appendInlineRuns(
 
   const tag = node.tagName.toLowerCase();
   if (tag === "br") {
-    runs.push(new TextRun({ text: "", break: 1 }));
+    runs.push(textRun(" ", inherited));
     return;
   }
-  const style: RunStyle = {
+  const style = getInlineStyle(tag, inherited);
+  for (const child of Array.from(node.childNodes) as Node[]) {
+    appendInlineRuns(child, runs, style);
+  }
+}
+
+function getInlineStyle(tag: string, inherited: RunStyle): RunStyle {
+  return {
     ...inherited,
     bold: inherited.bold || ["strong", "b", "th"].includes(tag),
     italics: inherited.italics || ["em", "i"].includes(tag),
     underline: inherited.underline || tag === "u",
     code: inherited.code || tag === "code",
   };
-  for (const child of Array.from(node.childNodes) as Node[]) {
-    appendInlineRuns(child, runs, style);
-  }
 }
 
 function textRun(text: string, style: RunStyle = {}): TextRun {
@@ -543,8 +583,9 @@ function appendNodeParagraphs(node: Node, paragraphs: string[]): void {
     return;
   }
   if (["p", "blockquote"].includes(tag)) {
-    const text = normalizeText(node.textContent || "");
-    if (text) paragraphs.push(buildXmlParagraph(text));
+    for (const line of textLinesByBreak(node)) {
+      paragraphs.push(buildXmlParagraph(line));
+    }
     return;
   }
 
@@ -555,6 +596,28 @@ function appendNodeParagraphs(node: Node, paragraphs: string[]): void {
 
 function isElement(node: Node | null): node is Element {
   return !!node && node.nodeType === 1;
+}
+
+function textLinesByBreak(element: Element): string[] {
+  const lines = [""];
+  appendTextLinesByBreak(element, lines);
+  return lines.map(normalizeText).filter(Boolean);
+}
+
+function appendTextLinesByBreak(node: Node, lines: string[]): void {
+  if (node.nodeType === 3) {
+    lines[lines.length - 1] += node.textContent || "";
+    return;
+  }
+  if (!isElement(node)) return;
+
+  if (node.tagName.toLowerCase() === "br") {
+    lines.push("");
+    return;
+  }
+  for (const child of Array.from(node.childNodes) as Node[]) {
+    appendTextLinesByBreak(child, lines);
+  }
 }
 
 function buildXmlParagraph(

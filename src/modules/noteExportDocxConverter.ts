@@ -117,7 +117,12 @@ function removeDuplicateLeadingHeading(
     (node) => !!node && normalizeText(node.textContent || "").length > 0,
   );
   if (!firstContent || !isElement(firstContent)) return;
-  if (!/^h[1-6]$/i.test(firstContent.tagName)) return;
+  const tagName = firstContent.tagName.toLowerCase();
+  if (tagName === "h1") {
+    firstContent.remove();
+    return;
+  }
+  if (!/^h[2-6]$/.test(tagName)) return;
 
   const headingText = normalizeComparableTitle(firstContent.textContent || "");
   if (headingText === normalizeComparableTitle(generatedTitle)) {

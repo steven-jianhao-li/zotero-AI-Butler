@@ -34,9 +34,9 @@
     "update-deps": "npm update --save"
   },
   "dependencies": {
-    "@turbodocx/html-to-docx": "^1.22.0",
     "@types/marked": "^5.0.2",
     "d3": "^7.9.0",
+    "docx": "^9.7.1",
     "jszip": "^3.10.1",
     "katex": "^0.16.28",
     "marked": "^16.4.1",

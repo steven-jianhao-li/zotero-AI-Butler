@@ -1,30 +1,37 @@
+import { withZoteroBrowserGlobals } from "./noteExportBrowserGlobals";
+
 export async function noteHtmlToMarkdown(html: string): Promise<string> {
   try {
-    const TurndownService = await loadTurndown();
-    const service = new TurndownService({
-      headingStyle: "atx",
-      codeBlockStyle: "fenced",
-      bulletListMarker: "-",
-      strongDelimiter: "**",
+    return await withZoteroBrowserGlobals(async () => {
+      const TurndownService = await loadTurndown();
+      const service = new TurndownService({
+        headingStyle: "atx",
+        codeBlockStyle: "fenced",
+        bulletListMarker: "-",
+        strongDelimiter: "**",
+      });
+
+      try {
+        const gfm = await import("turndown-plugin-gfm");
+        const plugin = (gfm as any).gfm || (gfm as any).default?.gfm;
+        if (plugin) service.use(plugin);
+      } catch (error) {
+        ztoolkit.log(
+          "[AI-Butler][NoteExport] GFM Markdown 插件加载失败:",
+          error,
+        );
+      }
+
+      service.addRule("zoteroMath", {
+        filter: (node: HTMLElement) =>
+          node.nodeName === "SPAN" && node.classList.contains("math"),
+        replacement: (_content: string, node: HTMLElement) =>
+          node.textContent || "",
+      });
+
+      const markdown = service.turndown(sanitizeHtmlForMarkdown(html));
+      return `${markdown.trim()}\n`;
     });
-
-    try {
-      const gfm = await import("turndown-plugin-gfm");
-      const plugin = (gfm as any).gfm || (gfm as any).default?.gfm;
-      if (plugin) service.use(plugin);
-    } catch (error) {
-      ztoolkit.log("[AI-Butler][NoteExport] GFM Markdown 插件加载失败:", error);
-    }
-
-    service.addRule("zoteroMath", {
-      filter: (node: HTMLElement) =>
-        node.nodeName === "SPAN" && node.classList.contains("math"),
-      replacement: (_content: string, node: HTMLElement) =>
-        node.textContent || "",
-    });
-
-    const markdown = service.turndown(sanitizeHtmlForMarkdown(html));
-    return `${markdown.trim()}\n`;
   } catch (error) {
     ztoolkit.log(
       "[AI-Butler][NoteExport] Turndown 在 Zotero 运行时不可用，使用内置 Markdown 转换:",

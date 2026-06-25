@@ -1,5 +1,27 @@
-import { escapeHtml } from "./noteMarkdown";
+import {
+  BorderStyle,
+  Document as DocxDocument,
+  HeadingLevel,
+  Packer,
+  Paragraph,
+  Table,
+  TableCell,
+  TableRow,
+  TextRun,
+  UnderlineType,
+  WidthType,
+} from "docx";
 import JSZip from "jszip";
+import { withZoteroBrowserGlobals } from "./noteExportBrowserGlobals";
+
+type DocxBlock = Paragraph | Table;
+
+type RunStyle = {
+  bold?: boolean;
+  italics?: boolean;
+  underline?: boolean;
+  code?: boolean;
+};
 
 export async function noteHtmlToDocxBytes(options: {
   html: string;
@@ -7,59 +29,74 @@ export async function noteHtmlToDocxBytes(options: {
   kindLabel: string;
 }): Promise<Uint8Array> {
   try {
-    const htmlToDocx = await loadHtmlToDocx();
-    const documentHtml = buildDocumentHtml(options);
-    const result = await htmlToDocx(documentHtml, null, {
-      title: `${options.kindLabel} - ${options.title}`,
-      creator: "AI-Butler",
-      font: "Microsoft YaHei",
-      fontSize: 22,
-      table: {
-        row: { cantSplit: true },
-        borderOptions: { size: 1, color: "d9d9d9" },
-      },
-      preprocessing: { skipHTMLMinify: true },
-      imageProcessing: { suppressSharpWarning: true, svgHandling: "native" },
+    return await withZoteroBrowserGlobals(async () => {
+      const doc = new DocxDocument({
+        title: `${options.kindLabel} - ${options.title}`,
+        creator: "AI-Butler",
+        styles: {
+          default: {
+            document: {
+              run: { font: "Microsoft YaHei", size: 22 },
+              paragraph: { spacing: { after: 120, line: 360 } },
+            },
+          },
+        },
+        sections: [
+          {
+            properties: {
+              page: {
+                margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+              },
+            },
+            children: buildDocxBlocks(options),
+          },
+        ],
+      });
+      return new Uint8Array(await Packer.toArrayBuffer(doc));
     });
-    return await resultToBytes(result);
   } catch (error) {
     ztoolkit.log(
-      "[AI-Butler][NoteExport] HTML 转 DOCX 依赖失败，使用内置 DOCX 生成器:",
+      "[AI-Butler][NoteExport] docx 依赖生成失败，使用内置 DOCX 生成器:",
       error,
     );
     return buildSimpleDocx(options);
   }
 }
 
-function buildDocumentHtml(options: {
+function buildDocxBlocks(options: {
   html: string;
   title: string;
   kindLabel: string;
-}): string {
-  return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <style>
-    body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; line-height: 1.55; color: #202124; }
-    h1, h2, h3, h4, h5, h6 { color: #1f2937; margin-top: 18px; margin-bottom: 8px; }
-    h1 { font-size: 22pt; border-bottom: 1px solid #d9d9d9; padding-bottom: 6px; }
-    h2 { font-size: 17pt; }
-    h3 { font-size: 14pt; }
-    p { margin: 6px 0; }
-    table { border-collapse: collapse; width: 100%; margin: 10px 0; }
-    th, td { border: 1px solid #d9d9d9; padding: 6px 8px; vertical-align: top; }
-    pre { background: #f6f8fa; padding: 8px; white-space: pre-wrap; }
-    code { font-family: Consolas, Menlo, monospace; }
-    blockquote { border-left: 4px solid #cbd5e1; margin-left: 0; padding-left: 12px; color: #475569; }
-    .math { font-family: Cambria Math, Times New Roman, serif; }
-  </style>
-</head>
-<body>
-  <h1>${escapeHtml(options.kindLabel)} - ${escapeHtml(options.title)}</h1>
-  ${sanitizeNoteHtmlForDocx(options.html)}
-</body>
-</html>`;
+}): DocxBlock[] {
+  const doc = new DOMParser().parseFromString(
+    `<div id="ai-butler-export-root">${sanitizeNoteHtmlForDocx(options.html)}</div>`,
+    "text/html",
+  );
+  const root = doc.getElementById("ai-butler-export-root");
+  const blocks: DocxBlock[] = [
+    new Paragraph({
+      heading: HeadingLevel.TITLE,
+      spacing: { after: 240 },
+      children: [
+        new TextRun({
+          text: `${options.kindLabel} - ${options.title}`,
+          bold: true,
+          size: 32,
+        }),
+      ],
+    }),
+  ];
+
+  if (root) {
+    for (const child of Array.from(root.childNodes) as Node[]) {
+      appendDocxBlocks(child, blocks);
+    }
+  }
+
+  if (blocks.length === 1) {
+    blocks.push(new Paragraph({ text: root?.textContent || "" }));
+  }
+  return blocks;
 }
 
 export function sanitizeNoteHtmlForDocx(html: string): string {
@@ -83,6 +120,8 @@ export function sanitizeNoteHtmlForDocx(html: string): string {
     element.textContent = text.replace(/^\$\\displaystyle\s*/, "$");
   }
 
+  normalizeTablesForDocx(doc, root);
+
   for (const element of Array.from(
     root.querySelectorAll("[style]"),
   ) as Element[]) {
@@ -92,34 +131,288 @@ export function sanitizeNoteHtmlForDocx(html: string): string {
   return String(root.innerHTML);
 }
 
-async function loadHtmlToDocx(): Promise<(...args: any[]) => Promise<unknown>> {
-  const mod = (await import("@turbodocx/html-to-docx")) as any;
-  const fn = mod.default || mod;
-  if (typeof fn !== "function") {
-    throw new Error("DOCX 转换依赖加载失败");
+function normalizeTablesForDocx(doc: Document, root: Element): void {
+  for (const table of Array.from(
+    root.querySelectorAll("table"),
+  ) as HTMLTableElement[]) {
+    const normalizedTable = doc.createElement("table");
+    for (const row of Array.from(
+      table.querySelectorAll("tr"),
+    ) as HTMLTableRowElement[]) {
+      const normalizedRow = doc.createElement("tr");
+      const cells = Array.from(
+        row.querySelectorAll("th,td"),
+      ) as HTMLTableCellElement[];
+      for (const cell of cells) {
+        const normalizedCell = doc.createElement(cell.tagName.toLowerCase());
+        normalizedCell.setAttribute(
+          "colspan",
+          String(Math.max(1, cell.colSpan || 1)),
+        );
+        normalizedCell.setAttribute(
+          "rowspan",
+          String(Math.max(1, cell.rowSpan || 1)),
+        );
+        normalizedCell.textContent =
+          normalizeText(cell.textContent || "") || " ";
+        normalizedRow.appendChild(normalizedCell);
+      }
+      if (!cells.length) {
+        const emptyCell = doc.createElement("td");
+        emptyCell.setAttribute("colspan", "1");
+        emptyCell.setAttribute("rowspan", "1");
+        emptyCell.textContent = " ";
+        normalizedRow.appendChild(emptyCell);
+      }
+      normalizedTable.appendChild(normalizedRow);
+    }
+    if (!normalizedTable.querySelector("tr")) {
+      const row = doc.createElement("tr");
+      const cell = doc.createElement("td");
+      cell.setAttribute("colspan", "1");
+      cell.setAttribute("rowspan", "1");
+      cell.textContent = normalizeText(table.textContent || "") || " ";
+      row.appendChild(cell);
+      normalizedTable.appendChild(row);
+    }
+    table.replaceWith(normalizedTable);
   }
-  return fn;
 }
 
-async function resultToBytes(result: unknown): Promise<Uint8Array> {
-  if (result instanceof Uint8Array) return result;
-  if (result instanceof ArrayBuffer) return new Uint8Array(result);
-  if (typeof Blob !== "undefined" && result instanceof Blob) {
-    return new Uint8Array(await result.arrayBuffer());
+function appendDocxBlocks(node: Node, blocks: DocxBlock[]): void {
+  if (node.nodeType === 3) {
+    const text = normalizeText(node.textContent || "");
+    if (text) blocks.push(new Paragraph({ children: [textRun(text)] }));
+    return;
   }
-  const maybeBuffer = result as {
-    buffer?: ArrayBuffer;
-    byteOffset?: number;
-    byteLength?: number;
-  };
-  if (maybeBuffer?.buffer instanceof ArrayBuffer) {
-    return new Uint8Array(
-      maybeBuffer.buffer,
-      maybeBuffer.byteOffset || 0,
-      maybeBuffer.byteLength,
+  if (!isElement(node)) return;
+
+  const tag = node.tagName.toLowerCase();
+  if (/^h[1-6]$/.test(tag)) {
+    blocks.push(buildHeading(node, Number(tag.slice(1))));
+    return;
+  }
+  if (["p", "div", "section", "article"].includes(tag)) {
+    appendParagraphLike(node, blocks);
+    return;
+  }
+  if (["ul", "ol"].includes(tag)) {
+    appendList(node, blocks, tag === "ol");
+    return;
+  }
+  if (tag === "pre") {
+    appendPreformatted(node, blocks);
+    return;
+  }
+  if (tag === "blockquote") {
+    appendBlockquote(node, blocks);
+    return;
+  }
+  if (tag === "table") {
+    blocks.push(buildTable(node));
+    return;
+  }
+  if (tag === "br") {
+    blocks.push(new Paragraph({ text: "" }));
+    return;
+  }
+
+  for (const child of Array.from(node.childNodes) as Node[]) {
+    appendDocxBlocks(child, blocks);
+  }
+}
+
+function appendParagraphLike(element: Element, blocks: DocxBlock[]): void {
+  const blockTags = new Set([
+    "div",
+    "p",
+    "section",
+    "article",
+    "ul",
+    "ol",
+    "pre",
+    "blockquote",
+    "table",
+  ]);
+  const hasBlockChild = Array.from(element.children).some((child) =>
+    blockTags.has(child.tagName.toLowerCase()),
+  );
+  if (hasBlockChild) {
+    for (const child of Array.from(element.childNodes) as Node[]) {
+      appendDocxBlocks(child, blocks);
+    }
+    return;
+  }
+  const children = inlineRuns(element);
+  if (children.length) blocks.push(new Paragraph({ children }));
+}
+
+function appendList(
+  element: Element,
+  blocks: DocxBlock[],
+  ordered: boolean,
+): void {
+  const items = Array.from(element.children).filter(
+    (child) => child.tagName.toLowerCase() === "li",
+  );
+  items.forEach((item, index) => {
+    const prefix = ordered ? `${index + 1}. ` : "• ";
+    blocks.push(
+      new Paragraph({
+        indent: { left: 360, hanging: 240 },
+        children: [textRun(prefix), ...inlineRuns(item)],
+      }),
+    );
+  });
+}
+
+function appendPreformatted(element: Element, blocks: DocxBlock[]): void {
+  const text = element.textContent || "";
+  for (const line of text.split(/\r?\n/)) {
+    blocks.push(
+      new Paragraph({
+        spacing: { before: 60, after: 60 },
+        children: [textRun(line || " ", { code: true })],
+      }),
     );
   }
-  throw new Error("DOCX 转换结果格式不受支持");
+}
+
+function appendBlockquote(element: Element, blocks: DocxBlock[]): void {
+  const children = inlineRuns(element);
+  if (!children.length) return;
+  blocks.push(
+    new Paragraph({
+      indent: { left: 360 },
+      border: {
+        left: { style: BorderStyle.SINGLE, size: 12, color: "CBD5E1" },
+      },
+      children,
+    }),
+  );
+}
+
+function buildHeading(element: Element, level: number): Paragraph {
+  const headingMap = [
+    HeadingLevel.HEADING_1,
+    HeadingLevel.HEADING_2,
+    HeadingLevel.HEADING_3,
+    HeadingLevel.HEADING_4,
+    HeadingLevel.HEADING_5,
+    HeadingLevel.HEADING_6,
+  ] as const;
+  return new Paragraph({
+    heading: headingMap[Math.max(0, Math.min(5, level - 1))],
+    spacing: { before: 240, after: 120 },
+    children: inlineRuns(element, { bold: level <= 3 }),
+  });
+}
+
+function buildTable(element: Element): Table {
+  const rows = Array.from(
+    element.querySelectorAll("tr"),
+  ) as HTMLTableRowElement[];
+  const tableRows = rows.length
+    ? rows.map(buildTableRow)
+    : [
+        new TableRow({
+          children: [buildTableCell(element.textContent || " ")],
+        }),
+      ];
+  return new Table({
+    rows: tableRows,
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: tableBorder(),
+      bottom: tableBorder(),
+      left: tableBorder(),
+      right: tableBorder(),
+      insideHorizontal: tableBorder(),
+      insideVertical: tableBorder(),
+    },
+  });
+}
+
+function buildTableRow(row: HTMLTableRowElement): TableRow {
+  const cells = Array.from(
+    row.querySelectorAll("th,td"),
+  ) as HTMLTableCellElement[];
+  return new TableRow({
+    children: cells.length
+      ? cells.map((cell) => buildTableCell(cell.textContent || " ", cell))
+      : [buildTableCell(" ")],
+  });
+}
+
+function buildTableCell(text: string, cell?: HTMLTableCellElement): TableCell {
+  return new TableCell({
+    columnSpan: Math.max(1, cell?.colSpan || 1),
+    rowSpan: Math.max(1, cell?.rowSpan || 1),
+    margins: { top: 120, bottom: 120, left: 120, right: 120 },
+    children: [
+      new Paragraph({ children: [textRun(normalizeText(text) || " ")] }),
+    ],
+  });
+}
+
+function tableBorder(): {
+  style: typeof BorderStyle.SINGLE;
+  size: number;
+  color: string;
+} {
+  return { style: BorderStyle.SINGLE, size: 1, color: "D9D9D9" };
+}
+
+function inlineRuns(element: Element, inherited: RunStyle = {}): TextRun[] {
+  const runs: TextRun[] = [];
+  for (const child of Array.from(element.childNodes) as Node[]) {
+    appendInlineRuns(child, runs, inherited);
+  }
+  return runs;
+}
+
+function appendInlineRuns(
+  node: Node,
+  runs: TextRun[],
+  inherited: RunStyle,
+): void {
+  if (node.nodeType === 3) {
+    const text = normalizeText(node.textContent || "");
+    if (text) runs.push(textRun(text, inherited));
+    return;
+  }
+  if (!isElement(node)) return;
+
+  const tag = node.tagName.toLowerCase();
+  if (tag === "br") {
+    runs.push(new TextRun({ text: "", break: 1 }));
+    return;
+  }
+  const style: RunStyle = {
+    ...inherited,
+    bold: inherited.bold || ["strong", "b", "th"].includes(tag),
+    italics: inherited.italics || ["em", "i"].includes(tag),
+    underline: inherited.underline || tag === "u",
+    code: inherited.code || tag === "code",
+  };
+  for (const child of Array.from(node.childNodes) as Node[]) {
+    appendInlineRuns(child, runs, style);
+  }
+}
+
+function textRun(text: string, style: RunStyle = {}): TextRun {
+  return new TextRun({
+    text,
+    bold: style.bold,
+    italics: style.italics,
+    underline: style.underline ? { type: UnderlineType.SINGLE } : undefined,
+    font: style.code ? "Consolas" : "Microsoft YaHei",
+    size: 22,
+  });
+}
+
+function normalizeText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
 async function buildSimpleDocx(options: {
@@ -143,7 +436,7 @@ function buildDocumentXml(options: {
   kindLabel: string;
 }): string {
   const paragraphs = [
-    buildParagraph(`${options.kindLabel} - ${options.title}`, {
+    buildXmlParagraph(`${options.kindLabel} - ${options.title}`, {
       bold: true,
       size: 32,
     }),
@@ -172,13 +465,13 @@ function htmlToWordParagraphs(html: string): string[] {
   }
   return paragraphs.length
     ? paragraphs
-    : [buildParagraph(root.textContent || "")];
+    : [buildXmlParagraph(root.textContent || "")];
 }
 
 function appendNodeParagraphs(node: Node, paragraphs: string[]): void {
   if (node.nodeType === 3) {
-    const text = (node.textContent || "").trim();
-    if (text) paragraphs.push(buildParagraph(text));
+    const text = normalizeText(node.textContent || "");
+    if (text) paragraphs.push(buildXmlParagraph(text));
     return;
   }
   if (!isElement(node)) return;
@@ -187,7 +480,7 @@ function appendNodeParagraphs(node: Node, paragraphs: string[]): void {
   if (/^h[1-6]$/.test(tag)) {
     const level = Number(tag.slice(1));
     paragraphs.push(
-      buildParagraph(node.textContent || "", {
+      buildXmlParagraph(node.textContent || "", {
         bold: true,
         size: Math.max(22, 34 - level * 2),
       }),
@@ -195,28 +488,29 @@ function appendNodeParagraphs(node: Node, paragraphs: string[]): void {
     return;
   }
   if (tag === "li") {
-    paragraphs.push(buildParagraph(`• ${(node.textContent || "").trim()}`));
+    paragraphs.push(
+      buildXmlParagraph(`• ${normalizeText(node.textContent || "")}`),
+    );
     return;
   }
   if (tag === "pre") {
     const text = node.textContent || "";
-    for (const line of text.split(/\r?\n/)) {
-      paragraphs.push(buildParagraph(line, { monospace: true }));
-    }
+    for (const line of text.split(/\r?\n/))
+      paragraphs.push(buildXmlParagraph(line, { monospace: true }));
     return;
   }
   if (tag === "table") {
     for (const row of Array.from(node.querySelectorAll("tr")) as Element[]) {
       const cells = (
         Array.from(row.querySelectorAll("th,td")) as Element[]
-      ).map((cell) => (cell.textContent || "").trim());
-      if (cells.length) paragraphs.push(buildParagraph(cells.join(" | ")));
+      ).map((cell) => normalizeText(cell.textContent || ""));
+      if (cells.length) paragraphs.push(buildXmlParagraph(cells.join(" | ")));
     }
     return;
   }
   if (["p", "blockquote"].includes(tag)) {
-    const text = (node.textContent || "").trim();
-    if (text) paragraphs.push(buildParagraph(text));
+    const text = normalizeText(node.textContent || "");
+    if (text) paragraphs.push(buildXmlParagraph(text));
     return;
   }
 
@@ -229,7 +523,7 @@ function isElement(node: Node | null): node is Element {
   return !!node && node.nodeType === 1;
 }
 
-function buildParagraph(
+function buildXmlParagraph(
   text: string,
   options: { bold?: boolean; size?: number; monospace?: boolean } = {},
 ): string {

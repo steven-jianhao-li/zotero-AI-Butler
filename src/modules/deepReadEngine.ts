@@ -110,6 +110,37 @@ export function ensureDeepReadSlotsHtml(
   ].join("\n");
 }
 
+export function migrateLegacyDeepReadHtmlToSlots(
+  noteHtml: string,
+  itemTitle: string,
+  template: MultiRoundPromptTemplate,
+  planned: PlannedDeepRead,
+): string {
+  let migratedHtml = buildDeepReadSkeletonHtml(itemTitle, template, planned);
+  const matchedSlotIds = new Set<string>();
+
+  for (const section of extractHeadingSections(noteHtml)) {
+    const slot = planned.slots.find(
+      (candidate) =>
+        !matchedSlotIds.has(candidate.id) &&
+        getComparableSlotTitles(candidate).some((title) =>
+          titlesMatch(section.title, title),
+        ),
+    );
+    if (!slot || !hasGeneratedSectionContent(section.html)) continue;
+
+    migratedHtml = replaceDeepReadSlotHtml(
+      migratedHtml,
+      slot.id,
+      stripStrikethroughHtml(section.html),
+      "done",
+    );
+    matchedSlotIds.add(slot.id);
+  }
+
+  return migratedHtml;
+}
+
 export function fillDeepReadSlot(
   noteHtml: string,
   slotId: string,
@@ -128,9 +159,11 @@ export function fillDeepReadSlot(
 }
 
 function markdownToDeepReadSlotHtml(markdown: string): string {
-  const normalizedMarkdown = normalizeDeepReadSlotMarkdown(markdown);
+  const normalizedMarkdown = normalizeDeepReadSlotMarkdown(
+    neutralizeStrikethroughMarkdown(markdown),
+  );
   const html = markdownToZoteroNoteHtml(normalizedMarkdown);
-  return normalizeDeepReadSlotHtml(html);
+  return normalizeDeepReadSlotHtml(stripStrikethroughHtml(html));
 }
 
 function normalizeDeepReadSlotMarkdown(markdown: string): string {
@@ -158,6 +191,17 @@ function normalizeDeepReadSlotHtml(html: string): string {
   });
 }
 
+function neutralizeStrikethroughMarkdown(markdown: string): string {
+  return markdown.replace(/~~/g, "\\~\\~");
+}
+
+function stripStrikethroughHtml(html: string): string {
+  return html
+    .replace(/<\/?(?:del|s|strike)\b[^>]*>/gi, "")
+    .replace(/\sstyle="[^"]*text-decoration\s*:\s*line-through;?[^"]*"/gi, "")
+    .replace(/\sstyle='[^']*text-decoration\s*:\s*line-through;?[^']*'/gi, "");
+}
+
 function looksLikeProseHeading(text: string): boolean {
   const normalized = text.replace(/\s+/g, "").trim();
   return normalized.length >= 60 && /[。！？.!?]$/.test(normalized);
@@ -165,6 +209,68 @@ function looksLikeProseHeading(text: string): boolean {
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, "");
+}
+
+type HeadingSection = {
+  title: string;
+  html: string;
+};
+
+function extractHeadingSections(noteHtml: string): HeadingSection[] {
+  const headingPattern = /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi;
+  const headings: Array<{ index: number; title: string }> = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = headingPattern.exec(noteHtml))) {
+    const title = decodeBasicHtmlEntities(stripHtml(match[2])).trim();
+    if (!title) continue;
+    headings.push({ index: match.index, title });
+  }
+
+  return headings.map((heading, index) => ({
+    title: heading.title,
+    html: noteHtml.slice(
+      heading.index,
+      headings[index + 1]?.index ?? noteHtml.length,
+    ),
+  }));
+}
+
+function titlesMatch(left: string, right: string): boolean {
+  const normalize = (value: string) =>
+    value
+      .replace(/^第\s*\d+\s*章(?:精读)?[：:、\s-]*/i, "")
+      .replace(/^(?:AI\s*)?精读[：:、\s-]*/i, "")
+      .replace(/[\s\p{P}\p{S}]+/gu, "")
+      .toLowerCase();
+  const normalizedLeft = normalize(left);
+  const normalizedRight = normalize(right);
+  return (
+    !!normalizedLeft &&
+    !!normalizedRight &&
+    (normalizedLeft === normalizedRight ||
+      normalizedLeft.includes(normalizedRight) ||
+      normalizedRight.includes(normalizedLeft))
+  );
+}
+
+function getComparableSlotTitles(slot: DeepReadSlot): string[] {
+  const titles = [slot.title];
+  const promptHeading = slot.prompt.match(/^\s*#{1,6}\s+(.+?)\s*$/m)?.[1];
+  if (promptHeading) titles.push(promptHeading);
+  const quotedHeading = slot.prompt.match(/#{1,6}\s+([^」\n\r]+)/)?.[1];
+  if (quotedHeading) titles.push(quotedHeading);
+  return titles;
+}
+
+function hasGeneratedSectionContent(html: string): boolean {
+  const text = decodeBasicHtmlEntities(stripHtml(html))
+    .replace(/\s+/g, "")
+    .trim();
+  return (
+    text.length > 20 &&
+    !/(?:等待生成|正在生成|已取消，重新运行AI精读时会从这里继续)/.test(text)
+  );
 }
 
 function shouldPrependSlotHeading(
@@ -189,7 +295,7 @@ export function replaceDeepReadSlotHtml(
   }
   return noteHtml.replace(
     pattern,
-    `<!-- ${DEEP_READ_SLOT_PREFIX}:${slotId}:${status} -->\n${innerHtml}\n<!-- ${DEEP_READ_SLOT_PREFIX}:${slotId}:end -->`,
+    `<!-- ${DEEP_READ_SLOT_PREFIX}:${slotId}:${status} -->\n${stripStrikethroughHtml(innerHtml)}\n<!-- ${DEEP_READ_SLOT_PREFIX}:${slotId}:end -->`,
   );
 }
 

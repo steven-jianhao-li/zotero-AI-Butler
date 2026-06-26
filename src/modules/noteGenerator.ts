@@ -66,9 +66,9 @@ import {
   fillDeepReadSlot,
   hasDeepReadV2Slots,
   hasIncompleteDeepReadContent,
-  hasRunnableDeepReadSlots,
   isDeepReadSlotDone,
   markDeepReadSlotRunning,
+  migrateLegacyDeepReadHtmlToSlots,
   planDeepReadSlots,
   resetRunningDeepReadSlots,
   shouldRunDeepReadSlot,
@@ -188,8 +188,8 @@ export class NoteGenerator {
       const canResumeDeepRead =
         noteKind === "deepRead" &&
         !!existingRecord?.rawHtml &&
-        hasDeepReadV2Slots(existingRecord.rawHtml) &&
-        hasRunnableDeepReadSlots(existingRecord.rawHtml);
+        (hasDeepReadV2Slots(existingRecord.rawHtml) ||
+          hasIncompleteDeepReadContent(existingRecord.rawHtml));
       const hasIncompleteDeepRead =
         noteKind === "deepRead" &&
         !!existingRecord?.rawHtml &&
@@ -1049,8 +1049,13 @@ export class NoteGenerator {
     response?: LLMResponse;
   }> {
     const currentTemplate = this.getActiveDeepReadTemplate();
+    const hasExistingDeepReadHtml = !!params.existingHtml?.trim();
     const shouldResume =
-      !!params.existing && hasDeepReadV2Slots(params.existingHtml);
+      !!params.existing &&
+      (hasDeepReadV2Slots(params.existingHtml) ||
+        hasIncompleteDeepReadContent(params.existingHtml));
+    const shouldMigrateLegacyResume =
+      shouldResume && !hasDeepReadV2Slots(params.existingHtml);
     const restoredPlan = shouldResume
       ? extractDeepReadPlanMetadata(params.existingHtml)
       : null;
@@ -1097,9 +1102,7 @@ export class NoteGenerator {
     let lastResponse: LLMResponse | undefined;
     let chapters =
       restoredPlan?.chapters ||
-      (shouldResume
-        ? extractDeepReadChaptersFromHtml(params.existingHtml)
-        : []);
+      (shouldResume ? extractDeepReadChaptersFromHtml(params.existingHtml) : []);
     if (params.outputWindow) {
       params.outputWindow.startItem(params.itemTitle);
       params.outputWindow.appendContent(
@@ -1180,10 +1183,22 @@ export class NoteGenerator {
 
     if (shouldResume) {
       const currentHtml = ((note as any).getNote?.() as string) || "";
-      const nextHtml = ensureDeepReadSlotsHtml(currentHtml, planned);
+      const nextHtml = shouldMigrateLegacyResume
+        ? migrateLegacyDeepReadHtmlToSlots(
+            currentHtml || params.existingHtml,
+            params.itemTitle,
+            template,
+            planned,
+          )
+        : ensureDeepReadSlotsHtml(currentHtml, planned);
       if (nextHtml !== currentHtml) {
         (note as any).setNote?.(nextHtml);
         await (note as any).saveTx?.();
+      }
+      if (shouldMigrateLegacyResume && hasExistingDeepReadHtml) {
+        ztoolkit.log(
+          `[AI-Butler] Deep read legacy note migrated for resume: item=${params.item.id}`,
+        );
       }
     }
 

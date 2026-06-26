@@ -2010,23 +2010,108 @@ function showCollectionExportDialog(
     const shell = createModalShell("导出该分类 AI 笔记");
     const { doc, body, actions, close } = shell;
 
-    const description = doc.createElement("div");
-    description.textContent = `将导出分类“${collectionName}”及子分类中的论文附件、AI 总结和 AI 精读。`;
-    body.appendChild(description);
+    Object.assign(body.style, {
+      gap: "16px",
+      color: "#1f2937",
+    });
+    Object.assign(actions.style, {
+      marginTop: "22px",
+      paddingTop: "18px",
+      borderTop: "1px solid #e5e7eb",
+    });
 
+    const descriptionCard = doc.createElement("div");
+    Object.assign(descriptionCard.style, {
+      display: "flex",
+      gap: "12px",
+      alignItems: "flex-start",
+      padding: "14px 16px",
+      borderRadius: "12px",
+      background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)",
+      border: "1px solid #dbeafe",
+    });
+    const descriptionIcon = doc.createElement("div");
+    descriptionIcon.textContent = "📦";
+    Object.assign(descriptionIcon.style, {
+      width: "32px",
+      height: "32px",
+      borderRadius: "10px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "#dbeafe",
+      fontSize: "17px",
+      flex: "0 0 auto",
+    });
+    const descriptionText = doc.createElement("div");
+    descriptionText.innerHTML = `将导出分类 <strong>“${escapeHtmlForDialog(collectionName)}”</strong> 及子分类中的论文附件、AI 总结和 AI 精读。`;
+    Object.assign(descriptionText.style, {
+      fontSize: "13px",
+      lineHeight: "1.65",
+      color: "#334155",
+    });
+    descriptionCard.appendChild(descriptionIcon);
+    descriptionCard.appendChild(descriptionText);
+    body.appendChild(descriptionCard);
+
+    const directorySection = doc.createElement("div");
+    Object.assign(directorySection.style, {
+      display: "grid",
+      gap: "8px",
+    });
+    const directoryLabel = doc.createElement("div");
+    directoryLabel.textContent = "导出目录";
+    Object.assign(directoryLabel.style, {
+      fontSize: "12px",
+      fontWeight: "700",
+      color: "#475569",
+      letterSpacing: "0.02em",
+    });
     const pathRow = doc.createElement("div");
-    Object.assign(pathRow.style, { display: "flex", gap: "8px" });
+    Object.assign(pathRow.style, {
+      display: "flex",
+      gap: "10px",
+      alignItems: "center",
+    });
     const pathInput = doc.createElement("input");
     pathInput.type = "text";
     pathInput.value = config.rootPath || "";
     pathInput.placeholder = "选择或输入导出目录...";
     Object.assign(pathInput.style, {
       flex: "1",
-      padding: "8px 10px",
-      border: "1px solid rgba(128,128,128,0.35)",
-      borderRadius: "6px",
+      minWidth: "0",
+      height: "38px",
+      boxSizing: "border-box",
+      padding: "0 12px",
+      border: "1px solid #cbd5e1",
+      borderRadius: "10px",
+      outline: "none",
+      background: "#fff",
+      boxShadow: "inset 0 1px 2px rgba(15, 23, 42, 0.04)",
+      fontSize: "13px",
+      lineHeight: "38px",
     });
-    const browseButton = createModalButton(doc, "选择目录", "#2196f3");
+    pathInput.addEventListener("focus", () => {
+      pathInput.style.borderColor = "#3b82f6";
+      pathInput.style.boxShadow = "0 0 0 3px rgba(59, 130, 246, 0.16)";
+    });
+    pathInput.addEventListener("blur", () => {
+      pathInput.style.borderColor = "#cbd5e1";
+      pathInput.style.boxShadow = "inset 0 1px 2px rgba(15, 23, 42, 0.04)";
+    });
+    const browseButton = createModalButton(doc, "选择目录", "#2563eb");
+    Object.assign(browseButton.style, {
+      height: "38px",
+      boxSizing: "border-box",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      flex: "0 0 auto",
+      borderRadius: "10px",
+      padding: "0 18px",
+      lineHeight: "1",
+      boxShadow: "0 6px 14px rgba(37, 99, 235, 0.2)",
+    });
     browseButton.addEventListener("click", async () => {
       try {
         const selected = await pickFolderPath("选择 AI 笔记导出目录");
@@ -2038,23 +2123,53 @@ function showCollectionExportDialog(
     });
     pathRow.appendChild(pathInput);
     pathRow.appendChild(browseButton);
-    body.appendChild(pathRow);
+    directorySection.appendChild(directoryLabel);
+    directorySection.appendChild(pathRow);
+    body.appendChild(directorySection);
 
+    const optionsCard = doc.createElement("div");
+    Object.assign(optionsCard.style, {
+      display: "grid",
+      gap: "10px",
+      padding: "12px 14px",
+      borderRadius: "12px",
+      background: "#f8fafc",
+      border: "1px solid #e2e8f0",
+    });
     const suppressLabel = createDialogCheckbox(
       doc,
       "不再提醒，保持该目录（可在快捷设置 -> 自动导出中修改）",
       false,
     );
-    body.appendChild(suppressLabel.wrapper);
+    styleExportDialogCheckbox(suppressLabel.wrapper, suppressLabel.checkbox);
+    optionsCard.appendChild(suppressLabel.wrapper);
     const watchLabel = createDialogCheckbox(
       doc,
       "将该分类加入自动导出监听分类",
       false,
     );
-    body.appendChild(watchLabel.wrapper);
+    styleExportDialogCheckbox(watchLabel.wrapper, watchLabel.checkbox);
+    optionsCard.appendChild(watchLabel.wrapper);
+    body.appendChild(optionsCard);
 
-    const strategyLabel = doc.createElement("label");
-    strategyLabel.textContent = "遇到已导出文件时：";
+    const strategyCard = doc.createElement("div");
+    Object.assign(strategyCard.style, {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "12px",
+      padding: "12px 14px",
+      borderRadius: "12px",
+      background: "#fff",
+      border: "1px solid #e5e7eb",
+    });
+    const strategyText = doc.createElement("div");
+    strategyText.textContent = "遇到已导出文件时";
+    Object.assign(strategyText.style, {
+      fontSize: "13px",
+      color: "#334155",
+      fontWeight: "600",
+    });
     const strategySelect = doc.createElement("select");
     for (const [value, label] of [
       ["skip", "跳过已有文件"],
@@ -2066,16 +2181,54 @@ function showCollectionExportDialog(
       option.selected = value === config.conflictStrategy;
       strategySelect.appendChild(option);
     }
-    Object.assign(strategySelect.style, { marginLeft: "8px", padding: "6px" });
-    strategyLabel.appendChild(strategySelect);
-    body.appendChild(strategyLabel);
+    Object.assign(strategySelect.style, {
+      minWidth: "132px",
+      height: "38px",
+      boxSizing: "border-box",
+      padding: "0 10px",
+      border: "1px solid #cbd5e1",
+      borderRadius: "9px",
+      background: "#f8fafc",
+      color: "#0f172a",
+      fontSize: "13px",
+      fontWeight: "600",
+      lineHeight: "38px",
+    });
+    strategyCard.appendChild(strategyText);
+    strategyCard.appendChild(strategySelect);
+    body.appendChild(strategyCard);
 
-    const cancelButton = createModalButton(doc, "取消", "#9e9e9e");
+    const cancelButton = createModalButton(doc, "取消", "#9ca3af");
+    Object.assign(cancelButton.style, {
+      height: "32px",
+      boxSizing: "border-box",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      borderColor: "#9ca3af",
+      background: "#9ca3af",
+      borderRadius: "9px",
+      padding: "0 18px",
+      lineHeight: "1",
+    });
     cancelButton.addEventListener("click", () => {
       close();
       resolve(null);
     });
-    const confirmButton = createModalButton(doc, "开始导出", "#4caf50");
+    const confirmButton = createModalButton(doc, "开始导出", "#16a34a");
+    Object.assign(confirmButton.style, {
+      height: "32px",
+      boxSizing: "border-box",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      borderColor: "#16a34a",
+      background: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)",
+      borderRadius: "9px",
+      padding: "0 20px",
+      lineHeight: "1",
+      boxShadow: "0 6px 14px rgba(22, 163, 74, 0.2)",
+    });
     confirmButton.addEventListener("click", () => {
       const rootPath = pathInput.value.trim();
       if (!rootPath) {
@@ -2096,6 +2249,33 @@ function showCollectionExportDialog(
   });
 }
 
+function styleExportDialogCheckbox(
+  wrapper: HTMLLabelElement,
+  checkbox: HTMLInputElement,
+): void {
+  Object.assign(wrapper.style, {
+    gap: "10px",
+    padding: "6px 4px",
+    color: "#334155",
+    fontSize: "13px",
+    cursor: "pointer",
+  });
+  Object.assign(checkbox.style, {
+    width: "15px",
+    height: "15px",
+    accentColor: "#2563eb",
+    cursor: "pointer",
+  });
+}
+
+function escapeHtmlForDialog(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 function createDialogCheckbox(
   doc: Document,
   label: string,

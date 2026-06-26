@@ -904,22 +904,13 @@ export class SummaryView extends BaseView {
     try {
       const item = await Zotero.Items.getAsync(this.currentItemId);
       if (!item) return;
-      const note = await this.getOrCreateChatNote(item);
-      let noteHtml = normalizeFollowUpChatNoteHtml(
-        (note as any).getNote?.() || "",
-      );
-      const blockContent = buildFollowUpChatPairNoteHtml({
+      await AiNoteService.appendFollowUpPair({
+        item,
         pairId,
         userMessage,
         assistantMessage,
+        metadata,
       });
-      const block = metadata
-        ? LLMNoteMetadataService.wrapHtml(blockContent, metadata)
-        : blockContent;
-
-      noteHtml += block;
-      (note as any).setNote(noteHtml);
-      await (note as any).saveTx();
       ztoolkit.log("[AI-Butler] 追问对已保存到 AI 精读笔记");
     } catch (e) {
       ztoolkit.log("[AI-Butler] 保存追问对到 AI 精读笔记失败:", e);
@@ -1249,54 +1240,11 @@ export class SummaryView extends BaseView {
       this.finishItem();
 
       // 查找已有的 AI 总结笔记
-      const noteIDs = (item as any).getNotes?.() || [];
       let aiSummaryText = "";
-      let targetNote: any = null;
-
-      for (const nid of noteIDs) {
-        try {
-          const n = await Zotero.Items.getAsync(nid);
-          if (!n) continue;
-          const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-          const noteHtml: string = (n as any).getNote?.() || "";
-          const isChatNote =
-            tags.some((t) => t.tag === "AI-Butler-Chat") ||
-            /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(noteHtml);
-          // 支持所有 AI 生成的笔记类型：总结、思维导图、一图总结
-          const isAiSummaryNote =
-            tags.some((t) => t.tag === "AI-Generated") ||
-            tags.some((t) => t.tag === "AI-Mindmap") ||
-            tags.some((t) => t.tag === "AI-ImageSummary") ||
-            (/<h2>\s*AI 管家\s*-/.test(noteHtml) && !isChatNote);
-
-          if (isAiSummaryNote) {
-            if (!targetNote) {
-              targetNote = n;
-            } else {
-              const a = (targetNote as any).dateModified || 0;
-              const b = (n as any).dateModified || 0;
-              if (b > a) targetNote = n;
-            }
-          }
-        } catch (e) {
-          continue;
-        }
+      const summaryRecord = await AiNoteService.findNoteRecord(item, "summary");
+      if (summaryRecord) {
+        aiSummaryText = SummaryView.noteHtmlToPlainText(summaryRecord.rawHtml);
       }
-
-      // 提取 AI 总结内容
-      if (targetNote) {
-        const html = (targetNote as any).getNote?.() || "";
-        aiSummaryText = html
-          .replace(/<style[^>]*>.*?<\/style>/gis, "")
-          .replace(/<script[^>]*>.*?<\/script>/gis, "")
-          .replace(/<[^>]+>/g, "")
-          .replace(/&nbsp;/g, " ")
-          .replace(/&lt;/g, "<")
-          .replace(/&gt;/g, ">")
-          .replace(/&amp;/g, "&")
-          .trim();
-      }
-
       // 获取 PDF 内容以支持追问
       try {
         const { PDFExtractor } = await import("../pdfExtractor");
@@ -1415,6 +1363,20 @@ export class SummaryView extends BaseView {
     }
   }
 
+  private static noteHtmlToPlainText(html: string): string {
+    return html
+      .replace(/<style[^>]*>.*?<\/style>/gis, "")
+      .replace(/<script[^>]*>.*?<\/script>/gis, "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, `"`)
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, "&")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
   /**
    * 显示已保存的笔记内容(来自 Zotero 笔记,HTML 直接渲染)
    *
@@ -1434,44 +1396,8 @@ export class SummaryView extends BaseView {
 
       const title = (item.getField("title") as string) || "文献";
 
-      // 获取子笔记ID列表
-      const noteIDs = (item as any).getNotes?.() || [];
-      let targetNote: any = null;
-
-      // 遍历寻找带有 AI-Generated 标签或标题包含“AI 管家”的最新笔记
-      // 注意：应排除“后续追问”聊天笔记，避免把聊天内容直接渲染到总结区
-      for (const nid of noteIDs) {
-        try {
-          const n = await Zotero.Items.getAsync(nid);
-          if (!n) continue;
-          const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-          const noteHtml: string = (n as any).getNote?.() || "";
-          const isChatNote =
-            tags.some((t) => t.tag === "AI-Butler-Chat") ||
-            /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(noteHtml);
-          // 支持所有 AI 生成的笔记类型：总结、思维导图、一图总结
-          const isAiSummaryNote =
-            tags.some((t) => t.tag === "AI-Generated") ||
-            tags.some((t) => t.tag === "AI-Mindmap") ||
-            tags.some((t) => t.tag === "AI-ImageSummary") ||
-            (/<h2>\s*AI 管家\s*-/.test(noteHtml) && !isChatNote);
-
-          if (isAiSummaryNote) {
-            if (!targetNote) {
-              targetNote = n;
-            } else {
-              // 选择修改时间更新的那个
-              const a = (targetNote as any).dateModified || 0;
-              const b = (n as any).dateModified || 0;
-              if (b > a) targetNote = n;
-            }
-          }
-        } catch (e) {
-          // 忽略异常的子笔记，继续查找
-          continue;
-        }
-      }
-
+      const summaryRecord = await AiNoteService.findNoteRecord(item, "summary");
+      const targetNote = summaryRecord?.note || null;
       this.hideLoading();
 
       if (!targetNote) {
@@ -1483,22 +1409,13 @@ export class SummaryView extends BaseView {
       }
 
       // 读取 HTML 内容，提取纯文本作为“AI 总结”卡片展示（不直接把整段 HTML 塞进总结区）
-      const html = (targetNote as any).getNote?.() || "";
+      const html =
+        summaryRecord?.rawHtml || (targetNote as any).getNote?.() || "";
       this.startItem(title);
       // 不直接渲染 html 到 item-content，改为在下方追加可折叠的“AI 总结”卡片
       this.finishItem();
 
-      // 提取AI总结的纯文本内容(去除HTML标签)
-      const aiSummaryText = html
-        .replace(/<style[^>]*>.*?<\/style>/gis, "")
-        .replace(/<script[^>]*>.*?<\/script>/gis, "")
-        .replace(/<[^>]+>/g, "")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&amp;/g, "&")
-        .trim();
-
+      const aiSummaryText = SummaryView.noteHtmlToPlainText(html);
       // 获取PDF内容以支持后续追问
       try {
         const { PDFExtractor } = await import("../pdfExtractor");
@@ -1560,9 +1477,15 @@ export class SummaryView extends BaseView {
    */
   private async loadExistingChatPairs(item: Zotero.Item): Promise<void> {
     try {
-      const note = await this.findChatNote(item);
-      if (!note) return;
-      const html: string = (note as any).getNote?.() || "";
+      const deepReadRecord = await AiNoteService.findNoteRecord(
+        item,
+        "deepRead",
+      );
+      const legacyChatNote = await this.findChatNote(item);
+      const html = [
+        deepReadRecord?.rawHtml || "",
+        ((legacyChatNote as any)?.getNote?.() as string | undefined) || "",
+      ].join("\n");
       const pairs = parseFollowUpChatPairsFromNoteHtml(html);
 
       if (pairs.length === 0) return;

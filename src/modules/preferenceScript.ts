@@ -241,6 +241,14 @@ function initializeDefaultPrefs() {
     contextMenuItemOrder: DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF,
     sidebarModuleVisibility: DEFAULT_SIDEBAR_MODULE_VISIBILITY_PREF,
     sidebarModuleOrder: DEFAULT_SIDEBAR_MODULE_ORDER_PREF,
+    noteExportEnabled: false,
+    noteExportRootPath: "",
+    noteExportWatchedCollections: "[]",
+    noteExportIncludeSubcollections: true,
+    noteExportFormats:
+      '{"summaryDocx":true,"deepReadDocx":true,"summaryMd":true,"deepReadMd":true}',
+    noteExportConflictStrategy: "skip",
+    noteExportSuppressDirectoryPrompt: false,
   };
 
   // 遍历所有默认配置

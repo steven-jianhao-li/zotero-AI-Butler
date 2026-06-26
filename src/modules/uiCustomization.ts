@@ -55,6 +55,12 @@ export const CONTEXT_MENU_ITEMS = [
     description: "分类右键：清空精读或全部可再生成的 AI 管家笔记",
     scope: "collection",
   },
+  {
+    id: "exportCollectionNotes",
+    label: "导出该分类 AI 笔记",
+    description: "分类右键：导出附件、AI 总结和 AI 精读到本地目录",
+    scope: "collection",
+  },
 ] as const;
 
 export type ContextMenuItemId = (typeof CONTEXT_MENU_ITEMS)[number]["id"];
@@ -114,6 +120,7 @@ export const DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY: ContextMenuVisibility = {
   chatWithAI: true,
   literatureReview: true,
   clearCollectionAiNotes: true,
+  exportCollectionNotes: true,
 };
 
 export const DEFAULT_SIDEBAR_MODULE_VISIBILITY: SidebarModuleVisibility = {
@@ -145,6 +152,7 @@ export const DEFAULT_CONTEXT_MENU_ITEM_ORDER: ContextMenuItemId[] = [
   "chatWithAI",
   "literatureReview",
   "clearCollectionAiNotes",
+  "exportCollectionNotes",
 ];
 
 export const DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY_PREF = JSON.stringify(

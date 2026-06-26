@@ -50,6 +50,16 @@ function logTaskQueue(...args: Parameters<ZToolkit["log"]>): void {
 const NO_PDF_ERROR_MSG =
   "该条目没有 PDF 附件，无法进行 AI 分析。请先为该文献添加 PDF 文件。";
 const TASK_ABORT_DETAIL = "该总结任务已由用户手动终止。";
+const INVALID_AI_SOURCE_ITEM_MSG =
+  "AI 总结/精读仅支持顶层文献条目，笔记、附件和子条目已跳过。";
+
+function isQueueableAiSourceItem(item: Zotero.Item): boolean {
+  const rawItem = item as any;
+  if (rawItem.isNote?.() || rawItem.isAttachment?.()) return false;
+  if (rawItem.parentID || rawItem.parentItemID) return false;
+  if (rawItem.isRegularItem?.() === false) return false;
+  return true;
+}
 
 type TaskAbortController = {
   signal: LLMAbortSignal;
@@ -504,6 +514,11 @@ export class TaskQueueManager {
     priority: boolean = false,
     options?: { summaryMode?: string; forceOverwrite?: boolean },
   ): Promise<string> {
+    if (!isQueueableAiSourceItem(item)) {
+      logTaskQueue(`[AI-Butler] 跳过非顶层文献 AI 总结任务: ${item.id}`);
+      throw new Error(INVALID_AI_SOURCE_ITEM_MSG);
+    }
+
     if (options?.summaryMode && options.summaryMode !== "single") {
       return this.addDeepReadTask(item, priority, options);
     }
@@ -618,6 +633,11 @@ export class TaskQueueManager {
     priority: boolean = false,
     options?: { summaryMode?: string; forceOverwrite?: boolean },
   ): Promise<string> {
+    if (!isQueueableAiSourceItem(item)) {
+      logTaskQueue(`[AI-Butler] 跳过非顶层文献 AI 精读任务: ${item.id}`);
+      throw new Error(INVALID_AI_SOURCE_ITEM_MSG);
+    }
+
     const taskId = getDeepReadTaskId(item.id);
     const deepReadOptions = {
       ...(options || {}),
@@ -1756,6 +1776,79 @@ export class TaskQueueManager {
     }
   }
 
+  private async markRelatedFixedTasksCompleted(
+    sourceTask: TaskItem,
+    taskType: "summary" | "deepRead",
+    message: string,
+  ): Promise<void> {
+    for (const task of this.tasks.values()) {
+      if (task.id === sourceTask.id) continue;
+      if (task.itemId !== sourceTask.itemId) continue;
+      if (getEffectiveTaskType(task) !== taskType) continue;
+      if (task.status === TaskStatus.COMPLETED) continue;
+      if (task.status === TaskStatus.PROCESSING) continue;
+
+      task.status = TaskStatus.COMPLETED;
+      task.progress = 100;
+      task.error = undefined;
+      task.errorDetails = undefined;
+      task.retryCount = 0;
+      task.startedAt = undefined;
+      task.completedAt = new Date();
+      task.duration = 0;
+      task.workflowStage = "已完成";
+      this.processingTasks.delete(task.id);
+      this.abortingTasks.delete(task.id);
+      this.taskAbortControllers.delete(task.id);
+      this.notifyProgress(task.id, 100, message);
+      this.notifyComplete(task.id, true);
+      this.notifyStream(task.id, { type: "finish" });
+      logTaskQueue(
+        `同一文献的重复任务产物已完整，修正为完成: ${task.title} (${task.id})`,
+      );
+    }
+  }
+
+  public async markTaskCompletedIfArtifactReady(
+    taskId: string,
+    message = "AI artifact already complete; marked completed",
+  ): Promise<boolean> {
+    const task = this.tasks.get(taskId);
+    if (!task || task.status === TaskStatus.COMPLETED) return false;
+
+    const taskType = getEffectiveTaskType(task);
+    if (taskType !== "summary" && taskType !== "deepRead") return false;
+
+    const item = await Zotero.Items.getAsync(task.itemId);
+    if (!item) return false;
+
+    const artifact = await TaskArtifacts.probe(taskType, item as Zotero.Item);
+    if (artifact.probeFailed || !artifact.exists) return false;
+
+    task.status = TaskStatus.COMPLETED;
+    task.progress = 100;
+    task.error = undefined;
+    task.errorDetails = undefined;
+    task.retryCount = 0;
+    task.startedAt = undefined;
+    task.completedAt = new Date();
+    task.duration = 0;
+    task.workflowStage = "已完成";
+    this.processingTasks.delete(taskId);
+    this.abortingTasks.delete(taskId);
+    this.taskAbortControllers.delete(taskId);
+
+    await this.markRelatedFixedTasksCompleted(task, taskType, message);
+    await this.saveToStorage();
+    this.notifyProgress(taskId, 100, message);
+    this.notifyComplete(taskId, true);
+    this.notifyStream(taskId, { type: "finish" });
+    logTaskQueue(
+      `任务产物已完整，修正任务状态为完成: ${task.title} (${taskId})`,
+    );
+    return true;
+  }
+
   /**
    * 终止正在执行的 AI 总结 / AI 精读任务
    *
@@ -2104,6 +2197,7 @@ export class TaskQueueManager {
       task.progress,
       isDeepReadTask ? "AI deep read started" : "AI summary started",
     );
+    this.notifyStream(taskId, { type: "start", title: task.title });
 
     logTaskQueue(`开始执行任务: ${task.title} (${taskId})`);
 
@@ -2112,6 +2206,21 @@ export class TaskQueueManager {
       const item = await Zotero.Items.getAsync(task.itemId);
       if (!item) {
         throw new Error("文献条目不存在");
+      }
+
+      if (!isQueueableAiSourceItem(item)) {
+        task.status = TaskStatus.COMPLETED;
+        task.progress = 100;
+        task.completedAt = new Date();
+        task.workflowStage = "非论文条目，已跳过";
+        task.error = undefined;
+        task.errorDetails = undefined;
+        this.notifyProgress(taskId, 100, INVALID_AI_SOURCE_ITEM_MSG);
+        this.notifyComplete(taskId, false, INVALID_AI_SOURCE_ITEM_MSG);
+        logTaskQueue(
+          `[AI-Butler] 任务目标不是顶层文献，已跳过执行: ${task.title} (${taskId})`,
+        );
+        return false;
       }
 
       // 检查是否有 PDF 附件
@@ -2135,10 +2244,6 @@ export class TaskQueueManager {
           }
           // 将增量内容广播给监听者
           try {
-            // 首次到来时发送 start 事件
-            if (task.progress === 0) {
-              this.notifyStream(taskId, { type: "start", title: task.title });
-            }
             this.notifyStream(taskId, { type: "chunk", chunk });
           } catch (e) {
             logTaskQueue(`流式内容广播失败: ${e}`);
@@ -2151,9 +2256,33 @@ export class TaskQueueManager {
         task.taskType === "deepRead" ? "deepRead" : "summary";
       const artifact = await TaskArtifacts.probe(artifactType, item);
       if (!artifact.exists) {
+        if (
+          artifactType === "deepRead" &&
+          artifact.reason === "deep-read-slots-incomplete"
+        ) {
+          task.status = TaskStatus.PENDING;
+          task.progress = Math.min(task.progress || 0, 95);
+          task.startedAt = undefined;
+          task.completedAt = undefined;
+          task.duration = undefined;
+          task.error = undefined;
+          task.errorDetails = undefined;
+          task.workflowStage = "等待补全未完成精读轮次";
+          this.notifyProgress(
+            taskId,
+            task.progress,
+            "AI 精读尚未完整，已重新加入队列补全未完成轮次",
+          );
+          this.notifyStream(taskId, { type: "finish" });
+          logTaskQueue(
+            `AI 精读尚未完整，任务回到待处理以继续补全: ${task.title} (${taskId})`,
+          );
+          return false;
+        }
+
         throw new Error(
           artifactType === "deepRead"
-            ? `AI 精读尚未完整生成（${artifact.reason || "incomplete"}），已重新加入队列补全未完成轮次`
+            ? `AI 精读尚未完整生成（${artifact.reason || "incomplete"}）`
             : `AI 总结尚未完整生成（${artifact.reason || "incomplete"}）`,
         );
       }
@@ -2171,6 +2300,14 @@ export class TaskQueueManager {
       );
 
       logTaskQueue(`任务完成: ${task.title} (耗时${task.duration}秒)`);
+      await this.markRelatedFixedTasksCompleted(
+        task,
+        artifactType,
+        artifactType === "deepRead"
+          ? "AI 精读已完整，任务状态已同步修正"
+          : "AI 总结已完整，任务状态已同步修正",
+      );
+      await this.saveToStorage();
       this.notifyComplete(taskId, true);
       // 发送结束事件
       this.notifyStream(taskId, { type: "finish" });

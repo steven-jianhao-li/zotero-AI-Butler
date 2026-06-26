@@ -90,6 +90,26 @@ export function buildDeepReadSkeletonHtml(
   return parts.join("\n");
 }
 
+export function ensureDeepReadSlotsHtml(
+  noteHtml: string,
+  planned: PlannedDeepRead,
+): string {
+  const missingSlots = planned.slots.filter(
+    (slot) => getDeepReadSlotStatus(noteHtml, slot.id) === null,
+  );
+  if (!missingSlots.length) return noteHtml;
+
+  return [
+    noteHtml,
+    "<hr/>",
+    ...missingSlots.flatMap((slot, index) => {
+      const parts = [buildPendingSlotHtml(slot)];
+      if (index < missingSlots.length - 1) parts.push("<hr/>");
+      return parts;
+    }),
+  ].join("\n");
+}
+
 export function fillDeepReadSlot(
   noteHtml: string,
   slotId: string,
@@ -202,7 +222,19 @@ export function hasDeepReadV2Slots(noteHtml: string): boolean {
 }
 
 export function hasRunnableDeepReadSlots(noteHtml: string): boolean {
-  return /<!-- zab:slot:[^:]+:(?:pending|running|error) -->/.test(noteHtml);
+  return new RegExp(
+    `<!--\\s*${escapeRegExp(DEEP_READ_SLOT_PREFIX)}:(?![^>]*:end\\s*-->)[\\s\\S]*?:(?:pending|running|error)\\s*-->`,
+  ).test(noteHtml);
+}
+
+export function hasIncompleteDeepReadContent(noteHtml: string): boolean {
+  if (hasRunnableDeepReadSlots(noteHtml)) return true;
+  const textContent = decodeBasicHtmlEntities(stripHtml(noteHtml))
+    .replace(/\s+/g, "")
+    .trim();
+  return /(?:等待生成|正在生成|已取消，重新运行AI精读时会从这里继续)/.test(
+    textContent,
+  );
 }
 
 export function markDeepReadSlotRunning(

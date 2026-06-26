@@ -721,8 +721,19 @@ export class TaskQueueView extends BaseView {
         return;
       }
 
-      // 注册一次性流式订阅，仅监听该 taskId
       if (!this.manager) this.manager = TaskQueueManager.getInstance();
+      const markedComplete =
+        await this.manager.markTaskCompletedIfArtifactReady(
+          task.id,
+          "AI 产物已完整，任务状态已修正",
+        );
+      if (markedComplete) {
+        this.syncFromManager();
+        await view.showSavedNoteForItem(task.itemId);
+        return;
+      }
+
+      // 注册一次性流式订阅，仅监听该 taskId
       // 确保执行器已启动，尽快进入处理
       try {
         this.manager.start();
@@ -1145,6 +1156,11 @@ export class TaskQueueView extends BaseView {
       }
 
       if (artifact.exists) {
+        await this.manager.markTaskCompletedIfArtifactReady(
+          task.id,
+          "AI 精读已完整，任务状态已修正",
+        );
+        this.syncFromManager();
         new ztoolkit.ProgressWindow("AI Butler", {
           closeOnClick: true,
           closeTime: 3000,

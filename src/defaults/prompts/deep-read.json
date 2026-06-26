@@ -1,0 +1,77 @@
+{
+  "chapterFallbacks": [
+    { "id": "ch1", "title_zh": "引言", "title_en": "Introduction" },
+    { "id": "ch2", "title_zh": "第二章", "title_en": "Chapter 2" }
+  ],
+  "template": {
+    "id": "default-v2-chapter-reading",
+    "name": "默认：双阶段逐章精读",
+    "description": "先解析章节 JSON，再按章节顺序逐章精读；第二阶段用重点追问补充论文理解。",
+    "version": 2,
+    "phases": [
+      {
+        "id": "chapter_reading",
+        "title": "阶段一：逐章精读",
+        "type": "sequential_dynamic",
+        "description": "先让 AI 识别论文章节结构，再把章节标题渲染进章节精读提示词，按顺序写入精读笔记。",
+        "contextStrategy": "last_round",
+        "planningPromptLines": [
+          "请阅读全文全文，识别论文的主要章节结构，并只返回 JSON，不要输出解释文字。",
+          "",
+          "返回格式必须是：",
+          "{",
+          "  \"chapters\": [",
+          "    { \"id\": \"ch1\", \"title_zh\": \"引言\", \"title_en\": \"Introduction\" },",
+          "    { \"id\": \"ch2\", \"title_zh\": \"第二章\", \"title_en\": \"Related Work 或 Method\" }",
+          "  ]",
+          "}",
+          "",
+          "要求：",
+          "1. 优先使用论文原文中的章节标题。",
+          "2. 如果论文标题不是中文，请给出简短中文译名和英文原名。",
+          "3. 至少返回两个章节；如果结构不清晰，就返回“引言”和“第二章”。",
+          "4. JSON 字段会直接用于逐章精读提示词模板：title_zh 对应 {{title_zh}}，title_en 对应 {{title_en}}，id 仅用于内部标识。"
+        ],
+        "fixedPrompts": [],
+        "chapterTemplateLines": [
+          "请精读论文中的“{{title_zh}}（{{title_en}}）”这一章。",
+          "",
+          "请围绕下面问题组织回答：",
+          "1. 这一章在全文中的作用是什么？",
+          "2. 这一章提出了哪些关键概念、论证或技术细节？",
+          "3. 哪些内容是读者理解后续章节必须掌握的？",
+          "4. 如果这一章有公式、实验设置或定义，请用通俗中文解释。",
+          "",
+          "输出要求：",
+          "- 使用 Markdown。",
+          "- 不要寒暄，不要重复题目。",
+          "- 标题层级从三级标题开始，例如“### 本章作用”。",
+          "- 尽量让没有该小方向背景的读者也能看懂。"
+        ]
+      },
+      {
+        "id": "deep_questions",
+        "title": "阶段二：重点追问",
+        "type": "independent",
+        "description": "每个追问独立阅读全文全文，不携带其他轮次上下文。",
+        "parallelizable": false,
+        "maxConcurrency": 1,
+        "prompts": [
+          {
+            "id": "q_core_contribution",
+            "title": "核心贡献判断",
+            "prompt": "请基于论文全文，用中文判断本文最核心的贡献是什么，并说明它为什么重要。输出 Markdown，标题层级从三级标题开始。",
+            "order": 1
+          },
+          {
+            "id": "q_limits_questions",
+            "title": "局限与疑问",
+            "prompt": "请基于论文全文，用中文列出本文最值得注意的局限、风险或仍未解决的问题。输出 Markdown，标题层级从三级标题开始。",
+            "order": 2
+          }
+        ]
+      }
+    ],
+    "prompts": []
+  }
+}

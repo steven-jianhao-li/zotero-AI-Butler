@@ -49,7 +49,6 @@ import { marked } from "marked";
 import {
   DEFAULT_TABLE_FILL_PROMPT,
   DEFAULT_TABLE_TEMPLATE,
-  DEFAULT_MULTI_ROUND_PLANNING_PROMPT,
   getBuiltinMultiRoundPromptTemplates,
   getDefaultMultiRoundPromptTemplate,
   mergeMultiRoundPromptTemplates,
@@ -61,10 +60,12 @@ import {
 } from "../utils/prompts";
 import {
   buildDeepReadSkeletonHtml,
+  ensureDeepReadSlotsHtml,
   extractDeepReadChaptersFromHtml,
   extractDeepReadPlanMetadata,
   fillDeepReadSlot,
   hasDeepReadV2Slots,
+  hasIncompleteDeepReadContent,
   hasRunnableDeepReadSlots,
   isDeepReadSlotDone,
   markDeepReadSlotRunning,
@@ -98,6 +99,17 @@ type MultiModelSummaryResult = {
  * 提供静态方法集合,封装论文笔记生成的核心逻辑
  * 采用静态方法设计,简化调用方式,无需实例化
  */
+const INVALID_AI_SOURCE_ITEM_MESSAGE =
+  "AI 总结/精读仅支持顶层文献条目，请不要对笔记、附件或子条目运行。";
+
+function isAiSourceItem(item: Zotero.Item): boolean {
+  const rawItem = item as any;
+  if (rawItem.isNote?.() || rawItem.isAttachment?.()) return false;
+  if (rawItem.parentID || rawItem.parentItemID) return false;
+  if (rawItem.isRegularItem?.() === false) return false;
+  return true;
+}
+
 export class NoteGenerator {
   /**
    * 为单个文献条目生成 AI 总结笔记
@@ -138,6 +150,10 @@ export class NoteGenerator {
       abortSignal?: LLMAbortSignal;
     },
   ): Promise<{ note: Zotero.Item; content: string }> {
+    if (!isAiSourceItem(item)) {
+      throw new Error(INVALID_AI_SOURCE_ITEM_MESSAGE);
+    }
+
     // 获取文献标题,用于日志和用户反馈
     const itemTitle = item.getField("title") as string;
     let note: Zotero.Item | null = null;
@@ -174,7 +190,16 @@ export class NoteGenerator {
         !!existingRecord?.rawHtml &&
         hasDeepReadV2Slots(existingRecord.rawHtml) &&
         hasRunnableDeepReadSlots(existingRecord.rawHtml);
-      if (existing && !options?.forceOverwrite && !canResumeDeepRead) {
+      const hasIncompleteDeepRead =
+        noteKind === "deepRead" &&
+        !!existingRecord?.rawHtml &&
+        hasIncompleteDeepReadContent(existingRecord.rawHtml);
+      if (
+        existing &&
+        !options?.forceOverwrite &&
+        !canResumeDeepRead &&
+        !hasIncompleteDeepRead
+      ) {
         if (policy === "skip") {
           progressCallback?.(
             `\u5df2\u5b58\u5728${AiNoteService.getTitle(noteKind)}\uff0c\u8df3\u8fc7`,
@@ -1025,9 +1050,7 @@ export class NoteGenerator {
   }> {
     const currentTemplate = this.getActiveDeepReadTemplate();
     const shouldResume =
-      params.existing &&
-      hasDeepReadV2Slots(params.existingHtml) &&
-      hasRunnableDeepReadSlots(params.existingHtml);
+      !!params.existing && hasDeepReadV2Slots(params.existingHtml);
     const restoredPlan = shouldResume
       ? extractDeepReadPlanMetadata(params.existingHtml)
       : null;
@@ -1085,7 +1108,7 @@ export class NoteGenerator {
     }
 
     if (!chapters.length) {
-      const planningPrompt = DEFAULT_MULTI_ROUND_PLANNING_PROMPT;
+      const planningPrompt = sequentialPhase.planningPrompt;
       params.outputWindow?.appendContent("### 正在解析章节结构\n\n");
       params.outputWindow?.appendContent(
         `**章节解析提示词：**\n\n${planningPrompt}\n\n`,
@@ -1122,6 +1145,9 @@ export class NoteGenerator {
     }
 
     const planned = planDeepReadSlots(template, chapters);
+    ztoolkit.log(
+      `[AI-Butler] Deep read planned slots: template=${template.id}, chapters=${chapters.length}, sequential=${planned.sequentialSlots.length}, independent=${planned.independentSlots.length}`,
+    );
 
     if (params.outputWindow) {
       params.outputWindow.appendContent(
@@ -1151,6 +1177,15 @@ export class NoteGenerator {
           existing: params.existing,
           policy: params.policy === "append" ? "append" : "overwrite",
         });
+
+    if (shouldResume) {
+      const currentHtml = ((note as any).getNote?.() as string) || "";
+      const nextHtml = ensureDeepReadSlotsHtml(currentHtml, planned);
+      if (nextHtml !== currentHtml) {
+        (note as any).setNote?.(nextHtml);
+        await (note as any).saveTx?.();
+      }
+    }
 
     let writeQueue = Promise.resolve();
     const updateSlot = async (

@@ -1,3 +1,5 @@
+import deepReadPromptDefaults from "../defaults/prompts/deep-read.json";
+
 /**
  * ================================================================
  * AI 提示词配置管理模块
@@ -276,87 +278,88 @@ export interface MultiRoundPromptTemplateExport {
 
 export type SummaryMode = "single" | "deepRead";
 
-export const DEFAULT_CHAPTER_FALLBACKS: ChapterInfo[] = [
-  { id: "ch1", title_zh: "\u5f15\u8a00", title_en: "Introduction" },
-  { id: "ch2", title_zh: "\u7b2c\u4e8c\u7ae0", title_en: "Chapter 2" },
-];
+type DeepReadPromptText = string | string[];
 
-export const DEFAULT_MULTI_ROUND_PLANNING_PROMPT = `\u8bf7\u9605\u8bfb\u8bba\u6587\u5168\u6587\uff0c\u8bc6\u522b\u8bba\u6587\u7684\u4e3b\u8981\u7ae0\u8282\u7ed3\u6784\uff0c\u5e76\u53ea\u8fd4\u56de JSON\uff0c\u4e0d\u8981\u8f93\u51fa\u89e3\u91ca\u6587\u5b57\u3002
-
-\u8fd4\u56de\u683c\u5f0f\u5fc5\u987b\u662f\uff1a
-{
-  "chapters": [
-    { "id": "ch1", "title_zh": "\u5f15\u8a00", "title_en": "Introduction" },
-    { "id": "ch2", "title_zh": "\u7b2c\u4e8c\u7ae0", "title_en": "Related Work \u6216 Method" }
-  ]
+interface DeepReadSequentialDynamicPhaseDefaults extends Omit<
+  MultiRoundSequentialDynamicPhase,
+  "planningPrompt" | "chapterTemplate"
+> {
+  planningPrompt?: string;
+  planningPromptLines?: string[];
+  chapterTemplate?: string;
+  chapterTemplateLines?: string[];
 }
 
-\u8981\u6c42\uff1a
-1. \u4f18\u5148\u4f7f\u7528\u8bba\u6587\u539f\u6587\u4e2d\u7684\u7ae0\u8282\u6807\u9898\u3002
-2. \u5982\u679c\u8bba\u6587\u6807\u9898\u4e0d\u662f\u4e2d\u6587\uff0c\u8bf7\u7ed9\u51fa\u7b80\u77ed\u4e2d\u6587\u8bd1\u540d\u548c\u82f1\u6587\u539f\u540d\u3002
-3. \u81f3\u5c11\u8fd4\u56de\u4e24\u4e2a\u7ae0\u8282\uff1b\u5982\u679c\u7ed3\u6784\u4e0d\u6e05\u6670\uff0c\u5c31\u8fd4\u56de\u201c\u5f15\u8a00\u201d\u548c\u201c\u7b2c\u4e8c\u7ae0\u201d\u3002
-4. JSON \u5b57\u6bb5\u4f1a\u76f4\u63a5\u7528\u4e8e\u9010\u7ae0\u7cbe\u8bfb\u63d0\u793a\u8bcd\u6a21\u677f\uff1atitle_zh \u5bf9\u5e94 {{title_zh}}\uff0ctitle_en \u5bf9\u5e94 {{title_en}}\uff0cid \u4ec5\u7528\u4e8e\u5185\u90e8\u6807\u8bc6\u3002`;
+type DeepReadPromptPhaseDefaults =
+  | DeepReadSequentialDynamicPhaseDefaults
+  | MultiRoundIndependentPhase;
 
-export const DEFAULT_MULTI_ROUND_CHAPTER_TEMPLATE = `\u8bf7\u7cbe\u8bfb\u8bba\u6587\u4e2d\u7684\u201c{{title_zh}}\uff08{{title_en}}\uff09\u201d\u8fd9\u4e00\u7ae0\u3002
+interface DeepReadPromptTemplateDefaults extends Omit<
+  MultiRoundPromptTemplate,
+  "phases"
+> {
+  phases: DeepReadPromptPhaseDefaults[];
+}
 
-\u8bf7\u56f4\u7ed5\u4e0b\u9762\u95ee\u9898\u7ec4\u7ec7\u56de\u7b54\uff1a
-1. \u8fd9\u4e00\u7ae0\u5728\u5168\u6587\u4e2d\u7684\u4f5c\u7528\u662f\u4ec0\u4e48\uff1f
-2. \u8fd9\u4e00\u7ae0\u63d0\u51fa\u4e86\u54ea\u4e9b\u5173\u952e\u6982\u5ff5\u3001\u8bba\u8bc1\u6216\u6280\u672f\u7ec6\u8282\uff1f
-3. \u54ea\u4e9b\u5185\u5bb9\u662f\u8bfb\u8005\u7406\u89e3\u540e\u7eed\u7ae0\u8282\u5fc5\u987b\u638c\u63e1\u7684\uff1f
-4. \u5982\u679c\u8fd9\u4e00\u7ae0\u6709\u516c\u5f0f\u3001\u5b9e\u9a8c\u8bbe\u7f6e\u6216\u5b9a\u4e49\uff0c\u8bf7\u7528\u901a\u4fd7\u4e2d\u6587\u89e3\u91ca\u3002
+interface DeepReadPromptDefaults {
+  chapterFallbacks: ChapterInfo[];
+  template: DeepReadPromptTemplateDefaults;
+}
 
-\u8f93\u51fa\u8981\u6c42\uff1a
-- \u4f7f\u7528 Markdown\u3002
-- \u4e0d\u8981\u5bd2\u6684\uff0c\u4e0d\u8981\u91cd\u590d\u9898\u76ee\u3002
-- \u6807\u9898\u5c42\u7ea7\u4ece\u4e09\u7ea7\u6807\u9898\u5f00\u59cb\uff0c\u4f8b\u5982\u201c### \u672c\u7ae0\u4f5c\u7528\u201d\u3002
-- \u5c3d\u91cf\u8ba9\u6ca1\u6709\u8be5\u5c0f\u65b9\u5411\u80cc\u666f\u7684\u8bfb\u8005\u4e5f\u80fd\u770b\u61c2\u3002`;
+function joinPromptLines(value: DeepReadPromptText | undefined): string {
+  if (Array.isArray(value)) {
+    return value.join("\n");
+  }
+  return value ?? "";
+}
 
-export const DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE: MultiRoundPromptTemplate = {
-  id: "default-v2-chapter-reading",
-  name: "\u9ed8\u8ba4\uff1a\u53cc\u9636\u6bb5\u9010\u7ae0\u7cbe\u8bfb",
-  description:
-    "\u5148\u89e3\u6790\u7ae0\u8282 JSON\uff0c\u518d\u6309\u7ae0\u8282\u987a\u5e8f\u9010\u7ae0\u7cbe\u8bfb\uff1b\u7b2c\u4e8c\u9636\u6bb5\u7528\u91cd\u70b9\u8ffd\u95ee\u8865\u5145\u8bba\u6587\u7406\u89e3\u3002",
-  version: 2,
-  phases: [
-    {
-      id: "chapter_reading",
-      title: "\u9636\u6bb5\u4e00\uff1a\u9010\u7ae0\u7cbe\u8bfb",
-      type: "sequential_dynamic",
-      description:
-        "\u5148\u8ba9 AI \u8bc6\u522b\u8bba\u6587\u7ae0\u8282\u7ed3\u6784\uff0c\u518d\u628a\u7ae0\u8282\u6807\u9898\u6e32\u67d3\u8fdb\u7ae0\u8282\u7cbe\u8bfb\u63d0\u793a\u8bcd\uff0c\u6309\u987a\u5e8f\u5199\u5165\u7cbe\u8bfb\u7b14\u8bb0\u3002",
-      contextStrategy: "last_round",
-      planningPrompt: DEFAULT_MULTI_ROUND_PLANNING_PROMPT,
-      fixedPrompts: [],
-      chapterTemplate: DEFAULT_MULTI_ROUND_CHAPTER_TEMPLATE,
-    },
-    {
-      id: "deep_questions",
-      title: "\u9636\u6bb5\u4e8c\uff1a\u91cd\u70b9\u8ffd\u95ee",
-      type: "independent",
-      description:
-        "\u6bcf\u4e2a\u8ffd\u95ee\u72ec\u7acb\u9605\u8bfb\u8bba\u6587\u5168\u6587\uff0c\u4e0d\u643a\u5e26\u5176\u4ed6\u8f6e\u6b21\u4e0a\u4e0b\u6587\u3002",
-      parallelizable: false,
-      maxConcurrency: 1,
-      prompts: [
-        {
-          id: "q_core_contribution",
-          title: "\u6838\u5fc3\u8d21\u732e\u5224\u65ad",
-          prompt:
-            "\u8bf7\u57fa\u4e8e\u8bba\u6587\u5168\u6587\uff0c\u7528\u4e2d\u6587\u5224\u65ad\u672c\u6587\u6700\u6838\u5fc3\u7684\u8d21\u732e\u662f\u4ec0\u4e48\uff0c\u5e76\u8bf4\u660e\u5b83\u4e3a\u4ec0\u4e48\u91cd\u8981\u3002\u8f93\u51fa Markdown\uff0c\u6807\u9898\u5c42\u7ea7\u4ece\u4e09\u7ea7\u6807\u9898\u5f00\u59cb\u3002",
-          order: 1,
-        },
-        {
-          id: "q_limits_questions",
-          title: "\u5c40\u9650\u4e0e\u7591\u95ee",
-          prompt:
-            "\u8bf7\u57fa\u4e8e\u8bba\u6587\u5168\u6587\uff0c\u7528\u4e2d\u6587\u5217\u51fa\u672c\u6587\u6700\u503c\u5f97\u6ce8\u610f\u7684\u5c40\u9650\u3001\u98ce\u9669\u6216\u4ecd\u672a\u89e3\u51b3\u7684\u95ee\u9898\u3002\u8f93\u51fa Markdown\uff0c\u6807\u9898\u5c42\u7ea7\u4ece\u4e09\u7ea7\u6807\u9898\u5f00\u59cb\u3002",
-          order: 2,
-        },
-      ],
-    },
-  ],
-  prompts: [],
-};
+function normalizeDeepReadPromptTemplate(
+  defaults: DeepReadPromptDefaults,
+): MultiRoundPromptTemplate {
+  return {
+    ...defaults.template,
+    phases: defaults.template.phases.map((phase) => {
+      if (phase.type !== "sequential_dynamic") {
+        return phase;
+      }
+      const {
+        planningPrompt,
+        planningPromptLines,
+        chapterTemplate,
+        chapterTemplateLines,
+        ...phaseBase
+      } = phase;
+      return {
+        ...phaseBase,
+        planningPrompt: joinPromptLines(planningPromptLines ?? planningPrompt),
+        chapterTemplate: joinPromptLines(
+          chapterTemplateLines ?? chapterTemplate,
+        ),
+      };
+    }),
+  };
+}
+
+const DEEP_READ_PROMPT_DEFAULTS =
+  deepReadPromptDefaults as DeepReadPromptDefaults;
+
+export const DEFAULT_CHAPTER_FALLBACKS: ChapterInfo[] =
+  DEEP_READ_PROMPT_DEFAULTS.chapterFallbacks;
+
+export const DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE: MultiRoundPromptTemplate =
+  normalizeDeepReadPromptTemplate(DEEP_READ_PROMPT_DEFAULTS);
+
+const defaultChapterReadingPhase =
+  DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE.phases.find(
+    (phase): phase is MultiRoundSequentialDynamicPhase =>
+      phase.type === "sequential_dynamic",
+  );
+
+export const DEFAULT_MULTI_ROUND_PLANNING_PROMPT =
+  defaultChapterReadingPhase?.planningPrompt ?? "";
+
+export const DEFAULT_MULTI_ROUND_CHAPTER_TEMPLATE =
+  defaultChapterReadingPhase?.chapterTemplate ?? "";
 
 export function getDefaultMultiRoundPromptTemplate(): MultiRoundPromptTemplate {
   return cloneMultiRoundPromptTemplate(DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE);

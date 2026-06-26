@@ -87,6 +87,13 @@ declare namespace _ZoteroTypes {
       "sidebarImageCollapsed": boolean;
       "notePrefix": string;
       "noteStrategy": string;
+      "noteExportEnabled": boolean;
+      "noteExportRootPath": string;
+      "noteExportWatchedCollections": string;
+      "noteExportIncludeSubcollections": boolean;
+      "noteExportFormats": string;
+      "noteExportConflictStrategy": string;
+      "noteExportSuppressDirectoryPrompt": boolean;
       "mindmapPrompt": string;
       "mindmapExportPath": string;
     };

@@ -4,7 +4,7 @@ import {
   isRegularSummaryNote,
   type NoteTag,
 } from "./aiNoteClassifier";
-import { hasRunnableDeepReadSlots } from "./deepReadEngine";
+import { hasIncompleteDeepReadContent } from "./deepReadEngine";
 import { TaskQueueManager, TaskStatus, type TaskItem } from "./taskQueue";
 
 type AiStatusColumnKind = "summary" | "deepRead";
@@ -454,7 +454,7 @@ function hasAiNoteKind(
         kind === "summary"
           ? isRegularSummaryNote(tags, noteHtml)
           : isDeepReadNote(tags, noteHtml) &&
-            !hasRunnableDeepReadSlots(noteHtml);
+            !hasIncompleteDeepReadContent(noteHtml);
       if (matches) {
         cache.set(itemId, true);
         return true;

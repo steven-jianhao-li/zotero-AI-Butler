@@ -49,7 +49,6 @@ import { marked } from "marked";
 import {
   DEFAULT_TABLE_FILL_PROMPT,
   DEFAULT_TABLE_TEMPLATE,
-  DEFAULT_MULTI_ROUND_PLANNING_PROMPT,
   getBuiltinMultiRoundPromptTemplates,
   getDefaultMultiRoundPromptTemplate,
   mergeMultiRoundPromptTemplates,
@@ -61,6 +60,7 @@ import {
 } from "../utils/prompts";
 import {
   buildDeepReadSkeletonHtml,
+  ensureDeepReadSlotsHtml,
   extractDeepReadChaptersFromHtml,
   extractDeepReadPlanMetadata,
   fillDeepReadSlot,
@@ -1050,9 +1050,7 @@ export class NoteGenerator {
   }> {
     const currentTemplate = this.getActiveDeepReadTemplate();
     const shouldResume =
-      params.existing &&
-      hasDeepReadV2Slots(params.existingHtml) &&
-      hasRunnableDeepReadSlots(params.existingHtml);
+      !!params.existing && hasDeepReadV2Slots(params.existingHtml);
     const restoredPlan = shouldResume
       ? extractDeepReadPlanMetadata(params.existingHtml)
       : null;
@@ -1110,7 +1108,7 @@ export class NoteGenerator {
     }
 
     if (!chapters.length) {
-      const planningPrompt = DEFAULT_MULTI_ROUND_PLANNING_PROMPT;
+      const planningPrompt = sequentialPhase.planningPrompt;
       params.outputWindow?.appendContent("### 正在解析章节结构\n\n");
       params.outputWindow?.appendContent(
         `**章节解析提示词：**\n\n${planningPrompt}\n\n`,
@@ -1147,6 +1145,9 @@ export class NoteGenerator {
     }
 
     const planned = planDeepReadSlots(template, chapters);
+    ztoolkit.log(
+      `[AI-Butler] Deep read planned slots: template=${template.id}, chapters=${chapters.length}, sequential=${planned.sequentialSlots.length}, independent=${planned.independentSlots.length}`,
+    );
 
     if (params.outputWindow) {
       params.outputWindow.appendContent(
@@ -1176,6 +1177,15 @@ export class NoteGenerator {
           existing: params.existing,
           policy: params.policy === "append" ? "append" : "overwrite",
         });
+
+    if (shouldResume) {
+      const currentHtml = ((note as any).getNote?.() as string) || "";
+      const nextHtml = ensureDeepReadSlotsHtml(currentHtml, planned);
+      if (nextHtml !== currentHtml) {
+        (note as any).setNote?.(nextHtml);
+        await (note as any).saveTx?.();
+      }
+    }
 
     let writeQueue = Promise.resolve();
     const updateSlot = async (

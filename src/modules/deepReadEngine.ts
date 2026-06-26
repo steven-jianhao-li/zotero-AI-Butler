@@ -90,6 +90,26 @@ export function buildDeepReadSkeletonHtml(
   return parts.join("\n");
 }
 
+export function ensureDeepReadSlotsHtml(
+  noteHtml: string,
+  planned: PlannedDeepRead,
+): string {
+  const missingSlots = planned.slots.filter(
+    (slot) => getDeepReadSlotStatus(noteHtml, slot.id) === null,
+  );
+  if (!missingSlots.length) return noteHtml;
+
+  return [
+    noteHtml,
+    "<hr/>",
+    ...missingSlots.flatMap((slot, index) => {
+      const parts = [buildPendingSlotHtml(slot)];
+      if (index < missingSlots.length - 1) parts.push("<hr/>");
+      return parts;
+    }),
+  ].join("\n");
+}
+
 export function fillDeepReadSlot(
   noteHtml: string,
   slotId: string,

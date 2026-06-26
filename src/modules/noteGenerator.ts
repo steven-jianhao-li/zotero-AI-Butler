@@ -1223,6 +1223,7 @@ export class NoteGenerator {
           markdown,
           slot.title,
           status,
+          slot,
         );
         if (nextHtml !== currentHtml) {
           (note as any).setNote?.(nextHtml);
@@ -1245,6 +1246,7 @@ export class NoteGenerator {
           currentHtml,
           slot.id,
           slot.title,
+          slot,
         );
         if (nextHtml !== currentHtml) {
           (note as any).setNote?.(nextHtml);
@@ -1300,7 +1302,7 @@ export class NoteGenerator {
       for (let index = 0; index < planned.sequentialSlots.length; index++) {
         const slot = planned.sequentialSlots[index];
         const currentHtml = ((note as any).getNote?.() as string) || "";
-        if (!shouldRunDeepReadSlot(currentHtml, slot.id)) continue;
+        if (!shouldRunDeepReadSlot(currentHtml, slot.id, slot)) continue;
 
         throwIfAborted(params.abortSignal);
         params.progressCallback?.(
@@ -1364,7 +1366,7 @@ export class NoteGenerator {
         streamLive: boolean,
       ) => {
         const currentHtml = ((note as any).getNote?.() as string) || "";
-        if (!shouldRunDeepReadSlot(currentHtml, slot.id)) return;
+        if (!shouldRunDeepReadSlot(currentHtml, slot.id, slot)) return;
 
         throwIfAborted(params.abortSignal);
         params.progressCallback?.(
@@ -1459,7 +1461,7 @@ export class NoteGenerator {
         await writeQueue;
         for (const slot of progressSlots) {
           const status = ((note as any).getNote?.() as string) || "";
-          if (shouldRunDeepReadSlot(status, slot.id)) {
+          if (shouldRunDeepReadSlot(status, slot.id, slot)) {
             params.outputWindow?.updateDeepReadProgressSlot?.(
               slot.id,
               slot.title,

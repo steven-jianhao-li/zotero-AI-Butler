@@ -154,7 +154,8 @@ export class OpenAICompatProvider implements ILlmProvider {
       let delivered = 0;
       let processedLength = 0;
       let partialLine = "";
-      let gotAnyDelta = false;
+      let streamComplete = false;
+      let finishReason = "";
       let abortError: Error | null = null;
       let cleanupAbortSignal: (() => void) | undefined;
 
@@ -208,12 +209,20 @@ export class OpenAICompatProvider implements ILlmProvider {
                   for (const raw of parts) {
                     if (raw.indexOf("data:") !== 0) continue;
                     const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                    if (!jsonStr || jsonStr === "[DONE]") continue;
+                    if (!jsonStr) continue;
+                    if (jsonStr === "[DONE]") {
+                      streamComplete = true;
+                      continue;
+                    }
                     try {
                       const evt = JSON.parse(jsonStr);
+                      const reason = evt?.choices?.[0]?.finish_reason;
+                      if (typeof reason === "string" && reason.length > 0) {
+                        finishReason = reason;
+                        streamComplete = true;
+                      }
                       const delta = evt?.choices?.[0]?.delta?.content;
                       if (typeof delta === "string" && delta.length > 0) {
-                        gotAnyDelta = true;
                         chunks.push(delta);
                         const current = chunks.join("");
                         if (onProgress && current.length > delivered) {
@@ -228,12 +237,22 @@ export class OpenAICompatProvider implements ILlmProvider {
                         }
                       }
                     } catch {
-                      /* ignore */
+                      abortError = new Error(
+                        "OpenAI 兼容流式响应解析失败，响应可能已被截断",
+                      );
+                      xmlhttp.abort();
+                      return;
                     }
                   }
                 }
               } catch (err) {
                 ztoolkit.log("[AI-Butler] OpenAI Compat SSE parse error:", err);
+                if (!abortError) {
+                  abortError = new Error(
+                    "OpenAI 兼容流式响应解析失败，响应可能已被截断",
+                  );
+                }
+                xmlhttp.abort();
               }
             };
             xmlhttp.onerror = () => {
@@ -253,7 +272,6 @@ export class OpenAICompatProvider implements ILlmProvider {
           if (isAbortError(abortError, options.abortSignal)) {
             throw normalizeAbortError(abortError, options.abortSignal);
           }
-          if (gotAnyDelta && chunks.length > 0) return chunks.join("");
           throw abortError;
         }
         if (isAbortError(error, options.abortSignal)) {
@@ -276,12 +294,12 @@ export class OpenAICompatProvider implements ILlmProvider {
         } catch {
           /* ignore */
         }
-        if (gotAnyDelta && chunks.length > 0) return chunks.join("");
         throw new Error(errorMessage);
       } finally {
         cleanupAbortSignal?.();
       }
 
+      this.assertStreamCompleted(streamComplete, finishReason, partialLine);
       return chunks.join("");
     }
 
@@ -393,7 +411,8 @@ export class OpenAICompatProvider implements ILlmProvider {
     let delivered = 0;
     let processedLength = 0;
     let partialLine = "";
-    let gotAnyDelta = false;
+    let streamComplete = false;
+    let finishReason = "";
     let lastUsage: any;
     let abortError: Error | null = null;
     let cleanupAbortSignal: (() => void) | undefined;
@@ -446,15 +465,23 @@ export class OpenAICompatProvider implements ILlmProvider {
                 for (const raw of parts) {
                   if (raw.indexOf("data:") !== 0) continue;
                   const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                  if (!jsonStr || jsonStr === "[DONE]") continue;
+                  if (!jsonStr) continue;
+                  if (jsonStr === "[DONE]") {
+                    streamComplete = true;
+                    continue;
+                  }
                   try {
                     const evt = JSON.parse(jsonStr);
                     if (options.enablePromptCache && evt?.usage) {
                       lastUsage = evt.usage;
                     }
+                    const reason = evt?.choices?.[0]?.finish_reason;
+                    if (typeof reason === "string" && reason.length > 0) {
+                      finishReason = reason;
+                      streamComplete = true;
+                    }
                     const delta = evt?.choices?.[0]?.delta?.content;
                     if (typeof delta === "string" && delta.length > 0) {
-                      gotAnyDelta = true;
                       chunks.push(delta);
                       const current = chunks.join("");
                       if (onProgress && current.length > delivered) {
@@ -469,7 +496,11 @@ export class OpenAICompatProvider implements ILlmProvider {
                       }
                     }
                   } catch {
-                    /* ignore */
+                    abortError = new Error(
+                      "OpenAI 兼容流式响应解析失败，响应可能已被截断",
+                    );
+                    xmlhttp.abort();
+                    return;
                   }
                 }
               }
@@ -478,6 +509,12 @@ export class OpenAICompatProvider implements ILlmProvider {
                 "[AI-Butler] OpenAI Compat chat SSE parse error:",
                 err,
               );
+              if (!abortError) {
+                abortError = new Error(
+                  "OpenAI 兼容流式响应解析失败，响应可能已被截断",
+                );
+              }
+              xmlhttp.abort();
             }
           };
           xmlhttp.onerror = () => {
@@ -497,7 +534,6 @@ export class OpenAICompatProvider implements ILlmProvider {
         if (isAbortError(abortError, options.abortSignal)) {
           throw normalizeAbortError(abortError, options.abortSignal);
         }
-        if (gotAnyDelta && chunks.length > 0) return chunks.join("");
         throw abortError;
       }
       if (isAbortError(error, options.abortSignal)) {
@@ -520,16 +556,32 @@ export class OpenAICompatProvider implements ILlmProvider {
       } catch {
         /* ignore */
       }
-      if (gotAnyDelta && chunks.length > 0) return chunks.join("");
       throw new Error(errorMessage);
     } finally {
       cleanupAbortSignal?.();
     }
 
+    this.assertStreamCompleted(streamComplete, finishReason, partialLine);
     if (options.enablePromptCache) {
       logPromptCacheUsage("OpenAI-Compat chat", lastUsage);
     }
     return chunks.join("");
+  }
+
+  private assertStreamCompleted(
+    streamComplete: boolean,
+    finishReason: string,
+    partialLine: string,
+  ): void {
+    if (partialLine.trim()) {
+      throw new Error("OpenAI 兼容流式响应未完整结束，最后一个 SSE 事件被截断");
+    }
+    if (!streamComplete) {
+      throw new Error("OpenAI 兼容流式响应未收到完成标记，已拒绝使用半截输出");
+    }
+    if (finishReason && finishReason !== "stop") {
+      throw new Error(`OpenAI 兼容流式响应未正常结束: ${finishReason}`);
+    }
   }
 
   async listModels(options: LLMOptions): Promise<LLMModelInfo[]> {

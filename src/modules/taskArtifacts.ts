@@ -3,7 +3,7 @@ import { LiteratureReviewService } from "./literatureReviewService";
 import { MindmapService } from "./mindmapService";
 import { NoteGenerator } from "./noteGenerator";
 import { AiNoteService } from "./aiNoteService";
-import { hasRunnableDeepReadSlots } from "./deepReadEngine";
+import { hasIncompleteDeepReadContent } from "./deepReadEngine";
 
 export type FixedTaskArtifactType =
   | "summary"
@@ -81,7 +81,7 @@ export class TaskArtifacts {
     }
 
     const noteHtml: string = (note as any).getNote?.() || "";
-    if (hasRunnableDeepReadSlots(noteHtml)) {
+    if (hasIncompleteDeepReadContent(noteHtml)) {
       return { exists: false, reason: "deep-read-slots-incomplete" };
     }
 

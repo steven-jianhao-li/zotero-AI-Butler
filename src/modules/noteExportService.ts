@@ -6,6 +6,7 @@ import {
 } from "./noteExportConfig";
 import { noteHtmlToDocxBytes } from "./noteExportDocxConverter";
 import { noteHtmlToMarkdown } from "./noteExportMarkdown";
+import { hasIncompleteDeepReadContent } from "./deepReadEngine";
 import {
   copyFile,
   ensureDirectory,
@@ -202,7 +203,11 @@ export class NoteExportService {
     item: Zotero.Item,
   ): Promise<boolean> {
     const notes = await this.resolveNotes(item);
-    return !!notes.summary && !!notes.deepRead;
+    return (
+      !!notes.summary &&
+      !!notes.deepRead &&
+      !hasIncompleteDeepReadContent(notes.deepRead.html)
+    );
   }
 
   private static async resolveNotes(item: Zotero.Item): Promise<NoteArtifacts> {

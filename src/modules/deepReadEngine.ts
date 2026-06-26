@@ -95,7 +95,7 @@ export function ensureDeepReadSlotsHtml(
   planned: PlannedDeepRead,
 ): string {
   const missingSlots = planned.slots.filter(
-    (slot) => getDeepReadSlotStatus(noteHtml, slot.id) === null,
+    (slot) => getDeepReadSlotStatus(noteHtml, slot.id, slot) === null,
   );
   if (!missingSlots.length) return noteHtml;
 
@@ -157,6 +157,7 @@ export function fillDeepReadSlot(
   markdown: string,
   slotTitle?: string,
   status: "done" | "error" = "done",
+  slot?: DeepReadSlot,
 ): string {
   const headingHtml = shouldPrependSlotHeading(markdown, slotTitle)
     ? `<h2>${escapeHtml(slotTitle || "")}</h2>\n`
@@ -165,7 +166,14 @@ export function fillDeepReadSlot(
     status === "done"
       ? `${headingHtml}${markdownToDeepReadSlotHtml(markdown)}`
       : `${headingHtml}<p>❌ ${escapeHtml(markdown)}</p>`;
-  return replaceDeepReadSlotHtml(noteHtml, slotId, htmlContent, status);
+  return replaceDeepReadSlotHtml(
+    noteHtml,
+    slotId,
+    htmlContent,
+    status,
+    slotTitle,
+    slot,
+  );
 }
 
 function markdownToDeepReadSlotHtml(markdown: string): string {
@@ -229,12 +237,12 @@ type HeadingSection = {
 };
 
 function extractHeadingSections(noteHtml: string): HeadingSection[] {
-  const headingPattern = /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi;
+  const headingPattern = /<h2\b[^>]*>([\s\S]*?)<\/h2>/gi;
   const headings: Array<{ index: number; title: string }> = [];
   let match: RegExpExecArray | null;
 
   while ((match = headingPattern.exec(noteHtml))) {
-    const title = decodeBasicHtmlEntities(stripHtml(match[2])).trim();
+    const title = decodeBasicHtmlEntities(stripHtml(match[1])).trim();
     if (!title) continue;
     headings.push({ index: match.index, title });
   }
@@ -260,6 +268,19 @@ function wrapDeepReadSlotHtml(
 
 function sectionStatus(html: string): DeepReadSlotStatus {
   return hasGeneratedSectionContent(html) ? "done" : "pending";
+}
+
+function findLegacySlotSection(
+  noteHtml: string,
+  slotTitle: string,
+  slot?: DeepReadSlot,
+): HeadingSection | null {
+  const titles = slot ? getComparableSlotTitles(slot) : [slotTitle];
+  return (
+    extractHeadingSections(noteHtml).find((section) =>
+      titles.some((title) => titlesMatch(section.title, title)),
+    ) || null
+  );
 }
 
 function ensurePlanMetadataHtml(
@@ -327,36 +348,47 @@ export function replaceDeepReadSlotHtml(
   slotId: string,
   innerHtml: string,
   status: DeepReadSlotStatus,
+  slotTitle?: string,
+  slot?: DeepReadSlot,
 ): string {
   const pattern = new RegExp(
     `<!-- ${DEEP_READ_SLOT_PREFIX}:${escapeRegExp(slotId)}:(?:pending|running|done|error) -->[\\s\\S]*?<!-- ${DEEP_READ_SLOT_PREFIX}:${escapeRegExp(slotId)}:end -->`,
   );
-  if (!pattern.test(noteHtml)) {
-    return noteHtml;
-  }
-  return noteHtml.replace(
-    pattern,
-    `<!-- ${DEEP_READ_SLOT_PREFIX}:${slotId}:${status} -->\n${stripStrikethroughHtml(innerHtml)}\n<!-- ${DEEP_READ_SLOT_PREFIX}:${slotId}:end -->`,
-  );
+  const replacement = wrapDeepReadSlotHtml(slotId, innerHtml, status);
+  if (pattern.test(noteHtml)) return noteHtml.replace(pattern, replacement);
+
+  const legacySection = slotTitle
+    ? findLegacySlotSection(noteHtml, slotTitle, slot)
+    : null;
+  if (!legacySection) return noteHtml;
+  return `${noteHtml.slice(0, legacySection.index)}${replacement}${noteHtml.slice(legacySection.endIndex)}`;
 }
 
 export function getDeepReadSlotStatus(
   noteHtml: string,
   slotId: string,
+  slot?: DeepReadSlot,
 ): DeepReadSlotStatus | null {
   const match = noteHtml.match(
     new RegExp(
       `<!-- ${DEEP_READ_SLOT_PREFIX}:${escapeRegExp(slotId)}:(pending|running|done|error) -->`,
     ),
   );
-  return (match?.[1] as DeepReadSlotStatus | undefined) || null;
+  const status = (match?.[1] as DeepReadSlotStatus | undefined) || null;
+  if (status) return status;
+  if (!slot) return null;
+
+  const legacySection = findLegacySlotSection(noteHtml, slot.title, slot);
+  if (!legacySection) return null;
+  return sectionStatus(legacySection.html);
 }
 
 export function shouldRunDeepReadSlot(
   noteHtml: string,
   slotId: string,
+  slot?: DeepReadSlot,
 ): boolean {
-  const status = getDeepReadSlotStatus(noteHtml, slotId);
+  const status = getDeepReadSlotStatus(noteHtml, slotId, slot);
   return status === "pending" || status === "running" || status === "error";
 }
 
@@ -388,12 +420,15 @@ export function markDeepReadSlotRunning(
   noteHtml: string,
   slotId: string,
   slotTitle?: string,
+  slot?: DeepReadSlot,
 ): string {
   return replaceDeepReadSlotHtml(
     noteHtml,
     slotId,
     `<h2>${escapeHtml(slotTitle || "")}</h2>\n<p>🔄 正在生成...</p>`,
     "running",
+    slotTitle,
+    slot,
   );
 }
 

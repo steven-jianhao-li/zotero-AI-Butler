@@ -65,6 +65,7 @@ import {
   extractDeepReadPlanMetadata,
   fillDeepReadSlot,
   hasDeepReadV2Slots,
+  hasIncompleteDeepReadContent,
   hasRunnableDeepReadSlots,
   isDeepReadSlotDone,
   markDeepReadSlotRunning,
@@ -189,7 +190,16 @@ export class NoteGenerator {
         !!existingRecord?.rawHtml &&
         hasDeepReadV2Slots(existingRecord.rawHtml) &&
         hasRunnableDeepReadSlots(existingRecord.rawHtml);
-      if (existing && !options?.forceOverwrite && !canResumeDeepRead) {
+      const hasIncompleteDeepRead =
+        noteKind === "deepRead" &&
+        !!existingRecord?.rawHtml &&
+        hasIncompleteDeepReadContent(existingRecord.rawHtml);
+      if (
+        existing &&
+        !options?.forceOverwrite &&
+        !canResumeDeepRead &&
+        !hasIncompleteDeepRead
+      ) {
         if (policy === "skip") {
           progressCallback?.(
             `\u5df2\u5b58\u5728${AiNoteService.getTitle(noteKind)}\uff0c\u8df3\u8fc7`,

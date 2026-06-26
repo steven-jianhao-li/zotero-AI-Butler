@@ -34,6 +34,8 @@ const NOTE_KIND_TITLE: Record<AiNoteKind, string> = {
 };
 
 export class AiNoteService {
+  private static noteWriteLocks = new Map<string, Promise<void>>();
+
   public static getTitle(kind: AiNoteKind): string {
     return NOTE_KIND_TITLE[kind];
   }
@@ -45,8 +47,9 @@ export class AiNoteService {
   public static async resolveParentItem(
     item: Zotero.Item,
   ): Promise<Zotero.Item | null> {
-    if ((item as any).isAttachment?.()) {
-      const parentId = (item as any).parentItemID;
+    const rawItem = item as any;
+    if (rawItem.isAttachment?.() || rawItem.isNote?.()) {
+      const parentId = rawItem.parentItemID || rawItem.parentID;
       return parentId
         ? ((await Zotero.Items.getAsync(parentId)) as Zotero.Item)
         : null;
@@ -116,32 +119,44 @@ export class AiNoteService {
   }): Promise<Zotero.Item> {
     const parentItem =
       (await this.resolveParentItem(options.item)) || options.item;
-    const tag = NOTE_KIND_TAG[options.kind];
-    const existing = options.existing || null;
+    return this.withNoteWriteLock(parentItem, options.kind, async () => {
+      const tag = NOTE_KIND_TAG[options.kind];
+      const liveExisting = await this.findNote(parentItem, options.kind);
+      const existing = liveExisting || options.existing || null;
 
-    if (existing) {
-      const oldHtml = (existing as any).getNote?.() || "";
-      const finalHtml =
-        options.policy === "append"
-          ? `${oldHtml}\n<hr/>\n${options.html}`
-          : options.html;
-      (existing as any).setNote?.(finalHtml);
-      this.ensureTag(existing, tag);
-      if (options.kind === "summary")
-        this.ensureTag(existing, SUMMARY_NOTE_TAG);
-      await (existing as any).saveTx?.();
-      return existing;
-    }
+      if (existing) {
+        if (options.policy === "skip") {
+          this.ensureTag(existing, tag);
+          if (options.kind === "summary") {
+            this.ensureTag(existing, SUMMARY_NOTE_TAG);
+          }
+          await (existing as any).saveTx?.();
+          return existing;
+        }
 
-    const note = new Zotero.Item("note");
-    note.libraryID = parentItem.libraryID;
-    note.parentID = parentItem.id;
-    note.setNote(options.html);
-    note.addTag(tag);
-    await note.saveTx();
-    return note;
+        const oldHtml = (existing as any).getNote?.() || "";
+        const finalHtml =
+          options.policy === "append"
+            ? `${oldHtml}\n<hr/>\n${options.html}`
+            : options.html;
+        (existing as any).setNote?.(finalHtml);
+        this.ensureTag(existing, tag);
+        if (options.kind === "summary") {
+          this.ensureTag(existing, SUMMARY_NOTE_TAG);
+        }
+        await (existing as any).saveTx?.();
+        return existing;
+      }
+
+      const note = new Zotero.Item("note");
+      note.libraryID = parentItem.libraryID;
+      note.parentID = parentItem.id;
+      note.setNote(options.html);
+      note.addTag(tag);
+      await note.saveTx();
+      return note;
+    });
   }
-
   public static async appendFollowUpPair(options: {
     item: Zotero.Item;
     pairId: string;
@@ -228,20 +243,46 @@ export class AiNoteService {
   private static async getOrCreateDeepReadNote(
     item: Zotero.Item,
   ): Promise<Zotero.Item> {
-    const existing = await this.findNote(item, "deepRead");
-    if (existing) return existing;
-
     const parentItem = (await this.resolveParentItem(item)) || item;
-    const title = (parentItem.getField("title") as string) || "文献";
-    const note = new Zotero.Item("note");
-    note.libraryID = parentItem.libraryID;
-    note.parentID = parentItem.id;
-    note.setNote(`<h1>AI 精读 - ${escapeHtml(title)}</h1>`);
-    note.addTag(DEEP_READ_NOTE_TAG);
-    await note.saveTx();
-    return note;
+    return this.withNoteWriteLock(parentItem, "deepRead", async () => {
+      const existing = await this.findNote(parentItem, "deepRead");
+      if (existing) return existing;
+
+      const title = (parentItem.getField("title") as string) || "文献";
+      const note = new Zotero.Item("note");
+      note.libraryID = parentItem.libraryID;
+      note.parentID = parentItem.id;
+      note.setNote(`<h1>AI 精读 - ${escapeHtml(title)}</h1>`);
+      note.addTag(DEEP_READ_NOTE_TAG);
+      await note.saveTx();
+      return note;
+    });
   }
 
+  private static async withNoteWriteLock<T>(
+    parentItem: Zotero.Item,
+    kind: AiNoteKind,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    const key = `${parentItem.libraryID || 0}:${parentItem.id}:${kind}`;
+    const previous = this.noteWriteLocks.get(key) || Promise.resolve();
+    let releaseCurrent!: () => void;
+    const current = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
+    });
+    const chained = previous.catch(() => undefined).then(() => current);
+    this.noteWriteLocks.set(key, chained);
+
+    await previous.catch(() => undefined);
+    try {
+      return await work();
+    } finally {
+      releaseCurrent();
+      if (this.noteWriteLocks.get(key) === chained) {
+        this.noteWriteLocks.delete(key);
+      }
+    }
+  }
   private static ensureTag(note: Zotero.Item, tag: string): void {
     const tags: NoteTag[] = (note as any).getTags?.() || [];
     if (!tags.some((entry) => entry.tag === tag)) {

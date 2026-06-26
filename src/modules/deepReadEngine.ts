@@ -338,7 +338,7 @@ export function hasIncompleteDeepReadContent(noteHtml: string): boolean {
   const textContent = decodeBasicHtmlEntities(stripHtml(noteHtml))
     .replace(/\s+/g, "")
     .trim();
-  return /(?:等待生成|正在生成|已取消，重新运行AI精读时会从这里继续)/.test(
+  return /(?:⏳等待生成\.\.\.|🔄正在生成\.\.\.|已取消，重新运行AI精读时会从这里继续。?)/.test(
     textContent,
   );
 }

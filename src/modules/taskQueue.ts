@@ -50,6 +50,16 @@ function logTaskQueue(...args: Parameters<ZToolkit["log"]>): void {
 const NO_PDF_ERROR_MSG =
   "该条目没有 PDF 附件，无法进行 AI 分析。请先为该文献添加 PDF 文件。";
 const TASK_ABORT_DETAIL = "该总结任务已由用户手动终止。";
+const INVALID_AI_SOURCE_ITEM_MSG =
+  "AI 总结/精读仅支持顶层文献条目，笔记、附件和子条目已跳过。";
+
+function isQueueableAiSourceItem(item: Zotero.Item): boolean {
+  const rawItem = item as any;
+  if (rawItem.isNote?.() || rawItem.isAttachment?.()) return false;
+  if (rawItem.parentID || rawItem.parentItemID) return false;
+  if (rawItem.isRegularItem?.() === false) return false;
+  return true;
+}
 
 type TaskAbortController = {
   signal: LLMAbortSignal;
@@ -504,6 +514,11 @@ export class TaskQueueManager {
     priority: boolean = false,
     options?: { summaryMode?: string; forceOverwrite?: boolean },
   ): Promise<string> {
+    if (!isQueueableAiSourceItem(item)) {
+      logTaskQueue(`[AI-Butler] 跳过非顶层文献 AI 总结任务: ${item.id}`);
+      throw new Error(INVALID_AI_SOURCE_ITEM_MSG);
+    }
+
     if (options?.summaryMode && options.summaryMode !== "single") {
       return this.addDeepReadTask(item, priority, options);
     }
@@ -618,6 +633,11 @@ export class TaskQueueManager {
     priority: boolean = false,
     options?: { summaryMode?: string; forceOverwrite?: boolean },
   ): Promise<string> {
+    if (!isQueueableAiSourceItem(item)) {
+      logTaskQueue(`[AI-Butler] 跳过非顶层文献 AI 精读任务: ${item.id}`);
+      throw new Error(INVALID_AI_SOURCE_ITEM_MSG);
+    }
+
     const taskId = getDeepReadTaskId(item.id);
     const deepReadOptions = {
       ...(options || {}),
@@ -2112,6 +2132,21 @@ export class TaskQueueManager {
       const item = await Zotero.Items.getAsync(task.itemId);
       if (!item) {
         throw new Error("文献条目不存在");
+      }
+
+      if (!isQueueableAiSourceItem(item)) {
+        task.status = TaskStatus.COMPLETED;
+        task.progress = 100;
+        task.completedAt = new Date();
+        task.workflowStage = "非论文条目，已跳过";
+        task.error = undefined;
+        task.errorDetails = undefined;
+        this.notifyProgress(taskId, 100, INVALID_AI_SOURCE_ITEM_MSG);
+        this.notifyComplete(taskId, false, INVALID_AI_SOURCE_ITEM_MSG);
+        logTaskQueue(
+          `[AI-Butler] 任务目标不是顶层文献，已跳过执行: ${task.title} (${taskId})`,
+        );
+        return false;
       }
 
       // 检查是否有 PDF 附件

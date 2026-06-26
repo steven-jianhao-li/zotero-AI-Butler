@@ -210,6 +210,8 @@ export class AutoScanManager {
 
   /** 如果条目附件已就绪且需要 AI，则入队；否则进入待观察并轮询重试 */
   private async enqueueIfReady(item: Zotero.Item): Promise<void> {
+    if (!this.shouldProcess(item)) return;
+
     const needsSummary = await this.shouldAutoCreate(item, "summary");
     const needsDeepRead = await this.shouldAutoCreate(item, "deepRead");
     if (!needsSummary && !needsDeepRead) return;
@@ -257,7 +259,7 @@ export class AutoScanManager {
     const timer = setTimeout(async () => {
       try {
         const latest = await Zotero.Items.getAsync(item.id);
-        if (latest) {
+        if (latest && this.shouldProcess(latest)) {
           await this.enqueueIfReady(latest);
         }
       } catch (e) {

@@ -60,7 +60,7 @@ export class AutoNoteExportManager {
     if (!config.enabled || !config.rootPath.trim()) return false;
 
     const item = await Zotero.Items.getAsync(itemId);
-    if (!item || !(item as any).isRegularItem?.()) return false;
+    if (!item || !isExportableSourceItem(item as Zotero.Item)) return false;
 
     const collectionPath =
       await NoteExportService.findWatchedCollectionPathForItem(
@@ -86,4 +86,11 @@ export class AutoNoteExportManager {
     );
     return result.success;
   }
+}
+
+function isExportableSourceItem(item: Zotero.Item): boolean {
+  const rawItem = item as any;
+  if (rawItem.isNote?.() || rawItem.isAttachment?.()) return false;
+  if (rawItem.parentID || rawItem.parentItemID) return false;
+  return rawItem.isRegularItem?.() !== false;
 }

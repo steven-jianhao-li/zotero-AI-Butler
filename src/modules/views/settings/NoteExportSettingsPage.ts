@@ -180,18 +180,20 @@ export class NoteExportSettingsPage {
     const saveButton = createStyledButton("保存设置", "#4caf50", "medium");
     saveButton.addEventListener("click", () => {
       setNoteExportConfig({
-        enabled: getCheckboxValue("noteExportEnabled", false),
+        enabled: getCheckboxValue(this.container, "noteExportEnabled", false),
         rootPath: (pathInput as HTMLInputElement).value,
         includeSubcollections: getCheckboxValue(
+          this.container,
           "noteExportIncludeSubcollections",
           true,
         ),
-        formats: readFormats(),
+        formats: readFormats(this.container),
         conflictStrategy: getSelectValue(
           strategySelect,
           "skip",
         ) as NoteExportConflictStrategy,
         suppressDirectoryPrompt: getCheckboxValue(
+          this.container,
           "noteExportSuppressDirectoryPrompt",
           false,
         ),
@@ -258,18 +260,22 @@ function getFormatRows(): Array<[keyof NoteExportFormats, string]> {
   ];
 }
 
-function readFormats(): NoteExportFormats {
+function readFormats(root: ParentNode): NoteExportFormats {
   return {
-    summaryDocx: getCheckboxValue("noteExportFormat-summaryDocx", true),
-    deepReadDocx: getCheckboxValue("noteExportFormat-deepReadDocx", true),
-    summaryMd: getCheckboxValue("noteExportFormat-summaryMd", true),
-    deepReadMd: getCheckboxValue("noteExportFormat-deepReadMd", true),
+    summaryDocx: getCheckboxValue(root, "noteExportFormat-summaryDocx", true),
+    deepReadDocx: getCheckboxValue(root, "noteExportFormat-deepReadDocx", true),
+    summaryMd: getCheckboxValue(root, "noteExportFormat-summaryMd", true),
+    deepReadMd: getCheckboxValue(root, "noteExportFormat-deepReadMd", true),
   };
 }
 
-function getCheckboxValue(id: string, fallback: boolean): boolean {
-  const checkbox = Zotero.getMainWindow().document.querySelector(
-    `#setting-${id} input[type="checkbox"], #setting-${id}`,
+function getCheckboxValue(
+  root: ParentNode,
+  id: string,
+  fallback: boolean,
+): boolean {
+  const checkbox = root.querySelector(
+    `input[type="checkbox"]#setting-${id}`,
   ) as HTMLInputElement | null;
   return typeof checkbox?.checked === "boolean" ? checkbox.checked : fallback;
 }

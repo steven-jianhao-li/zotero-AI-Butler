@@ -98,6 +98,17 @@ type MultiModelSummaryResult = {
  * 提供静态方法集合,封装论文笔记生成的核心逻辑
  * 采用静态方法设计,简化调用方式,无需实例化
  */
+const INVALID_AI_SOURCE_ITEM_MESSAGE =
+  "AI 总结/精读仅支持顶层文献条目，请不要对笔记、附件或子条目运行。";
+
+function isAiSourceItem(item: Zotero.Item): boolean {
+  const rawItem = item as any;
+  if (rawItem.isNote?.() || rawItem.isAttachment?.()) return false;
+  if (rawItem.parentID || rawItem.parentItemID) return false;
+  if (rawItem.isRegularItem?.() === false) return false;
+  return true;
+}
+
 export class NoteGenerator {
   /**
    * 为单个文献条目生成 AI 总结笔记
@@ -138,6 +149,10 @@ export class NoteGenerator {
       abortSignal?: LLMAbortSignal;
     },
   ): Promise<{ note: Zotero.Item; content: string }> {
+    if (!isAiSourceItem(item)) {
+      throw new Error(INVALID_AI_SOURCE_ITEM_MESSAGE);
+    }
+
     // 获取文献标题,用于日志和用户反馈
     const itemTitle = item.getField("title") as string;
     let note: Zotero.Item | null = null;

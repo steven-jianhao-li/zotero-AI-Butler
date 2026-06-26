@@ -1102,7 +1102,9 @@ export class NoteGenerator {
     let lastResponse: LLMResponse | undefined;
     let chapters =
       restoredPlan?.chapters ||
-      (shouldResume ? extractDeepReadChaptersFromHtml(params.existingHtml) : []);
+      (shouldResume
+        ? extractDeepReadChaptersFromHtml(params.existingHtml)
+        : []);
     if (params.outputWindow) {
       params.outputWindow.startItem(params.itemTitle);
       params.outputWindow.appendContent(

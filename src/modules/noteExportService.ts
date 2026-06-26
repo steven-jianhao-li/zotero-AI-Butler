@@ -148,7 +148,6 @@ export class NoteExportService {
 
     const notes = await this.resolveNotes(item);
     if (options.requireBothNotes && (!notes.summary || !notes.deepRead)) {
-      result.warnings.push("AI 总结和 AI 精读尚未全部完成，跳过自动导出");
       return result;
     }
 
@@ -267,10 +266,7 @@ export class NoteExportService {
   }): Promise<void> {
     const meta = NOTE_OUTPUT_META[options.kind];
     if (!options.exportDocx && !options.exportMarkdown) return;
-    if (!options.artifact) {
-      options.result.warnings.push(`${meta.label} 不存在，已跳过`);
-      return;
-    }
+    if (!options.artifact) return;
 
     if (options.exportDocx) {
       try {

@@ -1188,7 +1188,6 @@ export class NoteGenerator {
       const nextHtml = shouldMigrateLegacyResume
         ? migrateLegacyDeepReadHtmlToSlots(
             currentHtml || params.existingHtml,
-            params.itemTitle,
             template,
             planned,
           )

@@ -1,4 +1,4 @@
-﻿import { markdownToZoteroNoteHtml, escapeHtml } from "./noteMarkdown";
+import { markdownToZoteroNoteHtml, escapeHtml } from "./noteMarkdown";
 import {
   generateChapterPrompts,
   type ChapterInfo,
@@ -112,14 +112,18 @@ export function ensureDeepReadSlotsHtml(
 
 export function migrateLegacyDeepReadHtmlToSlots(
   noteHtml: string,
-  itemTitle: string,
   template: MultiRoundPromptTemplate,
   planned: PlannedDeepRead,
 ): string {
-  let migratedHtml = buildDeepReadSkeletonHtml(itemTitle, template, planned);
+  const sanitizedHtml = stripStrikethroughHtml(noteHtml);
+  const sections = extractHeadingSections(sanitizedHtml);
   const matchedSlotIds = new Set<string>();
+  const parts: string[] = [];
+  let cursor = 0;
 
-  for (const section of extractHeadingSections(noteHtml)) {
+  for (const section of sections) {
+    parts.push(sanitizedHtml.slice(cursor, section.index));
+    cursor = section.endIndex;
     const slot = planned.slots.find(
       (candidate) =>
         !matchedSlotIds.has(candidate.id) &&
@@ -127,18 +131,24 @@ export function migrateLegacyDeepReadHtmlToSlots(
           titlesMatch(section.title, title),
         ),
     );
-    if (!slot || !hasGeneratedSectionContent(section.html)) continue;
+    if (!slot) {
+      parts.push(section.html);
+      continue;
+    }
 
-    migratedHtml = replaceDeepReadSlotHtml(
-      migratedHtml,
-      slot.id,
-      stripStrikethroughHtml(section.html),
-      "done",
+    parts.push(
+      wrapDeepReadSlotHtml(slot.id, section.html, sectionStatus(section.html)),
     );
     matchedSlotIds.add(slot.id);
   }
 
-  return migratedHtml;
+  parts.push(sanitizedHtml.slice(cursor));
+  const migratedHtml = ensurePlanMetadataHtml(
+    parts.join(""),
+    template,
+    planned,
+  );
+  return ensureDeepReadSlotsHtml(migratedHtml, planned);
 }
 
 export function fillDeepReadSlot(
@@ -212,6 +222,8 @@ function stripHtml(html: string): string {
 }
 
 type HeadingSection = {
+  index: number;
+  endIndex: number;
   title: string;
   html: string;
 };
@@ -228,12 +240,35 @@ function extractHeadingSections(noteHtml: string): HeadingSection[] {
   }
 
   return headings.map((heading, index) => ({
+    index: heading.index,
+    endIndex: headings[index + 1]?.index ?? noteHtml.length,
     title: heading.title,
     html: noteHtml.slice(
       heading.index,
       headings[index + 1]?.index ?? noteHtml.length,
     ),
   }));
+}
+
+function wrapDeepReadSlotHtml(
+  slotId: string,
+  innerHtml: string,
+  status: DeepReadSlotStatus,
+): string {
+  return `<!-- ${DEEP_READ_SLOT_PREFIX}:${slotId}:${status} -->\n${stripStrikethroughHtml(innerHtml)}\n<!-- ${DEEP_READ_SLOT_PREFIX}:${slotId}:end -->`;
+}
+
+function sectionStatus(html: string): DeepReadSlotStatus {
+  return hasGeneratedSectionContent(html) ? "done" : "pending";
+}
+
+function ensurePlanMetadataHtml(
+  noteHtml: string,
+  template: MultiRoundPromptTemplate,
+  planned: PlannedDeepRead,
+): string {
+  if (noteHtml.includes(`<!-- ${DEEP_READ_PLAN_META_PREFIX}:`)) return noteHtml;
+  return `${buildPlanMetadataComment(template, planned.chapters)}\n${noteHtml}`;
 }
 
 function titlesMatch(left: string, right: string): boolean {
@@ -264,13 +299,19 @@ function getComparableSlotTitles(slot: DeepReadSlot): string[] {
 }
 
 function hasGeneratedSectionContent(html: string): boolean {
-  const text = decodeBasicHtmlEntities(stripHtml(html))
+  const text = decodeBasicHtmlEntities(stripHtml(removeLeadingHeading(html)))
     .replace(/\s+/g, "")
     .trim();
   return (
     text.length > 20 &&
-    !/(?:等待生成|正在生成|已取消，重新运行AI精读时会从这里继续)/.test(text)
+    !/(?:⏳等待生成\.\.\.|🔄正在生成\.\.\.|已取消，重新运行AI精读时会从这里继续。?)/.test(
+      text,
+    )
   );
+}
+
+function removeLeadingHeading(html: string): string {
+  return html.replace(/^\s*<h[1-6]\b[^>]*>[\s\S]*?<\/h[1-6]>\s*/i, "");
 }
 
 function shouldPrependSlotHeading(

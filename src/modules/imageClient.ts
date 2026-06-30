@@ -113,6 +113,80 @@ export class ImageClient {
     return "gemini";
   }
 
+  /**
+   * Gecko HTTP/2 workaround for Gemini direct connections.
+   *
+   * Temporarily disables HTTP/2 to force HTTP/1.1 and raises network
+   * timeout prefs to match the configured request timeout.
+   *
+   * Only used for the Gemini path where the target host has no existing
+   * HTTP/2 connection in the pool.  NOT used for OpenAI-compatible
+   * proxies — those require server-side proxy_read_timeout tuning.
+   */
+  private static applyGeckoHttpWorkaround(
+    requestTimeoutMs: number,
+  ): { key: string; type: "int" | "bool"; val: any }[] {
+    const savedPrefs: { key: string; type: "int" | "bool"; val: any }[] = [];
+
+    const tuneIntPref = (key: string, newVal: number) => {
+      try {
+        let old: number | null = null;
+        try {
+          old = Services.prefs.getIntPref(key);
+        } catch {
+          /* pref does not exist */
+        }
+        savedPrefs.push({ key, type: "int", val: old });
+        Services.prefs.setIntPref(key, newVal);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const tuneBoolPref = (key: string, newVal: boolean) => {
+      try {
+        let old: boolean | null = null;
+        try {
+          old = Services.prefs.getBoolPref(key);
+        } catch {
+          /* pref does not exist */
+        }
+        savedPrefs.push({ key, type: "bool", val: old });
+        Services.prefs.setBoolPref(key, newVal);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    tuneBoolPref("network.http.http2.enabled", false);
+    tuneBoolPref("network.http.spdy.enabled", false);
+    const networkTimeoutSeconds = Math.max(
+      30,
+      Math.ceil(requestTimeoutMs / 1000),
+    );
+    tuneIntPref("network.http.response.timeout", networkTimeoutSeconds);
+    tuneIntPref("network.http.connection-timeout", networkTimeoutSeconds);
+
+    return savedPrefs;
+  }
+
+  private static restoreGeckoPrefs(
+    savedPrefs: { key: string; type: "int" | "bool"; val: any }[],
+  ): void {
+    for (const { key, type, val } of savedPrefs) {
+      try {
+        if (val !== null) {
+          if (type === "bool") Services.prefs.setBoolPref(key, val);
+          else Services.prefs.setIntPref(key, val);
+        } else {
+          Services.prefs.clearUserPref(key);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
   private static normalizeApiUrl(url: string): string {
     return (url || "").trim().replace(/\/$/, "");
   }
@@ -1361,6 +1435,14 @@ export class ImageClient {
       const responseBody =
         error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
 
+      ztoolkit.log(
+        `[AI-Butler] OpenAI 生图请求失败 — ` +
+          `status=${statusCode}, ` +
+          `name=${error?.name}, ` +
+          `message=${error?.message}, ` +
+          `result=${error?.result ? "0x" + error.result.toString(16) : "N/A"}`,
+      );
+
       let errorMessage = error?.message || "OpenAI 兼容生图请求失败";
       let errorName = "NetworkError";
 
@@ -1416,6 +1498,12 @@ export class ImageClient {
     } finally {
       cleanupAbortSignal?.();
     }
+
+    ztoolkit.log(
+      `[AI-Butler] OpenAI 生图请求完成 — ` +
+        `status=${response.status}, ` +
+        `responseSize=${response.response?.length ?? 0}`,
+    );
 
     if (response.status !== 200) {
       throw new ImageGenerationError(`HTTP ${response.status}`, {
@@ -1601,53 +1689,9 @@ export class ImageClient {
     );
     const requestStartTime = Date.now();
 
-    // Gecko 的 HTTP/2 实现有独立的 stream 空闲超时 (~30-45s)，
-    // 不受 network.http.response.timeout 等偏好控制。
-    // Gemini 生成 4K 图片时服务器在 50-120 秒内不返回任何数据，触发此超时。
-    // 解决方案：临时禁用 HTTP/2 强制 HTTP/1.1（无 stream 层超时），
-    // 并提升网络超时偏好，请求完成后恢复。
-    const savedPrefs: { key: string; type: "int" | "bool"; val: any }[] = [];
-
-    const tuneIntPref = (key: string, newVal: number) => {
-      try {
-        let old: number | null = null;
-        try {
-          old = Services.prefs.getIntPref(key);
-        } catch {
-          /* pref does not exist */
-        }
-        savedPrefs.push({ key, type: "int", val: old });
-        Services.prefs.setIntPref(key, newVal);
-      } catch {
-        /* ignore */
-      }
-    };
-
-    const tuneBoolPref = (key: string, newVal: boolean) => {
-      try {
-        let old: boolean | null = null;
-        try {
-          old = Services.prefs.getBoolPref(key);
-        } catch {
-          /* pref does not exist */
-        }
-        savedPrefs.push({ key, type: "bool", val: old });
-        Services.prefs.setBoolPref(key, newVal);
-      } catch {
-        /* ignore */
-      }
-    };
-
-    tuneBoolPref("network.http.http2.enabled", false);
-    tuneBoolPref("network.http.spdy.enabled", false);
-    const networkTimeoutSeconds = Math.max(
-      30,
-      Math.ceil(requestTimeoutMs / 1000),
-    );
-    tuneIntPref("network.http.response.timeout", networkTimeoutSeconds);
-    tuneIntPref("network.http.connection-timeout", networkTimeoutSeconds);
-
     throwIfAborted(options?.abortSignal);
+
+    const savedPrefs = this.applyGeckoHttpWorkaround(requestTimeoutMs);
 
     let response: any;
     let abortError: Error | null = null;
@@ -1724,20 +1768,7 @@ export class ImageClient {
       });
     } finally {
       cleanupAbortSignal?.();
-
-      // 恢复所有 Gecko 偏好
-      for (const { key, type, val } of savedPrefs) {
-        try {
-          if (val !== null) {
-            if (type === "bool") Services.prefs.setBoolPref(key, val);
-            else Services.prefs.setIntPref(key, val);
-          } else {
-            Services.prefs.clearUserPref(key);
-          }
-        } catch {
-          /* ignore */
-        }
-      }
+      this.restoreGeckoPrefs(savedPrefs);
     }
 
     const elapsedSec = ((Date.now() - requestStartTime) / 1000).toFixed(1);

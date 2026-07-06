@@ -62,6 +62,7 @@ let notifierID: string | null = null;
 let unsubscribeProgress: (() => void) | null = null;
 let unsubscribeComplete: (() => void) | null = null;
 let refreshTimer: number | null = null;
+const DEFAULT_REFRESH_DELAY_MS = 80;
 const pendingRefreshItemIDs = new Set<number>();
 let forceRefreshAll = false;
 const summaryNoteCache = new Map<number, boolean>();
@@ -209,6 +210,12 @@ export function isAiStatusTrackedNote(
   noteHtml: string,
 ): boolean {
   return isRegularSummaryNote(tags, noteHtml) || isDeepReadNote(tags, noteHtml);
+}
+
+export function shouldDeferLibraryStatusRefreshForSelection(
+  selectedItems: Array<Pick<Zotero.Item, "isNote"> | null | undefined>,
+): boolean {
+  return selectedItems.some((item) => item?.isNote?.() === true);
 }
 
 export function registerLibraryStatusColumn(): void {
@@ -586,14 +593,14 @@ function scheduleRefreshAll(): void {
   scheduleFlushRefresh();
 }
 
-function scheduleFlushRefresh(): void {
+function scheduleFlushRefresh(delayMs = DEFAULT_REFRESH_DELAY_MS): void {
   if (refreshTimer !== null) {
     return;
   }
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
     void flushRefresh();
-  }, 80) as unknown as number;
+  }, delayMs) as unknown as number;
 }
 
 async function flushRefresh(): Promise<void> {
@@ -601,6 +608,10 @@ async function flushRefresh(): Promise<void> {
   pendingRefreshItemIDs.clear();
   const shouldRefreshAll = forceRefreshAll;
   forceRefreshAll = false;
+
+  if (isAnyPaneViewingNote()) {
+    return;
+  }
 
   try {
     if (!shouldRefreshAll && itemIDs.length) {
@@ -617,6 +628,28 @@ async function flushRefresh(): Promise<void> {
   }
 
   invalidateOpenItemTrees();
+}
+
+function isAnyPaneViewingNote(): boolean {
+  try {
+    for (const pane of Zotero.getZoteroPanes?.() || []) {
+      const selectedItems = pane.getSelectedItems?.() as
+        | Array<Pick<Zotero.Item, "isNote"> | null | undefined>
+        | undefined;
+      if (
+        selectedItems &&
+        shouldDeferLibraryStatusRefreshForSelection(selectedItems)
+      ) {
+        return true;
+      }
+    }
+  } catch (error) {
+    logLibraryStatusColumn(
+      "[AI-Butler] AI status column note selection check failed",
+      error,
+    );
+  }
+  return false;
 }
 
 function invalidateOpenItemTrees(): void {

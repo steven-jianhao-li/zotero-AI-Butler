@@ -1,5 +1,9 @@
 import { expect } from "chai";
-import { shouldOmitAnthropicTemperature } from "../src/modules/llmproviders/AnthropicProvider";
+import {
+  DEFAULT_ANTHROPIC_MAX_TOKENS,
+  resolveAnthropicMaxTokens,
+  shouldOmitAnthropicTemperature,
+} from "../src/modules/llmproviders/AnthropicProvider";
 
 describe("Anthropic provider", function () {
   it("keeps temperature for older Claude models", function () {
@@ -15,6 +19,16 @@ describe("Anthropic provider", function () {
     expect(shouldOmitAnthropicTemperature("claude-opus-4-6-20260205")).to.equal(
       false,
     );
+  });
+
+  it("uses the app-level Anthropic default when max tokens are disabled", function () {
+    expect(resolveAnthropicMaxTokens({})).to.equal(
+      DEFAULT_ANTHROPIC_MAX_TOKENS,
+    );
+  });
+
+  it("keeps explicit Anthropic max token overrides", function () {
+    expect(resolveAnthropicMaxTokens({ maxTokens: 2048 })).to.equal(2048);
   });
 
   it("omits temperature for Opus 4.7+ models", function () {

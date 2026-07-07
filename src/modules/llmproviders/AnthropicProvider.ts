@@ -35,6 +35,12 @@ export function shouldOmitAnthropicTemperature(model: string): boolean {
   return Number(opus4Minor[1]) >= 7;
 }
 
+export const DEFAULT_ANTHROPIC_MAX_TOKENS = 100000;
+
+export function resolveAnthropicMaxTokens(options: LLMOptions): number {
+  return options.maxTokens ?? DEFAULT_ANTHROPIC_MAX_TOKENS;
+}
+
 function buildAnthropicTemperatureParam(
   model: string,
   options: LLMOptions,
@@ -68,7 +74,7 @@ export class AnthropicProvider implements ILlmProvider {
     );
     const apiKey = (options.apiKey || "").trim();
     const model = (options.model || "claude-3-5-sonnet-20241022").trim();
-    const maxTokens = options.maxTokens ?? 4096; // Anthropic 必填
+    const maxTokens = resolveAnthropicMaxTokens(options);
 
     if (!baseUrl) throw new Error("Anthropic API URL 未配置");
     if (!apiKey) throw new Error("Anthropic API Key 未配置");
@@ -252,7 +258,7 @@ export class AnthropicProvider implements ILlmProvider {
     );
     const apiKey = (options.apiKey || "").trim();
     const model = (options.model || "claude-3-5-sonnet-20241022").trim();
-    const maxTokens = options.maxTokens ?? 4096;
+    const maxTokens = resolveAnthropicMaxTokens(options);
 
     if (!baseUrl) throw new Error("Anthropic API URL 未配置");
     if (!apiKey) throw new Error("Anthropic API Key 未配置");
@@ -658,7 +664,7 @@ export class AnthropicProvider implements ILlmProvider {
     );
     const apiKey = (options.apiKey || "").trim();
     const model = (options.model || "claude-3-5-sonnet-20241022").trim();
-    const maxTokens = options.maxTokens ?? 8192;
+    const maxTokens = resolveAnthropicMaxTokens(options);
 
     if (!baseUrl) throw new Error("Anthropic API URL 未配置");
     if (!apiKey) throw new Error("Anthropic API Key 未配置");

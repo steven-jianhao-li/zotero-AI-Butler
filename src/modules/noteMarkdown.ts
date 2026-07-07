@@ -37,7 +37,6 @@ const NOTE_TABLE_STYLE =
   "max-width:100%; width:auto; table-layout:auto; overflow-wrap:anywhere; word-break:break-word;";
 const NOTE_MATH_BLOCK_STYLE =
   "text-align:center; max-width:100%; overflow-x:auto; overflow-y:hidden; overflow-wrap:anywhere; word-break:break-word; box-sizing:border-box;";
-
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -45,6 +44,26 @@ export function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function isInvalidXmlCharCode(code: number): boolean {
+  return (
+    (code >= 0x00 && code <= 0x08) ||
+    code === 0x0b ||
+    code === 0x0c ||
+    (code >= 0x0e && code <= 0x1f) ||
+    (code >= 0x7f && code <= 0x9f)
+  );
+}
+
+export function stripInvalidXmlChars(text: string): string {
+  let sanitized = "";
+  for (const char of text) {
+    const code = char.codePointAt(0);
+    if (code === undefined || isInvalidXmlCharCode(code)) continue;
+    sanitized += char;
+  }
+  return sanitized;
 }
 
 function decodeHtmlCodePoint(raw: string, radix: 10 | 16): string {
@@ -75,13 +94,28 @@ export function decodeMathHtmlEntities(text: string): string {
     );
 }
 
+export function requiresDisplayMath(content: string): boolean {
+  return /(^|[^\\])\\tag\s*\{/.test(content);
+}
+
+export function zoteroNoteMathHtml(content: string, isBlock: boolean): string {
+  const escapedContent = escapeHtml(content);
+  if (isBlock) {
+    return `<p style="text-align: center;"><span class="math">$$${escapedContent}$$</span></p>`;
+  }
+  if (requiresDisplayMath(content)) {
+    return `<span class="math">$$${escapedContent}$$</span>`;
+  }
+  return `<span class="math">$${escapedContent}$</span>`;
+}
+
 /**
  * Convert Markdown into the HTML dialect Zotero notes can render, including
  * Zotero-native math spans. Shared by summary notes and saved follow-up chats.
  */
 export function markdownToZoteroNoteHtml(markdown: string): string {
   const formulas: ProtectedFormula[] = [];
-  let processedMarkdown = markdown;
+  let processedMarkdown = stripInvalidXmlChars(markdown);
 
   processedMarkdown = processedMarkdown.replace(
     /(\$\$|\\\[)([\s\S]*?)(\$\$|\\\])/g,
@@ -124,11 +158,7 @@ export function markdownToZoteroNoteHtml(markdown: string): string {
       const formulaData = formulas[parseInt(blockIndex ?? inlineIndex)];
       if (!formulaData) return _match;
 
-      const escapedContent = escapeHtml(formulaData.content);
-      if (formulaData.isBlock) {
-        return `<p style="text-align: center;"><span class="math">$\\displaystyle ${escapedContent}$</span></p>`;
-      }
-      return `<span class="math">$${escapedContent}$</span>`;
+      return zoteroNoteMathHtml(formulaData.content, formulaData.isBlock);
     },
   );
 
@@ -177,7 +207,7 @@ function normalizeMarkdownBlockBoundaries(markdown: string): string {
  */
 export function markdownToDisplayHtml(markdown: string): string {
   const formulas: ProtectedFormula[] = [];
-  let html = markdown;
+  let html = stripInvalidXmlChars(markdown);
 
   html = html.replace(/\\\[([\s\S]*?)\\\]/g, (_match, formula) => {
     const placeholder = `AI_BUTLER_FORMULA_BLOCK_${formulas.length}_END`;
@@ -219,8 +249,8 @@ export function markdownToDisplayHtml(markdown: string): string {
     const formulaData = formulas[parseInt(index)];
     if (!formulaData) return _match;
 
-    const { isBlock } = formulaData;
     const content = decodeMathHtmlEntities(formulaData.content);
+    const isBlock = formulaData.isBlock || requiresDisplayMath(content);
     try {
       const rendered = katex.renderToString(content, {
         throwOnError: false,

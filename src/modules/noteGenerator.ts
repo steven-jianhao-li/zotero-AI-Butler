@@ -36,7 +36,7 @@ import {
   LLMNoteMetadataService,
   type LLMNoteMetadata,
 } from "./llmNoteMetadata";
-import { markdownToZoteroNoteHtml } from "./noteMarkdown";
+import { markdownToZoteroNoteHtml, zoteroNoteMathHtml } from "./noteMarkdown";
 import type { LLMAbortSignal, LLMResponse } from "./llmproviders/types";
 import {
   isAbortError,
@@ -923,20 +923,7 @@ export class NoteGenerator {
         if (!formulaData) return _match;
         const { content, isBlock } = formulaData;
 
-        // 关键修复：必须对 LaTeX 内容进行 HTML 转义，否则 <, >, & 等字符会破坏 XML 结构
-        const escapedContent = NoteGenerator.escapeHtml(content);
-
-        // 根据用户反馈和 Zotero 特性调整：
-        // 鉴于用户反馈块级公式 <math-display> 未渲染，而行内公式有效
-        // 为了稳妥，暂时将所有公式都作为 <math-inline> 生成
-        if (isBlock) {
-          // 块级公式：必须使用 $ 包裹（Zotero不支持 $$），加上 \displaystyle 强制显示为块级样式
-          // 外层用 p 和 style 实现居中
-          return `<p style="text-align: center;"><span class="math">$\\displaystyle ${escapedContent}$</span></p>`;
-        } else {
-          // 行内公式：使用 $ 包裹
-          return `<span class="math">$${escapedContent}$</span>`;
-        }
+        return zoteroNoteMathHtml(content, isBlock);
       },
     );
 

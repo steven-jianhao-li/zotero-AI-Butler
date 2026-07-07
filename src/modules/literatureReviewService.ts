@@ -18,6 +18,7 @@
 
 import { PDFExtractor } from "./pdfExtractor";
 import { NoteGenerator } from "./noteGenerator";
+import { zoteroNoteMathHtml } from "./noteMarkdown";
 import LLMService from "./llmService";
 import {
   LLMNoteMetadataService,
@@ -743,17 +744,15 @@ ${entryList}
     renderedHtml = renderedHtml.replace(/\s+style="[^"]*"/g, "");
 
     // 将 LaTeX 公式转换为 Zotero 原生格式
-    // 块级公式: $$...$$ → <span class="math">$\displaystyle ...$</span>
     renderedHtml = renderedHtml.replace(
       /\$\$([\s\S]*?)\$\$/g,
-      (_match, formula) =>
-        `<span class="math">$\\displaystyle ${formula.trim()}$</span>`,
+      (_match, formula) => zoteroNoteMathHtml(formula.trim(), true),
     );
     // 行内公式: $...$ → <span class="math">$...$</span>
     // 使用负向前瞻/后瞻避免匹配已处理的 $$
     renderedHtml = renderedHtml.replace(
       /(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$(?!\$)/g,
-      (_match, formula) => `<span class="math">$${formula.trim()}$</span>`,
+      (_match, formula) => zoteroNoteMathHtml(formula.trim(), false),
     );
 
     // 将原始 Markdown 存储在预格式区块中，供 findTableNote 提取

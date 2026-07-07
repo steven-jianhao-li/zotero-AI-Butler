@@ -43,6 +43,7 @@ import {
   markdownToDisplayHtml,
   normalizeFollowUpChatNoteHtml,
   parseFollowUpChatPairsFromNoteHtml,
+  stripInvalidXmlChars,
 } from "../noteMarkdown";
 import { AiNoteService } from "../aiNoteService";
 
@@ -506,7 +507,7 @@ export class SummaryView extends BaseView {
       return;
     }
 
-    const userMessage = this.chatInput.value.trim();
+    const userMessage = stripInvalidXmlChars(this.chatInput.value).trim();
     if (!userMessage) {
       new ztoolkit.ProgressWindow("追问", { closeTime: 2000 })
         .createLine({ text: "请输入问题内容", type: "default" })

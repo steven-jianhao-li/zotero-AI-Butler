@@ -37,7 +37,6 @@ const NOTE_TABLE_STYLE =
   "max-width:100%; width:auto; table-layout:auto; overflow-wrap:anywhere; word-break:break-word;";
 const NOTE_MATH_BLOCK_STYLE =
   "text-align:center; max-width:100%; overflow-x:auto; overflow-y:hidden; overflow-wrap:anywhere; word-break:break-word; box-sizing:border-box;";
-
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -45,6 +44,26 @@ export function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function isInvalidXmlCharCode(code: number): boolean {
+  return (
+    (code >= 0x00 && code <= 0x08) ||
+    code === 0x0b ||
+    code === 0x0c ||
+    (code >= 0x0e && code <= 0x1f) ||
+    (code >= 0x7f && code <= 0x9f)
+  );
+}
+
+export function stripInvalidXmlChars(text: string): string {
+  let sanitized = "";
+  for (const char of text) {
+    const code = char.codePointAt(0);
+    if (code === undefined || isInvalidXmlCharCode(code)) continue;
+    sanitized += char;
+  }
+  return sanitized;
 }
 
 function decodeHtmlCodePoint(raw: string, radix: 10 | 16): string {
@@ -81,7 +100,7 @@ export function decodeMathHtmlEntities(text: string): string {
  */
 export function markdownToZoteroNoteHtml(markdown: string): string {
   const formulas: ProtectedFormula[] = [];
-  let processedMarkdown = markdown;
+  let processedMarkdown = stripInvalidXmlChars(markdown);
 
   processedMarkdown = processedMarkdown.replace(
     /(\$\$|\\\[)([\s\S]*?)(\$\$|\\\])/g,
@@ -177,7 +196,7 @@ function normalizeMarkdownBlockBoundaries(markdown: string): string {
  */
 export function markdownToDisplayHtml(markdown: string): string {
   const formulas: ProtectedFormula[] = [];
-  let html = markdown;
+  let html = stripInvalidXmlChars(markdown);
 
   html = html.replace(/\\\[([\s\S]*?)\\\]/g, (_match, formula) => {
     const placeholder = `AI_BUTLER_FORMULA_BLOCK_${formulas.length}_END`;

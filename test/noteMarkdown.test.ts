@@ -81,6 +81,22 @@ describe("note Markdown rendering", function () {
     expect(html).not.to.contain('<span class="math">');
   });
 
+  it("strips XML-invalid clipboard controls before rendering (#347)", function () {
+    const pastedText = ["·ccc", "\u000Bddd", "正常保留换行\t和制表符"].join(
+      "\n",
+    );
+
+    const displayHtml = markdownToDisplayHtml(pastedText);
+    const noteHtml = markdownToZoteroNoteHtml(pastedText);
+
+    expect(displayHtml).to.contain("·ccc");
+    expect(displayHtml).to.contain("ddd");
+    expect(displayHtml).not.to.contain("\u000B");
+    expect(noteHtml).to.contain("·ccc");
+    expect(noteHtml).to.contain("ddd");
+    expect(noteHtml).not.to.contain("\u000B");
+  });
+
   it("builds quick-chat context from the current dialog only", function () {
     const dialogHistory = [
       { role: "user" as const, content: "First question" },

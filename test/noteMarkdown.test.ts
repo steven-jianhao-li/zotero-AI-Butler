@@ -4,6 +4,7 @@ import {
   decodeMathHtmlEntities,
   markdownToDisplayHtml,
   markdownToZoteroNoteHtml,
+  requiresDisplayMath,
   normalizeFollowUpChatNoteHtml,
   parseFollowUpChatPairsFromNoteHtml,
 } from "../src/modules/noteMarkdown";
@@ -17,7 +18,7 @@ describe("note Markdown rendering", function () {
 
     expect(html).to.contain("<h2>Follow-up answer</h2>");
     expect(html).to.contain('<span class="math">$E=mc^2$</span>');
-    expect(html).to.contain("\\displaystyle a_b = c^2");
+    expect(html).to.contain("$$a_b = c^2$$");
     expect(html).not.to.contain("## Follow-up answer");
   });
 
@@ -25,6 +26,18 @@ describe("note Markdown rendering", function () {
     const html = markdownToZoteroNoteHtml("Compare $a < b & c$ safely.");
 
     expect(html).to.contain('<span class="math">$a &lt; b &amp; c$</span>');
+  });
+
+  it("keeps tagged equations in display math mode (#346)", function () {
+    const formula = String.raw`\mathbf{z}_{NAN} = \mathbf{z}_{1} \cdot \mathbf{z}_{0}^{-1}, \tag{1}`;
+    const noteHtml = markdownToZoteroNoteHtml(`$${formula}$`);
+    const displayHtml = markdownToDisplayHtml(`$${formula}$`);
+
+    expect(requiresDisplayMath(formula)).to.equal(true);
+    expect(noteHtml).to.contain(`<span class="math">$$${formula}$$</span>`);
+    expect(noteHtml).not.to.contain("\\displaystyle");
+    expect(displayHtml).to.contain('class="katex-display"');
+    expect(displayHtml).not.to.contain("katex-error");
   });
 
   it("keeps text after headings and block formulas as paragraphs", function () {

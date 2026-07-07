@@ -94,6 +94,21 @@ export function decodeMathHtmlEntities(text: string): string {
     );
 }
 
+export function requiresDisplayMath(content: string): boolean {
+  return /(^|[^\\])\\tag\s*\{/.test(content);
+}
+
+export function zoteroNoteMathHtml(content: string, isBlock: boolean): string {
+  const escapedContent = escapeHtml(content);
+  if (isBlock) {
+    return `<p style="text-align: center;"><span class="math">$$${escapedContent}$$</span></p>`;
+  }
+  if (requiresDisplayMath(content)) {
+    return `<span class="math">$$${escapedContent}$$</span>`;
+  }
+  return `<span class="math">$${escapedContent}$</span>`;
+}
+
 /**
  * Convert Markdown into the HTML dialect Zotero notes can render, including
  * Zotero-native math spans. Shared by summary notes and saved follow-up chats.
@@ -143,11 +158,7 @@ export function markdownToZoteroNoteHtml(markdown: string): string {
       const formulaData = formulas[parseInt(blockIndex ?? inlineIndex)];
       if (!formulaData) return _match;
 
-      const escapedContent = escapeHtml(formulaData.content);
-      if (formulaData.isBlock) {
-        return `<p style="text-align: center;"><span class="math">$\\displaystyle ${escapedContent}$</span></p>`;
-      }
-      return `<span class="math">$${escapedContent}$</span>`;
+      return zoteroNoteMathHtml(formulaData.content, formulaData.isBlock);
     },
   );
 
@@ -238,8 +249,8 @@ export function markdownToDisplayHtml(markdown: string): string {
     const formulaData = formulas[parseInt(index)];
     if (!formulaData) return _match;
 
-    const { isBlock } = formulaData;
     const content = decodeMathHtmlEntities(formulaData.content);
+    const isBlock = formulaData.isBlock || requiresDisplayMath(content);
     try {
       const rendered = katex.renderToString(content, {
         throwOnError: false,

@@ -35,6 +35,7 @@ import {
   buildFollowUpChatPairNoteHtml,
   decodeMathHtmlEntities,
   normalizeFollowUpChatNoteHtml,
+  requiresDisplayMath,
 } from "./noteMarkdown";
 import { AiNoteService, type AiNoteKind } from "./aiNoteService";
 import { SummaryView } from "./views/SummaryView";
@@ -4572,7 +4573,10 @@ async function loadNoteContent(
             trimmed.startsWith("$") && trimmed.endsWith("$");
           const hasDisplayStyle = trimmed.includes("\\displaystyle");
 
-          const isBlock = isDoubleDollar || (isSingleDollar && hasDisplayStyle);
+          const isTaggedDisplay = requiresDisplayMath(trimmed);
+          const isBlock =
+            isDoubleDollar ||
+            (isSingleDollar && (hasDisplayStyle || isTaggedDisplay));
 
           if (isBlock) {
             // Removing delimiters
@@ -4597,16 +4601,20 @@ async function loadNoteContent(
             }
           } else if (isSingleDollar) {
             const latex = trimmed.slice(1, -1);
+            const isTaggedDisplay = requiresDisplayMath(latex);
             try {
               const rendered = katex.renderToString(cleanLatex(latex), {
                 throwOnError: false,
-                displayMode: false, // inline
+                displayMode: isTaggedDisplay ? true : false, // inline
                 output: "html",
                 trust: true,
                 strict: false,
               });
               // 检查渲染后HTML长度，超过阈值则转为块级可滚动公式
-              if (rendered.length > INLINE_FORMULA_TO_BLOCK_THRESHOLD) {
+              if (
+                isTaggedDisplay ||
+                rendered.length > INLINE_FORMULA_TO_BLOCK_THRESHOLD
+              ) {
                 return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;
               }
               return `<span class="katex-inline">${rendered}</span>`;
@@ -4658,18 +4666,20 @@ async function loadNoteContent(
         inlineRegex,
         (_match: string, formula: string) => {
           try {
-            const rendered = katex.renderToString(
-              cleanLatex(decodeMathHtmlEntities(formula.trim())),
-              {
-                throwOnError: false,
-                displayMode: false,
-                output: "html",
-                trust: true,
-                strict: false,
-              },
-            );
+            const latex = decodeMathHtmlEntities(formula.trim());
+            const isTaggedDisplay = requiresDisplayMath(latex);
+            const rendered = katex.renderToString(cleanLatex(latex), {
+              throwOnError: false,
+              displayMode: isTaggedDisplay ? true : false,
+              output: "html",
+              trust: true,
+              strict: false,
+            });
             // 检查渲染后HTML长度，超过阈值则转为块级可滚动公式
-            if (rendered.length > INLINE_FORMULA_TO_BLOCK_THRESHOLD) {
+            if (
+              isTaggedDisplay ||
+              rendered.length > INLINE_FORMULA_TO_BLOCK_THRESHOLD
+            ) {
               return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;
             }
             return `<span class="katex-inline">${rendered}</span>`;

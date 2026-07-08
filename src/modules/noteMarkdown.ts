@@ -100,11 +100,8 @@ export function requiresDisplayMath(content: string): boolean {
 
 export function zoteroNoteMathHtml(content: string, isBlock: boolean): string {
   const escapedContent = escapeHtml(content);
-  if (isBlock) {
-    return `<p style="text-align: center;"><span class="math">$$${escapedContent}$$</span></p>`;
-  }
-  if (requiresDisplayMath(content)) {
-    return `<span class="math">$$${escapedContent}$$</span>`;
+  if (isBlock || requiresDisplayMath(content)) {
+    return `<p style="text-align: center;"><span class="math" data-ai-butler-display-math="true">$${escapedContent}$</span></p>`;
   }
   return `<span class="math">$${escapedContent}$</span>`;
 }

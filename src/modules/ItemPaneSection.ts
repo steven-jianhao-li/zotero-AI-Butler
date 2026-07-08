@@ -4555,14 +4555,44 @@ async function loadNoteContent(
     const renderLatexFormulas = (content: string): string => {
       let result = content;
 
+      result = result.replace(
+        /<p\b([^>]*)>\s*(<span\b([^>]*)class="[^"]*\bmath\b[^"]*"([^>]*)>)/g,
+        (
+          match: string,
+          paragraphAttrs: string,
+          spanOpen: string,
+          beforeClassAttrs: string,
+          afterClassAttrs: string,
+        ) => {
+          if (
+            /text-align\s*:\s*center/i.test(paragraphAttrs) &&
+            !/\bdata-ai-butler-display-math\s*=/i.test(spanOpen)
+          ) {
+            return match.replace(
+              spanOpen,
+              `<span${beforeClassAttrs}class="math"${afterClassAttrs} data-ai-butler-display-math="true">`,
+            );
+          }
+          return match;
+        },
+      );
+
       // 1. Render Zotero native format: <span class="math">...</span> (contains $...$ or $$...$$)
       result = result.replace(
-        /<span class="math">([\s\S]*?)<\/span>/g,
-        (_match: string, innerContent: string) => {
+        /<span\b([^>]*)class="[^"]*\bmath\b[^"]*"([^>]*)>([\s\S]*?)<\/span>/g,
+        (
+          _match: string,
+          beforeClassAttrs: string,
+          afterClassAttrs: string,
+          innerContent: string,
+        ) => {
           // content might be $x$ or $$x$$ or escaped HTML
           const unescaped = decodeMathHtmlEntities(innerContent);
 
           const trimmed = unescaped.trim();
+          const mathAttrs = `${beforeClassAttrs} ${afterClassAttrs}`;
+          const isMarkedDisplay =
+            /\bdata-ai-butler-display-math\s*=\s*["']true["']/i.test(mathAttrs);
 
           // Check for block formula markers
           // 1. Double dollar signs $$...$$
@@ -4575,6 +4605,7 @@ async function loadNoteContent(
 
           const isTaggedDisplay = requiresDisplayMath(trimmed);
           const isBlock =
+            isMarkedDisplay ||
             isDoubleDollar ||
             (isSingleDollar && (hasDisplayStyle || isTaggedDisplay));
 

@@ -35,6 +35,7 @@ import {
   buildFollowUpChatPairNoteHtml,
   decodeMathHtmlEntities,
   normalizeFollowUpChatNoteHtml,
+  normalizeLatexForKatex,
   requiresDisplayMath,
 } from "./noteMarkdown";
 import { AiNoteService, type AiNoteKind } from "./aiNoteService";
@@ -4545,9 +4546,9 @@ async function loadNoteContent(
      * LLM 有时会在公式中输出 <br> 等 HTML 标签，需要在渲染前移除
      */
     const cleanLatex = (latex: string): string => {
-      return latex
+      return normalizeLatexForKatex(latex)
         .replace(/<br\s*\/?>/gi, " ") // <br> or <br/> -> 空格
-        .replace(/<[^>]+>/g, ""); // 移除其他 HTML 标签
+        .replace(/<\/?(?:span|br|p|div|em|strong|code|sup|sub)\b[^>]*>/gi, ""); // 移除常见 HTML 标签，保留 LaTeX 比较符号
     };
 
     // Pre-render LaTeX formulas BEFORE XML validation
@@ -4577,6 +4578,29 @@ async function loadNoteContent(
         },
       );
 
+      result = result.replace(
+        /<pre\b[^>]*class="[^"]*\bmath\b[^"]*"[^>]*>([\s\S]*?)<\/pre>/g,
+        (_match: string, innerContent: string) => {
+          const unescaped = decodeMathHtmlEntities(innerContent).trim();
+          const latex =
+            unescaped.startsWith("$$") && unescaped.endsWith("$$")
+              ? unescaped.slice(2, -2)
+              : unescaped;
+          try {
+            const rendered = katex.renderToString(cleanLatex(latex), {
+              throwOnError: false,
+              displayMode: true,
+              output: "html",
+              trust: true,
+              strict: false,
+            });
+            return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;
+          } catch {
+            return `<code>${innerContent}</code>`;
+          }
+        },
+      );
+
       // 1. Render Zotero native format: <span class="math">...</span> (contains $...$ or $$...$$)
       result = result.replace(
         /<span\b([^>]*)class="[^"]*\bmath\b[^"]*"([^>]*)>([\s\S]*?)<\/span>/g,
@@ -4603,7 +4627,12 @@ async function loadNoteContent(
             trimmed.startsWith("$") && trimmed.endsWith("$");
           const hasDisplayStyle = trimmed.includes("\\displaystyle");
 
-          const isTaggedDisplay = requiresDisplayMath(trimmed);
+          const rawLatex = isDoubleDollar
+            ? trimmed.slice(2, -2)
+            : isSingleDollar
+              ? trimmed.slice(1, -1)
+              : trimmed;
+          const isTaggedDisplay = requiresDisplayMath(rawLatex);
           const isBlock =
             isMarkedDisplay ||
             isDoubleDollar ||

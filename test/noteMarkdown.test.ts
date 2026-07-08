@@ -4,6 +4,7 @@ import {
   decodeMathHtmlEntities,
   markdownToDisplayHtml,
   markdownToZoteroNoteHtml,
+  normalizeLatexForKatex,
   requiresDisplayMath,
   normalizeFollowUpChatNoteHtml,
   parseFollowUpChatPairsFromNoteHtml,
@@ -18,9 +19,8 @@ describe("note Markdown rendering", function () {
 
     expect(html).to.contain("<h2>Follow-up answer</h2>");
     expect(html).to.contain('<span class="math">$E=mc^2$</span>');
-    expect(html).to.contain(
-      '<span class="math" data-ai-butler-display-math="true">$a_b = c^2$</span>',
-    );
+    expect(html).to.contain(`<pre class="math"`);
+    expect(html).to.contain(`$$a_b = c^2$$`);
     expect(html).not.to.contain("## Follow-up answer");
   });
 
@@ -36,13 +36,26 @@ describe("note Markdown rendering", function () {
     const displayHtml = markdownToDisplayHtml(`$${formula}$`);
 
     expect(requiresDisplayMath(formula)).to.equal(true);
-    expect(noteHtml).to.contain(
-      `<span class="math" data-ai-butler-display-math="true">$${formula}$</span>`,
-    );
-    expect(noteHtml).not.to.contain(`$$${formula}$$`);
+    expect(noteHtml).to.contain(`<pre class="math"`);
+    expect(noteHtml).to.contain(`$$${formula}$$`);
+    expect(noteHtml).not.to.contain(`<p><pre`);
+    expect(noteHtml).not.to.contain(`<span class="math">$${formula}$</span>`);
     expect(noteHtml).not.to.contain("\\displaystyle");
     expect(displayHtml).to.contain('class="katex-display"');
     expect(displayHtml).not.to.contain("katex-error");
+  });
+
+  it("normalizes escaped angle brackets before KaTeX rendering", function () {
+    const formula = String.raw`\text {pairflow} := &lt; C _ {I P}, S _ {I P}, t &gt;`;
+    const normalized = normalizeLatexForKatex(formula);
+    const html = markdownToDisplayHtml(`$${formula}$`);
+
+    expect(normalized).to.contain("\\langle");
+    expect(normalized).to.contain("\\rangle");
+    expect(html).to.contain('class="katex-inline"');
+    expect(html).to.contain("pairflow");
+    expect(html).to.contain("C");
+    expect(html).not.to.contain("math-fallback");
   });
 
   it("keeps text after headings and block formulas as paragraphs", function () {

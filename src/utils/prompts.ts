@@ -258,7 +258,8 @@ export type MultiRoundPromptPhase =
 export const MULTI_ROUND_PROMPT_TEMPLATE_SCHEMA =
   "zotero-ai-butler.multi-round-prompt-template";
 export const MULTI_ROUND_PROMPT_TEMPLATE_EXPORT_VERSION = 2;
-export const DEFAULT_DEEP_READ_CHAPTER_LIMIT = Number.POSITIVE_INFINITY;
+export const DEFAULT_DEEP_READ_CHAPTER_LIMIT = 12;
+export const MAX_DEEP_READ_CHAPTER_LIMIT = 12;
 
 export interface MultiRoundPromptTemplate {
   id: string;
@@ -572,6 +573,7 @@ export function parseChapterStructureResult(
       const parsed = JSON.parse(candidate.trim());
       const chapters = normalizeChapterArray(
         (parsed as { chapters?: unknown }).chapters,
+        DEFAULT_DEEP_READ_CHAPTER_LIMIT,
       );
       if (chapters.length > 0) {
         return { chapters, source: "json" };
@@ -631,9 +633,18 @@ export function generateChapterPrompts(
   fixedPromptsCount = 0,
   maxChapters = DEFAULT_DEEP_READ_CHAPTER_LIMIT,
 ): MultiRoundPromptItem[] {
-  return chapters.slice(0, maxChapters).map((chapter, index) => ({
+  const limit = Math.min(
+    MAX_DEEP_READ_CHAPTER_LIMIT,
+    Math.max(
+      1,
+      Number.isFinite(maxChapters)
+        ? Math.round(maxChapters)
+        : DEFAULT_DEEP_READ_CHAPTER_LIMIT,
+    ),
+  );
+  return chapters.slice(0, limit).map((chapter, index) => ({
     id: `chapter_${chapter.id || `ch${index + 1}`}`,
-    title: chapter.title_zh || chapter.title_en || `\u7b2c ${index + 1} \u7ae0`,
+    title: chapter.title_zh || chapter.title_en || `第 ${index + 1} 章`,
     prompt: chapterTemplate
       .replace(/\{\{chapter_index\}\}/g, String(index + 1))
       .replace(/\{\{title_zh\}\}/g, chapter.title_zh || "")
@@ -643,7 +654,6 @@ export function generateChapterPrompts(
     order: fixedPromptsCount + index + 1,
   }));
 }
-
 export function cloneMultiRoundPromptTemplate(
   template: MultiRoundPromptTemplate,
 ): MultiRoundPromptTemplate {
@@ -684,8 +694,8 @@ function normalizeSequentialDynamicPhase(
     value.contextStrategy === "full_history" ? "full_history" : "last_round";
   const maxChapters =
     typeof value.maxChapters === "number" && Number.isFinite(value.maxChapters)
-      ? Math.max(1, Math.round(value.maxChapters))
-      : undefined;
+      ? Math.min(MAX_DEEP_READ_CHAPTER_LIMIT, Math.max(1, Math.round(value.maxChapters)))
+      : DEFAULT_DEEP_READ_CHAPTER_LIMIT;
 
   return {
     id: normalizeMultiRoundPromptId(value.id, index),
@@ -747,11 +757,19 @@ function validateMultiRoundSlotIds(phases: MultiRoundPromptPhase[]): void {
   });
 }
 
-function normalizeChapterArray(value: unknown): ChapterInfo[] {
+function normalizeChapterArray(
+  value: unknown,
+  maxChapters = DEFAULT_DEEP_READ_CHAPTER_LIMIT,
+): ChapterInfo[] {
   if (!Array.isArray(value)) {
     return [];
   }
+  const seen = new Set<string>();
+  const limit = Math.min(MAX_DEEP_READ_CHAPTER_LIMIT, Math.max(1, maxChapters));
   return value.reduce<ChapterInfo[]>((chapters, entry, index) => {
+    if (chapters.length >= limit) {
+      return chapters;
+    }
     if (!isRecord(entry)) {
       return chapters;
     }
@@ -760,10 +778,17 @@ function normalizeChapterArray(value: unknown): ChapterInfo[] {
     if (!titleZh && !titleEn) {
       return chapters;
     }
+    const normalizedTitleZh = titleZh || titleEn;
+    const normalizedTitleEn = titleEn;
+    const key = `${normalizedTitleZh}\n${normalizedTitleEn}`.toLowerCase();
+    if (seen.has(key)) {
+      return chapters;
+    }
+    seen.add(key);
     chapters.push({
       id: normalizeMultiRoundPromptId(entry.id, index).replace(/^chapter_/, ""),
-      title_zh: titleZh || titleEn,
-      title_en: titleEn,
+      title_zh: normalizedTitleZh,
+      title_en: normalizedTitleEn,
     });
     return chapters;
   }, []);

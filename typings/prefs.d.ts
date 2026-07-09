@@ -46,6 +46,11 @@ declare namespace _ZoteroTypes {
       "requestTimeout": string;
       "mineruApiKey": string;
       "mineruModelVersion": string;
+      "mineruSaveMarkdown": boolean;
+      "mineruSaveAsAttachment": boolean;
+      "mineruSyncExternal": boolean;
+      "mineruExternalPath": string;
+      "mineruFileNameMode": string;
       "summaryPrompt": string;
       "customPrompts": string;
       "summaryMode": string;

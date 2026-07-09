@@ -58,6 +58,11 @@ pref("__prefsPrefix__.requestTimeout", "300000"); // 5分钟超时
 // MINERU API KEY
 pref("__prefsPrefix__.mineruApiKey", "");
 pref("__prefsPrefix__.mineruModelVersion", "vlm");
+pref("__prefsPrefix__.mineruSaveMarkdown", false);
+pref("__prefsPrefix__.mineruSaveAsAttachment", true);
+pref("__prefsPrefix__.mineruSyncExternal", false);
+pref("__prefsPrefix__.mineruExternalPath", "");
+pref("__prefsPrefix__.mineruFileNameMode", "citationKey-title");
 
 // ==================== 提示词配置 ====================
 pref(

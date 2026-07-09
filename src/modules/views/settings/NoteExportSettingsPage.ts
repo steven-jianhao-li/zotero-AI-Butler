@@ -20,6 +20,7 @@ import {
 
 export class NoteExportSettingsPage {
   private container: HTMLElement;
+  private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -89,7 +90,10 @@ export class NoteExportSettingsPage {
     browseButton.addEventListener("click", async () => {
       try {
         const selected = await pickFolder("选择 AI 笔记导出目录");
-        if (selected) (pathInput as HTMLInputElement).value = selected;
+        if (selected) {
+          (pathInput as HTMLInputElement).value = selected;
+          saveCurrentSettings(true);
+        }
       } catch (error) {
         ztoolkit.log("[AI-Butler][NoteExport] 选择导出目录失败:", error);
         showToast("选择目录失败，请手动输入目录", "error");
@@ -120,6 +124,8 @@ export class NoteExportSettingsPage {
         return;
       }
       addWatchedCollection(collection.id);
+      AutoNoteExportManager.getInstance().reload();
+      showToast("自动导出设置已保存", "success");
       this.render();
     });
     collectionActions.appendChild(addSelectedButton);
@@ -171,14 +177,7 @@ export class NoteExportSettingsPage {
       ),
     );
 
-    const actions = doc.createElement("div");
-    Object.assign(actions.style, {
-      display: "flex",
-      gap: "12px",
-      marginTop: "8px",
-    });
-    const saveButton = createStyledButton("保存设置", "#4caf50", "medium");
-    saveButton.addEventListener("click", () => {
+    const saveCurrentSettings = (showNotice = true) => {
       setNoteExportConfig({
         enabled: getCheckboxValue(this.container, "noteExportEnabled", false),
         rootPath: (pathInput as HTMLInputElement).value,
@@ -199,11 +198,17 @@ export class NoteExportSettingsPage {
         ),
       });
       AutoNoteExportManager.getInstance().reload();
-      showToast("自动导出设置已保存", "success");
-      this.render();
-    });
-    actions.appendChild(saveButton);
-    form.appendChild(actions);
+      if (showNotice) showToast("自动导出设置已保存", "success");
+    };
+    const scheduleAutoSave = () => {
+      if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
+      this.autoSaveTimer = setTimeout(() => {
+        this.autoSaveTimer = null;
+        saveCurrentSettings(true);
+      }, 500);
+    };
+    form.addEventListener("input", scheduleAutoSave);
+    form.addEventListener("change", scheduleAutoSave);
 
     this.container.appendChild(form);
   }
@@ -241,6 +246,8 @@ export class NoteExportSettingsPage {
       const removeButton = createStyledButton("移除", "#f44336", "small");
       removeButton.addEventListener("click", () => {
         removeWatchedCollection(collectionId);
+        AutoNoteExportManager.getInstance().reload();
+        showToast("自动导出设置已保存", "success");
         this.render();
       });
       row.appendChild(removeButton);

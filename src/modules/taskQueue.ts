@@ -702,7 +702,7 @@ export class TaskQueueManager {
       progress: 0,
       createdAt: new Date(),
       retryCount: 0,
-      maxRetries: parseInt(getPref("maxRetries") as string) || 3,
+      maxRetries: 1,
       taskType: "deepRead",
       workflowStage: "等待 AI 精读",
       options: deepReadOptions,
@@ -2260,47 +2260,23 @@ export class TaskQueueManager {
           artifactType === "deepRead" &&
           artifact.reason === "deep-read-slots-incomplete"
         ) {
-          task.retryCount++;
-          const maxAutoCompletionAttempts = Math.max(1, task.maxRetries || 3);
-          if (task.retryCount >= maxAutoCompletionAttempts) {
-            task.status = TaskStatus.FAILED;
-            task.progress = Math.min(task.progress || 0, 95);
-            task.completedAt = new Date();
-            task.duration = task.startedAt
-              ? Math.floor(
-                  (task.completedAt.getTime() - task.startedAt.getTime()) /
-                    1000,
-                )
-              : undefined;
-            task.error =
-              "AI deep read is still incomplete after automatic completion attempts; please use manual completion.";
-            task.errorDetails = `Auto completion attempts exhausted (${task.retryCount}/${maxAutoCompletionAttempts}).`;
-            task.workflowStage = "Auto completion attempts exhausted";
-            this.notifyProgress(taskId, task.progress, task.error);
-            this.notifyComplete(taskId, false, task.error);
-            this.notifyStream(taskId, { type: "error" });
-            logTaskQueue(
-              `AI deep read auto completion stopped after ${task.retryCount}/${maxAutoCompletionAttempts}: ${task.title} (${taskId})`,
-            );
-            return false;
-          }
-
-          task.status = TaskStatus.PENDING;
+          task.status = TaskStatus.FAILED;
           task.progress = Math.min(task.progress || 0, 95);
-          task.startedAt = undefined;
-          task.completedAt = undefined;
-          task.duration = undefined;
-          task.error = undefined;
-          task.errorDetails = undefined;
-          task.workflowStage = "等待补全未完成精读轮次";
-          this.notifyProgress(
-            taskId,
-            task.progress,
-            "AI 精读尚未完整，已重新加入队列补全未完成轮次",
-          );
-          this.notifyStream(taskId, { type: "finish" });
+          task.completedAt = new Date();
+          task.duration = task.startedAt
+            ? Math.floor(
+                (task.completedAt.getTime() - task.startedAt.getTime()) / 1000,
+              )
+            : undefined;
+          task.error =
+            "AI 精读仍有未完成轮次，已停止自动重入队列，避免重复调用大模型。请检查精读笔记中的失败轮次后手动重新运行。";
+          task.errorDetails = `Deep-read artifact incomplete after one execution: ${artifact.reason || "incomplete"}.`;
+          task.workflowStage = "AI 精读未完整，已停止自动补全";
+          this.notifyProgress(taskId, task.progress, task.error);
+          this.notifyComplete(taskId, false, task.error);
+          this.notifyStream(taskId, { type: "error" });
           logTaskQueue(
-            `AI 精读尚未完整，任务回到待处理以继续补全 (${task.retryCount}/${maxAutoCompletionAttempts}): ${task.title} (${taskId})`,
+            `AI 精读未完整，停止自动补全以避免重复 API 调用: ${task.title} (${taskId})`,
           );
           return false;
         }

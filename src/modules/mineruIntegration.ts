@@ -17,11 +17,20 @@
 
 import { getPref } from "../utils/prefs";
 import { PDFExtractor } from "./pdfExtractor";
+import {
+  MineruMarkdownSaver,
+  type MineruMarkdownAsset,
+} from "./mineruMarkdownSaver";
 import JSZip from "jszip";
 
 type MineruModelVersion = "pipeline" | "vlm";
 const MINERU_POLL_INTERVAL_MS = 5000;
 const DEFAULT_MINERU_TIMEOUT_MS = 300000;
+
+interface MineruExtractedResult {
+  markdown: string;
+  assets: MineruMarkdownAsset[];
+}
 
 function getMineruModelVersion(): MineruModelVersion {
   const raw = String(getPref("mineruModelVersion") || "vlm")
@@ -64,6 +73,16 @@ export class MineruClient {
     const apiKey = (getPref("mineruApiKey") as string) || "";
     if (!apiKey) {
       throw new Error("MinerU API Key not configured.");
+    }
+
+    if (MineruMarkdownSaver.isSaveEnabled()) {
+      const cachedMarkdown = await MineruMarkdownSaver.readCachedMarkdown(item);
+      if (cachedMarkdown) {
+        ztoolkit.log(
+          "[MineruIntegration] Reusing saved MinerU Markdown attachment.",
+        );
+        return cachedMarkdown;
+      }
     }
 
     // Get PDF file path
@@ -141,14 +160,18 @@ export class MineruClient {
     ztoolkit.log(
       `[MineruIntegration] Polling for task completion... Batch ID: ${batchId}, timeout: ${timeoutMs}ms`,
     );
-    return await this.pollStatusAndDownload(apiKey, batchId, timeoutMs);
+    const result = await this.pollStatusAndDownload(apiKey, batchId, timeoutMs);
+    if (MineruMarkdownSaver.isSaveEnabled()) {
+      await MineruMarkdownSaver.save(item, result.markdown, result.assets);
+    }
+    return result.markdown;
   }
 
   private static async pollStatusAndDownload(
     apiKey: string,
     batchId: string,
     timeoutMs: number,
-  ): Promise<string> {
+  ): Promise<MineruExtractedResult> {
     const url = `https://mineru.net/api/v4/extract-results/batch/${batchId}`;
     const startedAt = Date.now();
     let attempt = 0;
@@ -198,7 +221,7 @@ export class MineruClient {
 
   private static async downloadAndExtractMarkdown(
     zipUrl: string,
-  ): Promise<string> {
+  ): Promise<MineruExtractedResult> {
     ztoolkit.log(`[MineruIntegration] Downloading zip result from ${zipUrl}`);
     const res = await fetch(zipUrl);
     if (!res.ok) {
@@ -231,6 +254,65 @@ export class MineruClient {
       throw new Error("No valid Markdown file found in the extracted zip.");
     }
 
-    return mdContent;
+    const assets = await this.extractMarkdownAssets(zip, mdContent);
+    return { markdown: mdContent, assets };
+  }
+
+  private static async extractMarkdownAssets(
+    zip: JSZip,
+    markdown: string,
+  ): Promise<MineruMarkdownAsset[]> {
+    const referencedPaths = this.extractImagePathsFromMarkdown(markdown);
+    if (referencedPaths.size === 0) return [];
+
+    const assets: MineruMarkdownAsset[] = [];
+    for (const relativePath of referencedPaths) {
+      const zipFile = this.findZipFileByRelativePath(zip, relativePath);
+      if (!zipFile) {
+        ztoolkit.log(
+          `[MineruIntegration] Image referenced in Markdown not found in zip: ${relativePath}`,
+        );
+        continue;
+      }
+      const data = await zipFile.async("uint8array");
+      assets.push({ relativePath, data });
+    }
+    return assets;
+  }
+
+  private static extractImagePathsFromMarkdown(markdown: string): Set<string> {
+    const paths = new Set<string>();
+    const imagePattern = /!\[[^\]]*\]\(([^)]+)\)/g;
+    let match: RegExpExecArray | null;
+    while ((match = imagePattern.exec(markdown)) !== null) {
+      const raw = match[1].trim().replace(/^<|>$/g, "");
+      if (!raw || /^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith("#")) {
+        continue;
+      }
+      const withoutQuery = raw.split(/[?#]/)[0];
+      try {
+        paths.add(decodeURIComponent(withoutQuery));
+      } catch (_error) {
+        paths.add(withoutQuery);
+      }
+    }
+    return paths;
+  }
+
+  private static findZipFileByRelativePath(
+    zip: JSZip,
+    relativePath: string,
+  ): JSZip.JSZipObject | null {
+    const normalized = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
+    const files = Object.values(zip.files).filter(
+      (file) => !file.dir && !file.name.includes("__MACOSX"),
+    );
+    return (
+      files.find((file) => file.name.replace(/\\/g, "/") === normalized) ||
+      files.find((file) =>
+        file.name.replace(/\\/g, "/").endsWith(`/${normalized}`),
+      ) ||
+      null
+    );
   }
 }

@@ -224,13 +224,30 @@ export class TaskQueueView extends BaseView {
       styles: {
         padding: "0 20px 15px 20px",
         display: "flex",
+        flexDirection: "column",
+        gap: "10px",
+      },
+    });
+
+    const statusRow = this.createElement("div", {
+      styles: {
+        display: "flex",
         gap: "10px",
         alignItems: "center",
         flexWrap: "wrap",
       },
     });
 
-    // 筛选按钮
+    const typeRow = this.createElement("div", {
+      styles: {
+        display: "flex",
+        gap: "10px",
+        alignItems: "center",
+        flexWrap: "wrap",
+      },
+    });
+
+    // 状态筛选按钮
     const filterButtons = [
       { label: "全部", value: "all" },
       { label: "优先处理", value: TaskStatus.PRIORITY },
@@ -249,7 +266,7 @@ export class TaskQueueView extends BaseView {
           border: "1px solid var(--ai-accent)",
           borderRadius: "4px",
           backgroundColor: isActive ? "var(--ai-accent-tint)" : "transparent",
-          color: isActive ? "var(--ai-accent)" : "var(--ai-accent)",
+          color: "var(--ai-accent)",
           fontWeight: isActive ? "1000" : "600",
           cursor: "pointer",
           transition: "all 0.2s",
@@ -260,44 +277,89 @@ export class TaskQueueView extends BaseView {
         textContent: btn.label,
       });
 
-      // 标记状态值以便后续激活逻辑精确匹配
       (button as HTMLElement).setAttribute("data-status", String(btn.value));
 
-      // 悬停交互：不改变颜色，仅加粗，避免出现“白字白底”看不见
       button.addEventListener("mouseenter", () => {
         (button as HTMLElement).style.fontWeight = "700";
       });
       button.addEventListener("mouseleave", () => {
-        (button as HTMLElement).style.fontWeight = "600";
+        (button as HTMLElement).style.fontWeight = isActive ? "1000" : "600";
       });
 
       button.addEventListener("click", () => {
         this.filterTasks(btn.value as TaskStatus | "all");
       });
 
-      filterBar.appendChild(button);
+      statusRow.appendChild(button);
     });
 
-    // 分隔符
-    const separator = this.createElement("span", {
+    // 搜索框放在第一行
+    const searchInput = this.createElement("input", {
       styles: {
-        width: "1px",
-        height: "24px",
-        backgroundColor: "var(--ai-border)",
-        margin: "0 8px",
+        flex: "1",
+        minWidth: "220px",
+        padding: "8px 12px",
+        border: "1px solid var(--ai-input-border)",
+        borderRadius: "4px",
+        fontSize: "12px",
+        backgroundColor: "var(--ai-input-bg)",
+        color: "var(--ai-input-text)",
       },
+      attributes: {
+        placeholder: "搜索标题...",
+      },
+    }) as HTMLInputElement;
+    searchInput.value = this.searchQuery;
+    searchInput.addEventListener("input", () => {
+      this.searchQuery = searchInput.value.trim();
+      this.renderTaskList();
     });
-    filterBar.appendChild(separator);
+    statusRow.appendChild(searchInput);
 
-    // 任务类型筛选按钮
+    const clearCompletedBtn = this.createElement("button", {
+      styles: {
+        padding: "8px 16px",
+        border: "1px solid var(--ai-border)",
+        borderRadius: "4px",
+        backgroundColor: "transparent",
+        color: "var(--ai-text-muted)",
+        cursor: "pointer",
+        transition: "all 0.2s",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      textContent: "🗑️ 清除已完成",
+    });
+
+    clearCompletedBtn.addEventListener("click", async () => {
+      await this.clearCompletedTasks();
+    });
+
+    statusRow.appendChild(clearCompletedBtn);
+
+    // 任务类型筛选按钮放在第二行；再次点击当前类型会取消筛选，回到全部类型
     const typeButtons = [
-      { label: "📝 AI 总结", value: "summary" as TaskType | "all" },
-      { label: "🖼️ 一图总结", value: "imageSummary" as TaskType | "all" },
-      { label: "🧠 思维导图", value: "mindmap" as TaskType | "all" },
-      { label: "📊 填表", value: "tableFill" as TaskType | "all" },
-      { label: "📝 综述", value: "review" as TaskType | "all" },
-      { label: "🎯 针对性提问", value: "targetedQuestion" as TaskType | "all" },
+      { label: "📝 AI 总结", value: "summary" as TaskType },
+      { label: "📚 AI 精读", value: "deepRead" as TaskType },
+      { label: "🖼️ 一图总结", value: "imageSummary" as TaskType },
+      { label: "🧠 思维导图", value: "mindmap" as TaskType },
+      { label: "📊 填表", value: "tableFill" as TaskType },
+      { label: "📝 综述", value: "review" as TaskType },
+      { label: "🎯 针对性提问", value: "targetedQuestion" as TaskType },
     ];
+
+    const applyTypeButtonState = () => {
+      typeRow.querySelectorAll(".type-filter-btn").forEach((b: Element) => {
+        const el = b as HTMLElement;
+        const val = el.getAttribute("data-type");
+        const active = val === this.filterTaskType;
+        el.style.border = active ? "2px solid #9c27b0" : "1px solid #9e9e9e";
+        el.style.backgroundColor = active ? "#f3e5f5" : "transparent";
+        el.style.color = active ? "#9c27b0" : "#666";
+        el.style.fontWeight = active ? "700" : "500";
+      });
+    };
 
     typeButtons.forEach((btn) => {
       const isActive = btn.value === this.filterTaskType;
@@ -322,69 +384,17 @@ export class TaskQueueView extends BaseView {
       (button as HTMLElement).setAttribute("data-type", String(btn.value));
 
       button.addEventListener("click", () => {
-        this.filterTaskType = btn.value;
-        // 更新按钮样式
-        filterBar.querySelectorAll(".type-filter-btn").forEach((b: Element) => {
-          const el = b as HTMLElement;
-          const val = el.getAttribute("data-type");
-          const active = val === btn.value;
-          el.style.border = active ? "2px solid #9c27b0" : "1px solid #9e9e9e";
-          el.style.backgroundColor = active ? "#f3e5f5" : "transparent";
-          el.style.color = active ? "#9c27b0" : "#666";
-          el.style.fontWeight = active ? "700" : "500";
-        });
+        this.filterTaskType =
+          this.filterTaskType === btn.value ? "all" : btn.value;
+        applyTypeButtonState();
         this.renderTaskList();
       });
 
-      filterBar.appendChild(button);
+      typeRow.appendChild(button);
     });
 
-    // 搜索框
-    const searchInput = this.createElement("input", {
-      styles: {
-        flex: "1",
-        minWidth: "200px",
-        padding: "8px 12px",
-        border: "1px solid var(--ai-input-border)",
-        borderRadius: "4px",
-        fontSize: "12px",
-        backgroundColor: "var(--ai-input-bg)",
-        color: "var(--ai-input-text)",
-      },
-      attributes: {
-        placeholder: "搜索标题...",
-      },
-    }) as HTMLInputElement;
-    searchInput.value = this.searchQuery;
-    searchInput.addEventListener("input", () => {
-      this.searchQuery = searchInput.value.trim();
-      this.renderTaskList();
-    });
-    filterBar.appendChild(searchInput);
-
-    // 操作按钮
-    const clearCompletedBtn = this.createElement("button", {
-      styles: {
-        marginLeft: "auto",
-        padding: "8px 16px",
-        border: "1px solid var(--ai-border)",
-        borderRadius: "4px",
-        backgroundColor: "transparent",
-        color: "var(--ai-text-muted)",
-        cursor: "pointer",
-        transition: "all 0.2s",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      },
-      textContent: "🗑️ 清除已完成",
-    });
-
-    clearCompletedBtn.addEventListener("click", async () => {
-      await this.clearCompletedTasks();
-    });
-
-    filterBar.appendChild(clearCompletedBtn);
+    filterBar.appendChild(statusRow);
+    filterBar.appendChild(typeRow);
 
     return filterBar;
   }
@@ -517,7 +527,6 @@ export class TaskQueueView extends BaseView {
         borderRadius: "10px",
         backgroundColor: color + "1f",
         color,
-        marginLeft: "8px",
         maxWidth: "240px",
         whiteSpace: "nowrap",
         overflow: "hidden",
@@ -552,6 +561,7 @@ export class TaskQueueView extends BaseView {
     const row = this.createElement("div", {
       styles: {
         display: "flex",
+        width: "100%",
         justifyContent: "space-between",
         alignItems: "center",
         fontSize: "11px",
@@ -633,17 +643,26 @@ export class TaskQueueView extends BaseView {
       }
     });
 
-    // 任务头部
+    // 右侧标签区：上方展示任务类型，下方展示状态/当前阶段。
     const taskHeader = this.createElement("div", {
       styles: {
         display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: "10px",
+        flexDirection: "column",
+        justifyContent: "flex-start",
+        alignItems: "flex-end",
+        gap: "8px",
+        minWidth: "120px",
+        maxWidth: "220px",
+        flexShrink: "0",
+        marginLeft: "auto",
       },
     });
 
-    // 删除任务标题的重复显示，仅保留 pill 和后续信息
+    // 状态标签：终态显示任务状态；处理中显示当前执行阶段。
+    const statusText =
+      task.status === TaskStatus.PROCESSING
+        ? this.getTaskStageLabel(task)
+        : statusLabels[task.status];
     const taskStatus = this.createElement("span", {
       className: `ai-pill ${
         task.status === TaskStatus.COMPLETED
@@ -658,16 +677,36 @@ export class TaskQueueView extends BaseView {
       }`,
       styles: {
         fontSize: "12px",
+        maxWidth: "210px",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
       },
-      textContent: statusLabels[task.status],
+      textContent: statusText,
     });
-    taskHeader.appendChild(taskStatus);
+    taskStatus.title = this.buildTaskStageTooltip(task);
 
     // 任务类型标识 (一图总结/思维导图特殊显示)
+    const isSummary = !task.taskType || task.taskType === "summary";
     const isDeepRead = task.taskType === "deepRead";
     const isImageSummary = task.taskType === "imageSummary";
     const isMindmap = task.taskType === "mindmap";
     const isTargetedQuestion = task.taskType === "targetedQuestion";
+    if (isSummary) {
+      const typeBadge = this.createElement("span", {
+        styles: {
+          fontSize: "11px",
+          padding: "2px 8px",
+          borderRadius: "10px",
+          backgroundColor: "#3f51b5",
+          color: "white",
+          fontWeight: "600",
+          lineHeight: "16px",
+        },
+        textContent: "📝 AI 总结",
+      });
+      taskHeader.appendChild(typeBadge);
+    }
     if (isDeepRead) {
       const typeBadge = this.createElement("span", {
         styles: {
@@ -676,7 +715,6 @@ export class TaskQueueView extends BaseView {
           borderRadius: "10px",
           backgroundColor: "#3f51b5",
           color: "white",
-          marginLeft: "8px",
         },
         textContent: "📚 AI 精读",
       });
@@ -690,7 +728,6 @@ export class TaskQueueView extends BaseView {
           borderRadius: "10px",
           backgroundColor: "#9c27b0",
           color: "white",
-          marginLeft: "8px",
         },
         textContent: "🖼️ 一图总结",
       });
@@ -704,7 +741,6 @@ export class TaskQueueView extends BaseView {
           borderRadius: "10px",
           backgroundColor: "#4caf50",
           color: "white",
-          marginLeft: "8px",
         },
         textContent: "🧠 思维导图",
       });
@@ -718,7 +754,6 @@ export class TaskQueueView extends BaseView {
           borderRadius: "10px",
           backgroundColor: "#ff9800",
           color: "white",
-          marginLeft: "8px",
         },
         textContent: "📊 填表",
       });
@@ -732,7 +767,6 @@ export class TaskQueueView extends BaseView {
           borderRadius: "10px",
           backgroundColor: "#2196f3",
           color: "white",
-          marginLeft: "8px",
         },
         textContent: "📝 综述",
       });
@@ -746,17 +780,13 @@ export class TaskQueueView extends BaseView {
           borderRadius: "10px",
           backgroundColor: "#0ea5e9",
           color: "white",
-          marginLeft: "8px",
         },
         textContent: "🎯 针对性提问",
       });
       taskHeader.appendChild(typeBadge);
     }
 
-    const stageBadge = this.createTaskStageBadge(task);
-    if (stageBadge) {
-      taskHeader.appendChild(stageBadge);
-    }
+    taskHeader.appendChild(taskStatus);
 
     const safeError = task.error ? this.escapeHtml(task.error) : "";
     const displayWorkflowStage =
@@ -765,9 +795,16 @@ export class TaskQueueView extends BaseView {
         : task.status === TaskStatus.FAILED
           ? task.stageLabel || task.workflowStage || "失败"
           : task.workflowStage;
-    const safeWorkflowStage = displayWorkflowStage
-      ? this.escapeHtml(displayWorkflowStage)
-      : "";
+    const shouldShowInlineStage =
+      task.status !== TaskStatus.COMPLETED && task.status !== TaskStatus.FAILED;
+    const safeWorkflowStage =
+      shouldShowInlineStage && displayWorkflowStage
+        ? this.escapeHtml(displayWorkflowStage)
+        : "";
+    const safeStageDetail =
+      shouldShowInlineStage && task.stageDetail
+        ? this.escapeHtml(task.stageDetail)
+        : "";
 
     // 任务信息
     const taskInfo = this.createElement("div", {
@@ -782,7 +819,7 @@ export class TaskQueueView extends BaseView {
         ${safeError ? `<br/><span style="color: #f44336;">错误: ${safeError}</span>` : ""}
         ${task.retryCount > 0 ? `<br/>重试次数: ${task.retryCount}` : ""}
         ${safeWorkflowStage ? `<br/><strong style="color: ${this.getTaskStageColor(task)};">阶段: ${safeWorkflowStage}</strong>` : ""}
-        ${task.stageDetail ? `<br/><span title="${this.escapeHtml(task.stageDetail)}">详情: ${this.escapeHtml(task.stageDetail)}</span>` : ""}
+        ${safeStageDetail ? `<br/><span title="${safeStageDetail}">详情: ${safeStageDetail}</span>` : ""}
       `,
     });
 
@@ -795,6 +832,9 @@ export class TaskQueueView extends BaseView {
         display: "flex",
         flexWrap: "wrap",
         gap: "10px",
+        justifyContent: "flex-start",
+        alignItems: "center",
+        marginTop: "6px",
       },
     });
 
@@ -886,6 +926,25 @@ export class TaskQueueView extends BaseView {
       });
     });
     actions.appendChild(detailBtn);
+
+    const deleteBtn = this.createElement("button", {
+      styles: {
+        padding: "6px 12px",
+        border: "1px solid #f44336",
+        borderRadius: "4px",
+        backgroundColor: "transparent",
+        color: "#f44336",
+        cursor: "pointer",
+        fontSize: "12px",
+      },
+      textContent: "🗑️ 删除",
+    });
+
+    deleteBtn.addEventListener("click", () => {
+      this.deleteTask(task.id);
+    });
+
+    actions.appendChild(deleteBtn);
 
     if (
       ((task.taskType || "summary") === "summary" ||
@@ -1017,34 +1076,45 @@ export class TaskQueueView extends BaseView {
       actions.appendChild(priorityBtn);
     }
 
-    const deleteBtn = this.createElement("button", {
-      styles: {
-        padding: "6px 12px",
-        border: "1px solid #f44336",
-        borderRadius: "4px",
-        backgroundColor: "transparent",
-        color: "#f44336",
-        cursor: "pointer",
-        fontSize: "12px",
-      },
-      textContent: "🗑️ 删除",
-    });
-
-    deleteBtn.addEventListener("click", () => {
-      this.deleteTask(task.id);
-    });
-
-    actions.appendChild(deleteBtn);
-
     // 组装任务项
-    taskItem.appendChild(taskHeader);
     const body = taskItem.querySelector(".ai-card__body") as HTMLElement | null;
+    if (body) {
+      Object.assign(body.style, {
+        display: "block",
+        width: "100%",
+        boxSizing: "border-box",
+      });
+    }
     const target = body ?? taskItem;
-    target.appendChild(taskInfo);
+    const topRow = this.createElement("div", {
+      styles: {
+        display: "flex",
+        width: "100%",
+        boxSizing: "border-box",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        gap: "16px",
+        marginBottom: "4px",
+      },
+    });
+    const leftColumn = this.createElement("div", {
+      styles: {
+        flex: "1",
+        minWidth: "0",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-start",
+      },
+    });
+    taskInfo.style.marginBottom = "0";
+    leftColumn.appendChild(taskInfo);
+    leftColumn.appendChild(actions);
+    topRow.appendChild(leftColumn);
+    topRow.appendChild(taskHeader);
+    target.appendChild(topRow);
     if (progressBar) {
       target.appendChild(progressBar);
     }
-    target.appendChild(actions);
 
     return taskItem;
   }

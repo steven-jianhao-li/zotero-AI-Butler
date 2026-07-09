@@ -63,12 +63,6 @@ interface ChatState {
 // 递增的对话对 ID 计数器
 let quickChatPairIdCounter = 0;
 
-/**
- * 内联公式转块级公式的阈值（渲染后HTML字符数）
- * 当内联公式渲染后的HTML长度超过此阈值时，自动转换为可滚动的块级公式
- * 调整此值可控制何时触发转换，详见 doc/DevelopmentGuide.md
- */
-const INLINE_FORMULA_TO_BLOCK_THRESHOLD = 2000;
 const SIDEBAR_HEADING_TO_BLOCKQUOTE_TEXT_THRESHOLD = 36;
 const SIDEBAR_NOTE_OVERFLOW_GUARD_CSS = `
 .ai-butler-note-section,
@@ -4664,11 +4658,7 @@ async function loadNoteContent(
                 trust: true,
                 strict: false,
               });
-              // 检查渲染后HTML长度，超过阈值则转为块级可滚动公式
-              if (
-                isTaggedDisplay ||
-                rendered.length > INLINE_FORMULA_TO_BLOCK_THRESHOLD
-              ) {
+              if (isTaggedDisplay) {
                 return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;
               }
               return `<span class="katex-inline">${rendered}</span>`;
@@ -4729,11 +4719,7 @@ async function loadNoteContent(
               trust: true,
               strict: false,
             });
-            // 检查渲染后HTML长度，超过阈值则转为块级可滚动公式
-            if (
-              isTaggedDisplay ||
-              rendered.length > INLINE_FORMULA_TO_BLOCK_THRESHOLD
-            ) {
+            if (isTaggedDisplay) {
               return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;
             }
             return `<span class="katex-inline">${rendered}</span>`;
@@ -4921,8 +4907,6 @@ async function loadNoteContent(
       noteContent.appendChild(errorContainer);
     } else {
       // LaTeX formulas already rendered before XML validation
-      // Oversized inline formulas are already converted to block format during rendering
-      // (see INLINE_FORMULA_TO_BLOCK_THRESHOLD constant)
       noteContent.innerHTML = sanitizedContent;
     }
   } catch (err: any) {

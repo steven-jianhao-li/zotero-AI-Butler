@@ -26,7 +26,11 @@
  */
 
 import { PDFExtractor } from "./pdfExtractor";
-import LLMService, { type LLMChatRequest } from "./llmService";
+import LLMService, {
+  type LLMChatRequest,
+  type LLMLifecycleEvent,
+} from "./llmService";
+import type { TaskProgressMeta } from "./taskQueue";
 import {
   LLMEndpointManager,
   type LLMEndpoint,
@@ -142,7 +146,11 @@ export class NoteGenerator {
   public static async generateNoteForItem(
     item: Zotero.Item,
     outputWindow?: SummaryView,
-    progressCallback?: (message: string, progress: number) => void,
+    progressCallback?: (
+      message: string,
+      progress: number,
+      meta?: TaskProgressMeta,
+    ) => void,
     streamCallback?: (chunk: string) => void,
     options?: {
       summaryMode?: string;
@@ -214,7 +222,11 @@ export class NoteGenerator {
 
       // Step 1: PDF processing
       throwIfAborted(options?.abortSignal);
-      progressCallback?.("正在处理PDF...", 10);
+      progressCallback?.("正在处理PDF...", 10, {
+        stage: "pdf-extracting",
+        label: "处理 PDF",
+        detail: "正在根据当前 PDF 处理模式准备论文内容",
+      });
 
       // 检查 PDF 文件大小限制
       const enableSizeLimit =
@@ -292,7 +304,11 @@ export class NoteGenerator {
 
       // AI 精读会复用同一份 PDF 内容；单次总结交给 LLMService 统一解析，避免 MinerU 重复处理。
       if (summaryMode !== "single" && !useMultiModelSummary) {
-        const extracted = await this.extractPdfContentForMode(item, prefMode);
+        const extracted = await this.extractPdfContentForMode(
+          item,
+          prefMode,
+          progressCallback,
+        );
         pdfContent = extracted.content;
         isBase64 = extracted.isBase64;
       }
@@ -305,6 +321,11 @@ export class NoteGenerator {
           ? "正在生成AI总结..."
           : "正在进行 AI 精读分析...",
         40,
+        {
+          stage: "llm-preparing",
+          label: summaryMode === "single" ? "准备 AI 总结" : "准备 AI 精读",
+          detail: "PDF 内容已准备，正在进入大模型分析阶段",
+        },
       );
 
       // 如果有输出窗口,开始显示当前处理的条目
@@ -359,7 +380,11 @@ export class NoteGenerator {
               item,
               attachmentMode: "all",
             },
-            transport: { abortSignal: options?.abortSignal },
+            transport: {
+              abortSignal: options?.abortSignal,
+              onStatus: (event) =>
+                this.forwardLLMStatus(progressCallback, event),
+            },
             onProgress,
           });
         } else {
@@ -370,7 +395,11 @@ export class NoteGenerator {
               item,
               attachmentMode: "default",
             },
-            transport: { abortSignal: options?.abortSignal },
+            transport: {
+              abortSignal: options?.abortSignal,
+              onStatus: (event) =>
+                this.forwardLLMStatus(progressCallback, event),
+            },
             onProgress,
           });
         }
@@ -409,7 +438,11 @@ export class NoteGenerator {
 
       // Step 3: create or update note
       throwIfAborted(options?.abortSignal);
-      progressCallback?.(`正在创建${AiNoteService.getTitle(noteKind)}...`, 80);
+      progressCallback?.(`正在创建${AiNoteService.getTitle(noteKind)}...`, 80, {
+        stage: "saving-note",
+        label: "保存笔记中",
+        detail: `正在创建或更新 Zotero ${AiNoteService.getTitle(noteKind)}`,
+      });
 
       // 检查内容是否为空，防止创建空笔记
       if (!fullContent || !fullContent.trim()) {
@@ -442,7 +475,11 @@ export class NoteGenerator {
       }
 
       // 通知进度回调完成 (100%)
-      progressCallback?.("完成！", 100);
+      progressCallback?.("完成！", 100, {
+        stage: "completed",
+        label: "已完成",
+        detail: "AI 笔记已生成并保存",
+      });
 
       // 异步并行填表（不阻塞笔记返回）
       const enableTable =
@@ -521,18 +558,47 @@ export class NoteGenerator {
     }
   }
 
+  private static forwardLLMStatus(
+    progressCallback:
+      | ((message: string, progress: number, meta?: TaskProgressMeta) => void)
+      | undefined,
+    event: LLMLifecycleEvent,
+  ): void {
+    if (!progressCallback) return;
+    progressCallback(
+      event.message || event.label || "大模型状态更新",
+      event.progress || 40,
+      {
+        ...event,
+        updatedAt: new Date().toISOString(),
+      },
+    );
+  }
+
   private static async extractPdfContentForMode(
     item: Zotero.Item,
     mode: LLMPdfProcessMode,
+    progressCallback?: (
+      message: string,
+      progress: number,
+      meta?: TaskProgressMeta,
+    ) => void,
   ): Promise<{ content: string; isBase64: boolean }> {
     if (mode === "base64") {
       return {
-        content: await PDFExtractor.extractBase64FromItem(item),
+        content: await PDFExtractor.extractBase64FromItem(
+          item,
+          progressCallback,
+        ),
         isBase64: true,
       };
     }
 
-    const fullText = await PDFExtractor.extractTextFromItem(item, mode);
+    const fullText = await PDFExtractor.extractTextFromItem(
+      item,
+      mode,
+      progressCallback,
+    );
     const cleanedText = PDFExtractor.cleanText(fullText);
     return {
       content: PDFExtractor.truncateText(cleanedText),
@@ -550,7 +616,11 @@ export class NoteGenerator {
     pdfAttachmentMode: string;
     prefMode: string;
     outputWindow?: SummaryView;
-    progressCallback?: (message: string, progress: number) => void;
+    progressCallback?: (
+      message: string,
+      progress: number,
+      meta?: TaskProgressMeta,
+    ) => void;
     streamCallback?: (chunk: string) => void;
     abortSignal?: LLMAbortSignal;
   }): Promise<{ content: string; noteHtml: string }> {
@@ -1026,7 +1096,11 @@ export class NoteGenerator {
     isBase64: boolean;
     itemTitle: string;
     outputWindow?: SummaryView;
-    progressCallback?: (message: string, progress: number) => void;
+    progressCallback?: (
+      message: string,
+      progress: number,
+      meta?: TaskProgressMeta,
+    ) => void;
     streamCallback?: (chunk: string) => void;
     abortSignal?: LLMAbortSignal;
   }): Promise<{
@@ -1105,13 +1179,19 @@ export class NoteGenerator {
       params.outputWindow?.appendContent(
         `**章节解析提示词：**\n\n${planningPrompt}\n\n`,
       );
-      params.progressCallback?.("正在解析章节结构...", 45);
+      params.progressCallback?.("正在解析章节结构...", 45, {
+        stage: "deepread-planning",
+        label: "AI 精读规划中",
+        detail: "正在调用大模型解析论文章节结构",
+      });
       const planningResponse = await this.callDeepReadChat({
         session,
         pdfContent: params.pdfContent,
         isBase64: params.isBase64,
         conversation: [{ role: "user", content: planningPrompt }],
         abortSignal: params.abortSignal,
+        onStatus: (event) =>
+          this.forwardLLMStatus(params.progressCallback, event),
       });
       lastResponse = planningResponse;
       const parsedChapters = parseChapterStructureResult(planningResponse.text);
@@ -1133,7 +1213,11 @@ export class NoteGenerator {
       }
     } else {
       params.outputWindow?.appendContent("### 从现有精读笔记恢复章节结构\n\n");
-      params.progressCallback?.("正在从已有笔记恢复精读进度...", 45);
+      params.progressCallback?.("正在从已有笔记恢复精读进度...", 45, {
+        stage: "deepread-planning",
+        label: "恢复精读进度",
+        detail: "检测到已有 AI 精读笔记，正在恢复未完成轮次",
+      });
     }
 
     const planned = planDeepReadSlots(template, chapters);
@@ -1263,6 +1347,8 @@ export class NoteGenerator {
           isBase64: params.isBase64,
           conversation: [{ role: "user", content: slot.prompt }],
           abortSignal: params.abortSignal,
+          onStatus: (event) =>
+            this.forwardLLMStatus(params.progressCallback, event),
           onProgress: (chunk) => {
             params.streamCallback?.(chunk);
             params.outputWindow?.appendContent(chunk);
@@ -1324,6 +1410,8 @@ export class NoteGenerator {
             isBase64: params.isBase64,
             conversation,
             abortSignal: params.abortSignal,
+            onStatus: (event) =>
+              this.forwardLLMStatus(params.progressCallback, event),
             onProgress: (chunk) => {
               params.streamCallback?.(chunk);
               params.outputWindow?.appendContent(chunk);
@@ -1376,6 +1464,8 @@ export class NoteGenerator {
             isBase64: params.isBase64,
             conversation: [{ role: "user", content: slot.prompt }],
             abortSignal: params.abortSignal,
+            onStatus: (event) =>
+              this.forwardLLMStatus(params.progressCallback, event),
             onProgress: streamLive
               ? (chunk) => {
                   params.streamCallback?.(chunk);
@@ -1521,6 +1611,7 @@ export class NoteGenerator {
     conversation: Array<{ role: "user" | "assistant"; content: string }>;
     abortSignal?: LLMAbortSignal;
     onProgress?: (chunk: string) => void;
+    onStatus?: (event: LLMLifecycleEvent) => void;
   }): Promise<LLMResponse> {
     const content = {
       kind: "legacy" as const,
@@ -1532,7 +1623,10 @@ export class NoteGenerator {
     let response = await this.chatWithDeepReadSession(params.session, {
       content,
       conversation,
-      transport: { abortSignal: params.abortSignal },
+      transport: {
+        abortSignal: params.abortSignal,
+        onStatus: params.onStatus,
+      },
       onProgress: params.onProgress,
     });
     let text = response.text;
@@ -1553,7 +1647,10 @@ export class NoteGenerator {
       const continuation = await this.chatWithDeepReadSession(params.session, {
         content,
         conversation,
-        transport: { abortSignal: params.abortSignal },
+        transport: {
+          abortSignal: params.abortSignal,
+          onStatus: params.onStatus,
+        },
         onProgress: params.onProgress,
       });
       response = { ...continuation, text: text + "\n\n" + continuation.text };

@@ -463,6 +463,132 @@ export class TaskQueueView extends BaseView {
     }
   }
 
+  private getTaskStageLabel(task: TaskItem): string {
+    if (task.status === TaskStatus.COMPLETED) return "已完成";
+    if (task.status === TaskStatus.FAILED) return task.stageLabel || "失败";
+    return (
+      task.stageLabel || task.workflowStage || this.getFallbackStageLabel(task)
+    );
+  }
+
+  private getFallbackStageLabel(task: TaskItem): string {
+    if (task.status === TaskStatus.PENDING) return "等待处理";
+    if (task.status === TaskStatus.PRIORITY) return "优先等待";
+    if (task.status === TaskStatus.PROCESSING) return "处理中";
+    if (task.status === TaskStatus.COMPLETED) return "已完成";
+    return "失败";
+  }
+
+  private getTaskStageColor(task: TaskItem): string {
+    if (task.status === TaskStatus.FAILED) return "#f44336";
+    if (task.status === TaskStatus.COMPLETED) return "#4caf50";
+    if (task.status === TaskStatus.PRIORITY) return "#ff9800";
+    const stage = task.stage || "";
+    if (stage.startsWith("mineru")) return "#8b5cf6";
+    if (stage.startsWith("llm")) return "#0ea5e9";
+    if (stage.startsWith("deepread")) return "#3f51b5";
+    if (stage === "saving-note") return "#10b981";
+    return "#2196f3";
+  }
+
+  private buildTaskStageTooltip(task: TaskItem): string {
+    const lines = [
+      `当前阶段：${this.getTaskStageLabel(task)}`,
+      task.stageDetail ? `详情：${task.stageDetail}` : undefined,
+      typeof task.progress === "number"
+        ? `进度：${Math.round(task.progress)}%`
+        : undefined,
+      task.stageUpdatedAt
+        ? `更新时间：${task.stageUpdatedAt.toLocaleString("zh-CN")}`
+        : undefined,
+      task.error ? `错误：${task.error}` : undefined,
+    ];
+    return lines.filter(Boolean).join("\n");
+  }
+
+  private createTaskStageBadge(task: TaskItem): HTMLElement | null {
+    const label = this.getTaskStageLabel(task);
+    if (!label) return null;
+    const color = this.getTaskStageColor(task);
+    const badge = this.createElement("span", {
+      styles: {
+        fontSize: "11px",
+        padding: "2px 8px",
+        borderRadius: "10px",
+        backgroundColor: color + "1f",
+        color,
+        marginLeft: "8px",
+        maxWidth: "240px",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        border: "1px solid " + color + "55",
+      },
+      textContent: label,
+    });
+    badge.title = this.buildTaskStageTooltip(task);
+    return badge;
+  }
+
+  private createTaskProgressBar(task: TaskItem): HTMLElement | null {
+    if (
+      task.status !== TaskStatus.PROCESSING &&
+      task.status !== TaskStatus.FAILED
+    ) {
+      return null;
+    }
+    const progress = Math.max(0, Math.min(100, Math.round(task.progress || 0)));
+    const color =
+      task.status === TaskStatus.FAILED
+        ? "#f44336"
+        : this.getTaskStageColor(task);
+    const label =
+      task.status === TaskStatus.FAILED
+        ? `失败于 ${progress}%`
+        : `${progress}%`;
+    const wrapper = this.createElement("div", {
+      styles: { marginBottom: "10px" },
+    });
+    const row = this.createElement("div", {
+      styles: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        fontSize: "11px",
+        color: "var(--ai-text-muted)",
+        marginBottom: "4px",
+      },
+      children: [
+        this.createElement("span", {
+          textContent: this.getTaskStageLabel(task),
+        }),
+        this.createElement("span", { textContent: label }),
+      ],
+    });
+    const track = this.createElement("div", {
+      styles: {
+        height: "6px",
+        backgroundColor: color + "22",
+        borderRadius: "999px",
+        overflow: "hidden",
+      },
+      children: [
+        this.createElement("div", {
+          styles: {
+            height: "100%",
+            width: progress + "%",
+            backgroundColor: color,
+            transition: "width 0.3s",
+          },
+        }),
+      ],
+    });
+    wrapper.title = this.buildTaskStageTooltip(task);
+    wrapper.appendChild(row);
+    wrapper.appendChild(track);
+    return wrapper;
+  }
+
   /**
    * 创建任务元素
    *
@@ -627,7 +753,21 @@ export class TaskQueueView extends BaseView {
       taskHeader.appendChild(typeBadge);
     }
 
+    const stageBadge = this.createTaskStageBadge(task);
+    if (stageBadge) {
+      taskHeader.appendChild(stageBadge);
+    }
+
     const safeError = task.error ? this.escapeHtml(task.error) : "";
+    const displayWorkflowStage =
+      task.status === TaskStatus.COMPLETED
+        ? "已完成"
+        : task.status === TaskStatus.FAILED
+          ? task.stageLabel || task.workflowStage || "失败"
+          : task.workflowStage;
+    const safeWorkflowStage = displayWorkflowStage
+      ? this.escapeHtml(displayWorkflowStage)
+      : "";
 
     // 任务信息
     const taskInfo = this.createElement("div", {
@@ -641,37 +781,13 @@ export class TaskQueueView extends BaseView {
         ${task.completedAt ? `<br/>完成时间: ${task.completedAt.toLocaleString("zh-CN")}` : ""}
         ${safeError ? `<br/><span style="color: #f44336;">错误: ${safeError}</span>` : ""}
         ${task.retryCount > 0 ? `<br/>重试次数: ${task.retryCount}` : ""}
-        ${isImageSummary && task.workflowStage ? `<br/><strong style="color: #9c27b0;">阶段: ${task.workflowStage}</strong>` : ""}
-        ${isMindmap && task.workflowStage ? `<br/><strong style="color: #4caf50;">阶段: ${task.workflowStage}</strong>` : ""}
-        ${task.taskType === "tableFill" && task.workflowStage ? `<br/><strong style="color: #ff9800;">阶段: ${task.workflowStage}</strong>` : ""}
-        ${task.taskType === "review" && task.workflowStage ? `<br/><strong style="color: #2196f3;">阶段: ${task.workflowStage}</strong>` : ""}
-        ${isTargetedQuestion && task.workflowStage ? `<br/><strong style="color: #0ea5e9;">阶段: ${task.workflowStage}</strong>` : ""}
+        ${safeWorkflowStage ? `<br/><strong style="color: ${this.getTaskStageColor(task)};">阶段: ${safeWorkflowStage}</strong>` : ""}
+        ${task.stageDetail ? `<br/><span title="${this.escapeHtml(task.stageDetail)}">详情: ${this.escapeHtml(task.stageDetail)}</span>` : ""}
       `,
     });
 
-    // 进度条 (仅处理中时显示)
-    let progressBar: HTMLElement | null = null;
-    if (task.status === TaskStatus.PROCESSING) {
-      progressBar = this.createElement("div", {
-        styles: {
-          height: "4px",
-          backgroundColor: "rgba(33, 150, 243, 0.2)",
-          borderRadius: "2px",
-          overflow: "hidden",
-          marginBottom: "10px",
-        },
-        children: [
-          this.createElement("div", {
-            styles: {
-              height: "100%",
-              width: `${task.progress}%`,
-              backgroundColor: "#2196f3",
-              transition: "width 0.3s",
-            },
-          }),
-        ],
-      });
-    }
+    // 进度条与百分比
+    const progressBar = this.createTaskProgressBar(task);
 
     // 操作按钮
     const actions = this.createElement("div", {
@@ -1308,7 +1424,7 @@ export class TaskQueueView extends BaseView {
 
     // 注册回调
     this.unsubscribeProgress = this.manager.onProgress(
-      (taskId, progress, message) => {
+      (taskId, progress, message, meta) => {
         const currentTask = this.manager?.getTask(taskId);
         if (currentTask && currentTask.status !== TaskStatus.PROCESSING) {
           this.syncFromManager();
@@ -1320,7 +1436,15 @@ export class TaskQueueView extends BaseView {
           t.status = TaskStatus.PROCESSING;
           t.progress = progress;
           if (message) {
-            t.workflowStage = message;
+            t.workflowStage = meta?.label || message;
+          }
+          if (meta) {
+            t.stage = meta.stage;
+            t.stageLabel = meta.label || message;
+            t.stageDetail = meta.detail;
+            t.stageUpdatedAt = meta.updatedAt
+              ? new Date(meta.updatedAt)
+              : new Date();
           }
           this.renderTaskList();
         }
@@ -1335,6 +1459,11 @@ export class TaskQueueView extends BaseView {
           t.error = success ? undefined : error || t.error;
           t.completedAt = new Date();
           t.progress = 100;
+          t.stage = success ? "completed" : "failed";
+          t.stageLabel = success ? "已完成" : "失败";
+          t.workflowStage = success ? "已完成" : "失败";
+          t.stageDetail = success ? "任务已完成" : error || t.error;
+          t.stageUpdatedAt = new Date();
           this.updateStats();
           this.renderTaskList();
         } else {
@@ -1354,11 +1483,35 @@ export class TaskQueueView extends BaseView {
     ) as unknown as number;
   }
 
+  private normalizeTerminalTaskForDisplay(task: TaskItem): TaskItem {
+    if (task.status === TaskStatus.COMPLETED) {
+      return {
+        ...task,
+        stage: "completed",
+        stageLabel: "已完成",
+        workflowStage: "已完成",
+        stageDetail: "任务已完成",
+      };
+    }
+    if (task.status === TaskStatus.FAILED) {
+      return {
+        ...task,
+        stage: "failed",
+        stageLabel: "失败",
+        workflowStage: "失败",
+        stageDetail: task.errorDetails || task.error || task.stageDetail,
+      };
+    }
+    return task;
+  }
+
   /** 从管理器同步任务到视图 */
   private syncFromManager(): void {
     if (!this.manager) return;
     this.manager.refreshFromStorage();
-    this.tasks = this.manager.getAllTasks();
+    this.tasks = this.manager
+      .getAllTasks()
+      .map((task) => this.normalizeTerminalTaskForDisplay(task));
     this.updateStats();
     this.renderTaskList();
   }

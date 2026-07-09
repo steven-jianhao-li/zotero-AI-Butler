@@ -22,6 +22,7 @@ import {
   type MineruMarkdownAsset,
 } from "./mineruMarkdownSaver";
 import JSZip from "jszip";
+import type { PdfExtractionProgressCallback } from "./pdfExtractor";
 
 type MineruModelVersion = "pipeline" | "vlm";
 const MINERU_POLL_INTERVAL_MS = 5000;
@@ -69,7 +70,10 @@ export class MineruClient {
   /**
    * Main entry to extract markdown from a Zotero PDF item using MinerU
    */
-  public static async extractMarkdown(item: Zotero.Item): Promise<string> {
+  public static async extractMarkdown(
+    item: Zotero.Item,
+    progressCallback?: PdfExtractionProgressCallback,
+  ): Promise<string> {
     const apiKey = (getPref("mineruApiKey") as string) || "";
     if (!apiKey) {
       throw new Error("MinerU API Key not configured.");
@@ -81,6 +85,11 @@ export class MineruClient {
         ztoolkit.log(
           "[MineruIntegration] Reusing saved MinerU Markdown attachment.",
         );
+        progressCallback?.("复用已保存的 MinerU Markdown", 38, {
+          stage: "mineru-parsing",
+          label: "复用 MinerU 缓存",
+          detail: "已找到此前保存的 MinerU Markdown 附件，跳过重新解析",
+        });
         return cachedMarkdown;
       }
     }
@@ -97,6 +106,11 @@ export class MineruClient {
     }
 
     ztoolkit.log(`[MineruIntegration] Starting MinerU parsing of ${filePath}`);
+    progressCallback?.("正在读取 PDF 并准备提交 MinerU...", 12, {
+      stage: "mineru-uploading",
+      label: "MinerU 准备中",
+      detail: `PDF 路径：${filePath}`,
+    });
 
     // Read PDF binary
     const fileData = await IOUtils.read(filePath);
@@ -105,6 +119,11 @@ export class MineruClient {
     // Get Batch & Upload URLs
     // Assuming simple payload for /api/v4/file-urls/batch based on standard implementations
     const fileName = "document.pdf";
+    progressCallback?.("正在获取 MinerU 上传地址...", 14, {
+      stage: "mineru-uploading",
+      label: "MinerU 获取上传地址",
+      detail: `模型版本：${modelVersion}`,
+    });
     const batchRes = await fetch("https://mineru.net/api/v4/file-urls/batch", {
       method: "POST",
       headers: {
@@ -143,6 +162,11 @@ export class MineruClient {
 
     // Upload file content to the presigned URL
     ztoolkit.log(`[MineruIntegration] Uploading PDF to Mineru PUT URL...`);
+    progressCallback?.("MinerU 上传中...", 16, {
+      stage: "mineru-uploading",
+      label: "MinerU 上传中",
+      detail: `正在上传 PDF，大小约 ${(fileData.byteLength / 1024 / 1024).toFixed(2)} MB`,
+    });
     const putRes = await fetch(putUrl, {
       method: "PUT",
       body: fileData,
@@ -162,8 +186,18 @@ export class MineruClient {
     );
     const result = await this.pollStatusAndDownload(apiKey, batchId, timeoutMs);
     if (MineruMarkdownSaver.isSaveEnabled()) {
+      progressCallback?.("正在保存 MinerU Markdown 缓存...", 39, {
+        stage: "mineru-parsing",
+        label: "保存 MinerU 缓存",
+        detail: "正在把 MinerU Markdown 和图片资源保存为 Zotero 附件",
+      });
       await MineruMarkdownSaver.save(item, result.markdown, result.assets);
     }
+    progressCallback?.("MinerU 解析完成", 40, {
+      stage: "mineru-parsing",
+      label: "MinerU 完成",
+      detail: `已提取约 ${result.markdown.length} 个 Markdown 字符`,
+    });
     return result.markdown;
   }
 
@@ -171,6 +205,7 @@ export class MineruClient {
     apiKey: string,
     batchId: string,
     timeoutMs: number,
+    progressCallback?: PdfExtractionProgressCallback,
   ): Promise<MineruExtractedResult> {
     const url = `https://mineru.net/api/v4/extract-results/batch/${batchId}`;
     const startedAt = Date.now();
@@ -202,6 +237,18 @@ export class MineruClient {
       const result = data?.data?.extract_result?.[0] || data?.data;
       const state = result?.state;
 
+      const elapsedMs = Date.now() - startedAt;
+      const estimatedProgress = Math.min(
+        35,
+        20 + Math.floor((elapsedMs / timeoutMs) * 15),
+      );
+      progressCallback?.("MinerU 解析中...", estimatedProgress, {
+        stage: "mineru-processing",
+        label: "MinerU 解析中",
+        detail: `第 ${attempt} 次轮询；状态：${state || "pending"}；已等待 ${Math.floor(elapsedMs / 1000)} 秒；Batch ID：${batchId}`,
+        attempt,
+      });
+
       if (state === "done") {
         const zipUrl = result?.full_zip_url;
         if (!zipUrl) {
@@ -209,7 +256,12 @@ export class MineruClient {
             "MinerU Task completed but no full_zip_url returned.",
           );
         }
-        return await this.downloadAndExtractMarkdown(zipUrl);
+        progressCallback?.("MinerU 解析完成，正在下载结果...", 36, {
+          stage: "mineru-downloading",
+          label: "MinerU 下载结果",
+          detail: "MinerU 已完成解析，正在下载结果压缩包",
+        });
+        return await this.downloadAndExtractMarkdown(zipUrl, progressCallback);
       } else if (state === "error") {
         throw new Error(`MinerU Task failed processing.`);
       }
@@ -221,6 +273,7 @@ export class MineruClient {
 
   private static async downloadAndExtractMarkdown(
     zipUrl: string,
+    progressCallback?: PdfExtractionProgressCallback,
   ): Promise<MineruExtractedResult> {
     ztoolkit.log(`[MineruIntegration] Downloading zip result from ${zipUrl}`);
     const res = await fetch(zipUrl);
@@ -228,6 +281,11 @@ export class MineruClient {
       throw new Error(`Failed to download zip file from ${zipUrl}`);
     }
     const arrayBuffer = await res.arrayBuffer();
+    progressCallback?.("正在解压 MinerU Markdown...", 37, {
+      stage: "mineru-parsing",
+      label: "MinerU 解压结果",
+      detail: `结果压缩包大小约 ${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)} MB`,
+    });
 
     // Extract using JSZip
     // Zotero/Firefox extension environment does not natively provide setImmediate which JSZip needs

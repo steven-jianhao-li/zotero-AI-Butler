@@ -834,7 +834,7 @@ export class TaskQueueView extends BaseView {
         gap: "10px",
         justifyContent: "flex-start",
         alignItems: "center",
-        marginTop: "6px",
+        marginTop: "0",
       },
     });
 
@@ -1106,9 +1106,22 @@ export class TaskQueueView extends BaseView {
         alignItems: "flex-start",
       },
     });
+    const infoActionRow = this.createElement("div", {
+      styles: {
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "14px",
+        width: "100%",
+        flexWrap: "wrap",
+      },
+    });
     taskInfo.style.marginBottom = "0";
-    leftColumn.appendChild(taskInfo);
-    leftColumn.appendChild(actions);
+    taskInfo.style.flexShrink = "0";
+    actions.style.flex = "1";
+    actions.style.minWidth = "220px";
+    infoActionRow.appendChild(taskInfo);
+    infoActionRow.appendChild(actions);
+    leftColumn.appendChild(infoActionRow);
     topRow.appendChild(leftColumn);
     topRow.appendChild(taskHeader);
     target.appendChild(topRow);

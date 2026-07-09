@@ -6,6 +6,7 @@ import {
   markdownToZoteroNoteHtml,
   normalizeLatexForKatex,
   requiresDisplayMath,
+  stripMathDelimiters,
   normalizeFollowUpChatNoteHtml,
   parseFollowUpChatPairsFromNoteHtml,
 } from "../src/modules/noteMarkdown";
@@ -56,6 +57,18 @@ describe("note Markdown rendering", function () {
     expect(html).to.contain("pairflow");
     expect(html).to.contain("C");
     expect(html).not.to.contain("math-fallback");
+  });
+
+  it("strips accidental triple-dollar delimiters in display math", function () {
+    const formula = String.raw`\text{最小流量} = 2900 \ \frac{\text{包}}{\text{秒}} \approx 180 \ \text{Gbps}`;
+    const noteHtml = markdownToZoteroNoteHtml(`$$$${formula}$$$`);
+    const displayHtml = markdownToDisplayHtml(`$$$${formula}$$$`);
+
+    expect(stripMathDelimiters(`$${formula}$`)).to.equal(formula);
+    expect(noteHtml).to.contain(`$$${formula}$$`);
+    expect(noteHtml).not.to.contain(`$$$${formula}$$$`);
+    expect(displayHtml).to.contain('class="katex-display"');
+    expect(displayHtml).not.to.contain("math-fallback");
   });
 
   it("keeps text after headings and block formulas as paragraphs", function () {

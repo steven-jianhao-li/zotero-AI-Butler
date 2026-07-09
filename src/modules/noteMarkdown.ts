@@ -98,15 +98,28 @@ export function requiresDisplayMath(content: string): boolean {
   return /(^|[^\\])\\tag\s*\{/.test(content);
 }
 
+export function stripMathDelimiters(content: string): string {
+  let trimmed = content.trim();
+  while (
+    trimmed.startsWith("$") &&
+    trimmed.endsWith("$") &&
+    trimmed.length >= 2
+  ) {
+    trimmed = trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
 export function normalizeLatexForKatex(content: string): string {
-  return decodeMathHtmlEntities(content)
+  return decodeMathHtmlEntities(stripMathDelimiters(content))
     .replace(/</g, "\\langle ")
     .replace(/>/g, " \\rangle");
 }
 
 export function zoteroNoteMathHtml(content: string, isBlock: boolean): string {
-  const escapedContent = escapeHtml(content);
-  if (isBlock || requiresDisplayMath(content)) {
+  const normalizedContent = stripMathDelimiters(content);
+  const escapedContent = escapeHtml(normalizedContent);
+  if (isBlock || requiresDisplayMath(normalizedContent)) {
     return `<pre class="math">$$${escapedContent}$$</pre>`;
   }
   return `<span class="math">$${escapedContent}$</span>`;

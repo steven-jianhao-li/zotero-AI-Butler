@@ -37,6 +37,7 @@ import {
   normalizeFollowUpChatNoteHtml,
   normalizeLatexForKatex,
   requiresDisplayMath,
+  stripMathDelimiters,
 } from "./noteMarkdown";
 import { AiNoteService, type AiNoteKind } from "./aiNoteService";
 import { SummaryView } from "./views/SummaryView";
@@ -4582,10 +4583,7 @@ async function loadNoteContent(
         /<pre\b[^>]*class="[^"]*\bmath\b[^"]*"[^>]*>([\s\S]*?)<\/pre>/g,
         (_match: string, innerContent: string) => {
           const unescaped = decodeMathHtmlEntities(innerContent).trim();
-          const latex =
-            unescaped.startsWith("$$") && unescaped.endsWith("$$")
-              ? unescaped.slice(2, -2)
-              : unescaped;
+          const latex = stripMathDelimiters(unescaped);
           try {
             const rendered = katex.renderToString(cleanLatex(latex), {
               throwOnError: false,
@@ -4627,11 +4625,7 @@ async function loadNoteContent(
             trimmed.startsWith("$") && trimmed.endsWith("$");
           const hasDisplayStyle = trimmed.includes("\\displaystyle");
 
-          const rawLatex = isDoubleDollar
-            ? trimmed.slice(2, -2)
-            : isSingleDollar
-              ? trimmed.slice(1, -1)
-              : trimmed;
+          const rawLatex = stripMathDelimiters(trimmed);
           const isTaggedDisplay = requiresDisplayMath(rawLatex);
           const isBlock =
             isMarkedDisplay ||

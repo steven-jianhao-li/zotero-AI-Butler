@@ -251,13 +251,16 @@ describe("multi-round prompt templates v2", function () {
     );
   });
 
-  it("rejects duplicate dynamically planned slot ids", function () {
-    expect(() =>
-      planDeepReadSlots(v2Template(), [
-        { id: "same", title_zh: "A", title_en: "A" },
-        { id: "same", title_zh: "B", title_en: "B" },
-      ]),
-    ).to.throw("slot ID");
+  it("normalizes duplicate dynamically planned chapter ids into stable slot ids", function () {
+    const planned = planDeepReadSlots(v2Template(), [
+      { id: "same", title_zh: "A", title_en: "A" },
+      { id: "same", title_zh: "B", title_en: "B" },
+    ]);
+
+    expect(planned.sequentialSlots.map((slot) => slot.id)).to.deep.equal([
+      "chapter_ch1",
+      "chapter_ch2",
+    ]);
   });
 
   it("does not duplicate model-provided top-level slot headings", function () {

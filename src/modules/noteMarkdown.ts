@@ -98,13 +98,29 @@ export function requiresDisplayMath(content: string): boolean {
   return /(^|[^\\])\\tag\s*\{/.test(content);
 }
 
-export function zoteroNoteMathHtml(content: string, isBlock: boolean): string {
-  const escapedContent = escapeHtml(content);
-  if (isBlock) {
-    return `<p style="text-align: center;"><span class="math">$$${escapedContent}$$</span></p>`;
+export function stripMathDelimiters(content: string): string {
+  let trimmed = content.trim();
+  while (
+    trimmed.startsWith("$") &&
+    trimmed.endsWith("$") &&
+    trimmed.length >= 2
+  ) {
+    trimmed = trimmed.slice(1, -1).trim();
   }
-  if (requiresDisplayMath(content)) {
-    return `<span class="math">$$${escapedContent}$$</span>`;
+  return trimmed;
+}
+
+export function normalizeLatexForKatex(content: string): string {
+  return decodeMathHtmlEntities(stripMathDelimiters(content))
+    .replace(/</g, "\\langle ")
+    .replace(/>/g, " \\rangle");
+}
+
+export function zoteroNoteMathHtml(content: string, isBlock: boolean): string {
+  const normalizedContent = stripMathDelimiters(content);
+  const escapedContent = escapeHtml(normalizedContent);
+  if (isBlock || requiresDisplayMath(normalizedContent)) {
+    return `<pre class="math">$$${escapedContent}$$</pre>`;
   }
   return `<span class="math">$${escapedContent}$</span>`;
 }
@@ -153,9 +169,10 @@ export function markdownToZoteroNoteHtml(markdown: string): string {
   html = html.replace(/\s+style="[^"]*"/g, "");
 
   html = html.replace(
-    /<p>\s*FORMULA_BLOCK_(\d+)_END\s*<\/p>|FORMULA_(BLOCK|INLINE)_(\d+)_END/g,
-    (_match, blockIndex, _type, inlineIndex) => {
-      const formulaData = formulas[parseInt(blockIndex ?? inlineIndex)];
+    /<p>\s*FORMULA_BLOCK_(\d+)_END\s*<\/p>|<p>\s*FORMULA_INLINE_(\d+)_END\s*<\/p>|FORMULA_(BLOCK|INLINE)_(\d+)_END/g,
+    (_match, blockIndex, paragraphInlineIndex, _type, inlineIndex) => {
+      const formulaData =
+        formulas[parseInt(blockIndex ?? paragraphInlineIndex ?? inlineIndex)];
       if (!formulaData) return _match;
 
       return zoteroNoteMathHtml(formulaData.content, formulaData.isBlock);
@@ -189,7 +206,7 @@ export function addZoteroNoteOverflowGuards(html: string): string {
       mergeStyleAttribute(tag, NOTE_TABLE_STYLE),
     )
     .replace(
-      /(<p\b[^>]*>)(\s*<span class="math">[\s\S]*?<\/span>\s*)<\/p>/gi,
+      /(<p\b[^>]*>)(\s*<span class="math"(?:\s[^>]*)?>[\s\S]*?<\/span>\s*)<\/p>/gi,
       (_match, openingTag, inner) =>
         `${mergeStyleAttribute(openingTag, NOTE_MATH_BLOCK_STYLE)}${inner}</p>`,
     );
@@ -249,7 +266,7 @@ export function markdownToDisplayHtml(markdown: string): string {
     const formulaData = formulas[parseInt(index)];
     if (!formulaData) return _match;
 
-    const content = decodeMathHtmlEntities(formulaData.content);
+    const content = normalizeLatexForKatex(formulaData.content);
     const isBlock = formulaData.isBlock || requiresDisplayMath(content);
     try {
       const rendered = katex.renderToString(content, {

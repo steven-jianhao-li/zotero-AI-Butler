@@ -62,7 +62,7 @@ let notifierID: string | null = null;
 let unsubscribeProgress: (() => void) | null = null;
 let unsubscribeComplete: (() => void) | null = null;
 let refreshTimer: number | null = null;
-const DEFAULT_REFRESH_DELAY_MS = 80;
+const DEFAULT_REFRESH_DELAY_MS = 3000;
 const pendingRefreshItemIDs = new Set<number>();
 let forceRefreshAll = false;
 const summaryNoteCache = new Map<number, boolean>();
@@ -609,7 +609,12 @@ async function flushRefresh(): Promise<void> {
   const shouldRefreshAll = forceRefreshAll;
   forceRefreshAll = false;
 
-  if (isAnyPaneViewingNote()) {
+  if (shouldDeferTreeRefresh()) {
+    for (const itemID of itemIDs) {
+      pendingRefreshItemIDs.add(itemID);
+    }
+    forceRefreshAll = forceRefreshAll || shouldRefreshAll;
+    scheduleFlushRefresh(DEFAULT_REFRESH_DELAY_MS);
     return;
   }
 
@@ -630,22 +635,19 @@ async function flushRefresh(): Promise<void> {
   invalidateOpenItemTrees();
 }
 
-function isAnyPaneViewingNote(): boolean {
+function shouldDeferTreeRefresh(): boolean {
   try {
     for (const pane of Zotero.getZoteroPanes?.() || []) {
       const selectedItems = pane.getSelectedItems?.() as
         | Array<Pick<Zotero.Item, "isNote"> | null | undefined>
         | undefined;
-      if (
-        selectedItems &&
-        shouldDeferLibraryStatusRefreshForSelection(selectedItems)
-      ) {
+      if (selectedItems && selectedItems.length > 0) {
         return true;
       }
     }
   } catch (error) {
     logLibraryStatusColumn(
-      "[AI-Butler] AI status column note selection check failed",
+      "[AI-Butler] AI status column selection check failed",
       error,
     );
   }
@@ -671,10 +673,6 @@ function invalidateOpenItemTrees(): void {
       }
       if (typeof itemsView.treeInstance?.invalidate === "function") {
         itemsView.treeInstance.invalidate();
-        continue;
-      }
-      if (typeof itemsView.refresh === "function") {
-        itemsView.refresh();
       }
     }
   } catch (error) {

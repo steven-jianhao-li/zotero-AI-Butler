@@ -38,6 +38,7 @@ import {
 export class UiSettingsPage {
   private container: HTMLElement;
   private preview!: HTMLElement;
+  private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -219,6 +220,7 @@ export class UiSettingsPage {
       ),
     );
 
+    let scheduleAutoSave: () => void = () => undefined;
     const contextMenuVisibilityDraft = getContextMenuItemVisibility();
     let contextMenuOrderDraft = getContextMenuItemOrder();
     let contextMenuCollapsedDraft = isContextMenuCollapsed();
@@ -232,33 +234,15 @@ export class UiSettingsPage {
         () => contextMenuOrderDraft,
         (nextOrder) => {
           contextMenuOrderDraft = nextOrder;
+          scheduleAutoSave();
         },
+        scheduleAutoSave,
       ),
     );
 
     const sidebarVisibilityDraft = getSidebarModuleVisibility();
     let sidebarOrderDraft = getSidebarModuleOrder();
-    form.appendChild(
-      this.createSidebarModuleSection(
-        sidebarVisibilityDraft,
-        () => sidebarOrderDraft,
-        (nextOrder) => {
-          sidebarOrderDraft = nextOrder;
-        },
-      ),
-    );
-
-    // 预览区域（移除字号预览，不再提供字体大小设置）
-
-    // 按钮
-    const actions = Zotero.getMainWindow().document.createElement("div");
-    Object.assign(actions.style, {
-      display: "flex",
-      gap: "12px",
-      marginTop: "16px",
-    });
-    const btnSave = createStyledButton("💾 保存设置", "#4caf50");
-    btnSave.addEventListener("click", async () => {
+    const saveCurrentSettings = async (showNotice = true) => {
       const autoVal =
         (form.querySelector("#setting-autoScroll") as HTMLInputElement)
           ?.checked ?? true;
@@ -323,18 +307,52 @@ export class UiSettingsPage {
       setSidebarModuleVisibility(sidebarVisibilityDraft);
       setSidebarModuleOrder(sidebarOrderDraft);
 
-      // 清除主题缓存以便下次加载新主题
       const { themeManager } = await import("../../themeManager");
       themeManager.setCurrentTheme(themeVal);
       themeManager.clearCache();
 
-      // 重新加载自动扫描管理器
       AutoScanManager.getInstance().reload();
       await this.applyLiveUICustomization();
 
-      new ztoolkit.ProgressWindow("界面设置")
-        .createLine({ text: "✅ 设置已保存", type: "success" })
-        .show();
+      if (showNotice) {
+        this.showSavedNotice();
+      }
+    };
+    scheduleAutoSave = () => {
+      if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
+      this.autoSaveTimer = setTimeout(() => {
+        this.autoSaveTimer = null;
+        void saveCurrentSettings(true);
+      }, 500);
+    };
+
+    form.appendChild(
+      this.createSidebarModuleSection(
+        sidebarVisibilityDraft,
+        () => sidebarOrderDraft,
+        (nextOrder) => {
+          sidebarOrderDraft = nextOrder;
+          scheduleAutoSave();
+        },
+        scheduleAutoSave,
+      ),
+    );
+
+    form.addEventListener("change", scheduleAutoSave);
+    form.addEventListener("input", scheduleAutoSave);
+
+    // 预览区域（移除字号预览，不再提供字体大小设置）
+
+    // 按钮
+    const actions = Zotero.getMainWindow().document.createElement("div");
+    Object.assign(actions.style, {
+      display: "flex",
+      gap: "12px",
+      marginTop: "16px",
+    });
+    const btnSave = createStyledButton("💾 保存设置", "#4caf50");
+    btnSave.addEventListener("click", async () => {
+      await saveCurrentSettings(true);
     });
 
     const btnReset = createStyledButton("🔄 重置默认", "#9e9e9e");
@@ -363,6 +381,15 @@ export class UiSettingsPage {
     this.container.appendChild(form);
 
     // 无字号预览
+  }
+
+  private showSavedNotice(): void {
+    new ztoolkit.ProgressWindow("界面设置", {
+      closeOnClick: true,
+      closeTime: 2200,
+    })
+      .createLine({ text: "✅ 设置已保存", type: "success" })
+      .show();
   }
 
   private applyPreview(fontSize: number): void {
@@ -410,6 +437,7 @@ export class UiSettingsPage {
     setCollapsed: (collapsed: boolean) => void,
     getOrder: () => ContextMenuItemId[],
     setOrder: (order: ContextMenuItemId[]) => void,
+    onAutoSave?: () => void,
   ): HTMLElement {
     const doc = Zotero.getMainWindow().document;
     const panel = this.createSettingsPanel(
@@ -442,6 +470,7 @@ export class UiSettingsPage {
     });
     collapseCheckbox.addEventListener("change", () => {
       setCollapsed(collapseCheckbox.checked);
+      onAutoSave?.();
     });
 
     const collapseText = doc.createElement("div");
@@ -505,6 +534,7 @@ export class UiSettingsPage {
         });
         checkbox.addEventListener("change", () => {
           visibilityDraft[item.id] = checkbox.checked;
+          onAutoSave?.();
         });
 
         const textWrap = doc.createElement("div");
@@ -549,6 +579,7 @@ export class UiSettingsPage {
             ];
             setOrder(nextOrder);
             renderRows();
+            onAutoSave?.();
           },
           () => {
             const nextOrder = [...getOrder()];
@@ -578,6 +609,7 @@ export class UiSettingsPage {
     visibilityDraft: SidebarModuleVisibility,
     getOrder: () => SidebarModuleId[],
     setOrder: (order: SidebarModuleId[]) => void,
+    onAutoSave?: () => void,
   ): HTMLElement {
     const doc = Zotero.getMainWindow().document;
     const panel = this.createSettingsPanel(
@@ -622,6 +654,7 @@ export class UiSettingsPage {
         });
         checkbox.addEventListener("change", () => {
           visibilityDraft[moduleId] = checkbox.checked;
+          onAutoSave?.();
         });
 
         const textWrap = doc.createElement("div");

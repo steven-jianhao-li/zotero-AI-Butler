@@ -35,7 +35,9 @@ import {
   buildFollowUpChatPairNoteHtml,
   decodeMathHtmlEntities,
   normalizeFollowUpChatNoteHtml,
+  normalizeLatexForKatex,
   requiresDisplayMath,
+  stripMathDelimiters,
 } from "./noteMarkdown";
 import { AiNoteService, type AiNoteKind } from "./aiNoteService";
 import { SummaryView } from "./views/SummaryView";
@@ -61,12 +63,6 @@ interface ChatState {
 // 递增的对话对 ID 计数器
 let quickChatPairIdCounter = 0;
 
-/**
- * 内联公式转块级公式的阈值（渲染后HTML字符数）
- * 当内联公式渲染后的HTML长度超过此阈值时，自动转换为可滚动的块级公式
- * 调整此值可控制何时触发转换，详见 doc/DevelopmentGuide.md
- */
-const INLINE_FORMULA_TO_BLOCK_THRESHOLD = 2000;
 const SIDEBAR_HEADING_TO_BLOCKQUOTE_TEXT_THRESHOLD = 36;
 const SIDEBAR_NOTE_OVERFLOW_GUARD_CSS = `
 .ai-butler-note-section,
@@ -4545,9 +4541,9 @@ async function loadNoteContent(
      * LLM 有时会在公式中输出 <br> 等 HTML 标签，需要在渲染前移除
      */
     const cleanLatex = (latex: string): string => {
-      return latex
+      return normalizeLatexForKatex(latex)
         .replace(/<br\s*\/?>/gi, " ") // <br> or <br/> -> 空格
-        .replace(/<[^>]+>/g, ""); // 移除其他 HTML 标签
+        .replace(/<\/?(?:span|br|p|div|em|strong|code|sup|sub)\b[^>]*>/gi, ""); // 移除常见 HTML 标签，保留 LaTeX 比较符号
     };
 
     // Pre-render LaTeX formulas BEFORE XML validation
@@ -4555,14 +4551,64 @@ async function loadNoteContent(
     const renderLatexFormulas = (content: string): string => {
       let result = content;
 
+      result = result.replace(
+        /<p\b([^>]*)>\s*(<span\b([^>]*)class="[^"]*\bmath\b[^"]*"([^>]*)>)/g,
+        (
+          match: string,
+          paragraphAttrs: string,
+          spanOpen: string,
+          beforeClassAttrs: string,
+          afterClassAttrs: string,
+        ) => {
+          if (
+            /text-align\s*:\s*center/i.test(paragraphAttrs) &&
+            !/\bdata-ai-butler-display-math\s*=/i.test(spanOpen)
+          ) {
+            return match.replace(
+              spanOpen,
+              `<span${beforeClassAttrs}class="math"${afterClassAttrs} data-ai-butler-display-math="true">`,
+            );
+          }
+          return match;
+        },
+      );
+
+      result = result.replace(
+        /<pre\b[^>]*class="[^"]*\bmath\b[^"]*"[^>]*>([\s\S]*?)<\/pre>/g,
+        (_match: string, innerContent: string) => {
+          const unescaped = decodeMathHtmlEntities(innerContent).trim();
+          const latex = stripMathDelimiters(unescaped);
+          try {
+            const rendered = katex.renderToString(cleanLatex(latex), {
+              throwOnError: false,
+              displayMode: true,
+              output: "html",
+              trust: true,
+              strict: false,
+            });
+            return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;
+          } catch {
+            return `<code>${innerContent}</code>`;
+          }
+        },
+      );
+
       // 1. Render Zotero native format: <span class="math">...</span> (contains $...$ or $$...$$)
       result = result.replace(
-        /<span class="math">([\s\S]*?)<\/span>/g,
-        (_match: string, innerContent: string) => {
+        /<span\b([^>]*)class="[^"]*\bmath\b[^"]*"([^>]*)>([\s\S]*?)<\/span>/g,
+        (
+          _match: string,
+          beforeClassAttrs: string,
+          afterClassAttrs: string,
+          innerContent: string,
+        ) => {
           // content might be $x$ or $$x$$ or escaped HTML
           const unescaped = decodeMathHtmlEntities(innerContent);
 
           const trimmed = unescaped.trim();
+          const mathAttrs = `${beforeClassAttrs} ${afterClassAttrs}`;
+          const isMarkedDisplay =
+            /\bdata-ai-butler-display-math\s*=\s*["']true["']/i.test(mathAttrs);
 
           // Check for block formula markers
           // 1. Double dollar signs $$...$$
@@ -4573,8 +4619,10 @@ async function loadNoteContent(
             trimmed.startsWith("$") && trimmed.endsWith("$");
           const hasDisplayStyle = trimmed.includes("\\displaystyle");
 
-          const isTaggedDisplay = requiresDisplayMath(trimmed);
+          const rawLatex = stripMathDelimiters(trimmed);
+          const isTaggedDisplay = requiresDisplayMath(rawLatex);
           const isBlock =
+            isMarkedDisplay ||
             isDoubleDollar ||
             (isSingleDollar && (hasDisplayStyle || isTaggedDisplay));
 
@@ -4610,11 +4658,7 @@ async function loadNoteContent(
                 trust: true,
                 strict: false,
               });
-              // 检查渲染后HTML长度，超过阈值则转为块级可滚动公式
-              if (
-                isTaggedDisplay ||
-                rendered.length > INLINE_FORMULA_TO_BLOCK_THRESHOLD
-              ) {
+              if (isTaggedDisplay) {
                 return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;
               }
               return `<span class="katex-inline">${rendered}</span>`;
@@ -4675,11 +4719,7 @@ async function loadNoteContent(
               trust: true,
               strict: false,
             });
-            // 检查渲染后HTML长度，超过阈值则转为块级可滚动公式
-            if (
-              isTaggedDisplay ||
-              rendered.length > INLINE_FORMULA_TO_BLOCK_THRESHOLD
-            ) {
+            if (isTaggedDisplay) {
               return `<div class="katex-scroll-container" style="width: 100%; overflow-x: auto; overflow-y: visible;"><div class="katex-display">${rendered}</div></div>`;
             }
             return `<span class="katex-inline">${rendered}</span>`;
@@ -4867,8 +4907,6 @@ async function loadNoteContent(
       noteContent.appendChild(errorContainer);
     } else {
       // LaTeX formulas already rendered before XML validation
-      // Oversized inline formulas are already converted to block format during rendering
-      // (see INLINE_FORMULA_TO_BLOCK_THRESHOLD constant)
       noteContent.innerHTML = sanitizedContent;
     }
   } catch (err: any) {

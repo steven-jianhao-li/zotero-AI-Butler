@@ -536,10 +536,11 @@ function createSequentialSlots(
   chapters: ChapterInfo[],
 ): DeepReadSlot[] {
   const maxChapters = phase.maxChapters || chapters.length;
+  const normalizedChapters = normalizeDeepReadChapters(chapters, maxChapters);
   const prompts = [
     ...phase.fixedPrompts,
     ...generateChapterPrompts(
-      chapters,
+      normalizedChapters,
       phase.chapterTemplate,
       phase.fixedPrompts.length,
       maxChapters,
@@ -563,7 +564,7 @@ function promptToSlot(
   phase: MultiRoundPromptPhase,
 ): DeepReadSlot {
   return {
-    id: prompt.id,
+    id: normalizeDeepReadSlotId(prompt.id),
     title: normalizeDeepReadPromptTitle(prompt.title),
     prompt: prompt.prompt,
     phaseId: phase.id,
@@ -571,6 +572,45 @@ function promptToSlot(
     phaseType: phase.type,
     status: "pending",
   };
+}
+
+function normalizeDeepReadChapters(
+  chapters: ChapterInfo[],
+  maxChapters: number,
+): ChapterInfo[] {
+  const limit = Math.max(
+    1,
+    Math.min(12, Number.isFinite(maxChapters) ? Math.round(maxChapters) : 12),
+  );
+  const seenTitles = new Set<string>();
+  return chapters.reduce<ChapterInfo[]>((result, chapter, index) => {
+    if (result.length >= limit) return result;
+    const titleZh = (
+      chapter.title_zh ||
+      chapter.title_en ||
+      `第 ${index + 1} 章`
+    ).trim();
+    const titleEn = (chapter.title_en || "").trim();
+    const titleKey = `${titleZh}\n${titleEn}`.toLowerCase();
+    if (seenTitles.has(titleKey)) return result;
+    seenTitles.add(titleKey);
+    result.push({
+      id: `ch${result.length + 1}`,
+      title_zh: titleZh,
+      title_en: titleEn,
+    });
+    return result;
+  }, []);
+}
+
+function normalizeDeepReadSlotId(id: string): string {
+  return (
+    id
+      .trim()
+      .replace(/[^A-Za-z0-9_-]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "") || "slot"
+  );
 }
 
 function normalizeDeepReadPromptTitle(title: string): string {

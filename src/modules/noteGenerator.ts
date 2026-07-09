@@ -1259,7 +1259,6 @@ export class NoteGenerator {
       try {
         const response = await this.callDeepReadChat({
           session,
-          item: params.item,
           pdfContent: params.pdfContent,
           isBase64: params.isBase64,
           conversation: [{ role: "user", content: slot.prompt }],
@@ -1321,7 +1320,6 @@ export class NoteGenerator {
         try {
           const response = await this.callDeepReadChat({
             session,
-            item: params.item,
             pdfContent: params.pdfContent,
             isBase64: params.isBase64,
             conversation,
@@ -1374,7 +1372,6 @@ export class NoteGenerator {
         try {
           const response = await this.callDeepReadChat({
             session,
-            item: params.item,
             pdfContent: params.pdfContent,
             isBase64: params.isBase64,
             conversation: [{ role: "user", content: slot.prompt }],
@@ -1519,25 +1516,18 @@ export class NoteGenerator {
 
   private static async callDeepReadChat(params: {
     session?: DeepReadSession;
-    item?: Zotero.Item;
     pdfContent: string;
     isBase64: boolean;
     conversation: Array<{ role: "user" | "assistant"; content: string }>;
     abortSignal?: LLMAbortSignal;
     onProgress?: (chunk: string) => void;
   }): Promise<LLMResponse> {
-    const content = params.item
-      ? {
-          kind: "zotero-item" as const,
-          item: params.item,
-          attachmentMode: "default" as const,
-        }
-      : {
-          kind: "legacy" as const,
-          content: params.pdfContent,
-          isBase64: params.isBase64,
-          policy: params.isBase64 ? ("pdf-base64" as const) : ("text" as const),
-        };
+    const content = {
+      kind: "legacy" as const,
+      content: params.pdfContent,
+      isBase64: params.isBase64,
+      policy: params.isBase64 ? ("pdf-base64" as const) : ("text" as const),
+    };
     let conversation = params.conversation;
     let response = await this.chatWithDeepReadSession(params.session, {
       content,

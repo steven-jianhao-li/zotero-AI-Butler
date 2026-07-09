@@ -18,6 +18,7 @@ import LLMClient from "../../llmClient";
 import type { LLMModelInfo, LLMOptions } from "../../llmproviders/types";
 import { ApiKeyManager, type ProviderId } from "../../apiKeyManager";
 import { LLMEndpointManager } from "../../llmEndpointManager";
+import { pickFolder } from "../../folderPicker";
 
 /**
  * API 设置页面类
@@ -25,6 +26,7 @@ import { LLMEndpointManager } from "../../llmEndpointManager";
 export class ApiSettingsPage {
   private container: HTMLElement;
   private endpointPreviewUpdaters: Array<() => void> = [];
+  private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -970,6 +972,97 @@ export class ApiSettingsPage {
         "只要全局 PDF 处理模式或“模型平台”页面任一模型的 PDF 处理方式选择 MinerU，就需要填写。请访问 https://mineru.net/ 申请 API Key。",
       ),
     );
+
+    sectionMineru.appendChild(
+      this.createFormGroup(
+        "保存解析后的全文 Markdown",
+        this.createCheckbox(
+          "mineruSaveMarkdown",
+          Boolean(getPref("mineruSaveMarkdown" as any)),
+        ),
+        "启用后，MinerU 解析完成时会保存全文 Markdown；后续处理同一条目会优先复用已保存的 Markdown，避免重复解析。",
+      ),
+    );
+
+    sectionMineru.appendChild(
+      this.createFormGroup(
+        "保存为 Zotero 子附件",
+        this.createCheckbox(
+          "mineruSaveAsAttachment",
+          Boolean(getPref("mineruSaveAsAttachment" as any) ?? true),
+        ),
+        "将 Markdown 作为当前文献条目下的 text/markdown 附件保存，并在再次解析时更新同一附件。",
+      ),
+    );
+
+    sectionMineru.appendChild(
+      this.createFormGroup(
+        "同步到外部文件夹",
+        this.createCheckbox(
+          "mineruSyncExternal",
+          Boolean(getPref("mineruSyncExternal" as any)),
+        ),
+        "可用于同步到 Obsidian Vault 或本地 RAG 知识库目录。",
+      ),
+    );
+
+    const mineruExternalPathInput = this.createInput(
+      "mineruExternalPath",
+      "text",
+      String(getPref("mineruExternalPath" as any) || ""),
+      "例如 D:\\ObsidianVault\\Literature",
+    );
+    const mineruPathWrapper = this.createElement("div", {
+      styles: { display: "flex", gap: "8px", alignItems: "center" },
+    });
+    mineruPathWrapper.appendChild(mineruExternalPathInput);
+    const mineruBrowseButton = createStyledButton(
+      "选择目录",
+      "#2196f3",
+      "small",
+    );
+    mineruBrowseButton.addEventListener("click", async () => {
+      try {
+        const selected = await pickFolder(
+          "选择 MinerU Markdown 同步目录",
+          this.container.ownerDocument?.defaultView || null,
+        );
+        if (selected) {
+          mineruExternalPathInput.value = selected;
+          this.scheduleAutoSave();
+        }
+      } catch (error) {
+        ztoolkit.log(
+          "[API Settings] 选择 MinerU Markdown 同步目录失败:",
+          error,
+        );
+      }
+    });
+    mineruPathWrapper.appendChild(mineruBrowseButton);
+    sectionMineru.appendChild(
+      this.createFormGroup(
+        "外部文件夹路径",
+        mineruPathWrapper,
+        "开启外部同步后生效；每篇论文会写入该目录下独立的论文子文件夹，包含 Markdown 和 images/ 等资源。",
+      ),
+    );
+
+    const mineruFileNameModeSelect = createSelect(
+      "mineruFileNameMode",
+      [
+        { value: "citationKey-title", label: "Citation Key + 标题（推荐）" },
+        { value: "citationKey", label: "仅 Citation Key" },
+        { value: "title", label: "仅 Zotero 标题" },
+      ],
+      String(getPref("mineruFileNameMode" as any) || "citationKey-title"),
+    );
+    sectionMineru.appendChild(
+      this.createFormGroup(
+        "Markdown 文件命名",
+        mineruFileNameModeSelect,
+        "优先读取 Zotero/Better BibTeX citationKey；没有 citationKey 时自动回退到条目标题。",
+      ),
+    );
     form.appendChild(sectionMineru);
 
     // PDF 大小限制设置
@@ -1059,6 +1152,8 @@ export class ApiSettingsPage {
         "当论文有多个 PDF 附件时的处理方式。选择“全部 PDF”时会使用当前 Provider 的多 PDF 上传能力；具体可用性取决于所选模型和服务端是否支持 PDF 输入",
       ),
     );
+
+    this.bindAutoSave(form);
 
     const buttonGroup = this.createElement("div", {
       styles: {
@@ -2395,6 +2490,29 @@ export class ApiSettingsPage {
     return createStyledButton(text, color);
   }
 
+  private bindAutoSave(root: HTMLElement): void {
+    root.addEventListener("input", (event) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("button")) return;
+      this.scheduleAutoSave();
+    });
+    root.addEventListener("change", (event) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("button")) return;
+      this.scheduleAutoSave();
+    });
+  }
+
+  private scheduleAutoSave(delayMs = 700): void {
+    if (this.autoSaveTimer) {
+      clearTimeout(this.autoSaveTimer);
+    }
+    this.autoSaveTimer = setTimeout(() => {
+      this.autoSaveTimer = null;
+      void this.saveSettings();
+    }, delayMs);
+  }
+
   /**
    * 保存设置
    */
@@ -2445,6 +2563,26 @@ export class ApiSettingsPage {
       setPref("batchInterval", inputValue("batchInterval", "60"));
       setPref("scanInterval", inputValue("scanInterval", "300"));
       setPref("pdfProcessMode", selectValue("pdfProcessMode", "base64"));
+      setPref(
+        "mineruSaveMarkdown" as any,
+        checkboxValue("mineruSaveMarkdown", false),
+      );
+      setPref(
+        "mineruSaveAsAttachment" as any,
+        checkboxValue("mineruSaveAsAttachment", true),
+      );
+      setPref(
+        "mineruSyncExternal" as any,
+        checkboxValue("mineruSyncExternal", false),
+      );
+      setPref(
+        "mineruExternalPath" as any,
+        inputValue("mineruExternalPath", ""),
+      );
+      setPref(
+        "mineruFileNameMode" as any,
+        selectValue("mineruFileNameMode", "citationKey-title"),
+      );
 
       setPref(
         "enablePdfSizeLimit" as any,
@@ -3206,6 +3344,11 @@ export class ApiSettingsPage {
     setPref("pdfProcessMode", "base64");
     setPref("mineruApiKey" as any, "");
     setPref("mineruModelVersion", "vlm");
+    setPref("mineruSaveMarkdown" as any, false);
+    setPref("mineruSaveAsAttachment" as any, true);
+    setPref("mineruSyncExternal" as any, false);
+    setPref("mineruExternalPath" as any, "");
+    setPref("mineruFileNameMode" as any, "citationKey-title");
     setPref("enablePdfSizeLimit" as any, false);
     setPref("maxPdfSizeMB" as any, "50");
     setPref("pdfAttachmentMode" as any, "default");

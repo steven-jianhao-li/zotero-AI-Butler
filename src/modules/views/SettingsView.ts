@@ -105,7 +105,7 @@ export class SettingsView extends BaseView {
       },
       { id: "mindmap", label: "🧠 思维导图" },
       { id: "imageSummary", label: "🖼️ 一图总结" },
-      { id: "noteExport", label: "📤 自动导出" },
+      { id: "noteExport", label: "📤 笔记自动导出" },
       { id: "ui", label: "🎨 界面设置" },
       { id: "data", label: "💾 数据管理" },
       { id: "about", label: "ℹ️ 关于" },

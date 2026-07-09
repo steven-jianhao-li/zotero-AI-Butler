@@ -89,7 +89,10 @@ export class NoteExportSettingsPage {
     const browseButton = createStyledButton("选择目录", "#2196f3", "medium");
     browseButton.addEventListener("click", async () => {
       try {
-        const selected = await pickFolder("选择 AI 笔记导出目录");
+        const selected = await pickFolder(
+          "选择 AI 笔记导出目录",
+          this.container.ownerDocument?.defaultView || null,
+        );
         if (selected) {
           (pathInput as HTMLInputElement).value = selected;
           saveCurrentSettings(true);

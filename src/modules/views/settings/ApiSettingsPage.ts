@@ -1023,7 +1023,10 @@ export class ApiSettingsPage {
     );
     mineruBrowseButton.addEventListener("click", async () => {
       try {
-        const selected = await pickFolder("选择 MinerU Markdown 同步目录");
+        const selected = await pickFolder(
+          "选择 MinerU Markdown 同步目录",
+          this.container.ownerDocument?.defaultView || null,
+        );
         if (selected) {
           mineruExternalPathInput.value = selected;
           this.scheduleAutoSave();

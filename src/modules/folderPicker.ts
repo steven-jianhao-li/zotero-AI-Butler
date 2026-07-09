@@ -1,23 +1,60 @@
-export async function pickFolder(title: string): Promise<string | null> {
+export async function pickFolder(
+  title: string,
+  ownerWindow?: Window | null,
+): Promise<string | null> {
+  const restoreWindow = ownerWindow || getMostRecentWindow();
   const FilePicker = ChromeUtils.importESModule(
     "chrome://zotero/content/modules/filePicker.mjs",
   ).FilePicker;
   const fp = new FilePicker();
   fp.init(Zotero.getMainWindow(), title, fp.modeGetFolder);
-  const result = await fp.show();
 
-  if (result !== fp.returnOK && result !== fp.returnReplace) {
-    return null;
-  }
+  try {
+    const result = await fp.show();
 
-  const path = resolvePickerPath(fp.file);
-  if (!path) {
-    ztoolkit.log("[AI-Butler][FolderPicker] 未能从目录选择器读取路径", {
-      result,
-      file: fp.file,
-    });
+    if (result !== fp.returnOK && result !== fp.returnReplace) {
+      return null;
+    }
+
+    const path = resolvePickerPath(fp.file);
+    if (!path) {
+      ztoolkit.log("[AI-Butler][FolderPicker] 未能从目录选择器读取路径", {
+        result,
+        file: fp.file,
+      });
+    }
+    return path;
+  } finally {
+    restoreWindowFocus(restoreWindow);
   }
-  return path;
+}
+
+function getMostRecentWindow(): Window | null {
+  try {
+    const wm = Services.wm as unknown as {
+      getMostRecentWindow?: (windowType?: string | null) => Window | null;
+    };
+    return wm.getMostRecentWindow?.(null) || Zotero.getMainWindow() || null;
+  } catch (_error) {
+    return Zotero.getMainWindow() || null;
+  }
+}
+
+function restoreWindowFocus(win: Window | null): void {
+  if (!win || win.closed) return;
+
+  const focus = () => {
+    try {
+      win.focus();
+    } catch (error) {
+      ztoolkit.log("[AI-Butler][FolderPicker] 恢复窗口焦点失败:", error);
+    }
+  };
+
+  focus();
+  // Windows 原生文件选择器关闭后，宿主窗口激活有时会被系统延后一拍。
+  setTimeout(focus, 50);
+  setTimeout(focus, 180);
 }
 
 function resolvePickerPath(file: unknown): string | null {

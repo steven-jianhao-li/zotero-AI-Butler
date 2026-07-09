@@ -41,7 +41,7 @@ export class MineruMarkdownSaver {
       }
     }
 
-    if (Boolean(getPref("mineruSyncExternal" as any))) {
+    if (getPref("mineruSyncExternal" as any)) {
       const content = await this.readExternalMarkdown(item);
       if (content) return content;
     }
@@ -57,7 +57,7 @@ export class MineruMarkdownSaver {
     const result: MineruMarkdownSaveResult = {};
     if (!markdown.trim()) return result;
 
-    if (Boolean(getPref("mineruSaveAsAttachment" as any))) {
+    if (getPref("mineruSaveAsAttachment" as any)) {
       const attachment = await this.saveAsZoteroAttachment(
         item,
         markdown,
@@ -66,7 +66,7 @@ export class MineruMarkdownSaver {
       if (attachment) result.attachmentId = attachment.id;
     }
 
-    if (Boolean(getPref("mineruSyncExternal" as any))) {
+    if (getPref("mineruSyncExternal" as any)) {
       const externalPath = await this.saveToExternalFolder(
         item,
         markdown,

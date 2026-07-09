@@ -694,7 +694,10 @@ function normalizeSequentialDynamicPhase(
     value.contextStrategy === "full_history" ? "full_history" : "last_round";
   const maxChapters =
     typeof value.maxChapters === "number" && Number.isFinite(value.maxChapters)
-      ? Math.min(MAX_DEEP_READ_CHAPTER_LIMIT, Math.max(1, Math.round(value.maxChapters)))
+      ? Math.min(
+          MAX_DEEP_READ_CHAPTER_LIMIT,
+          Math.max(1, Math.round(value.maxChapters)),
+        )
       : DEFAULT_DEEP_READ_CHAPTER_LIMIT;
 
   return {

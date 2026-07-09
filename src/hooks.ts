@@ -1956,7 +1956,7 @@ async function handleExportCollectionNotes() {
       });
       if (choice.addToAutoWatch) {
         addWatchedCollection(collection.id);
-        showAIButlerToast("已加入自动导出监听分类", "success", 2200);
+        showAIButlerToast("已加入笔记自动导出监听分类", "success", 2200);
       }
     }
 
@@ -2138,14 +2138,14 @@ function showCollectionExportDialog(
     });
     const suppressLabel = createDialogCheckbox(
       doc,
-      "不再提醒，保持该目录（可在快捷设置 -> 自动导出中修改）",
+      "不再提醒，保持该目录（可在快捷设置 -> 笔记自动导出中修改）",
       false,
     );
     styleExportDialogCheckbox(suppressLabel.wrapper, suppressLabel.checkbox);
     optionsCard.appendChild(suppressLabel.wrapper);
     const watchLabel = createDialogCheckbox(
       doc,
-      "将该分类加入自动导出监听分类",
+      "将该分类加入笔记自动导出监听分类",
       false,
     );
     styleExportDialogCheckbox(watchLabel.wrapper, watchLabel.checkbox);

@@ -21,6 +21,7 @@
  */
 
 import { getPref } from "../utils/prefs";
+import type { TaskProgressMeta } from "./taskQueue";
 
 type PDFTextExtractionStep = {
   step: string;
@@ -68,6 +69,12 @@ export class PDFTextExtractionError extends Error {
  * 提供静态方法集合,用于 PDF 文本的提取、清理和处理
  * 采用静态方法设计,简化调用方式,无需实例化
  */
+export type PdfExtractionProgressCallback = (
+  message: string,
+  progress: number,
+  meta?: TaskProgressMeta,
+) => void;
+
 export class PDFExtractor {
   private static readonly TEXT_EXTRACTION_TIMEOUT_MS = 30000;
   private static readonly TEXT_EXTRACTION_POLL_INTERVAL_MS = 1000;
@@ -225,6 +232,7 @@ export class PDFExtractor {
   public static async extractTextFromItem(
     item: Zotero.Item,
     pdfProcessMode?: string,
+    progressCallback?: PdfExtractionProgressCallback,
   ): Promise<string> {
     // 第一步:获取条目的所有附件 ID
     const attachments = item.getAttachments();
@@ -280,7 +288,7 @@ export class PDFExtractor {
       );
       try {
         const { MineruClient } = await import("./mineruIntegration");
-        return await MineruClient.extractMarkdown(item);
+        return await MineruClient.extractMarkdown(item, progressCallback);
       } catch (e) {
         ztoolkit.log(
           "[AI Butler] MinerU extraction failed, returning to Zotero built-in extraction",
@@ -290,6 +298,11 @@ export class PDFExtractor {
     }
 
     // 若选择 Zotero 全文索引模式或MinerU失效，则使用 Zotero 全文索引提取文本
+    progressCallback?.("正在使用 Zotero 全文索引提取 PDF 文本...", 20, {
+      stage: "pdf-extracting",
+      label: "提取 PDF",
+      detail: `正在从 PDF 附件提取文本：${pdfAttachment.getField("title") || "PDF"}`,
+    });
     const text = await this.extractTextFromPDF(pdfAttachment);
 
     // 第四步:验证文本有效性
@@ -297,6 +310,11 @@ export class PDFExtractor {
       throw new Error("Failed to extract text from PDF or PDF is empty");
     }
 
+    progressCallback?.("PDF 文本提取完成", 38, {
+      stage: "pdf-extracting",
+      label: "PDF 提取完成",
+      detail: `已提取约 ${text.length} 个字符`,
+    });
     return text;
   }
 
@@ -834,8 +852,14 @@ export class PDFExtractor {
    */
   public static async extractBase64FromItem(
     item: Zotero.Item,
+    progressCallback?: PdfExtractionProgressCallback,
   ): Promise<string> {
     // 第一步: 获取条目的所有附件 ID
+    progressCallback?.("正在准备 PDF Base64 内容...", 12, {
+      stage: "pdf-extracting",
+      label: "准备 PDF",
+      detail: "正在读取 PDF 附件并准备上传内容",
+    });
     const attachments = item.getAttachments();
 
     if (attachments.length === 0) {
@@ -897,6 +921,11 @@ export class PDFExtractor {
       }
       const base64String = btoa(binary);
 
+      progressCallback?.("PDF Base64 准备完成", 35, {
+        stage: "pdf-extracting",
+        label: "PDF 准备完成",
+        detail: `Base64 内容长度：${base64String.length}`,
+      });
       return base64String;
     } catch (error: any) {
       throw new Error(`Failed to read or encode PDF: ${error.message}`);

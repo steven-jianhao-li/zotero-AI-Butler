@@ -16,6 +16,7 @@ import {
   type LLMPdfProcessMode,
 } from "./llmEndpointManager";
 import { PDFExtractor } from "./pdfExtractor";
+import type { TaskProgressMeta } from "./taskQueue";
 import { ProviderRegistry } from "./llmproviders/ProviderRegistry";
 import "./llmproviders";
 import type { ILlmProvider, PdfFileInfo } from "./llmproviders/ILlmProvider";
@@ -108,12 +109,20 @@ export type LLMGenerationOptions = {
   vendorOptions?: Record<string, unknown>;
 };
 
+export type LLMLifecycleEvent = TaskProgressMeta & {
+  progress?: number;
+  message?: string;
+};
+
+export type LLMLifecycleCallback = (event: LLMLifecycleEvent) => void;
+
 export type LLMTransportOptions = {
   stream?: boolean;
   timeoutMs?: number;
   retry?: boolean;
   keyRotation?: boolean;
   abortSignal?: LLMAbortSignal;
+  onStatus?: LLMLifecycleCallback;
 };
 
 export type LLMGenerateRequest = {
@@ -575,6 +584,15 @@ export class LLMService {
   ): Promise<LLMResponse> {
     const provider = this.getProviderForEndpoint(endpoint);
     const warnings: string[] = [];
+    request.transport?.onStatus?.({
+      stage: "llm-preparing",
+      label: "准备模型输入",
+      message: "正在准备模型输入...",
+      progress: 40,
+      endpointName: endpoint.name,
+      model: endpoint.model,
+      detail: `Provider：${endpoint.providerType}；Endpoint：${endpoint.name}`,
+    });
     throwIfAborted(request.transport?.abortSignal);
     const resolved = await this.resolveContent(
       provider,
@@ -582,6 +600,14 @@ export class LLMService {
       warnings,
       true,
       endpoint,
+      request.transport?.onStatus
+        ? (message, progress, meta) =>
+            request.transport?.onStatus?.({
+              ...(meta || {}),
+              message,
+              progress,
+            })
+        : undefined,
     );
     throwIfAborted(request.transport?.abortSignal);
     const options = this.buildOptions(
@@ -589,6 +615,42 @@ export class LLMService {
       request.generation,
       request.transport,
     );
+    request.transport?.onStatus?.({
+      stage: "llm-uploading",
+      label: "调用大模型中（上传请求中）",
+      message: "调用大模型中（上传请求中）",
+      progress: 42,
+      endpointName: endpoint.name,
+      model: options.model || endpoint.model,
+      detail: `Provider：${endpoint.providerType}；Endpoint：${endpoint.name}；Model：${options.model || endpoint.model || "unknown"}`,
+    });
+    let sawFirstChunk = false;
+    const progressProxy: ProgressCb | undefined = request.onProgress
+      ? async (chunk: string) => {
+          if (!sawFirstChunk) {
+            sawFirstChunk = true;
+            request.transport?.onStatus?.({
+              stage: "llm-streaming",
+              label: "调用大模型中（接收响应中）",
+              message: "调用大模型中（接收响应中）",
+              progress: 50,
+              endpointName: endpoint.name,
+              model: options.model || endpoint.model,
+              detail: "已收到首段模型响应，正在持续接收内容",
+            });
+          }
+          await request.onProgress?.(chunk);
+        }
+      : undefined;
+    request.transport?.onStatus?.({
+      stage: "llm-waiting",
+      label: "调用大模型中（等待响应中）",
+      message: "调用大模型中（等待响应中）",
+      progress: 45,
+      endpointName: endpoint.name,
+      model: options.model || endpoint.model,
+      detail: "请求已发出，正在等待模型返回首段内容或完整响应",
+    });
     let text: string;
     if (resolved.mode === "multi-file") {
       if (typeof provider.generateMultiFileSummary !== "function") {
@@ -601,7 +663,7 @@ export class LLMService {
           resolved.files,
           prompt,
           options,
-          request.onProgress,
+          progressProxy,
         );
       } catch (error: unknown) {
         if (isAbortError(error, options.abortSignal)) {
@@ -616,7 +678,7 @@ export class LLMService {
           resolved.isBase64,
           prompt,
           options,
-          request.onProgress,
+          progressProxy,
         );
       } catch (error: unknown) {
         if (isAbortError(error, options.abortSignal)) {
@@ -625,6 +687,15 @@ export class LLMService {
         throw this.toApiCallError(endpoint, error);
       }
     }
+    request.transport?.onStatus?.({
+      stage: "llm-streaming",
+      label: "大模型响应完成",
+      message: "大模型响应完成",
+      progress: 78,
+      endpointName: endpoint.name,
+      model: options.model || endpoint.model,
+      detail: `已收到完整响应，长度约 ${text.length} 个字符`,
+    });
     return this.toResponse(
       text,
       endpoint.providerType,
@@ -697,6 +768,15 @@ export class LLMService {
   ): Promise<LLMResponse> {
     const provider = this.getProviderForEndpoint(endpoint);
     const warnings: string[] = [];
+    request.transport?.onStatus?.({
+      stage: "llm-preparing",
+      label: "准备模型输入",
+      message: "正在准备模型输入...",
+      progress: 40,
+      endpointName: endpoint.name,
+      model: endpoint.model,
+      detail: `Provider：${endpoint.providerType}；Endpoint：${endpoint.name}`,
+    });
     throwIfAborted(request.transport?.abortSignal);
     const resolved = await this.resolveContent(
       provider,
@@ -704,6 +784,14 @@ export class LLMService {
       warnings,
       false,
       endpoint,
+      request.transport?.onStatus
+        ? (message, progress, meta) =>
+            request.transport?.onStatus?.({
+              ...(meta || {}),
+              message,
+              progress,
+            })
+        : undefined,
     );
     throwIfAborted(request.transport?.abortSignal);
     if (resolved.mode !== "single") {
@@ -714,6 +802,42 @@ export class LLMService {
       request.generation,
       request.transport,
     );
+    request.transport?.onStatus?.({
+      stage: "llm-uploading",
+      label: "调用大模型中（上传请求中）",
+      message: "调用大模型中（上传请求中）",
+      progress: 42,
+      endpointName: endpoint.name,
+      model: options.model || endpoint.model,
+      detail: `Provider：${endpoint.providerType}；Endpoint：${endpoint.name}；Model：${options.model || endpoint.model || "unknown"}`,
+    });
+    let sawFirstChunk = false;
+    const progressProxy: ProgressCb | undefined = request.onProgress
+      ? async (chunk: string) => {
+          if (!sawFirstChunk) {
+            sawFirstChunk = true;
+            request.transport?.onStatus?.({
+              stage: "llm-streaming",
+              label: "调用大模型中（接收响应中）",
+              message: "调用大模型中（接收响应中）",
+              progress: 50,
+              endpointName: endpoint.name,
+              model: options.model || endpoint.model,
+              detail: "已收到首段模型响应，正在持续接收内容",
+            });
+          }
+          await request.onProgress?.(chunk);
+        }
+      : undefined;
+    request.transport?.onStatus?.({
+      stage: "llm-waiting",
+      label: "调用大模型中（等待响应中）",
+      message: "调用大模型中（等待响应中）",
+      progress: 45,
+      endpointName: endpoint.name,
+      model: options.model || endpoint.model,
+      detail: "请求已发出，正在等待模型返回首段内容或完整响应",
+    });
     let text: string;
     try {
       text = await provider.chat(
@@ -721,7 +845,7 @@ export class LLMService {
         resolved.isBase64,
         request.conversation,
         options,
-        request.onProgress,
+        progressProxy,
       );
     } catch (error: unknown) {
       if (isAbortError(error, options.abortSignal)) {
@@ -729,6 +853,15 @@ export class LLMService {
       }
       throw this.toApiCallError(endpoint, error);
     }
+    request.transport?.onStatus?.({
+      stage: "llm-streaming",
+      label: "大模型响应完成",
+      message: "大模型响应完成",
+      progress: 78,
+      endpointName: endpoint.name,
+      model: options.model || endpoint.model,
+      detail: `已收到完整响应，长度约 ${text.length} 个字符`,
+    });
     return this.toResponse(
       text,
       endpoint.providerType,
@@ -868,6 +1001,11 @@ export class LLMService {
     warnings: string[],
     allowMultiFile: boolean,
     endpoint?: LLMEndpoint,
+    statusCallback?: (
+      message: string,
+      progress: number,
+      meta?: TaskProgressMeta,
+    ) => void,
   ): Promise<ResolvedContent> {
     if (input.kind === "text") {
       return { mode: "single", content: input.text, isBase64: false, warnings };
@@ -895,11 +1033,17 @@ export class LLMService {
         capabilities,
         warnings,
         allowMultiFile,
+        statusCallback,
       );
     }
 
     if (input.kind === "pdf-attachment") {
-      return this.resolvePdfAttachmentContent(input, policy, warnings);
+      return this.resolvePdfAttachmentContent(
+        input,
+        policy,
+        warnings,
+        statusCallback,
+      );
     }
 
     return this.resolvePdfFilesContent(
@@ -940,6 +1084,11 @@ export class LLMService {
     capabilities: LLMProviderCapabilities,
     warnings: string[],
     allowMultiFile: boolean,
+    statusCallback?: (
+      message: string,
+      progress: number,
+      meta?: TaskProgressMeta,
+    ) => void,
   ): Promise<ResolvedContent> {
     const attachmentMode =
       input.attachmentMode ||
@@ -979,7 +1128,10 @@ export class LLMService {
     }
 
     if (policy === "pdf-base64") {
-      const content = await PDFExtractor.extractBase64FromItem(input.item);
+      const content = await PDFExtractor.extractBase64FromItem(
+        input.item,
+        statusCallback,
+      );
       return { mode: "single", content, isBase64: true, warnings };
     }
 
@@ -1002,7 +1154,11 @@ export class LLMService {
       };
     }
 
-    const text = await PDFExtractor.extractTextFromItem(input.item, policy);
+    const text = await PDFExtractor.extractTextFromItem(
+      input.item,
+      policy,
+      statusCallback,
+    );
     return {
       mode: "single",
       content: this.normalizeText(text),
@@ -1015,6 +1171,11 @@ export class LLMService {
     input: LLMPdfAttachmentContent,
     policy: LLMContentPolicy,
     warnings: string[],
+    statusCallback?: (
+      message: string,
+      progress: number,
+      meta?: TaskProgressMeta,
+    ) => void,
   ): Promise<ResolvedContent> {
     if (policy === "pdf-base64") {
       const content = await PDFExtractor.extractBase64FromAttachment(
@@ -1025,7 +1186,11 @@ export class LLMService {
 
     const text =
       policy === "mineru" && input.item
-        ? await PDFExtractor.extractTextFromItem(input.item, "mineru")
+        ? await PDFExtractor.extractTextFromItem(
+            input.item,
+            "mineru",
+            statusCallback,
+          )
         : await PDFExtractor.extractTextFromAttachment(input.attachment);
     return {
       mode: "single",

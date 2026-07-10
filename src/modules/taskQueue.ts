@@ -143,6 +143,40 @@ export type TaskType =
 /**
  * 任务项接口
  */
+export type TaskStage =
+  | "queued"
+  | "preparing"
+  | "pdf-checking"
+  | "pdf-extracting"
+  | "mineru-uploading"
+  | "mineru-processing"
+  | "mineru-downloading"
+  | "mineru-parsing"
+  | "llm-preparing"
+  | "llm-uploading"
+  | "llm-waiting"
+  | "llm-streaming"
+  | "deepread-planning"
+  | "deepread-round"
+  | "saving-note"
+  | "completed"
+  | "failed"
+  | "aborted";
+
+export interface TaskProgressMeta {
+  stage?: TaskStage;
+  label?: string;
+  detail?: string;
+  providerName?: string;
+  endpointName?: string;
+  model?: string;
+  currentRound?: number;
+  totalRounds?: number;
+  attempt?: number;
+  maxAttempts?: number;
+  updatedAt?: string;
+}
+
 export interface TaskItem {
   id: string; // 任务唯一ID (使用 Zotero Item ID)
   itemId: number; // Zotero 文献条目 ID
@@ -159,8 +193,16 @@ export interface TaskItem {
   duration?: number; // 处理耗时(秒)
   /** 任务类型: summary(默认) 或 imageSummary(一图总结) 或 mindmap(思维导图) */
   taskType?: TaskType;
-  /** 工作流阶段 (一图总结专用) */
+  /** 工作流阶段/当前状态标签 */
   workflowStage?: string;
+  /** 结构化任务阶段，供任务队列展示与诊断使用 */
+  stage?: TaskStage;
+  /** 当前阶段短标签 */
+  stageLabel?: string;
+  /** 当前阶段详情，鼠标悬停时展示 */
+  stageDetail?: string;
+  /** 当前阶段更新时间 */
+  stageUpdatedAt?: Date;
   options?: {
     summaryMode?: string;
     forceOverwrite?: boolean;
@@ -215,6 +257,7 @@ export type TaskProgressCallback = (
   taskId: string,
   progress: number,
   message: string,
+  meta?: TaskProgressMeta,
 ) => void;
 
 /**
@@ -875,7 +918,11 @@ export class TaskQueueManager {
 
       // 任务成功完成
       task.status = TaskStatus.COMPLETED;
-      task.progress = 100;
+      this.updateTaskProgress(task, 100, "任务完成", {
+        stage: "completed",
+        label: "已完成",
+        detail: `任务已完成：${task.title}`,
+      });
       task.workflowStage = "完成";
       task.completedAt = new Date();
       task.duration = Math.floor(
@@ -904,6 +951,11 @@ export class TaskQueueManager {
         logTaskQueue(`一图总结任务最终失败: ${task.title} - ${task.error}`);
       }
 
+      this.updateTaskProgress(task, task.progress, task.error || "任务失败", {
+        stage: "failed",
+        label: "失败",
+        detail: task.errorDetails || task.error,
+      });
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
@@ -1797,6 +1849,10 @@ export class TaskQueueManager {
       task.completedAt = new Date();
       task.duration = 0;
       task.workflowStage = "已完成";
+      task.stage = "completed";
+      task.stageLabel = "已完成";
+      task.stageDetail = undefined;
+      task.stageUpdatedAt = new Date();
       this.processingTasks.delete(task.id);
       this.abortingTasks.delete(task.id);
       this.taskAbortControllers.delete(task.id);
@@ -1834,6 +1890,10 @@ export class TaskQueueManager {
     task.completedAt = new Date();
     task.duration = 0;
     task.workflowStage = "已完成";
+    task.stage = "completed";
+    task.stageLabel = "已完成";
+    task.stageDetail = undefined;
+    task.stageUpdatedAt = new Date();
     this.processingTasks.delete(taskId);
     this.abortingTasks.delete(taskId);
     this.taskAbortControllers.delete(taskId);
@@ -2185,17 +2245,25 @@ export class TaskQueueManager {
     task.error = undefined;
     task.errorDetails = undefined;
     task.workflowStage = undefined;
+    task.stage = undefined;
+    task.stageLabel = undefined;
+    task.stageDetail = undefined;
+    task.stageUpdatedAt = undefined;
     this.processingTasks.add(taskId);
     this.abortingTasks.delete(taskId);
     const abortController = createTaskAbortController();
     this.taskAbortControllers.set(taskId, abortController);
     await this.saveToStorage();
     const isDeepReadTask = task.taskType === "deepRead";
-    task.workflowStage = isDeepReadTask ? "正在 AI 精读" : "正在 AI 总结";
-    this.notifyProgress(
-      taskId,
+    this.updateTaskProgress(
+      task,
       task.progress,
-      isDeepReadTask ? "AI deep read started" : "AI summary started",
+      isDeepReadTask ? "AI 精读已开始" : "AI 总结已开始",
+      {
+        stage: "preparing",
+        label: isDeepReadTask ? "正在 AI 精读" : "正在 AI 总结",
+        detail: `任务已开始：${task.title}`,
+      },
     );
     this.notifyStream(taskId, { type: "start", title: task.title });
 
@@ -2224,6 +2292,11 @@ export class TaskQueueManager {
       }
 
       // 检查是否有 PDF 附件
+      this.updateTaskProgress(task, 5, "正在检查 PDF 附件", {
+        stage: "pdf-checking",
+        label: "检查 PDF",
+        detail: "正在确认当前条目是否包含可分析的 PDF 附件",
+      });
       const hasPdf = await PDFExtractor.hasPDFAttachment(item);
       if (!hasPdf) {
         throw new Error(NO_PDF_ERROR_MSG);
@@ -2233,10 +2306,9 @@ export class TaskQueueManager {
       await NoteGenerator.generateNoteForItem(
         item,
         undefined, // 不使用输出窗口,通过流式回调转发
-        (message: string, progress: number) => {
+        (message: string, progress: number, meta?: TaskProgressMeta) => {
           // 更新任务进度
-          task.progress = progress;
-          this.notifyProgress(taskId, progress, message);
+          this.updateTaskProgress(task, progress, message, meta);
         },
         (chunk: string) => {
           if (this.abortingTasks.has(taskId)) {
@@ -2249,7 +2321,10 @@ export class TaskQueueManager {
             logTaskQueue(`流式内容广播失败: ${e}`);
           }
         },
-        { ...(task.options || {}), abortSignal: abortController.signal },
+        {
+          ...(task.options || {}),
+          abortSignal: abortController.signal,
+        },
       );
 
       const artifactType: FixedTaskArtifactType =
@@ -2271,8 +2346,11 @@ export class TaskQueueManager {
           task.error =
             "AI 精读仍有未完成轮次，已停止自动重入队列，避免重复调用大模型。请检查精读笔记中的失败轮次后手动重新运行。";
           task.errorDetails = `Deep-read artifact incomplete after one execution: ${artifact.reason || "incomplete"}.`;
-          task.workflowStage = "AI 精读未完整，已停止自动补全";
-          this.notifyProgress(taskId, task.progress, task.error);
+          this.updateTaskProgress(task, task.progress, task.error, {
+            stage: "failed",
+            label: "AI 精读未完整",
+            detail: task.errorDetails,
+          });
           this.notifyComplete(taskId, false, task.error);
           this.notifyStream(taskId, { type: "error" });
           logTaskQueue(
@@ -2294,7 +2372,11 @@ export class TaskQueueManager {
 
       // 任务成功完成
       task.status = TaskStatus.COMPLETED;
-      task.progress = 100;
+      this.updateTaskProgress(task, 100, "任务完成", {
+        stage: "completed",
+        label: "已完成",
+        detail: `任务已完成：${task.title}`,
+      });
       task.completedAt = new Date();
       task.duration = Math.floor(
         (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
@@ -2361,6 +2443,11 @@ export class TaskQueueManager {
         }
       }
 
+      this.updateTaskProgress(task, task.progress, task.error || "任务失败", {
+        stage: isTaskAborted ? "aborted" : "failed",
+        label: isTaskAborted ? "已终止" : "失败",
+        detail: task.errorDetails || task.error,
+      });
       this.notifyComplete(taskId, false, task.error);
       this.notifyStream(taskId, { type: "error" });
       return isNoPdfError; // 无 PDF 错误时返回 true，表示快速失败
@@ -2581,13 +2668,37 @@ export class TaskQueueManager {
     taskId: string,
     progress: number,
     message: string,
+    meta?: TaskProgressMeta,
   ): void {
     this.progressCallbacks.forEach((callback) => {
       try {
-        callback(taskId, progress, message);
+        callback(taskId, progress, message, meta);
       } catch (error) {
         logTaskQueue(`进度回调执行失败: ${error}`);
       }
+    });
+  }
+
+  private updateTaskProgress(
+    task: TaskItem,
+    progress: number,
+    message: string,
+    meta?: TaskProgressMeta,
+  ): void {
+    const nextProgress = Math.max(0, Math.min(100, Math.round(progress)));
+    task.progress = nextProgress;
+    const label = meta?.label || message;
+    task.workflowStage = label;
+    task.stage = meta?.stage;
+    task.stageLabel = label;
+    task.stageDetail = meta?.detail;
+    task.stageUpdatedAt = meta?.updatedAt
+      ? new Date(meta.updatedAt)
+      : new Date();
+    this.notifyProgress(task.id, nextProgress, message, {
+      ...(meta || {}),
+      label,
+      updatedAt: task.stageUpdatedAt.toISOString(),
     });
   }
 
@@ -2694,6 +2805,9 @@ export class TaskQueueManager {
             : undefined,
           completedAt: taskData.completedAt
             ? new Date(taskData.completedAt)
+            : undefined,
+          stageUpdatedAt: taskData.stageUpdatedAt
+            ? new Date(taskData.stageUpdatedAt)
             : undefined,
         };
 

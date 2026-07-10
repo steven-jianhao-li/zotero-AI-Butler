@@ -1237,6 +1237,45 @@ export class NoteGenerator {
     }
 
     const progressSlots = planned.slots;
+    const totalDeepReadStages = Math.max(progressSlots.length, 1);
+    const slotOrdinal = new Map<string, number>(
+      progressSlots.map((slot, index) => [slot.id, index + 1]),
+    );
+    const getDeepReadSlotProgress = (slot: DeepReadSlot, done = false) => {
+      const ordinal = slotOrdinal.get(slot.id) || 1;
+      const ratio = (ordinal - (done ? 0 : 1)) / totalDeepReadStages;
+      return Math.min(92, 50 + Math.floor(ratio * 42));
+    };
+    const notifyDeepReadSlotProgress = (
+      slot: DeepReadSlot,
+      labelPrefix: string,
+      done = false,
+    ) => {
+      const ordinal = slotOrdinal.get(slot.id) || 1;
+      const label = `AI 精读 ${ordinal}/${totalDeepReadStages}`;
+      params.progressCallback?.(
+        `${labelPrefix}：${slot.title}`,
+        getDeepReadSlotProgress(slot, done),
+        {
+          stage: "deepread-round",
+          label,
+          detail: `${labelPrefix}：${slot.title}（${ordinal}/${totalDeepReadStages}）`,
+          currentRound: ordinal,
+          totalRounds: totalDeepReadStages,
+        },
+      );
+    };
+    params.progressCallback?.(
+      `AI 精读计划完成，共 ${totalDeepReadStages} 个阶段`,
+      50,
+      {
+        stage: "deepread-planning",
+        label: `AI 精读 0/${totalDeepReadStages}`,
+        detail: `章节结构已解析，后续将执行 ${totalDeepReadStages} 个精读/追问阶段`,
+        currentRound: 0,
+        totalRounds: totalDeepReadStages,
+      },
+    );
     params.outputWindow?.setDeepReadProgressSlots?.(progressSlots);
 
     const skeleton = buildDeepReadSkeletonHtml(
@@ -1340,6 +1379,7 @@ export class NoteGenerator {
         return;
       }
       await markSlotRunning(slot);
+      notifyDeepReadSlotProgress(slot, "正在重试精读阶段");
       try {
         const response = await this.callDeepReadChat({
           session,
@@ -1347,8 +1387,6 @@ export class NoteGenerator {
           isBase64: params.isBase64,
           conversation: [{ role: "user", content: slot.prompt }],
           abortSignal: params.abortSignal,
-          onStatus: (event) =>
-            this.forwardLLMStatus(params.progressCallback, event),
           onProgress: (chunk) => {
             params.streamCallback?.(chunk);
             params.outputWindow?.appendContent(chunk);
@@ -1356,6 +1394,7 @@ export class NoteGenerator {
         });
         lastResponse = response;
         await updateSlot(slot, response.text, "done");
+        notifyDeepReadSlotProgress(slot, "已完成重试阶段", true);
       } catch (error: any) {
         if (isAbortError(error, params.abortSignal)) throw error;
         await updateSlot(slot, error?.message || String(error), "error");
@@ -1377,13 +1416,7 @@ export class NoteGenerator {
         if (!shouldRunDeepReadSlot(currentHtml, slot.id, slot)) continue;
 
         throwIfAborted(params.abortSignal);
-        params.progressCallback?.(
-          `\u6b63\u5728\u7cbe\u8bfb\uff1a${slot.title}`,
-          55 +
-            Math.floor(
-              (index / Math.max(1, planned.sequentialSlots.length)) * 20,
-            ),
-        );
+        notifyDeepReadSlotProgress(slot, "正在精读");
         params.outputWindow?.appendContent(
           `### \u6b63\u5728\u7cbe\u8bfb\uff1a${slot.title}\n\n`,
         );
@@ -1410,8 +1443,6 @@ export class NoteGenerator {
             isBase64: params.isBase64,
             conversation,
             abortSignal: params.abortSignal,
-            onStatus: (event) =>
-              this.forwardLLMStatus(params.progressCallback, event),
             onProgress: (chunk) => {
               params.streamCallback?.(chunk);
               params.outputWindow?.appendContent(chunk);
@@ -1423,6 +1454,7 @@ export class NoteGenerator {
           fullHistory.push({ role: "user", content: userPrompt });
           fullHistory.push({ role: "assistant", content: response.text });
           await updateSlot(slot, response.text, "done");
+          notifyDeepReadSlotProgress(slot, "已完成精读", true);
         } catch (error: any) {
           if (
             isAbortError(error, params.abortSignal) ||
@@ -1430,6 +1462,7 @@ export class NoteGenerator {
           )
             throw error;
           await updateSlot(slot, error?.message || String(error), "error");
+          notifyDeepReadSlotProgress(slot, "精读阶段记录为失败", true);
         }
       }
 
@@ -1442,13 +1475,7 @@ export class NoteGenerator {
         if (!shouldRunDeepReadSlot(currentHtml, slot.id, slot)) return;
 
         throwIfAborted(params.abortSignal);
-        params.progressCallback?.(
-          `\u6b63\u5728\u8ffd\u95ee\uff1a${slot.title}`,
-          78 +
-            Math.floor(
-              (index / Math.max(1, planned.independentSlots.length)) * 12,
-            ),
-        );
+        notifyDeepReadSlotProgress(slot, "正在追问");
         params.outputWindow?.appendContent(
           `### \u6b63\u5728\u8ffd\u95ee\uff1a${slot.title}\n\n`,
         );
@@ -1464,8 +1491,6 @@ export class NoteGenerator {
             isBase64: params.isBase64,
             conversation: [{ role: "user", content: slot.prompt }],
             abortSignal: params.abortSignal,
-            onStatus: (event) =>
-              this.forwardLLMStatus(params.progressCallback, event),
             onProgress: streamLive
               ? (chunk) => {
                   params.streamCallback?.(chunk);
@@ -1480,6 +1505,7 @@ export class NoteGenerator {
             params.outputWindow?.appendContent(response.text);
           }
           await updateSlot(slot, response.text, "done");
+          notifyDeepReadSlotProgress(slot, "已完成追问", true);
         } catch (error: any) {
           if (
             isAbortError(error, params.abortSignal) ||
@@ -1487,6 +1513,7 @@ export class NoteGenerator {
           )
             throw error;
           await updateSlot(slot, error?.message || String(error), "error");
+          notifyDeepReadSlotProgress(slot, "追问阶段记录为失败", true);
         }
       };
 
@@ -1509,6 +1536,23 @@ export class NoteGenerator {
             await runIndependentSlot(batch[0], batchStartIndex, true);
             continue;
           }
+          const firstOrdinal =
+            slotOrdinal.get(batch[0]?.id || "") || batchStartIndex + 1;
+          const lastOrdinal = Math.min(
+            totalDeepReadStages,
+            firstOrdinal + batch.length - 1,
+          );
+          params.progressCallback?.(
+            `正在并行追问：${batch.map((slot) => slot.title).join("、")}`,
+            50 + Math.floor(((firstOrdinal - 1) / totalDeepReadStages) * 42),
+            {
+              stage: "deepread-round",
+              label: `AI 精读并行追问 ${firstOrdinal}-${lastOrdinal}/${totalDeepReadStages}`,
+              detail: `正在并行执行 ${batch.length} 个追问阶段：${batch.map((slot) => slot.title).join("、")}`,
+              currentRound: firstOrdinal,
+              totalRounds: totalDeepReadStages,
+            },
+          );
           const results = await Promise.allSettled(
             batch.map((slot, offset) =>
               runIndependentSlot(slot, batchStartIndex + offset, false),

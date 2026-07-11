@@ -42,37 +42,32 @@ export class ImageSummarySettingsPage {
     this.container.innerHTML = "";
     this.endpointPreviewUpdaters = [];
 
-    // 标题
-    const title = this.createElement("h2", {
-      textContent: "🖼️ 一图总结设置",
-      styles: {
-        color: "#9c27b0",
-        marginBottom: "20px",
-        fontSize: "20px",
-        borderBottom: "2px solid #9c27b0",
-        paddingBottom: "10px",
-      },
-    });
+    const title = this.createPageTitle("🖼️ 一图总结设置");
     this.container.appendChild(title);
 
-    // 功能说明
-    const notice = createNotice(
-      "📝 <strong>功能说明</strong>：一图总结使用生图模型 (默认 gemini-3-pro-image-preview) 为论文生成学术概念海报，支持 Gemini 原生接口与 OpenAI 兼容接口两种请求方式。",
-      "info",
+    this.container.appendChild(
+      createNotice(
+        "一图总结使用生图模型为论文生成学术概念海报。支持 Gemini 原生接口与 OpenAI 兼容接口；可先用预设快速接入服务，再按需微调 API 与生成参数。",
+        "info",
+      ),
     );
-    this.container.appendChild(notice);
 
-    // 表单容器
     const form = this.createElement("div", {
       styles: {
-        maxWidth: "800px",
+        maxWidth: "880px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "16px",
       },
     });
 
-    // === API 配置区域 ===
-    form.appendChild(createSectionTitle("🔌 API 配置"));
+    form.appendChild(this.createPresetPanel());
 
-    // 请求方式
+    const apiCard = this.createSettingsCard(
+      "🔌 API 连接",
+      "填写用于生成图片的服务地址、密钥和模型。首次使用可以先在上方选择一个常用服务。",
+    );
+
     const requestModeValue =
       (getPref("imageSummaryRequestMode" as any) as string) || "gemini";
     const requestModeSelect = createSelect(
@@ -83,7 +78,6 @@ export class ImageSummarySettingsPage {
       ],
       requestModeValue,
       (newVal) => {
-        // 切换时，如 API 地址保持默认且用户尚未手动修改，则自动填充更合适的默认值
         const urlInput = this.container.querySelector(
           "#setting-imageSummaryApiUrl",
         ) as HTMLInputElement | null;
@@ -104,16 +98,15 @@ export class ImageSummarySettingsPage {
         this.refreshEndpointPreviews();
       },
     );
-    form.appendChild(
+    apiCard.body.appendChild(
       createFormGroup(
         "请求方式",
         requestModeSelect,
-        "选择使用 Gemini 原生接口或 OpenAI 兼容接口来调用生图模型",
+        "选择使用 Gemini 原生接口或 OpenAI 兼容接口来调用生图模型。",
       ),
     );
 
-    // API Key
-    form.appendChild(
+    apiCard.body.appendChild(
       createFormGroup(
         "API Key *",
         this.createPasswordInput(
@@ -125,8 +118,7 @@ export class ImageSummarySettingsPage {
       ),
     );
 
-    // API Base URL
-    form.appendChild(
+    apiCard.body.appendChild(
       this.createEndpointFormGroup(
         "API 地址 *",
         "imageSummaryApiUrl",
@@ -140,8 +132,7 @@ export class ImageSummarySettingsPage {
       ),
     );
 
-    // 自定义请求 Header
-    form.appendChild(
+    apiCard.body.appendChild(
       createFormGroup(
         "额外请求 Headers",
         createTextarea(
@@ -154,8 +145,7 @@ export class ImageSummarySettingsPage {
       ),
     );
 
-    // 模型名称
-    form.appendChild(
+    apiCard.body.appendChild(
       createFormGroup(
         "生图模型",
         createInput(
@@ -165,7 +155,7 @@ export class ImageSummarySettingsPage {
             "gemini-3-pro-image-preview",
           "gemini-3-pro-image-preview",
         ),
-        "Gemini 推荐 gemini-3-pro-image-preview；OpenAI 兼容生图可填写 gpt-image-2 等模型",
+        "Gemini 推荐 gemini-3-pro-image-preview；OpenAI 兼容生图可填写 gpt-image-2、agnes-image-2.1-flash、qwen-image-2.0 等模型。",
       ),
     );
 
@@ -177,19 +167,21 @@ export class ImageSummarySettingsPage {
     );
     timeoutInput.min = "30";
     timeoutInput.step = "1";
-    form.appendChild(
+    apiCard.body.appendChild(
       createFormGroup(
         "生图请求超时时间 (秒)",
         timeoutInput,
         "一图总结第二阶段生图请求的超时时间，默认 600 秒 (10 分钟)，最小 30 秒。",
       ),
     );
+    form.appendChild(apiCard.card);
 
-    // === 生成选项区域 ===
-    form.appendChild(createSectionTitle("⚙️ 生成选项"));
+    const generationCard = this.createSettingsCard(
+      "⚙️ 生成选项",
+      "控制图片文字语言、比例和分辨率。兼容服务较多时，建议先关闭高级参数跑通 API。",
+    );
 
-    // 图片语言
-    form.appendChild(
+    generationCard.body.appendChild(
       createFormGroup(
         "图片语言",
         createInput(
@@ -198,12 +190,11 @@ export class ImageSummarySettingsPage {
           (getPref("imageSummaryLanguage" as any) as string) || "中文",
           "中文",
         ),
-        "生成图片中显示的文字语言",
+        "生成图片中显示的文字语言。",
       ),
     );
 
-    // 启用图片宽高比参数
-    form.appendChild(
+    generationCard.body.appendChild(
       createFormGroup(
         "启用宽高比参数",
         createCheckbox(
@@ -215,8 +206,7 @@ export class ImageSummarySettingsPage {
       ),
     );
 
-    // 图片宽高比
-    form.appendChild(
+    generationCard.body.appendChild(
       createFormGroup(
         "图片宽高比",
         createInput(
@@ -225,12 +215,11 @@ export class ImageSummarySettingsPage {
           (getPref("imageSummaryAspectRatio" as any) as string) || "16:9",
           "16:9",
         ),
-        "生成图片的宽高比，如 16:9、1:1、9:16、4:3 等；gpt-image-2 的最长边/最短边比例需不超过 3:1。",
+        "如 16:9、1:1、9:16、4:3；Agnes 2.1 会作为 ratio 参数发送。",
       ),
     );
 
-    // 启用图片分辨率参数
-    form.appendChild(
+    generationCard.body.appendChild(
       createFormGroup(
         "启用分辨率参数",
         createCheckbox(
@@ -241,36 +230,25 @@ export class ImageSummarySettingsPage {
       ),
     );
 
-    // 图片分辨率
-    form.appendChild(
+    generationCard.body.appendChild(
       createFormGroup(
         "图片分辨率",
-        createSelect(
-          "imageSummaryResolution",
-          [
-            { value: "1K", label: "1K (默认)" },
-            { value: "2K", label: "2K" },
-            { value: "4K", label: "4K" },
-          ],
-          (getPref("imageSummaryResolution" as any) as string) || "1K",
-        ),
-        "生成图片的分辨率；OpenAI/gpt-image-2 会映射为合法尺寸，如 16:9 的 1K/2K/4K 对应 1280x720、2048x1152、3840x2160。",
+        this.createResolutionSetting(),
+        "不知道怎么选时用 1K；想要更清晰可选 2K/4K。特殊尺寸可选择“自定义”。",
       ),
     );
 
-    // 使用已有 AI 总结代替
-    form.appendChild(
+    generationCard.body.appendChild(
       createFormGroup(
         "使用已有 AI 总结",
         createCheckbox(
           "imageSummaryUseExistingNote",
           (getPref("imageSummaryUseExistingNote" as any) as boolean) || false,
         ),
-        "开启后，将使用已存在的 AI 管家笔记内容作为视觉摘要输入，可节省 API 调用费用",
+        "开启后，将使用已存在的 AI 管家笔记内容作为视觉摘要输入，可节省 API 调用费用。",
       ),
     );
 
-    // 自动添加一图总结（带二次确认）
     const autoSummaryContainer = createCheckbox(
       "autoImageSummaryOnComplete",
       (getPref("autoImageSummaryOnComplete" as any) as boolean) || false,
@@ -285,7 +263,6 @@ export class ImageSummarySettingsPage {
     if (autoSummaryCheckbox) {
       autoSummaryCheckbox.addEventListener("change", () => {
         if (autoSummaryCheckbox.checked) {
-          // 弹出二次确认对话框
           const confirmed = this.showCostWarningDialog();
           if (!confirmed) {
             autoSummaryCheckbox.checked = false;
@@ -296,29 +273,30 @@ export class ImageSummarySettingsPage {
             if (autoSummaryLabel) {
               autoSummaryLabel.textContent = "已启用";
             }
-            // 用户确认后自动保存设置
             setPref("autoImageSummaryOnComplete" as any, true);
           }
         } else {
           if (autoSummaryLabel) {
             autoSummaryLabel.textContent = "已禁用";
           }
-          // 用户关闭时自动保存设置
           setPref("autoImageSummaryOnComplete" as any, false);
         }
       });
     }
 
-    form.appendChild(
+    generationCard.body.appendChild(
       createFormGroup(
         "自动添加一图总结",
         autoSummaryContainer,
-        "⚠️ 开启后，论文AI总结完成时将自动生成一图总结（可能消耗大量API费用，请谨慎开启）",
+        "⚠️ 开启后，论文 AI 总结完成时将自动生成一图总结，可能消耗大量 API 费用。",
       ),
     );
+    form.appendChild(generationCard.card);
 
-    // === 提示词配置区域 ===
-    form.appendChild(createSectionTitle("📝 提示词配置"));
+    const promptCard = this.createSettingsCard(
+      "📝 提示词配置",
+      "这里决定图片里讲什么、怎么讲。通常保持默认即可，有固定风格需求时再调整。",
+    );
 
     // 变量说明
     const varsNotice = this.createElement("div", {
@@ -334,10 +312,10 @@ export class ImageSummarySettingsPage {
     });
     varsNotice.innerHTML =
       "📌 <strong>可用变量</strong>：<code>${context}</code> 论文内容, <code>${title}</code> 论文标题, <code>${language}</code> 语言设置, <code>${summaryForImage}</code> 视觉摘要结果";
-    form.appendChild(varsNotice);
+    promptCard.body.appendChild(varsNotice);
 
     // 视觉信息提取提示词
-    form.appendChild(
+    promptCard.body.appendChild(
       createFormGroup(
         "视觉信息提取提示词",
         createTextarea(
@@ -352,7 +330,7 @@ export class ImageSummarySettingsPage {
     );
 
     // 生图提示词
-    form.appendChild(
+    promptCard.body.appendChild(
       createFormGroup(
         "生图提示词",
         createTextarea(
@@ -365,6 +343,8 @@ export class ImageSummarySettingsPage {
         "第二阶段：根据视觉摘要生成学术概念海报图片",
       ),
     );
+
+    form.appendChild(promptCard.card);
 
     // 按钮组
     const buttonGroup = this.createElement("div", {
@@ -507,6 +487,488 @@ export class ImageSummarySettingsPage {
     this.container.appendChild(form);
   }
 
+  private createPageTitle(titleText: string): HTMLElement {
+    const title = this.createElement("h2", {
+      textContent: titleText,
+      styles: {
+        color: "#59c0bc",
+        marginBottom: "20px",
+        fontSize: "20px",
+        borderBottom: "2px solid #59c0bc",
+        paddingBottom: "10px",
+      },
+    });
+    return title;
+  }
+
+  private createSettingsCard(
+    titleText: string,
+    subtitleText: string,
+  ): { card: HTMLElement; body: HTMLElement } {
+    const doc = this.container.ownerDocument || Zotero.getMainWindow().document;
+    const card = doc.createElement("section");
+    Object.assign(card.style, {
+      padding: "18px",
+      borderRadius: "14px",
+      background: "var(--ai-surface, #ffffff)",
+      border: "1px solid var(--ai-border, #d7dde5)",
+      boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)",
+    });
+
+    const header = doc.createElement("div");
+    Object.assign(header.style, {
+      display: "flex",
+      flexDirection: "column",
+      gap: "6px",
+      marginBottom: "16px",
+      paddingBottom: "12px",
+      borderBottom: "1px solid var(--ai-border, #e5e7eb)",
+    });
+
+    const title = doc.createElement("div");
+    title.textContent = titleText;
+    Object.assign(title.style, {
+      fontSize: "16px",
+      fontWeight: "750",
+      color: "var(--ai-text, #1f2937)",
+    });
+    header.appendChild(title);
+
+    const subtitle = doc.createElement("div");
+    subtitle.textContent = subtitleText;
+    Object.assign(subtitle.style, {
+      fontSize: "12px",
+      lineHeight: "1.6",
+      color: "var(--ai-text-muted, #6b7280)",
+    });
+    header.appendChild(subtitle);
+    card.appendChild(header);
+
+    const body = doc.createElement("div");
+    Object.assign(body.style, {
+      display: "grid",
+      gridTemplateColumns: "minmax(0, 1fr)",
+      gap: "2px",
+    });
+    card.appendChild(body);
+
+    return { card, body };
+  }
+
+  private createPresetPanel(): HTMLElement {
+    const doc = this.container.ownerDocument || Zotero.getMainWindow().document;
+    const panel = doc.createElement("section");
+    Object.assign(panel.style, {
+      padding: "16px",
+      borderRadius: "14px",
+      border: "1px solid rgba(156, 39, 176, 0.22)",
+      background:
+        "linear-gradient(135deg, rgba(156,39,176,0.08), rgba(255,255,255,0)), var(--ai-surface, #ffffff)",
+      boxShadow: "0 8px 24px rgba(15, 23, 42, 0.05)",
+    });
+
+    const header = doc.createElement("div");
+    Object.assign(header.style, {
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: "16px",
+      marginBottom: "12px",
+    });
+
+    const copy = doc.createElement("div");
+    const title = doc.createElement("div");
+    title.textContent = "快速开始";
+    Object.assign(title.style, {
+      fontSize: "15px",
+      fontWeight: "750",
+      color: "var(--ai-text, #1f2937)",
+      marginBottom: "4px",
+    });
+    copy.appendChild(title);
+
+    const desc = doc.createElement("div");
+    desc.textContent =
+      "选择你准备用的生图服务，插件会自动填好地址、模型和推荐尺寸。";
+    Object.assign(desc.style, {
+      fontSize: "12px",
+      lineHeight: "1.6",
+      color: "var(--ai-text-muted, #6b7280)",
+    });
+    copy.appendChild(desc);
+    header.appendChild(copy);
+
+    const badge = doc.createElement("span");
+    badge.textContent = "推荐首次配置使用";
+    Object.assign(badge.style, {
+      flex: "0 0 auto",
+      padding: "5px 9px",
+      borderRadius: "999px",
+      fontSize: "11px",
+      fontWeight: "700",
+      color: "#7b1fa2",
+      background: "rgba(156, 39, 176, 0.10)",
+      border: "1px solid rgba(156, 39, 176, 0.16)",
+    });
+    header.appendChild(badge);
+    panel.appendChild(header);
+
+    const presetSelect = createSelect(
+      "imageSummaryPreset",
+      [
+        { value: "", label: "选择一个服务预设…" },
+        { value: "gemini", label: "Gemini 原生 / Nano Banana Pro" },
+        { value: "openai", label: "OpenAI 官方 gpt-image" },
+        { value: "agnes21", label: "Agnes Image 2.1 Flash" },
+        { value: "dashscope", label: "阿里云百炼 Qwen Image" },
+      ],
+      "",
+      (newVal) => this.applyImageProviderPreset(newVal),
+    );
+    panel.appendChild(presetSelect);
+
+    const note = doc.createElement("div");
+    note.textContent =
+      "应用后只需要重新填写 API Key。已经能正常生成图片时，不必重复应用预设。";
+    Object.assign(note.style, {
+      marginTop: "8px",
+      fontSize: "11px",
+      lineHeight: "1.5",
+      color: "var(--ai-text-muted, #6b7280)",
+    });
+    panel.appendChild(note);
+
+    return panel;
+  }
+
+  private createResolutionSetting(): HTMLElement {
+    const doc = this.container.ownerDocument || Zotero.getMainWindow().document;
+    const wrapper = doc.createElement("div");
+    Object.assign(wrapper.style, {
+      display: "flex",
+      flexDirection: "column",
+      gap: "8px",
+    });
+
+    const current =
+      ((getPref("imageSummaryResolution" as any) as string) || "1K").trim() ||
+      "1K";
+    const presets = ["1K", "2K", "4K"];
+    const isPreset = presets.includes(current);
+
+    const select = createSelect(
+      "imageSummaryResolutionPreset",
+      [
+        { value: "1K", label: "标准清晰度 1K（通用，费用低）" },
+        { value: "2K", label: "高清 2K（更清晰）" },
+        { value: "4K", label: "超清 4K（更慢，成本更高）" },
+        { value: "custom", label: "自定义（输入尺寸或等级）" },
+      ],
+      isPreset ? current : "custom",
+      (value) => this.updateResolutionCustomInputVisibility(value),
+    );
+    wrapper.appendChild(select);
+
+    const customInput = createInput(
+      "imageSummaryResolutionCustom",
+      "text",
+      isPreset ? "" : current,
+      "例如 1024x768、1536x1024、2K",
+    );
+    customInput.style.display = isPreset ? "none" : "block";
+    wrapper.appendChild(customInput);
+
+    return wrapper;
+  }
+
+  private updateResolutionCustomInputVisibility(value?: string): void {
+    const preset =
+      value ||
+      ((
+        this.container.querySelector(
+          "#setting-imageSummaryResolutionPreset",
+        ) as any
+      )?.getValue?.() as string | undefined) ||
+      "1K";
+    const customInput = this.container.querySelector(
+      "#setting-imageSummaryResolutionCustom",
+    ) as HTMLInputElement | null;
+    if (customInput) {
+      customInput.style.display = preset === "custom" ? "block" : "none";
+    }
+  }
+
+  private getResolutionSettingValue(): string {
+    const presetEl = this.container.querySelector(
+      "#setting-imageSummaryResolutionPreset",
+    ) as HTMLElement | null;
+    const preset =
+      (presetEl as any)?.getValue?.() ||
+      presetEl?.getAttribute("data-value") ||
+      "1K";
+    if (preset !== "custom") return String(preset || "1K").trim() || "1K";
+
+    const customInput = this.container.querySelector(
+      "#setting-imageSummaryResolutionCustom",
+    ) as HTMLInputElement | null;
+    return (customInput?.value || "").trim() || "1K";
+  }
+
+  private showPresetConfirmDialog(
+    presetName: string,
+    onConfirm: () => void,
+  ): void {
+    const doc = this.container.ownerDocument || Zotero.getMainWindow().document;
+    this.container
+      .querySelectorAll(".ai-butler-image-preset-dialog")
+      .forEach((node: Element) => node.remove());
+
+    const overlay = doc.createElement("div");
+    overlay.className = "ai-butler-image-preset-dialog";
+    Object.assign(overlay.style, {
+      position: "fixed",
+      inset: "0",
+      minHeight: "100vh",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "24px",
+      background: "rgba(15, 23, 42, 0.36)",
+      zIndex: "99999",
+      boxSizing: "border-box",
+      overflow: "auto",
+    });
+
+    const dialog = doc.createElement("div");
+    Object.assign(dialog.style, {
+      width: "min(560px, calc(100vw - 48px))",
+      maxHeight: "calc(100vh - 48px)",
+      overflow: "auto",
+      padding: "18px",
+      borderRadius: "12px",
+      background: "var(--ai-surface, #ffffff)",
+      border: "1px solid var(--ai-border, #d7dde5)",
+      boxShadow: "0 18px 50px rgba(15, 23, 42, 0.2)",
+      color: "var(--ai-text, #1f2937)",
+      boxSizing: "border-box",
+    });
+    overlay.appendChild(dialog);
+
+    const title = doc.createElement("div");
+    title.textContent = "应用生图预设";
+    Object.assign(title.style, {
+      fontSize: "16px",
+      fontWeight: "700",
+      marginBottom: "12px",
+      color: "var(--ai-text, #1f2937)",
+    });
+    dialog.appendChild(title);
+
+    const message = doc.createElement("div");
+    message.innerHTML =
+      "将应用预设：<strong>" +
+      this.escapeHtml(presetName) +
+      "</strong><br><br>插件将把生图服务切换到这套推荐配置，包括地址、模型和图片尺寸。<br><br>你的提示词会保留；API Key 会清空，需要重新填写。";
+    Object.assign(message.style, {
+      fontSize: "13px",
+      lineHeight: "1.65",
+      color: "var(--ai-text-muted, #4b5563)",
+      wordBreak: "break-word",
+    });
+    dialog.appendChild(message);
+
+    const actions = doc.createElement("div");
+    Object.assign(actions.style, {
+      display: "flex",
+      justifyContent: "flex-end",
+      gap: "10px",
+      marginTop: "18px",
+      flexWrap: "wrap",
+    });
+
+    const close = () => {
+      overlay.remove();
+      this.setSelectValue("imageSummaryPreset", "");
+    };
+
+    const cancelButton = createStyledButton("取消", "#9e9e9e", "small");
+    cancelButton.addEventListener("click", close);
+    actions.appendChild(cancelButton);
+
+    const confirmButton = createStyledButton("确认应用", "#9c27b0", "small");
+    confirmButton.addEventListener("click", () => {
+      overlay.remove();
+      onConfirm();
+    });
+    actions.appendChild(confirmButton);
+    dialog.appendChild(actions);
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) close();
+    });
+    dialog.addEventListener("click", (event) => event.stopPropagation());
+
+    (doc.body || this.container).appendChild(overlay);
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, (char) => {
+      switch (char) {
+        case "&":
+          return "&amp;";
+        case "<":
+          return "&lt;";
+        case ">":
+          return "&gt;";
+        case '"':
+          return "&quot;";
+        case "'":
+          return "&#39;";
+        default:
+          return char;
+      }
+    });
+  }
+
+  private applyImageProviderPreset(preset: string): void {
+    if (!preset) return;
+
+    const presetNames: Record<string, string> = {
+      gemini: "Gemini 原生 / Nano Banana Pro",
+      openai: "OpenAI 官方 gpt-image",
+      agnes21: "Agnes Image 2.1 Flash",
+      dashscope: "阿里云百炼 Qwen Image",
+    };
+    const presetName = presetNames[preset] || preset;
+
+    this.showPresetConfirmDialog(presetName, () =>
+      this.applyImageProviderPresetConfirmed(preset, presetName),
+    );
+  }
+
+  private applyImageProviderPresetConfirmed(
+    preset: string,
+    presetName: string,
+  ): void {
+    const timeoutSeconds = String(
+      ImageClient.getImageSummaryRequestTimeoutSeconds(),
+    );
+
+    const configs: Record<
+      string,
+      {
+        requestMode: "gemini" | "openai";
+        apiUrl: string;
+        model: string;
+        aspectRatioEnabled: boolean;
+        aspectRatio: string;
+        resolutionEnabled: boolean;
+        resolution: string;
+        customHeaders?: string;
+      }
+    > = {
+      gemini: {
+        requestMode: "gemini",
+        apiUrl: "https://generativelanguage.googleapis.com",
+        model: "gemini-3-pro-image-preview",
+        aspectRatioEnabled: true,
+        aspectRatio: "16:9",
+        resolutionEnabled: true,
+        resolution: "1K",
+      },
+      openai: {
+        requestMode: "openai",
+        apiUrl: "https://api.openai.com/v1/images/generations",
+        model: "gpt-image-1",
+        aspectRatioEnabled: true,
+        aspectRatio: "16:9",
+        resolutionEnabled: true,
+        resolution: "1K",
+      },
+      agnes21: {
+        requestMode: "openai",
+        apiUrl: "https://apihub.agnes-ai.com/v1/images/generations",
+        model: "agnes-image-2.1-flash",
+        aspectRatioEnabled: true,
+        aspectRatio: "16:9",
+        resolutionEnabled: true,
+        resolution: "2K",
+      },
+      dashscope: {
+        requestMode: "openai",
+        apiUrl:
+          "https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations",
+        model: "qwen-image-2.0",
+        aspectRatioEnabled: false,
+        aspectRatio: "16:9",
+        resolutionEnabled: false,
+        resolution: "1K",
+      },
+    };
+
+    const config = configs[preset];
+    if (!config) {
+      this.setSelectValue("imageSummaryPreset", "");
+      return;
+    }
+
+    // 应用预设是一次显式重置：直接写入 prefs 后重新渲染，确保页面和持久化配置同步。
+    setPref("imageSummaryRequestMode" as any, config.requestMode);
+    setPref("imageSummaryApiKey" as any, "");
+    setPref("imageSummaryApiUrl" as any, config.apiUrl);
+    setPref("imageSummaryModel" as any, config.model);
+    setPref("imageSummaryCustomHeaders" as any, config.customHeaders || "");
+    setPref("imageSummaryRequestTimeoutSeconds" as any, timeoutSeconds);
+    setPref("imageSummaryLanguage" as any, "中文");
+    setPref("imageSummaryAspectRatioEnabled" as any, config.aspectRatioEnabled);
+    setPref("imageSummaryAspectRatio" as any, config.aspectRatio);
+    setPref("imageSummaryResolutionEnabled" as any, config.resolutionEnabled);
+    setPref("imageSummaryResolution" as any, config.resolution);
+    setPref("imageSummaryUseExistingNote" as any, false);
+    setPref("autoImageSummaryOnComplete" as any, false);
+
+    this.render();
+
+    new ztoolkit.ProgressWindow("一图总结", {
+      closeOnClick: true,
+      closeTime: 2500,
+    })
+      .createLine({ text: "已切换到：" + presetName, type: "success" })
+      .show();
+  }
+
+  private setInputValue(id: string, value: string): void {
+    const input = this.container.querySelector("#setting-" + id) as
+      | HTMLInputElement
+      | HTMLTextAreaElement
+      | null;
+    if (!input) return;
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  private setCheckboxValue(id: string, checked: boolean): void {
+    const input = this.container.querySelector(
+      "#setting-" + id,
+    ) as HTMLInputElement | null;
+    if (!input) return;
+    input.checked = checked;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  private setSelectValue(id: string, value: string): void {
+    const el = this.container.querySelector("#setting-" + id) as any;
+    if (!el) return;
+    if (typeof el.setValue === "function") el.setValue(value);
+    else if ("value" in el) el.value = value;
+    el.setAttribute?.("data-value", value);
+    el.dispatchEvent?.(new Event("change", { bubbles: true }));
+    if (id === "imageSummaryResolutionPreset") {
+      this.updateResolutionCustomInputVisibility(value);
+    }
+  }
+
   /**
    * 保存设置
    */
@@ -559,17 +1021,8 @@ export class ImageSummarySettingsPage {
         setPref("imageSummaryRequestMode" as any, modeValue);
       }
 
-      // 下拉框单独处理 (resolution)
-      const resolutionSelect = this.container.querySelector(
-        "#setting-imageSummaryResolution",
-      ) as HTMLElement;
-      if (resolutionSelect) {
-        const resValue =
-          (resolutionSelect as any).getValue?.() ||
-          resolutionSelect.getAttribute("data-value") ||
-          "1K";
-        setPref("imageSummaryResolution" as any, resValue);
-      }
+      const resolutionValue = this.getResolutionSettingValue();
+      setPref("imageSummaryResolution" as any, resolutionValue);
 
       // 复选框单独处理
       const useExistingCb = this.container.querySelector(
@@ -936,6 +1389,18 @@ export class ImageSummarySettingsPage {
 
   private getImageOfficialEndpoint(): string {
     if (this.getImageRequestMode() === "openai") {
+      const model =
+        (
+          this.container.querySelector(
+            "#setting-imageSummaryModel",
+          ) as HTMLInputElement | null
+        )?.value?.trim() || "";
+      if (/^agnes-image(?:$|[-_.:])/i.test(model)) {
+        return "https://apihub.agnes-ai.com/v1/images/generations";
+      }
+      if (/^qwen-image(?:$|[-_.:])/i.test(model)) {
+        return "https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations";
+      }
       return "https://api.openai.com/v1/images/generations";
     }
     return "https://generativelanguage.googleapis.com";

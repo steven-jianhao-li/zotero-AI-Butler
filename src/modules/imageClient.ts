@@ -1120,6 +1120,10 @@ export class ImageClient {
     return /^gpt-image-2(?:$|[-_.:])/i.test((model || "").trim());
   }
 
+  private static isAgnesImageModel(model: string): boolean {
+    return /^agnes-image(?:$|[-_.:])/i.test((model || "").trim());
+  }
+
   private static gcd(a: number, b: number): number {
     let x = Math.abs(a);
     let y = Math.abs(b);
@@ -1284,7 +1288,11 @@ export class ImageClient {
     },
     endpointType: "images" | "responses" | "chat",
   ): string | null {
-    if (!config.aspectRatio && !config.resolution) return null;
+    if (!config.aspectRatio && !config.resolution) {
+      return this.isAgnesImageModel(config.model) && endpointType === "images"
+        ? "1024x1024"
+        : null;
+    }
 
     if (endpointType === "responses" || this.isGptImage2Model(config.model)) {
       return this.buildFlexibleOpenAIImageSize(
@@ -1316,6 +1324,26 @@ export class ImageClient {
         prompt,
       };
       if (imageSize) payload.size = imageSize;
+      if (this.isAgnesImageModel(config.model)) {
+        const explicitSize = this.normalizeOpenAIExplicitSize(
+          config.resolution,
+        );
+        const resolutionTier = this.parseOpenAIResolutionTier(
+          config.resolution,
+        );
+        if (explicitSize && explicitSize !== "auto") {
+          payload.size = explicitSize;
+        } else if (resolutionTier) {
+          payload.size = resolutionTier;
+        } else {
+          payload.size = payload.size || "1024x1024";
+        }
+        if (config.aspectRatio && resolutionTier) {
+          payload.ratio = config.aspectRatio;
+        }
+        payload.return_base64 = true;
+        return payload;
+      }
       if (!this.isGptImageModel(config.model)) {
         payload.response_format = "b64_json";
       }

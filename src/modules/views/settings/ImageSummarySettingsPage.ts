@@ -72,6 +72,27 @@ export class ImageSummarySettingsPage {
     // === API 配置区域 ===
     form.appendChild(createSectionTitle("🔌 API 配置"));
 
+    // 常用服务预设
+    const presetSelect = createSelect(
+      "imageSummaryPreset",
+      [
+        { value: "", label: "选择预设" },
+        { value: "gemini", label: "Gemini 原生 / Nano Banana Pro" },
+        { value: "openai", label: "OpenAI 官方 gpt-image" },
+        { value: "agnes21", label: "Agnes Image 2.1 Flash" },
+        { value: "dashscope", label: "阿里云百炼 Qwen Image" },
+      ],
+      "",
+      (newVal) => this.applyImageProviderPreset(newVal),
+    );
+    form.appendChild(
+      createFormGroup(
+        "应用生图预设",
+        presetSelect,
+        "选择后会先弹出确认；确认应用预设将清空当前一图总结 API 配置，并写入该服务的默认接口类型和推荐参数；提示词不会被修改。",
+      ),
+    );
+
     // 请求方式
     const requestModeValue =
       (getPref("imageSummaryRequestMode" as any) as string) || "gemini";
@@ -165,7 +186,7 @@ export class ImageSummarySettingsPage {
             "gemini-3-pro-image-preview",
           "gemini-3-pro-image-preview",
         ),
-        "Gemini 推荐 gemini-3-pro-image-preview；OpenAI 兼容生图可填写 gpt-image-2 等模型",
+        "Gemini 推荐 gemini-3-pro-image-preview；OpenAI 兼容生图可填写 gpt-image-2、agnes-image-2.0-flash、qwen-image-2.0 等模型",
       ),
     );
 
@@ -225,7 +246,7 @@ export class ImageSummarySettingsPage {
           (getPref("imageSummaryAspectRatio" as any) as string) || "16:9",
           "16:9",
         ),
-        "生成图片的宽高比，如 16:9、1:1、9:16、4:3 等；gpt-image-2 的最长边/最短边比例需不超过 3:1。",
+        "生成图片的宽高比，如 16:9、1:1、9:16、4:3 等；Agnes 2.1 会作为 ratio 参数发送，gpt-image-2 的最长边/最短边比例需不超过 3:1。",
       ),
     );
 
@@ -245,16 +266,8 @@ export class ImageSummarySettingsPage {
     form.appendChild(
       createFormGroup(
         "图片分辨率",
-        createSelect(
-          "imageSummaryResolution",
-          [
-            { value: "1K", label: "1K (默认)" },
-            { value: "2K", label: "2K" },
-            { value: "4K", label: "4K" },
-          ],
-          (getPref("imageSummaryResolution" as any) as string) || "1K",
-        ),
-        "生成图片的分辨率；OpenAI/gpt-image-2 会映射为合法尺寸，如 16:9 的 1K/2K/4K 对应 1280x720、2048x1152、3840x2160。",
+        this.createResolutionSetting(),
+        "先选择常用分辨率预设；如果服务商要求特殊值，选择“自定义”后在输入框里填写，例如 1024x768、1536x1024、2K。",
       ),
     );
 
@@ -507,6 +520,334 @@ export class ImageSummarySettingsPage {
     this.container.appendChild(form);
   }
 
+  private createResolutionSetting(): HTMLElement {
+    const doc = this.container.ownerDocument || Zotero.getMainWindow().document;
+    const wrapper = doc.createElement("div");
+    Object.assign(wrapper.style, {
+      display: "flex",
+      flexDirection: "column",
+      gap: "8px",
+    });
+
+    const current =
+      ((getPref("imageSummaryResolution" as any) as string) || "1K").trim() ||
+      "1K";
+    const presets = ["1K", "2K", "4K"];
+    const isPreset = presets.includes(current);
+
+    const select = createSelect(
+      "imageSummaryResolutionPreset",
+      [
+        { value: "1K", label: "标准清晰度 1K（通用，费用低）" },
+        { value: "2K", label: "高清 2K（推荐，需要服务商支持）" },
+        { value: "4K", label: "超清 4K（慢且贵，需要服务商支持）" },
+        { value: "custom", label: "自定义（按服务商文档填写）" },
+      ],
+      isPreset ? current : "custom",
+      (value) => this.updateResolutionCustomInputVisibility(value),
+    );
+    wrapper.appendChild(select);
+
+    const customInput = createInput(
+      "imageSummaryResolutionCustom",
+      "text",
+      isPreset ? "" : current,
+      "例如 1024x768、1536x1024、2K",
+    );
+    customInput.style.display = isPreset ? "none" : "block";
+    wrapper.appendChild(customInput);
+
+    return wrapper;
+  }
+
+  private updateResolutionCustomInputVisibility(value?: string): void {
+    const preset =
+      value ||
+      ((
+        this.container.querySelector(
+          "#setting-imageSummaryResolutionPreset",
+        ) as any
+      )?.getValue?.() as string | undefined) ||
+      "1K";
+    const customInput = this.container.querySelector(
+      "#setting-imageSummaryResolutionCustom",
+    ) as HTMLInputElement | null;
+    if (customInput) {
+      customInput.style.display = preset === "custom" ? "block" : "none";
+    }
+  }
+
+  private getResolutionSettingValue(): string {
+    const presetEl = this.container.querySelector(
+      "#setting-imageSummaryResolutionPreset",
+    ) as HTMLElement | null;
+    const preset =
+      (presetEl as any)?.getValue?.() ||
+      presetEl?.getAttribute("data-value") ||
+      "1K";
+    if (preset !== "custom") return String(preset || "1K").trim() || "1K";
+
+    const customInput = this.container.querySelector(
+      "#setting-imageSummaryResolutionCustom",
+    ) as HTMLInputElement | null;
+    return (customInput?.value || "").trim() || "1K";
+  }
+
+  private showPresetConfirmDialog(
+    presetName: string,
+    onConfirm: () => void,
+  ): void {
+    const doc = this.container.ownerDocument || Zotero.getMainWindow().document;
+    this.container
+      .querySelectorAll(".ai-butler-image-preset-dialog")
+      .forEach((node: Element) => node.remove());
+
+    const overlay = doc.createElement("div");
+    overlay.className = "ai-butler-image-preset-dialog";
+    Object.assign(overlay.style, {
+      position: "fixed",
+      inset: "0",
+      minHeight: "100vh",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "24px",
+      background: "rgba(15, 23, 42, 0.36)",
+      zIndex: "99999",
+      boxSizing: "border-box",
+      overflow: "auto",
+    });
+
+    const dialog = doc.createElement("div");
+    Object.assign(dialog.style, {
+      width: "min(560px, calc(100vw - 48px))",
+      maxHeight: "calc(100vh - 48px)",
+      overflow: "auto",
+      padding: "18px",
+      borderRadius: "12px",
+      background: "var(--ai-surface, #ffffff)",
+      border: "1px solid var(--ai-border, #d7dde5)",
+      boxShadow: "0 18px 50px rgba(15, 23, 42, 0.2)",
+      color: "var(--ai-text, #1f2937)",
+      boxSizing: "border-box",
+    });
+    overlay.appendChild(dialog);
+
+    const title = doc.createElement("div");
+    title.textContent = "应用生图预设";
+    Object.assign(title.style, {
+      fontSize: "16px",
+      fontWeight: "700",
+      marginBottom: "12px",
+      color: "var(--ai-text, #1f2937)",
+    });
+    dialog.appendChild(title);
+
+    const message = doc.createElement("div");
+    message.innerHTML =
+      "将应用预设：<strong>" +
+      this.escapeHtml(presetName) +
+      "</strong><br><br>这会清空当前一图总结 API 配置，并替换为该服务的默认接口类型、API 地址、模型、Header 和推荐生成参数。<br><br><strong>提示词配置不会被修改。</strong> API Key 会被清空，需要重新填写。";
+    Object.assign(message.style, {
+      fontSize: "13px",
+      lineHeight: "1.65",
+      color: "var(--ai-text-muted, #4b5563)",
+      wordBreak: "break-word",
+    });
+    dialog.appendChild(message);
+
+    const actions = doc.createElement("div");
+    Object.assign(actions.style, {
+      display: "flex",
+      justifyContent: "flex-end",
+      gap: "10px",
+      marginTop: "18px",
+      flexWrap: "wrap",
+    });
+
+    const close = () => {
+      overlay.remove();
+      this.setSelectValue("imageSummaryPreset", "");
+    };
+
+    const cancelButton = createStyledButton("取消", "#9e9e9e", "small");
+    cancelButton.addEventListener("click", close);
+    actions.appendChild(cancelButton);
+
+    const confirmButton = createStyledButton("确认应用", "#9c27b0", "small");
+    confirmButton.addEventListener("click", () => {
+      overlay.remove();
+      onConfirm();
+    });
+    actions.appendChild(confirmButton);
+    dialog.appendChild(actions);
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) close();
+    });
+    dialog.addEventListener("click", (event) => event.stopPropagation());
+
+    (doc.body || this.container).appendChild(overlay);
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, (char) => {
+      switch (char) {
+        case "&":
+          return "&amp;";
+        case "<":
+          return "&lt;";
+        case ">":
+          return "&gt;";
+        case '"':
+          return "&quot;";
+        case "'":
+          return "&#39;";
+        default:
+          return char;
+      }
+    });
+  }
+
+  private applyImageProviderPreset(preset: string): void {
+    if (!preset) return;
+
+    const presetNames: Record<string, string> = {
+      gemini: "Gemini 原生 / Nano Banana Pro",
+      openai: "OpenAI 官方 gpt-image",
+      agnes21: "Agnes Image 2.1 Flash",
+      dashscope: "阿里云百炼 Qwen Image",
+    };
+    const presetName = presetNames[preset] || preset;
+
+    this.showPresetConfirmDialog(presetName, () =>
+      this.applyImageProviderPresetConfirmed(preset, presetName),
+    );
+  }
+
+  private applyImageProviderPresetConfirmed(
+    preset: string,
+    presetName: string,
+  ): void {
+    const timeoutSeconds = String(
+      ImageClient.getImageSummaryRequestTimeoutSeconds(),
+    );
+
+    const configs: Record<
+      string,
+      {
+        requestMode: "gemini" | "openai";
+        apiUrl: string;
+        model: string;
+        aspectRatioEnabled: boolean;
+        aspectRatio: string;
+        resolutionEnabled: boolean;
+        resolution: string;
+        customHeaders?: string;
+      }
+    > = {
+      gemini: {
+        requestMode: "gemini",
+        apiUrl: "https://generativelanguage.googleapis.com",
+        model: "gemini-3-pro-image-preview",
+        aspectRatioEnabled: true,
+        aspectRatio: "16:9",
+        resolutionEnabled: true,
+        resolution: "1K",
+      },
+      openai: {
+        requestMode: "openai",
+        apiUrl: "https://api.openai.com/v1/images/generations",
+        model: "gpt-image-1",
+        aspectRatioEnabled: true,
+        aspectRatio: "16:9",
+        resolutionEnabled: true,
+        resolution: "1K",
+      },
+      agnes21: {
+        requestMode: "openai",
+        apiUrl: "https://apihub.agnes-ai.com/v1/images/generations",
+        model: "agnes-image-2.1-flash",
+        aspectRatioEnabled: true,
+        aspectRatio: "16:9",
+        resolutionEnabled: true,
+        resolution: "2K",
+      },
+      dashscope: {
+        requestMode: "openai",
+        apiUrl:
+          "https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations",
+        model: "qwen-image-2.0",
+        aspectRatioEnabled: false,
+        aspectRatio: "16:9",
+        resolutionEnabled: false,
+        resolution: "1K",
+      },
+    };
+
+    const config = configs[preset];
+    if (!config) {
+      this.setSelectValue("imageSummaryPreset", "");
+      return;
+    }
+
+    // 应用预设是一次显式重置：直接写入 prefs 后重新渲染，确保页面和持久化配置同步。
+    setPref("imageSummaryRequestMode" as any, config.requestMode);
+    setPref("imageSummaryApiKey" as any, "");
+    setPref("imageSummaryApiUrl" as any, config.apiUrl);
+    setPref("imageSummaryModel" as any, config.model);
+    setPref("imageSummaryCustomHeaders" as any, config.customHeaders || "");
+    setPref("imageSummaryRequestTimeoutSeconds" as any, timeoutSeconds);
+    setPref("imageSummaryLanguage" as any, "中文");
+    setPref("imageSummaryAspectRatioEnabled" as any, config.aspectRatioEnabled);
+    setPref("imageSummaryAspectRatio" as any, config.aspectRatio);
+    setPref("imageSummaryResolutionEnabled" as any, config.resolutionEnabled);
+    setPref("imageSummaryResolution" as any, config.resolution);
+    setPref("imageSummaryUseExistingNote" as any, false);
+    setPref("autoImageSummaryOnComplete" as any, false);
+
+    this.render();
+
+    new ztoolkit.ProgressWindow("一图总结", {
+      closeOnClick: true,
+      closeTime: 2500,
+    })
+      .createLine({ text: "已应用预设：" + presetName, type: "success" })
+      .show();
+  }
+
+  private setInputValue(id: string, value: string): void {
+    const input = this.container.querySelector("#setting-" + id) as
+      | HTMLInputElement
+      | HTMLTextAreaElement
+      | null;
+    if (!input) return;
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  private setCheckboxValue(id: string, checked: boolean): void {
+    const input = this.container.querySelector(
+      "#setting-" + id,
+    ) as HTMLInputElement | null;
+    if (!input) return;
+    input.checked = checked;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  private setSelectValue(id: string, value: string): void {
+    const el = this.container.querySelector("#setting-" + id) as any;
+    if (!el) return;
+    if (typeof el.setValue === "function") el.setValue(value);
+    else if ("value" in el) el.value = value;
+    el.setAttribute?.("data-value", value);
+    el.dispatchEvent?.(new Event("change", { bubbles: true }));
+    if (id === "imageSummaryResolutionPreset") {
+      this.updateResolutionCustomInputVisibility(value);
+    }
+  }
+
   /**
    * 保存设置
    */
@@ -559,17 +900,8 @@ export class ImageSummarySettingsPage {
         setPref("imageSummaryRequestMode" as any, modeValue);
       }
 
-      // 下拉框单独处理 (resolution)
-      const resolutionSelect = this.container.querySelector(
-        "#setting-imageSummaryResolution",
-      ) as HTMLElement;
-      if (resolutionSelect) {
-        const resValue =
-          (resolutionSelect as any).getValue?.() ||
-          resolutionSelect.getAttribute("data-value") ||
-          "1K";
-        setPref("imageSummaryResolution" as any, resValue);
-      }
+      const resolutionValue = this.getResolutionSettingValue();
+      setPref("imageSummaryResolution" as any, resolutionValue);
 
       // 复选框单独处理
       const useExistingCb = this.container.querySelector(
@@ -936,6 +1268,18 @@ export class ImageSummarySettingsPage {
 
   private getImageOfficialEndpoint(): string {
     if (this.getImageRequestMode() === "openai") {
+      const model =
+        (
+          this.container.querySelector(
+            "#setting-imageSummaryModel",
+          ) as HTMLInputElement | null
+        )?.value?.trim() || "";
+      if (/^agnes-image(?:$|[-_.:])/i.test(model)) {
+        return "https://apihub.agnes-ai.com/v1/images/generations";
+      }
+      if (/^qwen-image(?:$|[-_.:])/i.test(model)) {
+        return "https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations";
+      }
       return "https://api.openai.com/v1/images/generations";
     }
     return "https://generativelanguage.googleapis.com";

@@ -63,6 +63,7 @@ import {
   PROMPT_VERSION,
   shouldUpdatePrompt,
 } from "./utils/prompts";
+import { maybeOpenOnboardingTutorialOnStartup } from "./modules/onboarding";
 
 /**
  * 插件启动钩子函数
@@ -124,6 +125,8 @@ async function onStartup() {
   // 标记插件初始化完成
   // 某些功能依赖此标志来判断插件是否已准备好
   addon.data.initialized = true;
+
+  void maybeOpenOnboardingTutorialOnStartup();
 }
 
 /**
@@ -285,6 +288,7 @@ function initializeDefaultPrefsOnStartup() {
       '{"summaryDocx":true,"deepReadDocx":true,"summaryMd":true,"deepReadMd":true}',
     noteExportConflictStrategy: "skip",
     noteExportSuppressDirectoryPrompt: false,
+    onboardingTutorialSeenVersion: "",
   };
 
   // 遍历所有配置项,确保每项都有有效值

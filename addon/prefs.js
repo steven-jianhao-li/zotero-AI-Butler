@@ -148,3 +148,6 @@ pref("__prefsPrefix__.noteExportSuppressDirectoryPrompt", false);
 // ==================== 思维导图配置 ====================
 pref("__prefsPrefix__.mindmapPrompt", ""); // 空表示使用默认提示词
 pref("__prefsPrefix__.mindmapExportPath", ""); // 空表示使用桌面目录
+
+// ==================== 新手教程配置 ====================
+pref("__prefsPrefix__.onboardingTutorialSeenVersion", "");

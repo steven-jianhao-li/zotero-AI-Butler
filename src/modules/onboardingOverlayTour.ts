@@ -232,9 +232,9 @@ function buildTourSteps(): OverlayTourStep[] {
       id: "setup-go-dashboard",
       stageId: "setup",
       stageTitle: "初始化配置",
-      title: "回到仪表盘",
+      title: "准备初始化模型配置",
       description:
-        "下一步要点击仪表盘里的“一键初始化配置”。请先点击顶部真实的“仪表盘”页签。",
+        "接下来要用仪表盘里的“一键初始化配置”写入 DeepSeek 端点、模型和 API Key。请点击顶部真实的“仪表盘”页签，回到快捷操作区。",
       host: "aiButler",
       target: "#tab-dashboard",
       placement: "bottom",
@@ -261,9 +261,9 @@ function buildTourSteps(): OverlayTourStep[] {
       id: "model-go-settings",
       stageId: "modelTest",
       stageTitle: "测试模型",
-      title: "进入快捷设置",
+      title: "准备验证模型可用性",
       description:
-        "DeepSeek 初始化完成后，请点击顶部真实的“快捷设置”页签，然后再进入模型平台测试连接。",
+        "DeepSeek 初始化完成后，需要确认这个模型端点真的能返回结果。请点击顶部真实的“快捷设置”页签，进入模型相关配置。",
       host: "aiButler",
       target: "#tab-settings",
       placement: "bottom",
@@ -275,9 +275,9 @@ function buildTourSteps(): OverlayTourStep[] {
       id: "model-platform",
       stageId: "modelTest",
       stageTitle: "测试模型",
-      title: "进入模型平台",
+      title: "查看模型平台里的 DeepSeek 端点",
       description:
-        "配置完成后，进入“快捷设置 → 模型平台”。这里能看到 DeepSeek 端点，也可以管理多个供应商。",
+        "模型平台集中管理所有供应商和端点。请点击左侧“模型平台”，找到刚才一键初始化生成的 DeepSeek 配置。",
       host: "aiButler",
       target: "#settings-nav-modelPlatform",
       placement: "right",
@@ -289,9 +289,9 @@ function buildTourSteps(): OverlayTourStep[] {
       id: "model-deepseek-card",
       stageId: "modelTest",
       stageTitle: "测试模型",
-      title: "展开 DeepSeek 详情",
+      title: "检查 DeepSeek 详细配置",
       description:
-        "请点击 DeepSeek 卡片右侧真实的“详情”按钮，展开刚才初始化配置生成的 DeepSeek 端点。",
+        "为了确认一键初始化写入的端点、模型和 PDF 处理方式，请点击 DeepSeek 卡片右侧真实的“详情”按钮展开配置。",
       host: "aiButler",
       target: (doc) =>
         queryFirst(
@@ -344,7 +344,7 @@ function buildTourSteps(): OverlayTourStep[] {
       stageTitle: "测试模型",
       title: "测试 DeepSeek 连接",
       description:
-        "点击“测试连接”，确认 API Key、模型和网络都可用。点击后下一步会高亮连接测试结果，帮助你判断大模型是否真的返回了内容。",
+        "点击“测试连接”，确认 API Key、模型和网络都可用。点击后下一步会展示连接测试结果，帮助你判断大模型是否真的返回了内容。",
       host: "aiButler",
       target: (doc) =>
         queryFirst(
@@ -436,9 +436,9 @@ function buildTourSteps(): OverlayTourStep[] {
       id: "task-open-dashboard",
       stageId: "library",
       stageTitle: "导入论文",
-      title: "重新打开 AI 管家仪表盘",
+      title: "查看论文总结处理进度",
       description:
-        "PDF 拖入后，请点击文献库工具栏上的 🤖 AI 管家入口，重新打开仪表盘。下一步会引导你进入任务队列查看处理进度。",
+        "PDF 已经拖入 Zotero，下一阶段的目标是在 AI 管家任务队列确认它是否开始自动总结。请点击文献库工具栏上的 🤖 AI 管家入口打开仪表盘。",
       host: "zotero",
       target: "#ai-butler-library-toolbar-btn",
       placement: "bottom",
@@ -452,9 +452,9 @@ function buildTourSteps(): OverlayTourStep[] {
       id: "task-progress",
       stageId: "library",
       stageTitle: "导入论文",
-      title: "进入任务队列看处理进度",
+      title: "定位刚导入论文的总结任务",
       description:
-        "请点击 AI 管家仪表盘顶部的“任务队列”页签。下一步会聚光灯展示刚才拖入论文对应的 AI 总结任务，并解释当前处理阶段。",
+        "任务队列用于确认后台任务是否入队、运行或完成。请点击顶部“任务队列”页签，下一步会展示刚才拖入论文对应的 AI 总结任务。",
       host: "aiButler",
       target: "#tab-tasks",
       placement: "bottom",
@@ -466,9 +466,9 @@ function buildTourSteps(): OverlayTourStep[] {
       id: "summary-task-progress",
       stageId: "library",
       stageTitle: "导入论文",
-      title: "聚光灯看当前论文总结进度",
+      title: "查看当前论文总结进度",
       description:
-        "这里会聚光灯展示刚才拖入论文的 AI 总结任务，解释它正在等待、提取 PDF、调用模型、生成或保存笔记。",
+        "这里是刚才拖入论文的 AI 总结任务。进度表示等待、提取 PDF、调用模型、生成或保存笔记；把鼠标移到阶段标签上可看具体说明。",
       host: "aiButler",
       targetRect: getTrackedSummaryTaskRect,
       placement: "top",
@@ -494,9 +494,9 @@ function buildTourSteps(): OverlayTourStep[] {
       id: "select-paper",
       stageId: "summary",
       stageTitle: "查看总结",
-      title: "回到论文区，点击刚导入的论文",
+      title: "在论文区选中刚导入的论文",
       description:
-        "任务完成后，回到 Zotero 论文列表，选中刚导入的论文。右侧条目面板会随选中文献刷新。",
+        "要查看某篇论文的 AI 结果，需要先在 Zotero 论文列表选中它。请选择刚才导入的论文，右侧条目面板会随选中文献刷新。",
       host: "zotero",
       target: (doc) =>
         queryFirst(
@@ -515,9 +515,9 @@ function buildTourSteps(): OverlayTourStep[] {
       id: "sidebar-ai-butler",
       stageId: "summary",
       stageTitle: "查看总结",
-      title: "点击右侧边栏的 AI 管家图标",
+      title: "打开当前论文的 AI 管家侧边栏",
       description:
-        "请点击最右侧竖排图标栏里的 AI 管家图标（通常在这一列靠下位置）。点击后会打开右侧 AI 管家区块。",
+        "当前论文的总结结果在右侧 AI 管家区块里查看。请点击最右侧竖排图标栏里的 AI 管家图标（通常在这一列靠下位置）打开它。",
       host: "zotero",
       target: getAiButlerSidenavIcon,
       placement: "left",
@@ -544,9 +544,9 @@ function buildTourSteps(): OverlayTourStep[] {
       id: "collection-export",
       stageId: "export",
       stageTitle: "导出笔记",
-      title: "右键分类，导出该分类 AI 笔记",
+      title: "把分类里的 AI 笔记导出到本地",
       description:
-        "右键刚才新建的分类，选择导出该分类 AI 笔记。这个功能会把该分类下已生成的 AI 总结/精读笔记批量导出；默认目录和格式可以之后在快捷设置里继续调整。",
+        "分类右键菜单可以批量导出该分类下已生成的 AI 总结/精读笔记。请右键刚才新建的分类，选择导出该分类 AI 笔记；默认目录和格式可以之后在快捷设置里调整。",
       host: "zotero",
       targetRect: getCollectionAreaRect,
       placement: "right",
@@ -555,9 +555,9 @@ function buildTourSteps(): OverlayTourStep[] {
       id: "paper-deep-read",
       stageId: "deepRead",
       stageTitle: "精读论文",
-      title: "右键论文，启用精读",
+      title: "为重点论文启动 AI 精读",
       description:
-        "最后回到论文列表，右键论文选择 AI 管家里的精读/重新精读功能。精读会比普通总结更深入，适合重点阅读的论文。",
+        "精读适合需要深入理解的重点论文。请在论文列表右键这篇论文，选择 AI 管家里的精读/重新精读功能。",
       host: "zotero",
       target: (doc) =>
         queryFirst(
@@ -578,9 +578,9 @@ function buildTourSteps(): OverlayTourStep[] {
       id: "deep-read-open-dashboard",
       stageId: "deepRead",
       stageTitle: "精读论文",
-      title: "重新打开 AI 管家仪表盘",
+      title: "查看精读任务处理进度",
       description:
-        "精读任务启动后，请点击文献库工具栏上的 🤖 AI 管家入口，重新打开仪表盘。下一步会进入任务队列查看精读状态。",
+        "精读任务已经启动，下一阶段的目标是在任务队列确认多轮精读是否入队、运行或完成。请点击文献库工具栏上的 🤖 AI 管家入口打开仪表盘。",
       host: "zotero",
       target: "#ai-butler-library-toolbar-btn",
       placement: "bottom",
@@ -594,9 +594,9 @@ function buildTourSteps(): OverlayTourStep[] {
       id: "deep-read-tasks",
       stageId: "deepRead",
       stageTitle: "精读论文",
-      title: "进入任务队列查看精读状态",
+      title: "确认精读任务状态",
       description:
-        "请点击 AI 管家仪表盘顶部的“任务队列”页签。精读任务启动后，可以在这里查看等待、运行、完成或失败状态。到这里，新手主流程就完整走通了。",
+        "任务队列会展示精读任务的等待、运行、完成或失败状态。请点击顶部“任务队列”页签，确认刚才启动的精读流程。",
       host: "aiButler",
       target: "#tab-tasks",
       placement: "bottom",
@@ -610,11 +610,10 @@ function buildTourSteps(): OverlayTourStep[] {
       stageTitle: "精读论文",
       title: "AI 精读：把论文读厚",
       description:
-        "AI 精读不是只生成一段摘要，而是把论文拆成多个阅读轮次，多次调用模型 API，从研究问题、方法、实验、贡献、局限和可追问点等角度逐层分析。任务队列里的进度代表当前多轮精读流程推进到哪里：等待/提取 PDF/规划轮次/第几轮分析/保存精读笔记。论文越长、轮次越多，进度停留时间就可能越长。",
+        "AI 精读会把论文拆成多个阅读轮次，多次调用模型 API，把论文读厚。进度表示等待、提取 PDF、规划轮次、AI 精读 3/25、保存笔记等阶段；把鼠标移到“AI 精读 3/25”这类阶段标签上，可看具体进度详情。",
       host: "aiButler",
-      target: "#ai-butler-task-queue-view",
-      placement: "left",
-      cardDock: "bottom",
+      targetRect: getTaskQueueListRect,
+      placement: "top",
       fallbackDescription:
         "AI 精读会多轮调用模型来深入分析论文；如果暂时看不到任务列表，请保持任务队列页面打开并稍等。",
     },
@@ -1140,8 +1139,14 @@ function positionCard(
     step.cardDock === "bottom" ? 760 : CARD_WIDTH,
     state.win.innerWidth - 32,
   );
+  state.card.style.width = cardWidth + "px";
+  const measuredHeight = Math.max(
+    state.card.scrollHeight || 0,
+    state.card.getBoundingClientRect().height || 0,
+    280,
+  );
   const cardHeight = Math.min(
-    state.card.scrollHeight || 280,
+    measuredHeight,
     step.cardDock === "bottom"
       ? Math.max(170, state.win.innerHeight * 0.36)
       : state.win.innerHeight - 32,
@@ -1514,6 +1519,28 @@ function getTrackedTask(state: OverlayTourState): TaskItem | undefined {
   return taskId ? TaskQueueManager.getInstance().getTask(taskId) : undefined;
 }
 
+function getTaskQueueListRect(doc: Document, win: Window): DOMRect | null {
+  const list = doc.getElementById("task-list-container");
+  const listRect = list ? getVisibleRect(list, win) : null;
+  if (listRect) return listRect;
+
+  const view = doc.getElementById("ai-butler-task-queue-view");
+  const viewRect = view ? getVisibleRect(view, win) : null;
+  const header = doc.getElementById("task-header-wrapper");
+  const headerRect = header ? getVisibleRect(header, win) : null;
+  if (!viewRect) return null;
+  const top = headerRect
+    ? Math.min(viewRect.bottom, headerRect.bottom)
+    : viewRect.top;
+  return makeRect(
+    win,
+    viewRect.left,
+    top,
+    viewRect.width,
+    Math.max(1, viewRect.bottom - top),
+  );
+}
+
 function getTrackedSummaryTaskRect(doc: Document, win: Window): DOMRect | null {
   const state = activeTour;
   if (!state) return null;
@@ -1628,12 +1655,12 @@ function getLiveStatusBody(state: OverlayTourState, task?: TaskItem): string {
   const stage = task.stageLabel || task.workflowStage || statusMap[task.status];
   const detail = task.stageDetail ? `；${task.stageDetail}` : "";
   if (task.status === TaskStatus.COMPLETED) {
-    return "AI 总结已经完成。下一步回到论文区选中这篇论文，再打开右侧 AI 管家图标查看总结。";
+    return "AI 总结已完成。下一步回到论文区查看结果。";
   }
   if (task.status === TaskStatus.FAILED) {
     return `当前总结任务失败：${task.error || stage}。你仍然可以继续教程，稍后在任务队列里重试或检查配置。`;
   }
-  return `当前阶段：${stage}${detail}。这个阶段可能是在检查 PDF、提取正文、等待模型响应、流式生成总结或保存笔记。`;
+  return `当前阶段：${stage}${detail}。鼠标移到任务卡片的阶段标签上可看完整进度详情。`;
 }
 
 function renderStepCelebration(

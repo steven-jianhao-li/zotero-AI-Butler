@@ -90,6 +90,11 @@ export async function startOnboardingOverlayTour(
   source: OverlayTourSource,
   options: OverlayTourOptions,
 ): Promise<boolean> {
+  if (source !== "startup") {
+    MainWindow.getInstance().close();
+    await delay(120);
+  }
+
   const steps = buildTourSteps();
   const initial = getStepWindow(steps[0]);
   const doc = initial?.document;
@@ -134,26 +139,12 @@ function buildTourSteps(): OverlayTourStep[] {
         "如果没有看到 🤖 按钮，请确认当前在 Zotero 文献库主窗口，并等待插件工具栏加载完成。",
     },
     {
-      id: "page-dashboard",
-      stageId: "pages",
-      stageTitle: "四个页面",
-      title: "页面 1：仪表盘",
-      description:
-        "请点击高亮的“仪表盘”页签。点击后，下一步会展示仪表盘内容区。",
-      host: "aiButler",
-      target: "#tab-dashboard",
-      placement: "bottom",
-      requireTargetClick: true,
-      advanceOnTargetClick: true,
-      advanceDelayMs: 80,
-    },
-    {
       id: "content-dashboard",
       stageId: "pages",
       stageTitle: "四个页面",
       title: "仪表盘内容区",
       description:
-        "这里是仪表盘内容区：上方显示管家状态和处理统计，下方是快捷操作。后面的一键初始化配置就在这里点击。",
+        "点击 🤖 后默认进入仪表盘。这里上方显示管家状态和处理统计，下方是快捷操作。后面的一键初始化配置就在这里点击。",
       host: "aiButler",
       target: "#ai-butler-dashboard-view",
       placement: "left",

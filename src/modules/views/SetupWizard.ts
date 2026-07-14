@@ -38,7 +38,14 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
   return element;
 }
 
-export function showSetupWizard(ownerDocument?: Document): void {
+export type SetupWizardOptions = {
+  onApplied?: () => void;
+};
+
+export function showSetupWizard(
+  ownerDocument?: Document,
+  options: SetupWizardOptions = {},
+): void {
   const doc = ownerDocument || Zotero.getMainWindow().document;
   const overlay = createElement(doc, "div", {
     styles: {
@@ -77,19 +84,40 @@ export function showSetupWizard(ownerDocument?: Document): void {
     if (event.target === overlay) close();
   });
 
-  renderPresetSelectionStep(doc, modal, close);
+  const notifyApplied = () => {
+    options.onApplied?.();
+    dispatchSetupWizardApplied(doc);
+  };
+
+  renderPresetSelectionStep(doc, modal, close, notifyApplied);
+}
+
+function dispatchSetupWizardApplied(doc: Document): void {
+  const eventName = "ai-butler-setup-wizard-applied";
+  const documents = new Set<Document>([doc, Zotero.getMainWindow().document]);
+  documents.forEach((targetDoc) => {
+    try {
+      const event = targetDoc.createEvent("Event");
+      event.initEvent(eventName, true, false);
+      targetDoc.dispatchEvent(event);
+      targetDoc.defaultView?.dispatchEvent(event);
+    } catch (error) {
+      ztoolkit.log("[AI-Butler] 发送初始化配置完成事件失败:", error);
+    }
+  });
 }
 
 function renderPresetSelectionStep(
   doc: Document,
   modal: HTMLElement,
   close: () => void,
+  onApplied: () => void,
 ): void {
   modal.innerHTML = "";
   const selectedPreset = getSelectedSetupPreset();
   const nextButton = createStyledButton("下一步", "#00a67e", "medium");
   nextButton.addEventListener("click", () =>
-    renderSetupPresetGuideStep(doc, modal, close, selectedPreset),
+    renderSetupPresetGuideStep(doc, modal, close, selectedPreset, onApplied),
   );
 
   const cancelButton = createStyledButton("取消", "#9e9e9e", "medium");
@@ -108,7 +136,7 @@ function renderPresetSelectionStep(
         );
         card.addEventListener("click", () => {
           selectedSetupPresetId = preset.id;
-          renderPresetSelectionStep(doc, modal, close);
+          renderPresetSelectionStep(doc, modal, close, onApplied);
         });
         return card;
       }),
@@ -123,6 +151,7 @@ function renderSetupPresetGuideStep(
   modal: HTMLElement,
   close: () => void,
   preset: SetupPreset,
+  onApplied: () => void,
 ): void {
   modal.innerHTML = "";
   const keyInput = createElement(doc, "input", {
@@ -243,7 +272,7 @@ function renderSetupPresetGuideStep(
 
   const backButton = createStyledButton("上一步", "#607d8b", "medium");
   backButton.addEventListener("click", () =>
-    renderPresetSelectionStep(doc, modal, close),
+    renderPresetSelectionStep(doc, modal, close, onApplied),
   );
   const nextButton = createStyledButton("下一步", "#00a67e", "medium");
   nextButton.addEventListener("click", () => {
@@ -255,7 +284,7 @@ function renderSetupPresetGuideStep(
         .show();
       return;
     }
-    renderSetupPresetConfirmStep(doc, modal, close, preset, {
+    renderSetupPresetConfirmStep(doc, modal, close, preset, onApplied, {
       apiKey,
       model: modelInput.value.trim() || preset.endpoint.model,
     });
@@ -278,6 +307,7 @@ function renderSetupPresetConfirmStep(
   modal: HTMLElement,
   close: () => void,
   preset: SetupPreset,
+  onApplied: () => void,
   values: SetupPresetValues,
 ): void {
   modal.innerHTML = "";
@@ -346,11 +376,12 @@ function renderSetupPresetConfirmStep(
 
   const backButton = createStyledButton("上一步", "#607d8b", "medium");
   backButton.addEventListener("click", () =>
-    renderSetupPresetGuideStep(doc, modal, close, preset),
+    renderSetupPresetGuideStep(doc, modal, close, preset, onApplied),
   );
   const applyButton = createStyledButton("确认并应用", "#00a67e", "medium");
   applyButton.addEventListener("click", () => {
     preset.apply(values);
+    onApplied();
     new ztoolkit.ProgressWindow("一键初始化配置", { closeTime: 3000 })
       .createLine({ text: preset.successMessage, type: "success" })
       .show();

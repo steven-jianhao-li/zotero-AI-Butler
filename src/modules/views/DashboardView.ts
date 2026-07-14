@@ -386,6 +386,14 @@ export class DashboardView extends BaseView {
         "large",
       );
 
+      if (action.label === "一键初始化配置") {
+        button.id = "ai-butler-quick-action-setup";
+      } else if (action.label === "查看任务队列") {
+        button.id = "ai-butler-quick-action-tasks";
+      } else if (action.label === "新手教程 / 重温教程") {
+        button.id = "ai-butler-quick-action-onboarding";
+      }
+
       button.addEventListener("click", () => {
         this.handleQuickAction(action.label);
       });

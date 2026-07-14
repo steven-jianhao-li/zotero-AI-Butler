@@ -599,6 +599,10 @@ export class TaskQueueView extends BaseView {
     return wrapper;
   }
 
+  private sanitizeTaskElementId(taskId: string): string {
+    return taskId.replace(/[^a-zA-Z0-9_-]/g, "-");
+  }
+
   /**
    * 创建任务元素
    *
@@ -626,6 +630,9 @@ export class TaskQueueView extends BaseView {
       accentColor: statusColors[task.status],
       classes: ["task-item"],
     });
+    taskItem.id = `ai-butler-task-${this.sanitizeTaskElementId(task.id)}`;
+    taskItem.dataset.taskId = task.id;
+    taskItem.dataset.itemId = String(task.itemId);
     taskItem.style.marginBottom = "10px";
     taskItem.style.cursor = "pointer";
     taskItem.title = "双击可定位到对应文献"; // Tooltip hint

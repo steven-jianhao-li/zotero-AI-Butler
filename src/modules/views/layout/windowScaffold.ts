@@ -263,6 +263,7 @@ export function createSettingsScaffold<T extends string>(
   const navButtons = new Map<T, HTMLElement>();
   for (const category of categories) {
     const button = createElement(doc, "button", {
+      id: `settings-nav-${category.id}`,
       className: "settings-nav-button",
       textContent: category.label,
       styles: {

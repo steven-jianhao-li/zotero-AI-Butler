@@ -34,7 +34,6 @@ import { TaskQueueView } from "./TaskQueueView";
 import { SettingsView } from "./SettingsView";
 import { LibraryScannerView } from "./LibraryScannerView";
 import { LiteratureReviewView } from "./LiteratureReviewView";
-import { OnboardingTutorialView } from "./OnboardingTutorialView";
 import { BaseView } from "./BaseView";
 import type { AiNoteKind } from "../aiNoteService";
 import {
@@ -53,8 +52,7 @@ export type TabType =
   | "tasks"
   | "settings"
   | "scanner"
-  | "literature-review"
-  | "tutorial";
+  | "literature-review";
 
 type OpenDialogWindow = Window & {
   openDialog?: (
@@ -132,9 +130,6 @@ export class MainWindow {
   /** 文献综述视图 */
   private literatureReviewView: LiteratureReviewView;
 
-  /** 新手教程视图 */
-  private onboardingTutorialView: OnboardingTutorialView;
-
   /**
    * 构造函数
    */
@@ -146,7 +141,6 @@ export class MainWindow {
     this.settingsView = new SettingsView();
     this.libraryScannerView = new LibraryScannerView();
     this.literatureReviewView = new LiteratureReviewView();
-    this.onboardingTutorialView = new OnboardingTutorialView();
 
     // 为总结视图设置默认的“返回任务队列”行为，避免未设置回调时按钮无效
     // 当外部未覆盖回调时，点击按钮将直接切换到任务队列标签页
@@ -161,7 +155,6 @@ export class MainWindow {
     this.views.set("settings", this.settingsView);
     this.views.set("scanner", this.libraryScannerView);
     this.views.set("literature-review", this.literatureReviewView);
-    this.views.set("tutorial", this.onboardingTutorialView);
   }
 
   /** 获取主窗口单例 */
@@ -604,9 +597,7 @@ export class MainWindow {
 
     // 如果是 scanner 或 literature-review 视图,隐藏标签栏
     this.scaffold?.setMainNavVisible(
-      tabId !== "scanner" &&
-        tabId !== "literature-review" &&
-        tabId !== "tutorial",
+      tabId !== "scanner" && tabId !== "literature-review",
     );
 
     // 更新标签按钮样式
@@ -741,6 +732,10 @@ export class MainWindow {
    */
   public isWindowOpen(): boolean {
     return this.isOpen && this.isDialogActive();
+  }
+
+  public getDialogWindow(): Window | null {
+    return this.isDialogActive() ? (this.dialog.window as Window) : null;
   }
 
   /**

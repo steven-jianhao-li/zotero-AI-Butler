@@ -618,15 +618,67 @@ function buildTourSteps(): OverlayTourStep[] {
         "AI 精读会多轮调用模型来深入分析论文；如果暂时看不到任务列表，请保持任务队列页面打开并稍等。",
     },
     {
+      id: "final-settings-tab",
+      stageId: "deepRead",
+      stageTitle: "精读论文",
+      title: "继续探索快捷设置",
+      description:
+        "核心流程已经走完。快捷设置里还有模型平台、自动扫描、笔记导出、侧边栏显示和右键菜单等个性化选项。请点击顶部“快捷设置”页签。",
+      host: "aiButler",
+      target: "#tab-settings",
+      placement: "bottom",
+      requireTargetClick: true,
+      advanceOnTargetClick: true,
+      advanceDelayMs: 120,
+    },
+    {
+      id: "final-settings-catalog",
+      stageId: "deepRead",
+      stageTitle: "精读论文",
+      title: "左侧是可配置项目录",
+      description:
+        "这里集中放着模型平台、API 配置、提示词、一图总结、笔记自动导出、界面设置、数据管理等入口。以后想调整 AI 管家行为，通常都从这里开始。",
+      host: "aiButler",
+      target: "#settings-sidebar",
+      placement: "right",
+    },
+    {
+      id: "final-ui-settings-nav",
+      stageId: "deepRead",
+      stageTitle: "精读论文",
+      title: "进入界面设置",
+      description:
+        "界面设置里可以调整自动扫描、右键菜单、侧边栏显示和已有笔记处理策略。请点击左侧“界面设置”。",
+      host: "aiButler",
+      target: "#settings-nav-ui",
+      placement: "right",
+      requireTargetClick: true,
+      advanceOnTargetClick: true,
+      advanceDelayMs: 160,
+    },
+    {
+      id: "final-auto-deepread-setting",
+      stageId: "deepRead",
+      stageTitle: "精读论文",
+      title: "自动扫描时生成 AI 精读",
+      description:
+        "这个选项会让新导入的论文自动加入 AI 精读队列。它很适合重点阅读场景，但精读会多轮调用模型，消耗的 token 明显多于普通总结；是否开启完全取决于你的使用习惯。",
+      host: "aiButler",
+      target: "#ui-setting-auto-scan-deep-read",
+      placement: "left",
+      nextLabel: "知道了",
+      fallbackDescription:
+        "界面设置中可以找到“自动扫描时生成 AI 精读”。它会消耗较多 token，不需要现在勾选，了解用途即可。",
+    },
+    {
       id: "finish",
       stageId: "deepRead",
       stageTitle: "精读论文",
       title: "🎉 恭喜，教程完成！",
       description:
-        "你已经走完 AI 管家的核心流程：配置模型、导入论文、查看总结、导出笔记、启动精读并查看任务状态。后续建议点击“快捷设置”，继续探索模型平台、自动扫描、笔记导出、侧边栏显示和右键菜单等个性化选项。",
+        "你已经走完 AI 管家的核心流程：配置模型、导入论文、查看总结、导出笔记、启动精读并查看任务状态。之后可以随时从仪表盘重温教程。",
       host: "aiButler",
-      target: "#tab-settings",
-      placement: "bottom",
+      placement: "center",
     },
   ];
 }
@@ -1693,7 +1745,7 @@ function renderConfetti(state: OverlayTourState): void {
     "#7c3aed",
     "#118ab2",
   ];
-  const count = 86;
+  const count = 150;
   for (let i = 0; i < count; i++) {
     const piece = state.doc.createElement("div");
     piece.className = "ai-butler-tour-confetti";
@@ -1702,8 +1754,8 @@ function renderConfetti(state: OverlayTourState): void {
     const drift = (Math.random() - 0.5) * 360;
     const fall = state.win.innerHeight * (0.58 + Math.random() * 0.42);
     const rotate = 180 + Math.random() * 720;
-    const duration = 1600 + Math.random() * 900;
-    const fadeDelay = 1450 + Math.random() * 500;
+    const duration = 2800 + Math.random() * 1800;
+    const fadeDelay = 2600 + Math.random() * 1400;
     Object.assign(piece.style, {
       position: "fixed",
       left: startX + "px",
@@ -1738,7 +1790,7 @@ function renderConfetti(state: OverlayTourState): void {
       },
       20 + Math.random() * 220,
     );
-    state.win.setTimeout(() => piece.remove(), 3100);
+    state.win.setTimeout(() => piece.remove(), 6200);
   }
 }
 function createTourButton(

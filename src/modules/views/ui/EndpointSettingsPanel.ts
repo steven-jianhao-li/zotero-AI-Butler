@@ -92,6 +92,7 @@ export class EndpointSettingsPanel {
   constructor(options: EndpointPanelOptions = {}) {
     this.options = options;
     this.root = doc().createElement("section");
+    this.root.id = "ai-butler-endpoint-settings-panel";
     this.endpoints = LLMEndpointManager.getEndpoints();
     this.render();
   }
@@ -166,6 +167,7 @@ export class EndpointSettingsPanel {
       "#59c0bc",
       "small",
     );
+    addButton.id = "ai-butler-add-endpoint-button";
     addButton.addEventListener("click", () => this.openAddEndpointDialog());
 
     header.appendChild(addButton);
@@ -537,6 +539,8 @@ export class EndpointSettingsPanel {
     const document = doc();
     const isExpanded = this.expandedEndpointIds.has(endpoint.id);
     const card = document.createElement("article");
+    card.id = `endpoint-card-${endpoint.id}`;
+    card.setAttribute("data-ai-butler-endpoint-name", endpoint.name || "");
     Object.assign(card.style, {
       border: "1px solid var(--ai-border)",
       borderRadius: "8px",
@@ -624,13 +628,17 @@ export class EndpointSettingsPanel {
         this.rerender();
       }),
     );
-    actions.appendChild(
-      this.actionButton(isExpanded ? "收起详情" : "详情", "#59c0bc", () => {
+    const expandButton = this.actionButton(
+      isExpanded ? "收起详情" : "详情",
+      "#59c0bc",
+      () => {
         if (isExpanded) this.expandedEndpointIds.delete(endpoint.id);
         else this.expandedEndpointIds.add(endpoint.id);
         this.render();
-      }),
+      },
     );
+    expandButton.id = `endpoint-expand-${endpoint.id}`;
+    actions.appendChild(expandButton);
     actions.appendChild(
       this.actionButton("删除", "#f44336", () => {
         if (this.endpoints.length <= 1) {
@@ -1026,6 +1034,8 @@ export class EndpointSettingsPanel {
       flexWrap: "wrap",
     });
     const testButton = createStyledButton("测试连接", "#2196f3", "small");
+    testButton.id = `endpoint-test-button-${endpoint.id}`;
+    testButton.classList.add("ai-butler-endpoint-test-button");
     const copyButton = createStyledButton("复制详情", "#777", "small");
     const status = document.createElement("pre");
     status.id = `endpoint-status-${endpoint.id}`;

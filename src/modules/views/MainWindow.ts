@@ -734,6 +734,10 @@ export class MainWindow {
     return this.isOpen && this.isDialogActive();
   }
 
+  public getDialogWindow(): Window | null {
+    return this.isDialogActive() ? (this.dialog.window as Window) : null;
+  }
+
   /**
    * 获取文献综述视图
    *

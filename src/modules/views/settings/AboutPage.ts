@@ -6,7 +6,8 @@
  */
 
 import { version, config, repository } from "../../../../package.json";
-import { createCard, createNotice } from "../ui/components";
+import { createCard, createStyledButton } from "../ui/components";
+import { openInteractiveOnboardingTour } from "../../onboarding";
 
 export class AboutPage {
   private container: HTMLElement;
@@ -31,6 +32,16 @@ export class AboutPage {
       paddingBottom: "10px",
     });
     this.container.appendChild(title);
+
+    const tutorialButton = createStyledButton(
+      "🎓 打开新手教程",
+      "#00a67e",
+      "medium",
+    );
+    tutorialButton.addEventListener("click", () => {
+      void openInteractiveOnboardingTour("settings");
+    });
+    this.container.appendChild(tutorialButton);
 
     const aboutContent = doc.createElement("div");
     Object.assign(aboutContent.style, {

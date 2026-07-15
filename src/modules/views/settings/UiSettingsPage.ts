@@ -109,13 +109,13 @@ export class UiSettingsPage {
       "autoScanDeepReadEnabled",
       !!autoScanDeepRead,
     );
-    form.appendChild(
-      createFormGroup(
-        "自动扫描时生成 AI 精读",
-        autoScanDeepReadBox,
-        "开启后，自动扫描到的新文献会加入 AI 精读队列；可关闭以节省 token。",
-      ),
+    const autoScanDeepReadGroup = createFormGroup(
+      "自动扫描时生成 AI 精读",
+      autoScanDeepReadBox,
+      "开启后，自动扫描到的新文献会加入 AI 精读队列；可关闭以节省 token。",
     );
+    autoScanDeepReadGroup.id = "ui-setting-auto-scan-deep-read";
+    form.appendChild(autoScanDeepReadGroup);
 
     // 保存对话历史
     const saveChatHistory = (getPref("saveChatHistory") as boolean) ?? true;

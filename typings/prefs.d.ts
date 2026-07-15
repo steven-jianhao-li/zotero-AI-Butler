@@ -101,6 +101,7 @@ declare namespace _ZoteroTypes {
       "noteExportSuppressDirectoryPrompt": boolean;
       "mindmapPrompt": string;
       "mindmapExportPath": string;
+      "onboardingTutorialSeenVersion": string;
     };
   }
 }

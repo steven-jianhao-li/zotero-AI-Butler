@@ -1,3 +1,4 @@
+import { getString } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
 import type { ProviderId } from "./apiKeyManager";
 import { normalizeReasoningEffortSetting } from "./llmproviders/shared/reasoning";
@@ -35,45 +36,52 @@ export interface ProviderDefaults {
   reasoningEffort?: LLMReasoningEffortSetting;
 }
 
-const PROVIDER_DEFAULTS: Record<LLMEndpointProviderType, ProviderDefaults> = {
+type ProviderDefaultsConfig = Omit<ProviderDefaults, "label"> & {
+  labelKey: string;
+};
+
+const PROVIDER_DEFAULTS: Record<
+  LLMEndpointProviderType,
+  ProviderDefaultsConfig
+> = {
   "openai-compat": {
-    label: "OpenAI 兼容 (Chat Completions)",
+    labelKey: "llm-endpoint-provider-openai-compat",
     apiUrl: "https://api.openai.com/v1/chat/completions",
     model: "gpt-3.5-turbo",
     reasoningEffort: "default",
   },
   openai: {
-    label: "OpenAI (Responses 新接口)",
+    labelKey: "llm-endpoint-provider-openai",
     apiUrl: "https://api.openai.com/v1/responses",
     model: "gpt-5",
     reasoningEffort: "medium",
   },
   google: {
-    label: "Google Gemini",
+    labelKey: "llm-endpoint-provider-google",
     apiUrl: "https://generativelanguage.googleapis.com",
     model: "gemini-2.5-pro",
     reasoningEffort: "default",
   },
   anthropic: {
-    label: "Anthropic Claude",
+    labelKey: "llm-endpoint-provider-anthropic",
     apiUrl: "https://api.anthropic.com",
     model: "claude-3-5-sonnet-20241022",
     reasoningEffort: "default",
   },
   openrouter: {
-    label: "OpenRouter",
+    labelKey: "llm-endpoint-provider-openrouter",
     apiUrl: "https://openrouter.ai/api/v1/chat/completions",
     model: "google/gemma-3-27b-it",
     reasoningEffort: "default",
   },
   volcanoark: {
-    label: "火山方舟 (Volcano Ark)",
+    labelKey: "llm-endpoint-provider-volcanoark",
     apiUrl: "https://ark.cn-beijing.volces.com/api/v3/responses",
     model: "doubao-seed-1-8-251228",
     reasoningEffort: "default",
   },
   ollama: {
-    label: "Ollama",
+    labelKey: "llm-endpoint-provider-ollama",
     apiUrl: "http://localhost:11434",
     model: "llama3.2",
     reasoningEffort: "default",
@@ -141,7 +149,7 @@ function normalizeEndpoint(
   fallbackIndex: number,
 ): LLMEndpoint {
   const providerType = safeProviderType(raw.providerType);
-  const defaults = PROVIDER_DEFAULTS[providerType];
+  const defaults = providerDefaults(providerType);
   const createdAt = raw.createdAt || nowIso();
   return {
     id: String(raw.id || "").trim() || makeEndpointId(),
@@ -162,6 +170,17 @@ function normalizeEndpoint(
   };
 }
 
+function providerDefaults(
+  providerType: LLMEndpointProviderType,
+): ProviderDefaults {
+  const { labelKey, ...defaults } =
+    PROVIDER_DEFAULTS[providerType] || PROVIDER_DEFAULTS.openai;
+  return {
+    ...defaults,
+    label: getString(labelKey),
+  };
+}
+
 export class LLMEndpointManager {
   static providerTypes(): LLMEndpointProviderType[] {
     return [...PROVIDER_TYPES];
@@ -170,7 +189,7 @@ export class LLMEndpointManager {
   static providerDefaults(
     providerType: LLMEndpointProviderType,
   ): ProviderDefaults {
-    return PROVIDER_DEFAULTS[providerType] || PROVIDER_DEFAULTS.openai;
+    return providerDefaults(providerType);
   }
 
   static providerLabel(providerType: string): string {
@@ -214,13 +233,13 @@ export class LLMEndpointManager {
   static pdfProcessModeLabel(mode: LLMEndpointPdfProcessMode): string {
     switch (normalizeEndpointPdfProcessMode(mode)) {
       case "base64":
-        return "Base64 文件输入";
+        return getString("endpoint-pdf-base64-short");
       case "text":
-        return "文本提取";
+        return getString("endpoint-pdf-text-short");
       case "mineru":
         return "MinerU";
       default:
-        return "跟随全局默认";
+        return getString("endpoint-pdf-global-short");
     }
   }
 
@@ -314,7 +333,7 @@ export class LLMEndpointManager {
       enabled = this.getEnabledEndpoints();
     }
     if (enabled.length === 0) {
-      throw new Error("No enabled LLM endpoints are configured.");
+      throw new Error(getString("llm-error-no-enabled-endpoints"));
     }
 
     const strategy = this.getRoutingStrategy();

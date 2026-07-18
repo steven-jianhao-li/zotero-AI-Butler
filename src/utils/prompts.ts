@@ -1,4 +1,5 @@
 import deepReadPromptDefaults from "../defaults/prompts/deep-read.json";
+import { getString } from "./locale";
 
 /**
  * ================================================================
@@ -41,7 +42,7 @@ import deepReadPromptDefaults from "../defaults/prompts/deep-read.json";
  *
  * @const {number} PROMPT_VERSION 当前提示词版本号
  */
-export const PROMPT_VERSION = 2;
+export const PROMPT_VERSION = 3;
 
 /**
  * 默认的论文总结提示词模板
@@ -69,7 +70,13 @@ export const PROMPT_VERSION = 2;
  *
  * @const {string} DEFAULT_SUMMARY_PROMPT 默认提示词文本
  */
+function shouldUseEnglishDefaultPrompts(): boolean {
+  return getString("settings-image-summary-default-language") === "English";
+}
+
 export const DEFAULT_SUMMARY_PROMPT = `帮我用中文讲一下这篇论文，讲的越详细越好，我有这个领域的通用基础，但是没有这个小方向的基础。输出的时候只包含关于论文的讲解，不要包含寒暄的内容。开始时先用一段话总结这篇论文的核心内容。`;
+
+export const DEFAULT_SUMMARY_PROMPT_EN = `Explain this paper in English in as much detail as possible. I have general background knowledge in this field, but not necessarily in this specific subarea. Only output the explanation of the paper; do not include greetings or small talk. Start with one paragraph summarizing the core idea of the paper.`;
 
 const LEGACY_DEFAULT_SUMMARY_PROMPTS = [
   `帮我用中文讲一下这篇论文，讲的越详细越好，我有这个领域的通用基础，但是没有这个小方向的基础。输出的时候只包含关于论文的讲解，不要包含寒暄的内容。开始时先用一段话总结这篇论文的核心内容。如果有公式，应该用$内联公式$和$$行间公式$$格式。`,
@@ -92,7 +99,13 @@ const LEGACY_DEFAULT_SUMMARY_PROMPTS = [
  * @const {string} SYSTEM_ROLE_PROMPT 系统角色定义
  */
 export const SYSTEM_ROLE_PROMPT =
-  "You are a helpful academic assistant. 如果有公式，应该用$内联公式$和$$行间公式$$格式。";
+  "You are a helpful academic assistant. 如果有公式，应该用$内联公式$和$行间公式$格式。";
+
+function getDefaultAnswerLanguageInstruction(): string {
+  return shouldUseEnglishDefaultPrompts()
+    ? "Please answer in English."
+    : "请用中文回答。";
+}
 
 /**
  * 构建完整的用户消息
@@ -124,7 +137,7 @@ export const SYSTEM_ROLE_PROMPT =
  * ```
  */
 export function buildUserMessage(prompt: string, text: string): string {
-  return `${prompt}\n\n请用中文回答。\n\n<Paper>\n${text}\n</Paper>`;
+  return `${prompt}\n\n${getDefaultAnswerLanguageInstruction()}\n\n<Paper>\n${text}\n</Paper>`;
 }
 
 /**
@@ -146,7 +159,9 @@ export function buildUserMessage(prompt: string, text: string): string {
  * ```
  */
 export function getDefaultSummaryPrompt(): string {
-  return DEFAULT_SUMMARY_PROMPT;
+  return shouldUseEnglishDefaultPrompts()
+    ? DEFAULT_SUMMARY_PROMPT_EN
+    : DEFAULT_SUMMARY_PROMPT;
 }
 
 /**
@@ -193,6 +208,7 @@ export function shouldUpdatePrompt(
   if (
     currentPrompt !== undefined &&
     currentPrompt !== DEFAULT_SUMMARY_PROMPT &&
+    currentPrompt !== DEFAULT_SUMMARY_PROMPT_EN &&
     !LEGACY_DEFAULT_SUMMARY_PROMPTS.includes(currentPrompt)
   ) {
     return false;
@@ -344,11 +360,97 @@ function normalizeDeepReadPromptTemplate(
 const DEEP_READ_PROMPT_DEFAULTS =
   deepReadPromptDefaults as DeepReadPromptDefaults;
 
+const DEEP_READ_PROMPT_DEFAULTS_EN: DeepReadPromptDefaults = {
+  chapterFallbacks: [
+    { id: "ch1", title_zh: "Introduction", title_en: "Introduction" },
+    { id: "ch2", title_zh: "Main Body", title_en: "Main Body" },
+  ],
+  template: {
+    id: "default-v2-chapter-reading",
+    name: "Default: two-stage deep reading",
+    description:
+      "Parse the chapter JSON first, then read chapters in order. Follow-up questions complete the paper-level understanding.",
+    version: 2,
+    prompts: [],
+    phases: [
+      {
+        id: "chapter_reading",
+        title: "Chapter-by-chapter reading",
+        type: "sequential_dynamic",
+        description:
+          "Based on the original paper, detect its chapter structure first, then read each chapter deeply in order. Each round carries the previous reading context, using either Full Context or Minimal Context as configured, so the reading stays coherent and avoids repetition. This phase runs serially and does not support parallel execution.",
+        contextStrategy: "last_round",
+        planningPromptLines: [
+          "Read the full paper and identify its main chapter structure. Return JSON only; do not output explanations.",
+          "",
+          "The return format must be:",
+          "{",
+          '  "chapters": [',
+          '    { "id": "ch1", "title_zh": "Introduction", "title_en": "Introduction" },',
+          '    { "id": "ch2", "title_zh": "Related Work or Method", "title_en": "Related Work or Method" }',
+          "  ]",
+          "}",
+          "",
+          "Requirements:",
+          "1. Prefer the section titles used in the original paper.",
+          "2. If a title is not in English, provide a concise English translation and keep the original meaning.",
+          "3. Return at least two chapters. If the structure is unclear, return Introduction and Main Body.",
+          "4. The JSON fields are used directly in the chapter reading prompt template: title_zh maps to {{title_zh}}, title_en maps to {{title_en}}, and id is only an internal identifier.",
+        ],
+        fixedPrompts: [],
+        chapterTemplateLines: [
+          "Read the chapter “{{title_en}}” in depth.",
+          "",
+          "Organize the answer around these questions:",
+          "1. What role does this chapter play in the whole paper?",
+          "2. What key concepts, arguments, methods, or technical details does it introduce?",
+          "3. What must the reader understand here before reading later chapters?",
+          "4. If this chapter contains formulas, experimental settings, or definitions, explain them clearly in plain English.",
+          "",
+          "Output requirements:",
+          "- Use Markdown.",
+          "- Do not include greetings or repeat the task statement.",
+          "- Start headings at level 3, for example “### Role of this chapter”.",
+          "- Make the explanation understandable to a reader who has general field knowledge but lacks background in this specific subarea.",
+        ],
+      },
+      {
+        id: "deep_questions",
+        title: "Focused follow-up",
+        type: "independent",
+        description:
+          "Each follow-up reads the full paper independently without carrying context from other rounds.",
+        parallelizable: false,
+        maxConcurrency: 1,
+        prompts: [
+          {
+            id: "q_core_contribution",
+            title: "Core contribution",
+            prompt:
+              "Based on the full paper, explain in English what the paper's core contribution is and why it matters. Output Markdown and start headings at level 3.",
+            order: 1,
+          },
+          {
+            id: "q_limits_questions",
+            title: "Limits and questions",
+            prompt:
+              "Based on the full paper, list the most important limitations, risks, or unresolved questions. Output Markdown and start headings at level 3.",
+            order: 2,
+          },
+        ],
+      },
+    ],
+  },
+};
+
 export const DEFAULT_CHAPTER_FALLBACKS: ChapterInfo[] =
   DEEP_READ_PROMPT_DEFAULTS.chapterFallbacks;
 
 export const DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE: MultiRoundPromptTemplate =
   normalizeDeepReadPromptTemplate(DEEP_READ_PROMPT_DEFAULTS);
+
+const DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE_EN: MultiRoundPromptTemplate =
+  normalizeDeepReadPromptTemplate(DEEP_READ_PROMPT_DEFAULTS_EN);
 
 const defaultChapterReadingPhase =
   DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE.phases.find(
@@ -363,7 +465,11 @@ export const DEFAULT_MULTI_ROUND_CHAPTER_TEMPLATE =
   defaultChapterReadingPhase?.chapterTemplate ?? "";
 
 export function getDefaultMultiRoundPromptTemplate(): MultiRoundPromptTemplate {
-  return cloneMultiRoundPromptTemplate(DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE);
+  return cloneMultiRoundPromptTemplate(
+    shouldUseEnglishDefaultPrompts()
+      ? DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE_EN
+      : DEFAULT_MULTI_ROUND_PROMPT_TEMPLATE,
+  );
 }
 
 export function getBuiltinMultiRoundPromptTemplates(): MultiRoundPromptTemplate[] {
@@ -868,6 +974,19 @@ export const DEFAULT_IMAGE_SUMMARY_PROMPT = `请阅读我提供的论文内容�
 论文内容如下：
 \${context}`;
 
+export const DEFAULT_IMAGE_SUMMARY_PROMPT_EN = `Read the paper content I provide and extract the key visual information needed to generate an academic concept poster.
+
+Make the description specific and visual so it can be turned into an image.
+Output the following content only, without extra commentary, in \${language}:
+1. Research problem: the core problem addressed by the paper
+2. Novel method: the main method or technique proposed by the paper, especially the key insight or aha moment
+3. Workflow: the process from input to output
+4. Key results: main experimental findings or performance improvements
+5. Practical value: the real-world or academic significance of the work
+---
+Paper content:
+\${context}`;
+
 /**
  * 默认的生图提示词
  *
@@ -910,13 +1029,82 @@ export const DEFAULT_IMAGE_GENERATION_PROMPT = `根据"\${summaryForImage}"，�
 **Generation Instructions:**
 Generate an academic infographic poster.`;
 
+export const DEFAULT_IMAGE_GENERATION_PROMPT_EN = `Based on "\${summaryForImage}", generate an academic paper concept illustration that clearly presents the following content:
+
+Research problem: the core problem addressed by the paper
+Novel method: the main method or technique proposed by the paper
+Workflow: the process from input to output
+Key results: main experimental findings or performance improvements
+Practical value: the significance of the research
+Paper title: \${title}
+Requirements:
+**Design Guidelines - STRICTLY FOLLOW:**
+1. **Style:**
+   * Modern minimalist tech infographic.
+   * Flat vector illustration with subtle isometric elements.
+   * High-quality corporate Memphis design style.
+   * Clean lines and geometric shapes.
+2. **Composition:**
+   * Layout: central composition or left-to-right process flow.
+   * Background: clean, solid off-white or very light grey background (#F5F5F7). No clutter.
+   * Structure: organize elements logically like a presentation slide or an academic poster.
+3. **Color palette:**
+   * Primary: deep academic blue and slate grey.
+   * Accent: vibrant orange or teal for highlights.
+   * High contrast and professional color grading.
+4. **Text rendering:**
+   * Use Times New Roman font for English.
+   * Main text language: \${language}.
+   * The title does not need to appear in the image.
+   * Text must be clear and free of garbled characters.
+5. **Negative prompt - avoid:**
+   * No photorealism.
+   * No messy sketches.
+   * No blurry text.
+   * No chaotic background.
+**Generation Instructions:**
+Generate an academic infographic poster.`;
+
 /**
  * 获取默认的视觉信息提取提示词
  *
  * @returns 默认视觉提取提示词
  */
+function normalizePromptForDefaultComparison(value: string): string {
+  return value.replace(/\r\n/g, "\n").trim();
+}
+
+function isKnownDefaultPrompt(
+  value: string | undefined,
+  defaults: string[],
+  markers: string[] = [],
+): boolean {
+  if (!value || !value.trim()) {
+    return true;
+  }
+  const normalized = normalizePromptForDefaultComparison(value);
+  return (
+    defaults.some(
+      (item) => normalizePromptForDefaultComparison(item) === normalized,
+    ) || markers.some((marker) => normalized.includes(marker))
+  );
+}
+
+function resolveConfiguredDefaultPrompt(
+  value: string | undefined,
+  defaultValue: string,
+  knownDefaults: string[],
+  markers: string[] = [],
+): string {
+  return isKnownDefaultPrompt(value, knownDefaults, markers)
+    ? defaultValue
+    : value!.trim();
+}
+
 export function getDefaultImageSummaryPrompt(): string {
-  return DEFAULT_IMAGE_SUMMARY_PROMPT;
+  return shouldUseEnglishDefaultPrompts()
+    ? DEFAULT_IMAGE_SUMMARY_PROMPT_EN
+    : DEFAULT_IMAGE_SUMMARY_PROMPT;
 }
 
 /**
@@ -925,7 +1113,24 @@ export function getDefaultImageSummaryPrompt(): string {
  * @returns 默认生图提示词
  */
 export function getDefaultImageGenerationPrompt(): string {
-  return DEFAULT_IMAGE_GENERATION_PROMPT;
+  return shouldUseEnglishDefaultPrompts()
+    ? DEFAULT_IMAGE_GENERATION_PROMPT_EN
+    : DEFAULT_IMAGE_GENERATION_PROMPT;
+}
+
+export function getConfiguredImageSummaryPrompt(value?: string): string {
+  return resolveConfiguredDefaultPrompt(value, getDefaultImageSummaryPrompt(), [
+    DEFAULT_IMAGE_SUMMARY_PROMPT,
+    DEFAULT_IMAGE_SUMMARY_PROMPT_EN,
+  ]);
+}
+
+export function getConfiguredImageGenerationPrompt(value?: string): string {
+  return resolveConfiguredDefaultPrompt(
+    value,
+    getDefaultImageGenerationPrompt(),
+    [DEFAULT_IMAGE_GENERATION_PROMPT, DEFAULT_IMAGE_GENERATION_PROMPT_EN],
+  );
 }
 
 // ================================================================
@@ -947,13 +1152,33 @@ export const DEFAULT_LITERATURE_REVIEW_PROMPT = `请阅读以下多篇学术论�
 
 请使用清晰的结构和学术性语言，确保综述内容准确、逻辑连贯。使用中文输出。`;
 
+export const DEFAULT_LITERATURE_REVIEW_PROMPT_EN = `Read the following academic papers and generate a comprehensive literature review report, including:
+
+1. **Overview of the research topic**: Briefly describe the shared research area and core problems addressed by these papers.
+2. **Main contribution of each paper**: Summarize the core ideas, methods, and findings of each paper one by one.
+3. **Method comparison**: Analyze the similarities and differences among the research methods used by the papers.
+4. **Summary of key findings**: Synthesize the main conclusions and findings across the papers.
+5. **Trends and future directions**: Based on these papers, analyze the development trends and future research directions of the field.
+
+Use a clear structure and academic language. Ensure the review is accurate and logically coherent. Write in English.`;
+
 /**
  * 获取默认的文献综述提示词
  *
  * @returns 默认文献综述提示词
  */
 export function getDefaultLiteratureReviewPrompt(): string {
-  return DEFAULT_LITERATURE_REVIEW_PROMPT;
+  return shouldUseEnglishDefaultPrompts()
+    ? DEFAULT_LITERATURE_REVIEW_PROMPT_EN
+    : DEFAULT_LITERATURE_REVIEW_PROMPT;
+}
+
+export function getConfiguredLiteratureReviewPrompt(value?: string): string {
+  return resolveConfiguredDefaultPrompt(
+    value,
+    getDefaultLiteratureReviewPrompt(),
+    [DEFAULT_LITERATURE_REVIEW_PROMPT, DEFAULT_LITERATURE_REVIEW_PROMPT_EN],
+  );
 }
 
 // ================================================================
@@ -978,6 +1203,18 @@ export const DEFAULT_TABLE_TEMPLATE = `| 维度 | 内容 |
 | 局限性 | |
 | 与本研究的关联 | |`;
 
+export const DEFAULT_TABLE_TEMPLATE_EN = `| Dimension | Content |
+|------|------|
+| Paper title | |
+| Authors | |
+| Publication year | |
+| Research question | |
+| Method | |
+| Main findings | |
+| Novelty | |
+| Limitations | |
+| Relevance to my research | |`;
+
 /**
  * 默认的逐篇填表提示词
  *
@@ -995,6 +1232,18 @@ export const DEFAULT_TABLE_FILL_PROMPT = `请仔细阅读以下学术论文的�
 表格模板：
 \${tableTemplate}`;
 
+export const DEFAULT_TABLE_FILL_PROMPT_EN = `Carefully read the content of the following academic paper and fill in each dimension according to the given table template.
+
+Requirements:
+1. Output strictly in the format of the table template and keep valid Markdown table syntax.
+2. Fill every dimension. If the paper does not mention relevant information, write "Not mentioned".
+3. Keep the content concise and precise, about 1-3 sentences for each dimension.
+4. Write in English.
+5. Only output the completed table without extra explanations.
+
+Table template:
+\${tableTemplate}`;
+
 /**
  * 默认的汇总综述提示词
  *
@@ -1010,13 +1259,25 @@ export const DEFAULT_TABLE_REVIEW_PROMPT = `请阅读以下多篇学术论文，
 
 对于所有引用的内容或结论，使用[num]格式标注（如[1]、[2]），其中num对应各文献的编号。有多个引用来源时使用[1][2][3]格式。无需在最后给出完整参考文献列表。请使用清晰的结构和学术性语言，确保综述内容准确、逻辑连贯。使用中文输出。`;
 
+export const DEFAULT_TABLE_REVIEW_PROMPT_EN = `Read the following academic papers and generate a comprehensive literature review report, including:
+
+1. **Overview of the research topic**: Briefly describe the shared research area and core problems addressed by these papers.
+2. **Main contribution of each paper**: Summarize the core ideas, methods, and findings of each paper one by one.
+3. **Method comparison**: Compare the similarities and differences among the research methods used by the papers.
+4. **Summary of key findings**: Synthesize the main conclusions and findings across the papers.
+5. **Trends and future directions**: Based on these papers, analyze the development trends and future research directions of the field.
+
+For all cited content or conclusions, use [num] citation markers, such as [1] or [2], where num corresponds to the paper index. For multiple sources, use the format [1][2][3]. Do not include a full reference list at the end. Use a clear structure and academic language. Ensure the review is accurate and logically coherent. Write in English.`;
+
 /**
  * 获取默认的表格模板
  *
  * @returns 默认 Markdown 表格模板
  */
 export function getDefaultTableTemplate(): string {
-  return DEFAULT_TABLE_TEMPLATE;
+  return shouldUseEnglishDefaultPrompts()
+    ? DEFAULT_TABLE_TEMPLATE_EN
+    : DEFAULT_TABLE_TEMPLATE;
 }
 
 /**
@@ -1025,7 +1286,9 @@ export function getDefaultTableTemplate(): string {
  * @returns 默认填表提示词
  */
 export function getDefaultTableFillPrompt(): string {
-  return DEFAULT_TABLE_FILL_PROMPT;
+  return shouldUseEnglishDefaultPrompts()
+    ? DEFAULT_TABLE_FILL_PROMPT_EN
+    : DEFAULT_TABLE_FILL_PROMPT;
 }
 
 /**
@@ -1034,7 +1297,46 @@ export function getDefaultTableFillPrompt(): string {
  * @returns 默认汇总综述提示词
  */
 export function getDefaultTableReviewPrompt(): string {
-  return DEFAULT_TABLE_REVIEW_PROMPT;
+  return shouldUseEnglishDefaultPrompts()
+    ? DEFAULT_TABLE_REVIEW_PROMPT_EN
+    : DEFAULT_TABLE_REVIEW_PROMPT;
+}
+
+export function getConfiguredTableTemplate(value?: string): string {
+  return resolveConfiguredDefaultPrompt(
+    value,
+    getDefaultTableTemplate(),
+    [DEFAULT_TABLE_TEMPLATE, DEFAULT_TABLE_TEMPLATE_EN],
+    ["| 维度 | 内容 |", "| 论文标题 |", "| Dimension | Content |"],
+  );
+}
+
+export function getConfiguredTableFillPrompt(value?: string): string {
+  return resolveConfiguredDefaultPrompt(
+    value,
+    getDefaultTableFillPrompt(),
+    [DEFAULT_TABLE_FILL_PROMPT, DEFAULT_TABLE_FILL_PROMPT_EN],
+    [
+      "请仔细阅读以下学术论文的内容",
+      "使用中文填写",
+      "Carefully read the content of the following academic paper",
+      "Write in English",
+    ],
+  );
+}
+
+export function getConfiguredTableReviewPrompt(value?: string): string {
+  return resolveConfiguredDefaultPrompt(
+    value,
+    getDefaultTableReviewPrompt(),
+    [DEFAULT_TABLE_REVIEW_PROMPT, DEFAULT_TABLE_REVIEW_PROMPT_EN],
+    [
+      "请阅读以下多篇学术论文",
+      "使用中文输出",
+      "Read the following academic papers",
+      "Write in English",
+    ],
+  );
 }
 
 // ================================================================
@@ -1113,11 +1415,81 @@ export const DEFAULT_MINDMAP_PROMPT = `# Role
 # Current Task
 请阅读以下论文内容，并按照上述格式生成思维导图数据：`;
 
+export const DEFAULT_MINDMAP_PROMPT_EN = `# Role
+You are a professional academic paper analysis assistant. Your task is to transform paper content into structured mind-map data.
+
+# Output Format Rules (strictly follow)
+1. The output format must be **Markdown headings and unordered lists**.
+2. **Root node (\`#\`)**: must be the paper title.
+3. **Level-1 branches (\`##\`)**: must include exactly the following four sections:
+   - Research Background and Goal
+   - Research Method
+   - Key Findings
+   - Conclusion and Significance
+4. **Child nodes (\`-\`)**: break down the content based on the paper. Keep the hierarchy within 3-4 levels and concise.
+5. Do not output Markdown code fence markers such as \`\`\`markdown. Output the content directly.
+6. Language: output in **English**.
+
+# One-Shot Example
+## Input Text:
+[An abstract of a paper about Deep Residual Learning (ResNet)...]
+
+## Expected Output:
+# Deep Residual Learning for Image Recognition
+
+## Research Background and Goal
+- Vanishing/exploding gradients
+  - Make very deep neural networks difficult to optimize
+- Degradation problem
+  - Accuracy saturates or even declines as networks become deeper
+- Core goal
+  - Train extremely deep networks (100+ layers)
+  - Solve the degradation problem
+
+## Research Method
+- Residual learning framework
+  - Introduces identity mapping
+  - Learns a residual function F(x) = H(x) - x
+- Network architecture
+  - Uses 3x3 convolution kernels
+  - Introduces global average pooling
+- Training strategy
+  - Uses batch normalization
+
+## Key Findings
+- Winner of the ImageNet competition
+  - Reduced the top-5 error rate to 3.57%
+- Validation of depth advantage
+  - A 152-layer network significantly outperforms VGG-16
+- Optimization benefit
+  - ResNet is easier to optimize than plain networks
+
+## Conclusion and Significance
+- Core contribution
+  - Demonstrates the effectiveness of residual structures in deep networks
+- Broad impact
+  - Became a standard backbone in computer vision
+- Limitation
+  - Very deep networks require high training cost
+
+---
+# Current Task
+Read the following paper content and generate mind-map data in the format above:`;
+
 /**
  * 获取默认的思维导图提示词
  *
  * @returns 默认思维导图提示词
  */
 export function getDefaultMindmapPrompt(): string {
-  return DEFAULT_MINDMAP_PROMPT;
+  return shouldUseEnglishDefaultPrompts()
+    ? DEFAULT_MINDMAP_PROMPT_EN
+    : DEFAULT_MINDMAP_PROMPT;
+}
+
+export function getConfiguredMindmapPrompt(value?: string): string {
+  return resolveConfiguredDefaultPrompt(value, getDefaultMindmapPrompt(), [
+    DEFAULT_MINDMAP_PROMPT,
+    DEFAULT_MINDMAP_PROMPT_EN,
+  ]);
 }

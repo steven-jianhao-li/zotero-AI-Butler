@@ -1,4 +1,6 @@
+import { getString } from "../../../utils/locale";
 import type { LLMModelInfo } from "../types";
+import { providerHttpRequestFailed } from "./localizedErrors";
 
 export function deriveVersionedModelsUrl(
   apiUrl: string | undefined,
@@ -49,14 +51,19 @@ export async function requestModelListJson(
     const status = response.status ?? 200;
     const rawResponse = response.response || "";
     if (status < 200 || status >= 300) {
-      throw new Error(`HTTP ${status}: ${rawResponse || "请求失败"}`);
+      throw new Error(
+        rawResponse
+          ? `HTTP ${status}: ${rawResponse}`
+          : providerHttpRequestFailed(status),
+      );
     }
     return rawResponse ? JSON.parse(rawResponse) : {};
   } catch (error: any) {
     const status = error?.xmlhttp?.status;
     const responseBody =
       error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
-    let errorMessage = error?.message || "获取模型列表失败";
+    let errorMessage =
+      error?.message || getString("provider-error-model-list-failed");
 
     try {
       if (responseBody) {

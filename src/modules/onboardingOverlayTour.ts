@@ -6,6 +6,7 @@ import {
 } from "./taskQueue";
 import { MainWindow } from "./views/MainWindow";
 import { showSetupWizard } from "./views/SetupWizard";
+import { getString } from "../utils/locale";
 
 export type OverlayTourSource = "startup" | "dashboard" | "settings";
 
@@ -125,26 +126,23 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "entry-toolbar",
       stageId: "entry",
-      stageTitle: "AI 管家仪表盘",
-      title: "AI 管家仪表盘",
-      description:
-        "文献库工具栏上的 🤖 会打开 AI 管家仪表盘。请直接点击这个真实按钮，教程会自动进入下一步。",
+      stageTitle: getString("onboarding-step-entry-toolbar-stage"),
+      title: getString("onboarding-step-entry-toolbar-title"),
+      description: getString("onboarding-step-entry-toolbar-description"),
       host: "zotero",
       target: "#ai-butler-library-toolbar-btn",
       placement: "bottom",
       requireTargetClick: true,
       advanceOnTargetClick: true,
       advanceDelayMs: 550,
-      fallbackDescription:
-        "如果没有看到 🤖 按钮，请确认当前在 Zotero 文献库主窗口，并等待插件工具栏加载完成。",
+      fallbackDescription: getString("onboarding-step-entry-toolbar-fallback"),
     },
     {
       id: "content-dashboard",
       stageId: "pages",
-      stageTitle: "四个页面",
-      title: "仪表盘内容区",
-      description:
-        "点击 🤖 后默认进入仪表盘。这里上方显示管家状态和处理统计，下方是快捷操作。后面的一键初始化配置就在这里点击。",
+      stageTitle: getString("onboarding-step-content-dashboard-stage"),
+      title: getString("onboarding-step-content-dashboard-title"),
+      description: getString("onboarding-step-content-dashboard-description"),
       host: "aiButler",
       target: "#ai-butler-dashboard-view",
       placement: "left",
@@ -153,10 +151,9 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "page-summary",
       stageId: "pages",
-      stageTitle: "四个页面",
-      title: "页面 2：AI 总结",
-      description:
-        "请点击高亮的“AI 总结”页签。点击后，下一步会展示 AI 总结内容区。",
+      stageTitle: getString("onboarding-step-page-summary-stage"),
+      title: getString("onboarding-step-page-summary-title"),
+      description: getString("onboarding-step-page-summary-description"),
       host: "aiButler",
       target: "#tab-summary",
       placement: "bottom",
@@ -167,10 +164,9 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "content-summary",
       stageId: "pages",
-      stageTitle: "四个页面",
-      title: "AI 总结内容区",
-      description:
-        "这里用于展示总结输出、后续追问和总结结果。以后从右键论文或侧边栏进入时，会在这里看到更完整的生成过程。",
+      stageTitle: getString("onboarding-step-content-summary-stage"),
+      title: getString("onboarding-step-content-summary-title"),
+      description: getString("onboarding-step-content-summary-description"),
       host: "aiButler",
       target: "#ai-butler-summary-view",
       placement: "left",
@@ -179,10 +175,9 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "page-tasks",
       stageId: "pages",
-      stageTitle: "四个页面",
-      title: "页面 3：任务队列",
-      description:
-        "请点击高亮的“任务队列”页签。点击后，下一步会展示任务队列内容区。",
+      stageTitle: getString("onboarding-step-page-tasks-stage"),
+      title: getString("onboarding-step-page-tasks-title"),
+      description: getString("onboarding-step-page-tasks-description"),
       host: "aiButler",
       target: "#tab-tasks",
       placement: "bottom",
@@ -193,10 +188,9 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "content-tasks",
       stageId: "pages",
-      stageTitle: "四个页面",
-      title: "任务队列内容区",
-      description:
-        "这里会列出正在运行、等待中、已完成和失败的任务。导入 PDF、生成总结、精读论文时，都可以回到这里看进度。",
+      stageTitle: getString("onboarding-step-content-tasks-stage"),
+      title: getString("onboarding-step-content-tasks-title"),
+      description: getString("onboarding-step-content-tasks-description"),
       host: "aiButler",
       target: "#ai-butler-task-queue-view",
       placement: "left",
@@ -205,10 +199,9 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "page-settings",
       stageId: "pages",
-      stageTitle: "四个页面",
-      title: "页面 4：快捷设置",
-      description:
-        "请点击高亮的“快捷设置”页签。点击后，下一步会展示快捷设置内容区。",
+      stageTitle: getString("onboarding-step-page-settings-stage"),
+      title: getString("onboarding-step-page-settings-title"),
+      description: getString("onboarding-step-page-settings-description"),
       host: "aiButler",
       target: "#tab-settings",
       placement: "bottom",
@@ -219,10 +212,9 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "content-settings",
       stageId: "pages",
-      stageTitle: "四个页面",
-      title: "快捷设置内容区",
-      description:
-        "这里是快捷设置页面：左侧是设置分类，右侧是当前分类的全部内容。下一阶段会点击左侧“模型平台”来测试 DeepSeek。",
+      stageTitle: getString("onboarding-step-content-settings-stage"),
+      title: getString("onboarding-step-content-settings-title"),
+      description: getString("onboarding-step-content-settings-description"),
       host: "aiButler",
       target: "#ai-butler-settings-scaffold",
       placement: "left",
@@ -231,10 +223,9 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "setup-go-dashboard",
       stageId: "setup",
-      stageTitle: "初始化配置",
-      title: "准备初始化模型配置",
-      description:
-        "接下来要用仪表盘里的“一键初始化配置”写入 DeepSeek 端点、模型和 API Key。请点击顶部真实的“仪表盘”页签，回到快捷操作区。",
+      stageTitle: getString("onboarding-step-setup-go-dashboard-stage"),
+      title: getString("onboarding-step-setup-go-dashboard-title"),
+      description: getString("onboarding-step-setup-go-dashboard-description"),
       host: "aiButler",
       target: "#tab-dashboard",
       placement: "bottom",
@@ -245,25 +236,22 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "setup-open",
       stageId: "setup",
-      stageTitle: "初始化配置",
-      title: "先用一键初始化配置 DeepSeek",
-      description:
-        "请直接点击高亮的“一键初始化配置”按钮，按向导粘贴 DeepSeek API Key。完成后会自动创建 DeepSeek 模型端点，并继续下一阶段。",
+      stageTitle: getString("onboarding-step-setup-open-stage"),
+      title: getString("onboarding-step-setup-open-title"),
+      description: getString("onboarding-step-setup-open-description"),
       host: "aiButler",
       target: "#ai-butler-quick-action-setup",
       placement: "top",
       requireTargetClick: true,
       advanceOnSetupApplied: true,
-      fallbackDescription:
-        "如果没有看到按钮，请先点击顶部“仪表盘”页签，再点击“一键初始化配置”。",
+      fallbackDescription: getString("onboarding-step-setup-open-fallback"),
     },
     {
       id: "model-go-settings",
       stageId: "modelTest",
-      stageTitle: "测试模型",
-      title: "准备验证模型可用性",
-      description:
-        "DeepSeek 初始化完成后，需要确认这个模型端点真的能返回结果。请点击顶部真实的“快捷设置”页签，进入模型相关配置。",
+      stageTitle: getString("onboarding-step-model-go-settings-stage"),
+      title: getString("onboarding-step-model-go-settings-title"),
+      description: getString("onboarding-step-model-go-settings-description"),
       host: "aiButler",
       target: "#tab-settings",
       placement: "bottom",
@@ -274,10 +262,9 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "model-platform",
       stageId: "modelTest",
-      stageTitle: "测试模型",
-      title: "查看模型平台里的 DeepSeek 端点",
-      description:
-        "模型平台集中管理所有供应商和端点。请点击左侧“模型平台”，找到刚才一键初始化生成的 DeepSeek 配置。",
+      stageTitle: getString("onboarding-step-model-platform-stage"),
+      title: getString("onboarding-step-model-platform-title"),
+      description: getString("onboarding-step-model-platform-description"),
       host: "aiButler",
       target: "#settings-nav-modelPlatform",
       placement: "right",
@@ -288,10 +275,9 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "model-deepseek-card",
       stageId: "modelTest",
-      stageTitle: "测试模型",
-      title: "检查 DeepSeek 详细配置",
-      description:
-        "为了确认一键初始化写入的端点、模型和 PDF 处理方式，请点击 DeepSeek 卡片右侧真实的“详情”按钮展开配置。",
+      stageTitle: getString("onboarding-step-model-deepseek-card-stage"),
+      title: getString("onboarding-step-model-deepseek-card-title"),
+      description: getString("onboarding-step-model-deepseek-card-description"),
       host: "aiButler",
       target: (doc) =>
         queryFirst(
@@ -307,16 +293,18 @@ function buildTourSteps(): OverlayTourStep[] {
       requireTargetClick: true,
       advanceOnTargetClick: true,
       advanceDelayMs: 180,
-      fallbackDescription:
-        "如果没有看到 DeepSeek 卡片，请先完成上一阶段的一键初始化配置。",
+      fallbackDescription: getString(
+        "onboarding-step-model-deepseek-card-fallback",
+      ),
     },
     {
       id: "model-detail-overview",
       stageId: "modelTest",
-      stageTitle: "测试模型",
-      title: "这是刚才配置好的 DeepSeek",
-      description:
-        "详情里包含 API 地址、API 密钥、模型名称、PDF 处理方式等配置。先确认这些内容来自刚才的一键初始化配置。",
+      stageTitle: getString("onboarding-step-model-detail-overview-stage"),
+      title: getString("onboarding-step-model-detail-overview-title"),
+      description: getString(
+        "onboarding-step-model-detail-overview-description",
+      ),
       host: "aiButler",
       target: "#endpoint-card-endpoint-preset-deepseek",
       placement: "left",
@@ -325,10 +313,11 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "model-scroll-to-test",
       stageId: "modelTest",
-      stageTitle: "测试模型",
-      title: "向下滚动到连接测试",
-      description:
-        "请在模型平台详情区域使用鼠标滚轮向下滑动，完整浏览 DeepSeek 配置，直到看到“连接测试 / 测试连接”按钮。看到后教程会自动进入下一步。",
+      stageTitle: getString("onboarding-step-model-scroll-to-test-stage"),
+      title: getString("onboarding-step-model-scroll-to-test-title"),
+      description: getString(
+        "onboarding-step-model-scroll-to-test-description",
+      ),
       host: "aiButler",
       target: "#endpoint-card-endpoint-preset-deepseek",
       placement: "left",
@@ -341,10 +330,9 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "model-test-button",
       stageId: "modelTest",
-      stageTitle: "测试模型",
-      title: "测试 DeepSeek 连接",
-      description:
-        "点击“测试连接”，确认 API Key、模型和网络都可用。点击后下一步会展示连接测试结果，帮助你判断大模型是否真的返回了内容。",
+      stageTitle: getString("onboarding-step-model-test-button-stage"),
+      title: getString("onboarding-step-model-test-button-title"),
+      description: getString("onboarding-step-model-test-button-description"),
       host: "aiButler",
       target: (doc) =>
         queryFirst(
@@ -363,27 +351,30 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "model-test-result",
       stageId: "modelTest",
-      stageTitle: "测试模型",
-      title: "查看 DeepSeek 返回结果",
-      description:
-        "这里是连接测试结果区。如果看到绿色成功文本，说明 DeepSeek 已经返回响应，后续 AI 总结/精读可以使用这个模型；如果看到红色错误，请检查 API Key、模型名、API 地址或网络后再重新测试。若还显示“正在测试...”，请稍等几秒。",
+      stageTitle: getString("onboarding-step-model-test-result-stage"),
+      title: getString("onboarding-step-model-test-result-title"),
+      description: getString("onboarding-step-model-test-result-description"),
       host: "aiButler",
       target: "#endpoint-status-endpoint-preset-deepseek",
       placement: "top",
-      fallbackDescription:
-        "如果暂时没有看到测试结果，请先点击上方“测试连接”按钮，并等待大模型返回响应。",
+      fallbackDescription: getString(
+        "onboarding-step-model-test-result-fallback",
+      ),
     },
     {
       id: "model-to-library-transition",
       stageId: "library",
-      stageTitle: "导入论文",
-      title: "进入论文导入阶段",
-      description:
-        "模型已经完成初始化和连接验证，下一阶段的目标是在 Zotero 主界面建立一个测试分类，并导入第一篇 PDF。为了让分类区和论文区完整可见，请关闭 AI 管家窗口后继续。",
+      stageTitle: getString(
+        "onboarding-step-model-to-library-transition-stage",
+      ),
+      title: getString("onboarding-step-model-to-library-transition-title"),
+      description: getString(
+        "onboarding-step-model-to-library-transition-description",
+      ),
       host: "aiButler",
       placement: "center",
       action: {
-        label: "关闭 AI 管家并继续",
+        label: getString("onboarding-action-close-ai-butler-continue"),
         run: closeAiButlerWindowSoon,
         advance: true,
       },
@@ -391,24 +382,23 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "collection-area",
       stageId: "library",
-      stageTitle: "导入论文",
-      title: "左侧是分类区：先新建一个分类",
-      description:
-        "左侧上方有新建分类按钮，下方是分类树。请用这里新建一个分类，例如“AI Butler 测试”，并点击进入这个分类。分类能让后续批量综述和笔记导出更清晰。",
+      stageTitle: getString("onboarding-step-collection-area-stage"),
+      title: getString("onboarding-step-collection-area-title"),
+      description: getString("onboarding-step-collection-area-description"),
       host: "zotero",
       targetRect: getCollectionAreaRect,
       placement: "right",
-      nextLabel: "分类已新建",
-      fallbackDescription:
-        "如果左侧分类区为空或隐藏，请先展开 Zotero 左侧面板；新建分类按钮通常在分类区顶部。",
+      nextLabel: getString("onboarding-step-collection-area-next"),
+      fallbackDescription: getString(
+        "onboarding-step-collection-area-fallback",
+      ),
     },
     {
       id: "paper-area-drop",
       stageId: "library",
-      stageTitle: "导入论文",
-      title: "中间是论文区：把 PDF 拖进来",
-      description:
-        "进入刚才新建的分类后，把一篇 PDF 拖到中间论文列表。教程会监听新拖入的 PDF，先等待 Zotero 创建条目、完成元数据检索并让自动扫描把论文加入总结队列。",
+      stageTitle: getString("onboarding-step-paper-area-drop-stage"),
+      title: getString("onboarding-step-paper-area-drop-title"),
+      description: getString("onboarding-step-paper-area-drop-description"),
       host: "zotero",
       target: (doc) =>
         queryFirst(
@@ -423,38 +413,38 @@ function buildTourSteps(): OverlayTourStep[] {
         ),
       placement: "right",
       action: {
-        label: "我已拖入 PDF / 继续",
+        label: getString("onboarding-action-pdf-dropped-continue"),
         run: () => undefined,
         advance: true,
         enabled: (state) => !!state.trackedItemId,
-        disabledLabel: "等待检测 PDF",
+        disabledLabel: getString("onboarding-action-wait-pdf"),
       },
-      fallbackDescription:
-        "请回到 Zotero 文献库窗口，把 PDF 拖到中间论文列表区域。",
+      fallbackDescription: getString(
+        "onboarding-step-paper-area-drop-fallback",
+      ),
     },
     {
       id: "task-open-dashboard",
       stageId: "library",
-      stageTitle: "导入论文",
-      title: "查看论文总结处理进度",
-      description:
-        "PDF 已经拖入 Zotero，下一阶段的目标是在 AI 管家任务队列确认它是否开始自动总结。请点击文献库工具栏上的 🤖 AI 管家入口打开仪表盘。",
+      stageTitle: getString("onboarding-step-task-open-dashboard-stage"),
+      title: getString("onboarding-step-task-open-dashboard-title"),
+      description: getString("onboarding-step-task-open-dashboard-description"),
       host: "zotero",
       target: "#ai-butler-library-toolbar-btn",
       placement: "bottom",
       requireTargetClick: true,
       advanceOnTargetClick: true,
       advanceDelayMs: 550,
-      fallbackDescription:
-        "如果没有看到 🤖 按钮，请确认当前在 Zotero 文献库主窗口，并等待插件工具栏加载完成。",
+      fallbackDescription: getString(
+        "onboarding-step-task-open-dashboard-fallback",
+      ),
     },
     {
       id: "task-progress",
       stageId: "library",
-      stageTitle: "导入论文",
-      title: "定位刚导入论文的总结任务",
-      description:
-        "任务队列用于确认后台任务是否入队、运行或完成。请点击顶部“任务队列”页签，下一步会展示刚才拖入论文对应的 AI 总结任务。",
+      stageTitle: getString("onboarding-step-task-progress-stage"),
+      title: getString("onboarding-step-task-progress-title"),
+      description: getString("onboarding-step-task-progress-description"),
       host: "aiButler",
       target: "#tab-tasks",
       placement: "bottom",
@@ -465,27 +455,30 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "summary-task-progress",
       stageId: "library",
-      stageTitle: "导入论文",
-      title: "查看当前论文总结进度",
-      description:
-        "这里是刚才拖入论文的 AI 总结任务。进度表示等待、提取 PDF、调用模型、生成或保存笔记；把鼠标移到阶段标签上可看具体说明。",
+      stageTitle: getString("onboarding-step-summary-task-progress-stage"),
+      title: getString("onboarding-step-summary-task-progress-title"),
+      description: getString(
+        "onboarding-step-summary-task-progress-description",
+      ),
       host: "aiButler",
       targetRect: getTrackedSummaryTaskRect,
       placement: "top",
-      fallbackDescription:
-        "暂时还没找到刚才拖入论文的总结任务。请保持任务队列页面打开，等待 Zotero 完成元数据检索和自动扫描入队；如果自动扫描关闭，可稍后从论文右键手动生成 AI 总结。",
+      fallbackDescription: getString(
+        "onboarding-step-summary-task-progress-fallback",
+      ),
     },
     {
       id: "summary-close-dashboard",
       stageId: "summary",
-      stageTitle: "查看总结",
-      title: "回到论文区查看总结",
-      description:
-        "AI 总结任务已经在任务队列里确认过。下一阶段的目标是在 Zotero 论文区选中刚导入的论文，并通过右侧 AI 管家侧边栏查看生成结果。为了看清论文列表和侧边栏，请关闭 AI 管家窗口后继续。",
+      stageTitle: getString("onboarding-step-summary-close-dashboard-stage"),
+      title: getString("onboarding-step-summary-close-dashboard-title"),
+      description: getString(
+        "onboarding-step-summary-close-dashboard-description",
+      ),
       host: "aiButler",
       placement: "center",
       action: {
-        label: "关闭 AI 管家并继续",
+        label: getString("onboarding-action-close-ai-butler-continue"),
         run: closeAiButlerWindowSoon,
         advance: true,
       },
@@ -493,10 +486,9 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "select-paper",
       stageId: "summary",
-      stageTitle: "查看总结",
-      title: "在论文区选中刚导入的论文",
-      description:
-        "要查看某篇论文的 AI 结果，需要先在 Zotero 论文列表选中它。请选择刚才导入的论文，右侧条目面板会随选中文献刷新。",
+      stageTitle: getString("onboarding-step-select-paper-stage"),
+      title: getString("onboarding-step-select-paper-title"),
+      description: getString("onboarding-step-select-paper-description"),
       host: "zotero",
       target: (doc) =>
         queryFirst(
@@ -514,39 +506,40 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "sidebar-ai-butler",
       stageId: "summary",
-      stageTitle: "查看总结",
-      title: "打开当前论文的 AI 管家侧边栏",
-      description:
-        "当前论文的总结结果在右侧 AI 管家区块里查看。请点击最右侧竖排图标栏里的 AI 管家图标（通常在这一列靠下位置）打开它。",
+      stageTitle: getString("onboarding-step-sidebar-ai-butler-stage"),
+      title: getString("onboarding-step-sidebar-ai-butler-title"),
+      description: getString("onboarding-step-sidebar-ai-butler-description"),
       host: "zotero",
       target: getAiButlerSidenavIcon,
       placement: "left",
       requireTargetClick: true,
       advanceOnTargetClick: true,
       advanceDelayMs: 450,
-      fallbackDescription:
-        "如果暂时看不到最右侧 AI 管家图标，请先选中一篇论文，并确认 Zotero 右侧条目面板没有被隐藏。",
+      fallbackDescription: getString(
+        "onboarding-step-sidebar-ai-butler-fallback",
+      ),
     },
     {
       id: "sidebar-ai-butler-content",
       stageId: "summary",
-      stageTitle: "查看总结",
-      title: "这里是 AI 管家侧边栏",
-      description:
-        "侧边栏会按当前选中的论文展示 AI 总结、AI 精读、一图总结、思维导图和快速追问。上方按钮可以打开完整追问或临时快速追问；中间的折叠区用于查看已经生成的笔记内容。",
+      stageTitle: getString("onboarding-step-sidebar-ai-butler-content-stage"),
+      title: getString("onboarding-step-sidebar-ai-butler-content-title"),
+      description: getString(
+        "onboarding-step-sidebar-ai-butler-content-description",
+      ),
       host: "zotero",
       targetRect: getAiButlerSidebarContentRect,
       placement: "left",
-      fallbackDescription:
-        "如果侧边栏内容还没展开，请再点击一次最右侧 AI 管家图标，或确认当前已选中一篇论文。",
+      fallbackDescription: getString(
+        "onboarding-step-sidebar-ai-butler-content-fallback",
+      ),
     },
     {
       id: "collection-export",
       stageId: "export",
-      stageTitle: "导出笔记",
-      title: "把分类里的 AI 笔记导出到本地",
-      description:
-        "分类右键菜单可以批量导出该分类下已生成的 AI 总结/精读笔记。请右键刚才新建的分类，选择导出该分类 AI 笔记；默认目录和格式可以之后在快捷设置里调整。",
+      stageTitle: getString("onboarding-step-collection-export-stage"),
+      title: getString("onboarding-step-collection-export-title"),
+      description: getString("onboarding-step-collection-export-description"),
       host: "zotero",
       targetRect: getCollectionAreaRect,
       placement: "right",
@@ -554,10 +547,9 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "paper-deep-read",
       stageId: "deepRead",
-      stageTitle: "精读论文",
-      title: "为重点论文启动 AI 精读",
-      description:
-        "精读适合需要深入理解的重点论文。请在论文列表右键这篇论文，选择 AI 管家里的精读/重新精读功能。",
+      stageTitle: getString("onboarding-step-paper-deep-read-stage"),
+      title: getString("onboarding-step-paper-deep-read-title"),
+      description: getString("onboarding-step-paper-deep-read-description"),
       host: "zotero",
       target: (doc) =>
         queryFirst(
@@ -571,32 +563,34 @@ function buildTourSteps(): OverlayTourStep[] {
           doc,
         ),
       placement: "right",
-      fallbackDescription:
-        "请先选中一篇论文并右键。如果右键菜单还没打开，本步骤会先高亮论文列表区域。",
+      fallbackDescription: getString(
+        "onboarding-step-paper-deep-read-fallback",
+      ),
     },
     {
       id: "deep-read-open-dashboard",
       stageId: "deepRead",
-      stageTitle: "精读论文",
-      title: "查看精读任务处理进度",
-      description:
-        "精读任务已经启动，下一阶段的目标是在任务队列确认多轮精读是否入队、运行或完成。请点击文献库工具栏上的 🤖 AI 管家入口打开仪表盘。",
+      stageTitle: getString("onboarding-step-deep-read-open-dashboard-stage"),
+      title: getString("onboarding-step-deep-read-open-dashboard-title"),
+      description: getString(
+        "onboarding-step-deep-read-open-dashboard-description",
+      ),
       host: "zotero",
       target: "#ai-butler-library-toolbar-btn",
       placement: "bottom",
       requireTargetClick: true,
       advanceOnTargetClick: true,
       advanceDelayMs: 550,
-      fallbackDescription:
-        "如果没有看到 🤖 按钮，请确认当前在 Zotero 文献库主窗口，并等待插件工具栏加载完成。",
+      fallbackDescription: getString(
+        "onboarding-step-deep-read-open-dashboard-fallback",
+      ),
     },
     {
       id: "deep-read-tasks",
       stageId: "deepRead",
-      stageTitle: "精读论文",
-      title: "确认精读任务状态",
-      description:
-        "任务队列会展示精读任务的等待、运行、完成或失败状态。请点击顶部“任务队列”页签，确认刚才启动的精读流程。",
+      stageTitle: getString("onboarding-step-deep-read-tasks-stage"),
+      title: getString("onboarding-step-deep-read-tasks-title"),
+      description: getString("onboarding-step-deep-read-tasks-description"),
       host: "aiButler",
       target: "#tab-tasks",
       placement: "bottom",
@@ -607,23 +601,22 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "deep-read-explain",
       stageId: "deepRead",
-      stageTitle: "精读论文",
-      title: "AI 精读：把论文读厚",
-      description:
-        "AI 精读会把论文拆成多个阅读轮次，多次调用模型 API，把论文读厚。进度表示等待、提取 PDF、规划轮次、AI 精读 3/25、保存笔记等阶段；把鼠标移到“AI 精读 3/25”这类阶段标签上，可看具体进度详情。",
+      stageTitle: getString("onboarding-step-deep-read-explain-stage"),
+      title: getString("onboarding-step-deep-read-explain-title"),
+      description: getString("onboarding-step-deep-read-explain-description"),
       host: "aiButler",
       targetRect: getTaskQueueListRect,
       placement: "top",
-      fallbackDescription:
-        "AI 精读会多轮调用模型来深入分析论文；如果暂时看不到任务列表，请保持任务队列页面打开并稍等。",
+      fallbackDescription: getString(
+        "onboarding-step-deep-read-explain-fallback",
+      ),
     },
     {
       id: "final-settings-tab",
       stageId: "deepRead",
-      stageTitle: "精读论文",
-      title: "继续探索快捷设置",
-      description:
-        "核心流程已经走完。快捷设置里还有模型平台、自动扫描、笔记导出、侧边栏显示和右键菜单等个性化选项。请点击顶部“快捷设置”页签。",
+      stageTitle: getString("onboarding-step-final-settings-tab-stage"),
+      title: getString("onboarding-step-final-settings-tab-title"),
+      description: getString("onboarding-step-final-settings-tab-description"),
       host: "aiButler",
       target: "#tab-settings",
       placement: "bottom",
@@ -634,10 +627,11 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "final-settings-catalog",
       stageId: "deepRead",
-      stageTitle: "精读论文",
-      title: "左侧是可配置项目录",
-      description:
-        "这里集中放着模型平台、API 配置、提示词、一图总结、笔记自动导出、界面设置、数据管理等入口。以后想调整 AI 管家行为，通常都从这里开始。",
+      stageTitle: getString("onboarding-step-final-settings-catalog-stage"),
+      title: getString("onboarding-step-final-settings-catalog-title"),
+      description: getString(
+        "onboarding-step-final-settings-catalog-description",
+      ),
       host: "aiButler",
       target: "#settings-sidebar",
       placement: "right",
@@ -645,10 +639,11 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "final-ui-settings-nav",
       stageId: "deepRead",
-      stageTitle: "精读论文",
-      title: "进入界面设置",
-      description:
-        "界面设置里可以调整自动扫描、右键菜单、侧边栏显示和已有笔记处理策略。请点击左侧“界面设置”。",
+      stageTitle: getString("onboarding-step-final-ui-settings-nav-stage"),
+      title: getString("onboarding-step-final-ui-settings-nav-title"),
+      description: getString(
+        "onboarding-step-final-ui-settings-nav-description",
+      ),
       host: "aiButler",
       target: "#settings-nav-ui",
       placement: "right",
@@ -659,24 +654,27 @@ function buildTourSteps(): OverlayTourStep[] {
     {
       id: "final-auto-deepread-setting",
       stageId: "deepRead",
-      stageTitle: "精读论文",
-      title: "自动扫描时生成 AI 精读",
-      description:
-        "这个选项会让新导入的论文自动加入 AI 精读队列。它很适合重点阅读场景，但精读会多轮调用模型，消耗的 token 明显多于普通总结；是否开启完全取决于你的使用习惯。",
+      stageTitle: getString(
+        "onboarding-step-final-auto-deepread-setting-stage",
+      ),
+      title: getString("onboarding-step-final-auto-deepread-setting-title"),
+      description: getString(
+        "onboarding-step-final-auto-deepread-setting-description",
+      ),
       host: "aiButler",
       target: "#ui-setting-auto-scan-deep-read",
       placement: "left",
-      nextLabel: "知道了",
-      fallbackDescription:
-        "界面设置中可以找到“自动扫描时生成 AI 精读”。它会消耗较多 token，不需要现在勾选，了解用途即可。",
+      nextLabel: getString("onboarding-step-final-auto-deepread-setting-next"),
+      fallbackDescription: getString(
+        "onboarding-step-final-auto-deepread-setting-fallback",
+      ),
     },
     {
       id: "finish",
       stageId: "deepRead",
-      stageTitle: "精读论文",
-      title: "🎉 恭喜，教程完成！",
-      description:
-        "你已经走完 AI 管家的核心流程：配置模型、导入论文、查看总结、导出笔记、启动精读并查看任务状态。之后可以随时从仪表盘重温教程。",
+      stageTitle: getString("onboarding-step-finish-stage"),
+      title: getString("onboarding-step-finish-title"),
+      description: getString("onboarding-step-finish-description"),
       host: "aiButler",
       placement: "center",
     },
@@ -928,7 +926,13 @@ function renderCard(
   state.card.innerHTML = "";
 
   const stage = state.doc.createElement("div");
-  stage.textContent = `大步骤 ${stageProgress.stageIndex + 1}/${stageProgress.stageTotal}：${step.stageTitle}`;
+  stage.textContent = getString("onboarding-stage-progress", {
+    args: {
+      current: stageProgress.stageIndex + 1,
+      total: stageProgress.stageTotal,
+      title: step.stageTitle,
+    },
+  });
   Object.assign(stage.style, {
     color: "#00a67e",
     fontSize: "12px",
@@ -938,7 +942,12 @@ function renderCard(
   } as Partial<CSSStyleDeclaration>);
 
   const small = state.doc.createElement("div");
-  small.textContent = `小步骤 ${stageProgress.stepIndex + 1}/${stageProgress.stepTotal}`;
+  small.textContent = getString("onboarding-step-progress", {
+    args: {
+      current: stageProgress.stepIndex + 1,
+      total: stageProgress.stepTotal,
+    },
+  });
   Object.assign(small.style, {
     color: "var(--ai-text-muted, #666)",
     fontSize: "12px",
@@ -984,7 +993,7 @@ function renderCard(
 
   if (step.waitForVisibleSelectors?.length) {
     const hint = state.doc.createElement("div");
-    hint.textContent = "请滚动页面，直到目标按钮出现在可视区域。";
+    hint.textContent = getString("onboarding-scroll-to-target-hint");
     Object.assign(hint.style, {
       marginTop: "10px",
       padding: "9px 11px",
@@ -1000,7 +1009,7 @@ function renderCard(
 
   if (step.requireTargetClick && rect) {
     const hint = state.doc.createElement("div");
-    hint.textContent = "请直接点击被高亮的真实按钮继续。";
+    hint.textContent = getString("onboarding-click-highlighted-target-hint");
     Object.assign(hint.style, {
       marginTop: "10px",
       padding: "9px 11px",
@@ -1034,7 +1043,13 @@ function renderCard(
     flexWrap: "wrap",
   } as Partial<CSSStyleDeclaration>);
   if (state.index > 0)
-    left.appendChild(createTourButton("上一步", "secondary", goPrev));
+    left.appendChild(
+      createTourButton(
+        getString("onboarding-prev-button"),
+        "secondary",
+        goPrev,
+      ),
+    );
 
   const right = state.doc.createElement("div");
   Object.assign(right.style, {
@@ -1074,7 +1089,9 @@ function renderCard(
   if (!requiresAction) {
     right.appendChild(
       createTourButton(
-        isLast ? "完成教程" : step.nextLabel || "下一步",
+        isLast
+          ? getString("onboarding-finish-button")
+          : step.nextLabel || getString("onboarding-next-button"),
         "primary",
         () => {
           if (isLast) finishTour();
@@ -1084,7 +1101,11 @@ function renderCard(
     );
   }
   right.appendChild(
-    createTourButton("跳过", "ghost", showSkipConfirmationDialog),
+    createTourButton(
+      getString("onboarding-skip-button"),
+      "ghost",
+      showSkipConfirmationDialog,
+    ),
   );
 
   actions.appendChild(left);
@@ -1138,7 +1159,7 @@ function showSkipConfirmationDialog(): void {
   } as Partial<CSSStyleDeclaration>);
 
   const title = state.doc.createElement("div");
-  title.textContent = "确认跳过新手教程？";
+  title.textContent = getString("onboarding-skip-title");
   Object.assign(title.style, {
     fontSize: "18px",
     fontWeight: "800",
@@ -1146,8 +1167,7 @@ function showSkipConfirmationDialog(): void {
   } as Partial<CSSStyleDeclaration>);
 
   const desc = state.doc.createElement("div");
-  desc.textContent =
-    "跳过后，本设备不会再自动弹出当前版本的新手教程。如果之后想再看一遍，可以打开 AI 管家仪表盘，在快捷操作里点击“新手教程 / 重温教程”；也可以从设置/帮助入口重新打开。";
+  desc.textContent = getString("onboarding-skip-description");
   Object.assign(desc.style, {
     color: "var(--ai-text-muted, #666)",
     fontSize: "14px",
@@ -1163,16 +1183,27 @@ function showSkipConfirmationDialog(): void {
     flexWrap: "wrap",
   } as Partial<CSSStyleDeclaration>);
 
-  const keepButton = createTourButton("继续教程", "secondary", () => {
-    backdrop.remove();
-  });
-  const confirmButton = createTourButton("确认跳过", "primary", () => {
-    state.options.onComplete();
-    new ztoolkit.ProgressWindow("AI Butler", { closeTime: 2200 })
-      .createLine({ text: "已跳过新手教程，可在仪表盘重温", type: "default" })
-      .show();
-    closeOnboardingOverlayTour();
-  });
+  const keepButton = createTourButton(
+    getString("onboarding-skip-continue"),
+    "secondary",
+    () => {
+      backdrop.remove();
+    },
+  );
+  const confirmButton = createTourButton(
+    getString("onboarding-skip-confirm"),
+    "primary",
+    () => {
+      state.options.onComplete();
+      new ztoolkit.ProgressWindow("AI Butler", { closeTime: 2200 })
+        .createLine({
+          text: getString("onboarding-skip-done"),
+          type: "default",
+        })
+        .show();
+      closeOnboardingOverlayTour();
+    },
+  );
 
   actions.append(keepButton, confirmButton);
   panel.append(title, desc, actions);
@@ -1686,33 +1717,40 @@ function appendLiveStatus(
 
 function getLiveStatusTitle(state: OverlayTourState, task?: TaskItem): string {
   if (task)
-    return `已追踪到当前论文总结任务：${Math.round(task.progress || 0)}%`;
-  if (state.trackedItemId) return "已检测到 PDF 论文，正在等待总结任务入队";
-  return "正在监听拖入的 PDF";
+    return getString("onboarding-live-status-tracked-title", {
+      args: { progress: Math.round(task.progress || 0) },
+    });
+  if (state.trackedItemId)
+    return getString("onboarding-live-status-pdf-detected-title");
+  return getString("onboarding-live-status-listening-title");
 }
 
 function getLiveStatusBody(state: OverlayTourState, task?: TaskItem): string {
   if (!task) {
     return state.trackedItemId
-      ? "Zotero 可能仍在检索元数据，自动扫描也会等待 PDF 附件就绪后再入队。请保持当前窗口打开，稍等几秒。"
-      : "把 PDF 拖入中间论文区后，这里会自动更新状态；如果 Zotero 正在抓取题名、作者、DOI，教程会先停在这里等待。";
+      ? getString("onboarding-live-status-pdf-detected-body")
+      : getString("onboarding-live-status-listening-body");
   }
   const statusMap: Record<string, string> = {
-    [TaskStatus.PENDING]: "等待处理",
-    [TaskStatus.PRIORITY]: "优先等待",
-    [TaskStatus.PROCESSING]: "处理中",
-    [TaskStatus.COMPLETED]: "已完成",
-    [TaskStatus.FAILED]: "失败",
+    [TaskStatus.PENDING]: getString("task-status-pending"),
+    [TaskStatus.PRIORITY]: getString("task-status-priority"),
+    [TaskStatus.PROCESSING]: getString("task-status-processing"),
+    [TaskStatus.COMPLETED]: getString("task-status-completed"),
+    [TaskStatus.FAILED]: getString("task-status-failed"),
   };
   const stage = task.stageLabel || task.workflowStage || statusMap[task.status];
   const detail = task.stageDetail ? `；${task.stageDetail}` : "";
   if (task.status === TaskStatus.COMPLETED) {
-    return "AI 总结已完成。下一步回到论文区查看结果。";
+    return getString("onboarding-live-status-summary-completed");
   }
   if (task.status === TaskStatus.FAILED) {
-    return `当前总结任务失败：${task.error || stage}。你仍然可以继续教程，稍后在任务队列里重试或检查配置。`;
+    return getString("onboarding-live-status-summary-failed", {
+      args: { error: task.error || stage },
+    });
   }
-  return `当前阶段：${stage}${detail}。鼠标移到任务卡片的阶段标签上可看完整进度详情。`;
+  return getString("onboarding-live-status-current-stage", {
+    args: { stage, detail },
+  });
 }
 
 function renderStepCelebration(
@@ -1841,7 +1879,7 @@ function createTourButton(
   } as Partial<CSSStyleDeclaration>);
   if (disabled) {
     button.setAttribute("aria-disabled", "true");
-    button.title = "检测到拖入的 PDF 后才能继续";
+    button.title = getString("onboarding-wait-pdf-drop-tooltip");
     button.style.opacity = "0.48";
     button.style.filter = "grayscale(0.55)";
     button.style.background = "rgba(128, 128, 128, 0.08)";
@@ -1975,7 +2013,10 @@ function finishTour(): void {
   const options = activeTour?.options;
   options?.onComplete();
   new ztoolkit.ProgressWindow("AI Butler", { closeTime: 2400 })
-    .createLine({ text: "✅ 新手教程已完成", type: "success" })
+    .createLine({
+      text: getString("onboarding-completed-toast"),
+      type: "success",
+    })
     .show();
   closeOnboardingOverlayTour();
 }
@@ -2127,14 +2168,15 @@ function getAiButlerSidebarContentRect(
 
 function getAiButlerSidenavIcon(doc: Document): Element | null {
   const win = doc.defaultView || Zotero.getMainWindow();
+  const sidenavLabel = getString("aibutler-itempane-ai-section-sidenav");
   const explicit = queryFirst(
     [
       '#zotero-item-pane [data-pane="ai-butler-chat-section"]',
       '#item-pane [data-pane="ai-butler-chat-section"]',
-      '[aria-label="AI 管家"]',
-      '[title="AI 管家"]',
-      '[tooltiptext="AI 管家"]',
-      '[label="AI 管家"]',
+      `[aria-label="${sidenavLabel}"]`,
+      `[title="${sidenavLabel}"]`,
+      `[tooltiptext="${sidenavLabel}"]`,
+      `[label="${sidenavLabel}"]`,
     ],
     doc,
   );
@@ -2177,7 +2219,12 @@ function elementLooksLikeAiButlerSidenav(element: Element): boolean {
   ]
     .join(" ")
     .toLowerCase();
-  if (attrs.includes("ai-butler") || attrs.includes("ai 管家")) return true;
+  const localizedSidenavLabel = getString(
+    "aibutler-itempane-ai-section-sidenav",
+  ).toLowerCase();
+  if (attrs.includes("ai-butler") || attrs.includes(localizedSidenavLabel)) {
+    return true;
+  }
 
   const image = element.matches("img,image")
     ? element

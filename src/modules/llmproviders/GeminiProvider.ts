@@ -10,7 +10,8 @@ import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
 import {
   getConnectionTestInput,
-  getConnectionTestModeLabel,
+  formatConnectionTestSuccess,
+  formatProviderTimeout,
 } from "./shared/connectionTest";
 import {
   deriveGeminiModelsUrl,
@@ -23,6 +24,18 @@ import {
   normalizeAbortError,
   throwIfAborted,
 } from "./shared/requestAbort";
+import {
+  providerHttpRequestFailed,
+  providerMissingApiKey,
+  providerMissingApiUrl,
+  providerNoPdfFiles,
+  providerNoPdfProcessed,
+  providerRequestFailed,
+  providerStreamMissingDone,
+  providerStreamParseFailed,
+  providerStreamTruncated,
+  providerStreamUnexpectedEnd,
+} from "./shared/localizedErrors";
 
 export class GeminiProvider implements ILlmProvider {
   readonly id = "google"; // 同步现有 provider 识别：google/gemini
@@ -51,8 +64,8 @@ export class GeminiProvider implements ILlmProvider {
     const topP = options.topP ?? 1.0;
     const maxTokens = options.maxTokens ?? 4096;
 
-    if (!baseUrl) throw new Error("Gemini API URL 未配置");
-    if (!apiKey) throw new Error("Gemini API Key 未配置");
+    if (!baseUrl) throw new Error(providerMissingApiUrl("Gemini"));
+    if (!apiKey) throw new Error(providerMissingApiKey("Gemini"));
     throwIfAborted(options.abortSignal);
 
     const endpoint = `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
@@ -127,13 +140,13 @@ export class GeminiProvider implements ILlmProvider {
                 const parsed = errorResponse ? JSON.parse(errorResponse) : null;
                 const err = parsed?.error || parsed || {};
                 const code = err?.code || `HTTP ${status}`;
-                const msg = err?.message || "请求失败";
+                const msg = err?.message || providerRequestFailed("API");
                 const errorMessage = `${code}: ${msg}`;
                 xmlhttp.abort();
                 throw new Error(errorMessage);
               } catch {
                 xmlhttp.abort();
-                throw new Error(`HTTP ${status}: 请求失败`);
+                throw new Error(providerHttpRequestFailed(status));
               }
             }
 
@@ -186,7 +199,7 @@ export class GeminiProvider implements ILlmProvider {
       if (abortError || isAbortError(error, options.abortSignal)) {
         throw normalizeAbortError(abortError || error, options.abortSignal);
       }
-      let errorMessage = error?.message || "Gemini 请求失败";
+      let errorMessage = error?.message || providerRequestFailed("Gemini");
       try {
         const responseText =
           error?.xmlhttp?.response || error?.xmlhttp?.responseText;
@@ -228,8 +241,8 @@ export class GeminiProvider implements ILlmProvider {
     const model = (options.model || "gemini-2.5-pro").trim();
     const temperature = options.temperature ?? 0.7;
 
-    if (!baseUrl) throw new Error("Gemini API URL 未配置");
-    if (!apiKey) throw new Error("Gemini API Key 未配置");
+    if (!baseUrl) throw new Error(providerMissingApiUrl("Gemini"));
+    if (!apiKey) throw new Error(providerMissingApiKey("Gemini"));
     throwIfAborted(options.abortSignal);
 
     const endpoint = `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
@@ -310,7 +323,7 @@ export class GeminiProvider implements ILlmProvider {
                 const parsed = errorResponse ? JSON.parse(errorResponse) : null;
                 const err = parsed?.error || parsed || {};
                 const code = err?.code || `HTTP ${status}`;
-                const msg = err?.message || "请求失败";
+                const msg = err?.message || providerRequestFailed("API");
                 const errorMessage = `${code}: ${msg}`;
                 abortError = new Error(errorMessage);
                 ztoolkit.log("[AI-Butler] Gemini HTTP error:", {
@@ -321,7 +334,7 @@ export class GeminiProvider implements ILlmProvider {
                 });
                 xmlhttp.abort();
               } catch (parseErr) {
-                const errorMessage = `HTTP ${status}: 请求失败`;
+                const errorMessage = providerHttpRequestFailed(status);
                 abortError = new Error(errorMessage);
                 ztoolkit.log("[AI-Butler] Gemini HTTP error:", {
                   status,
@@ -380,7 +393,9 @@ export class GeminiProvider implements ILlmProvider {
           xmlhttp.ontimeout = () => {
             if (!abortError)
               abortError = new Error(
-                `Timeout: 请求超过 ${options.requestTimeoutMs ?? getRequestTimeoutMs()} ms`,
+                formatProviderTimeout(
+                  options.requestTimeoutMs ?? getRequestTimeoutMs(),
+                ),
               );
           };
         },
@@ -398,7 +413,7 @@ export class GeminiProvider implements ILlmProvider {
       if (isAbortError(error, options.abortSignal)) {
         throw normalizeAbortError(error, options.abortSignal);
       }
-      let errorMessage = error?.message || "Gemini 请求失败";
+      let errorMessage = error?.message || providerRequestFailed("Gemini");
       try {
         const responseText =
           error?.xmlhttp?.response || error?.xmlhttp?.responseText;
@@ -434,8 +449,8 @@ export class GeminiProvider implements ILlmProvider {
       options.apiUrl || "https://generativelanguage.googleapis.com"
     ).replace(/\/+$/, "");
     const apiKey = (options.apiKey || "").trim();
-    if (!baseUrl) throw new Error("Gemini API URL 未配置");
-    if (!apiKey) throw new Error("Gemini API Key 未配置");
+    if (!baseUrl) throw new Error(providerMissingApiUrl("Gemini"));
+    if (!apiKey) throw new Error(providerMissingApiKey("Gemini"));
 
     const url = deriveGeminiModelsUrl(baseUrl);
     const data = await requestModelListJson(
@@ -452,8 +467,8 @@ export class GeminiProvider implements ILlmProvider {
     ).replace(/\/$/, "");
     const apiKey = (options.apiKey || "").trim();
     const model = (options.model || "gemini-2.5-pro").trim();
-    if (!baseUrl) throw new Error("Gemini API URL 未配置");
-    if (!apiKey) throw new Error("Gemini API Key 未配置");
+    if (!baseUrl) throw new Error(providerMissingApiUrl("Gemini"));
+    if (!apiKey) throw new Error(providerMissingApiKey("Gemini"));
 
     const url = `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:generateContent`;
     const testInput = getConnectionTestInput(options);
@@ -523,7 +538,7 @@ export class GeminiProvider implements ILlmProvider {
       const status = error?.xmlhttp?.status;
       const responseBody =
         error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
-      let errorMessage = error?.message || "Gemini 请求失败";
+      let errorMessage = error?.message || providerRequestFailed("Gemini");
       let errorName = "NetworkError";
       try {
         if (responseBody) {
@@ -565,14 +580,19 @@ export class GeminiProvider implements ILlmProvider {
         json?.candidates?.[0]?.content?.parts
           ?.map((p: any) => p?.text || "")
           .join("") || "";
-      return `Mode: ${getConnectionTestModeLabel(testInput.mode)}\n✅ 连接成功!\n模型: ${model}\n响应: ${text}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
+      return formatConnectionTestSuccess({
+        mode: testInput.mode,
+        model,
+        response: text,
+        rawResponse,
+      });
     }
 
     // 非 200 但未抛出异常的情况
     const { APITestError } = await import("./types");
     throw new APITestError(`HTTP ${status}`, {
       errorName: `HTTP_${status}`,
-      errorMessage: `HTTP ${status}: ${response.statusText || "请求失败"}`,
+      errorMessage: `HTTP ${status}: ${response.statusText || providerRequestFailed("API")}`,
       statusCode: status,
       requestUrl: url,
       requestBody: payloadStr,
@@ -657,12 +677,17 @@ export class GeminiProvider implements ILlmProvider {
       const headers = startResponse.getAllResponseHeaders?.() || "";
       const urlMatch = headers.match(/x-goog-upload-url:\s*(.+?)(?:\r?\n|$)/i);
       if (!urlMatch) {
-        throw new Error("无法获取 Gemini 文件上传 URL");
+        throw new Error(providerRequestFailed("Gemini file upload"));
       }
       uploadUrl = urlMatch[1].trim();
     } catch (error: any) {
       ztoolkit.log("[AI-Butler] Gemini 文件上传初始化失败:", error);
-      throw new Error(`Gemini 文件上传初始化失败: ${error.message}`);
+      throw new Error(
+        providerStreamUnexpectedEnd(
+          "Gemini file upload initialization",
+          error.message,
+        ),
+      );
     }
 
     // 步骤 2: 上传文件内容
@@ -682,14 +707,16 @@ export class GeminiProvider implements ILlmProvider {
       const fileInfo = uploadResponse.response;
       const fileUri = fileInfo?.file?.uri;
       if (!fileUri) {
-        throw new Error("无法获取上传文件的 URI");
+        throw new Error(providerRequestFailed("Gemini file URI"));
       }
 
       ztoolkit.log(`[AI-Butler] 文件上传成功: ${displayName} -> ${fileUri}`);
       return fileUri;
     } catch (error: any) {
       ztoolkit.log("[AI-Butler] Gemini 文件上传失败:", error);
-      throw new Error(`Gemini 文件上传失败: ${error.message}`);
+      throw new Error(
+        providerStreamUnexpectedEnd("Gemini file upload", error.message),
+      );
     }
   }
 
@@ -716,9 +743,9 @@ export class GeminiProvider implements ILlmProvider {
     const topP = options.topP ?? 1.0;
     const maxTokens = options.maxTokens ?? 8192;
 
-    if (!baseUrl) throw new Error("Gemini API URL 未配置");
-    if (!apiKey) throw new Error("Gemini API Key 未配置");
-    if (pdfFiles.length === 0) throw new Error("没有要处理的 PDF 文件");
+    if (!baseUrl) throw new Error(providerMissingApiUrl("Gemini"));
+    if (!apiKey) throw new Error(providerMissingApiKey("Gemini"));
+    if (pdfFiles.length === 0) throw new Error(providerNoPdfFiles());
     throwIfAborted(options.abortSignal);
 
     // 构建 inline_data 部分
@@ -746,7 +773,7 @@ export class GeminiProvider implements ILlmProvider {
     }
 
     if (fileParts.length === 0) {
-      throw new Error("没有成功处理任何 PDF 文件");
+      throw new Error(providerNoPdfProcessed());
     }
 
     ztoolkit.log(
@@ -810,12 +837,12 @@ export class GeminiProvider implements ILlmProvider {
                 const parsed = errorResponse ? JSON.parse(errorResponse) : null;
                 const err = parsed?.error || parsed || {};
                 const code = err?.code || `HTTP ${status}`;
-                const msg = err?.message || "请求失败";
+                const msg = err?.message || providerRequestFailed("API");
                 xmlhttp.abort();
                 throw new Error(`${code}: ${msg}`);
               } catch {
                 xmlhttp.abort();
-                throw new Error(`HTTP ${status}: 请求失败`);
+                throw new Error(providerHttpRequestFailed(status));
               }
             }
 
@@ -868,7 +895,7 @@ export class GeminiProvider implements ILlmProvider {
       if (abortError || isAbortError(error, options.abortSignal)) {
         throw normalizeAbortError(abortError || error, options.abortSignal);
       }
-      let errorMessage = error?.message || "Gemini 请求失败";
+      let errorMessage = error?.message || providerRequestFailed("Gemini");
       try {
         const responseText =
           error?.xmlhttp?.response || error?.xmlhttp?.responseText;

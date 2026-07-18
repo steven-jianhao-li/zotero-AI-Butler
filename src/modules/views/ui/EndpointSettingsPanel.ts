@@ -1,3 +1,5 @@
+import { getString } from "../../../utils/locale";
+import type { FluentMessageId } from "../../../../typings/i10n";
 import { getPref, setPref } from "../../../utils/prefs";
 import LLMService from "../../llmService";
 import { normalizeReasoningEffortSetting } from "../../llmproviders/shared/reasoning";
@@ -30,6 +32,10 @@ function doc(): Document {
   return Zotero.getMainWindow().document;
 }
 
+function t(key: FluentMessageId, args?: Record<string, unknown>): string {
+  return getString(key, args ? { args } : {});
+}
+
 function endpointProviderOptions(): Array<{ value: string; label: string }> {
   return LLMEndpointManager.providerTypes().map((providerType) => ({
     value: providerType,
@@ -54,24 +60,30 @@ function fieldDescription(text: string): string {
 
 function reasoningEffortOptions(): Array<{ value: string; label: string }> {
   return [
-    { value: "default", label: "默认：依赖模型默认行为，不作任何配置" },
-    { value: "none", label: "关闭：禁用推理" },
-    { value: "low", label: "浮想：低强度推理" },
-    { value: "medium", label: "斟酌：中强度推理" },
-    { value: "high", label: "沉思：高强度推理" },
-    { value: "xhigh", label: "穷究：超高强度推理" },
+    { value: "default", label: t("endpoint-reasoning-default") },
+    { value: "none", label: t("endpoint-reasoning-none") },
+    { value: "low", label: t("endpoint-reasoning-low") },
+    { value: "medium", label: t("endpoint-reasoning-medium") },
+    { value: "high", label: t("endpoint-reasoning-high") },
+    { value: "xhigh", label: t("endpoint-reasoning-xhigh") },
   ];
 }
 
+function localizedPdfProcessModeLabel(mode: string): string {
+  if (mode === "text") return t("endpoint-pdf-text-short");
+  if (mode === "mineru") return t("endpoint-pdf-mineru-short");
+  return t("endpoint-pdf-base64-short");
+}
+
 function pdfProcessModeOptions(): Array<{ value: string; label: string }> {
-  const globalLabel = LLMEndpointManager.pdfProcessModeLabel(
+  const globalLabel = localizedPdfProcessModeLabel(
     LLMEndpointManager.getGlobalPdfProcessMode(),
   );
   return [
-    { value: "global", label: `跟随全局默认（当前：${globalLabel}）` },
-    { value: "base64", label: "Base64 文件输入：发送原始 PDF 给多模态模型" },
-    { value: "text", label: "文本提取：只发送 Zotero 提取的正文文本" },
-    { value: "mineru", label: "MinerU：先解析为高质量 Markdown" },
+    { value: "global", label: t("endpoint-pdf-global", { mode: globalLabel }) },
+    { value: "base64", label: t("endpoint-pdf-base64") },
+    { value: "text", label: t("endpoint-pdf-text") },
+    { value: "mineru", label: t("endpoint-pdf-mineru") },
   ];
 }
 
@@ -143,7 +155,7 @@ export class EndpointSettingsPanel {
     if (this.options.showTitle !== false) {
       const titleWrap = document.createElement("div");
       const title = document.createElement("h3");
-      title.textContent = "模型平台";
+      title.textContent = t("endpoint-panel-title");
       Object.assign(title.style, {
         margin: "0 0 4px 0",
         color: "#59c0bc",
@@ -152,18 +164,14 @@ export class EndpointSettingsPanel {
         paddingBottom: "8px",
       });
       titleWrap.appendChild(title);
-      titleWrap.appendChild(
-        smallMuted(
-          "添加并管理一个或多个大模型供应商。供应商类型、API 地址、API 密钥和模型均由这里的模型平台配置接管。",
-        ),
-      );
+      titleWrap.appendChild(smallMuted(t("endpoint-panel-description")));
       header.appendChild(titleWrap);
     } else {
       header.style.justifyContent = "flex-end";
     }
 
     const addButton = createStyledButton(
-      "添加大模型供应商",
+      t("endpoint-add-provider"),
       "#59c0bc",
       "small",
     );
@@ -204,9 +212,9 @@ export class EndpointSettingsPanel {
       [
         {
           value: "priority",
-          label: "优先级：优先使用最高优先级供应商，仅失败后按顺序切换",
+          label: t("endpoint-routing-priority"),
         },
-        { value: "roundRobin", label: "轮询：轮询启用的供应商" },
+        { value: "roundRobin", label: t("endpoint-routing-round-robin") },
       ],
       strategy,
       (value) => {
@@ -215,9 +223,9 @@ export class EndpointSettingsPanel {
     );
     panel.appendChild(
       createFormGroup(
-        "路由策略",
+        t("endpoint-routing-strategy"),
         strategySelect,
-        "供应商优先级从上到下依次降低，可通过调整位置指定优先级",
+        t("endpoint-routing-help"),
       ),
     );
 
@@ -239,9 +247,9 @@ export class EndpointSettingsPanel {
     });
     panel.appendChild(
       createFormGroup(
-        "最大 API 请求次数",
+        t("endpoint-max-api-switch"),
         retryInput,
-        "一次 AI 调用内最多发起的真实 API 请求数。达到上限后任务会直接失败，不再由任务队列继续重试同一个坏端点。",
+        t("endpoint-max-api-switch-help"),
       ),
     );
 
@@ -293,14 +301,16 @@ export class EndpointSettingsPanel {
       flexWrap: "wrap",
     });
     const title = document.createElement("div");
-    title.textContent = "多模型同时总结";
+    title.textContent = t("endpoint-multi-summary-title");
     Object.assign(title.style, {
       color: "var(--ai-text)",
       fontSize: "15px",
       fontWeight: "700",
     });
     const badge = document.createElement("span");
-    badge.textContent = enabled ? `已选择 ${selectedCount} 个` : "未启用";
+    badge.textContent = enabled
+      ? t("endpoint-multi-summary-selected", { count: selectedCount })
+      : t("endpoint-disabled");
     Object.assign(badge.style, {
       padding: "2px 8px",
       borderRadius: "999px",
@@ -314,11 +324,7 @@ export class EndpointSettingsPanel {
     titleRow.appendChild(title);
     titleRow.appendChild(badge);
     titleWrap.appendChild(titleRow);
-    titleWrap.appendChild(
-      smallMuted(
-        "开启后，AI 总结会并行调用选中的供应商，并写入同一篇 AI 管家笔记；侧边栏可按供应商切换。其他功能仍使用上方路由策略。",
-      ),
-    );
+    titleWrap.appendChild(smallMuted(t("endpoint-multi-summary-help")));
     header.appendChild(titleWrap);
     header.appendChild(
       this.renderSettingSwitch(enabled, (nextEnabled) => {
@@ -348,7 +354,7 @@ export class EndpointSettingsPanel {
       flexWrap: "wrap",
     });
     const selectionLabel = document.createElement("div");
-    selectionLabel.textContent = "选择参与总结的大模型供应商";
+    selectionLabel.textContent = t("endpoint-multi-summary-select");
     Object.assign(selectionLabel.style, {
       color: "var(--ai-text)",
       fontSize: "13px",
@@ -360,8 +366,16 @@ export class EndpointSettingsPanel {
       gap: "6px",
       flexWrap: "wrap",
     });
-    const selectAllButton = createStyledButton("全选启用", "#59c0bc", "small");
-    const clearButton = createStyledButton("清空", "#777", "small");
+    const selectAllButton = createStyledButton(
+      t("endpoint-select-all-enabled"),
+      "#59c0bc",
+      "small",
+    );
+    const clearButton = createStyledButton(
+      t("endpoint-clear"),
+      "#777",
+      "small",
+    );
     selectAllButton.addEventListener("click", () => {
       LLMEndpointManager.setMultiModelSummaryEndpointIds(
         enabledEndpoints.map((endpoint) => endpoint.id),
@@ -388,7 +402,7 @@ export class EndpointSettingsPanel {
     });
     if (this.endpoints.length === 0) {
       const empty = document.createElement("div");
-      empty.textContent = "暂无可选供应商，请先添加大模型供应商。";
+      empty.textContent = t("endpoint-empty");
       Object.assign(empty.style, {
         color: "var(--ai-text-muted)",
         fontSize: "12px",
@@ -451,7 +465,11 @@ export class EndpointSettingsPanel {
         whiteSpace: "nowrap",
       });
       const detail = document.createElement("div");
-      detail.textContent = `${LLMEndpointManager.providerLabel(endpoint.providerType)} · ${endpoint.model || "未填写模型"} · PDF ${this.describeEndpointPdfMode(endpoint)}`;
+      detail.textContent = t("endpoint-multi-summary-detail", {
+        provider: LLMEndpointManager.providerLabel(endpoint.providerType),
+        model: endpoint.model || t("endpoint-model-empty"),
+        pdf: this.describeEndpointPdfMode(endpoint),
+      });
       Object.assign(detail.style, {
         marginTop: "3px",
         color: "var(--ai-text-muted)",
@@ -462,7 +480,9 @@ export class EndpointSettingsPanel {
         whiteSpace: "nowrap",
       });
       const state = document.createElement("div");
-      state.textContent = endpoint.enabled ? "可参与总结" : "已禁用";
+      state.textContent = endpoint.enabled
+        ? t("endpoint-can-summary")
+        : t("endpoint-disabled");
       Object.assign(state.style, {
         marginTop: "6px",
         color: endpoint.enabled ? "#4caf50" : "var(--ai-text-muted)",
@@ -479,8 +499,7 @@ export class EndpointSettingsPanel {
 
     if (enabled && selectedCount === 0) {
       const warning = document.createElement("div");
-      warning.textContent =
-        "已启用多模型同时总结，但尚未选择可用供应商；生成总结前请至少选择一个已启用供应商。";
+      warning.textContent = t("endpoint-multi-summary-warning");
       Object.assign(warning.style, {
         marginTop: "10px",
         color: "#f57c00",
@@ -499,7 +518,7 @@ export class EndpointSettingsPanel {
     const document = doc();
     const button = document.createElement("button");
     button.type = "button";
-    button.title = checked ? "已启用" : "已关闭";
+    button.title = checked ? t("endpoint-enabled") : t("endpoint-off");
     Object.assign(button.style, {
       width: "50px",
       height: "26px",
@@ -579,7 +598,7 @@ export class EndpointSettingsPanel {
       minWidth: "0",
     });
     const name = document.createElement("div");
-    name.textContent = endpoint.name || "未命名供应商";
+    name.textContent = endpoint.name || t("endpoint-unnamed-provider");
     Object.assign(name.style, {
       fontWeight: "700",
       color: "var(--ai-text)",
@@ -589,9 +608,10 @@ export class EndpointSettingsPanel {
       whiteSpace: "nowrap",
     });
     const type = document.createElement("div");
-    type.textContent = `供应商类型：${LLMEndpointManager.providerLabel(
-      endpoint.providerType,
-    )} · PDF：${this.describeEndpointPdfMode(endpoint)}`;
+    type.textContent = t("endpoint-card-subtitle", {
+      provider: LLMEndpointManager.providerLabel(endpoint.providerType),
+      pdf: this.describeEndpointPdfMode(endpoint),
+    });
     Object.assign(type.style, {
       color: "var(--ai-text-muted)",
       fontSize: "12px",
@@ -629,7 +649,7 @@ export class EndpointSettingsPanel {
       }),
     );
     const expandButton = this.actionButton(
-      isExpanded ? "收起详情" : "详情",
+      isExpanded ? t("endpoint-collapse-details") : t("endpoint-details"),
       "#59c0bc",
       () => {
         if (isExpanded) this.expandedEndpointIds.delete(endpoint.id);
@@ -640,7 +660,7 @@ export class EndpointSettingsPanel {
     expandButton.id = `endpoint-expand-${endpoint.id}`;
     actions.appendChild(expandButton);
     actions.appendChild(
-      this.actionButton("删除", "#f44336", () => {
+      this.actionButton(t("endpoint-delete"), "#f44336", () => {
         if (this.endpoints.length <= 1) {
           endpoint.enabled = false;
         } else {
@@ -666,7 +686,9 @@ export class EndpointSettingsPanel {
     const document = doc();
     const button = document.createElement("button");
     button.type = "button";
-    button.title = endpoint.enabled ? "已启用" : "已禁用";
+    button.title = endpoint.enabled
+      ? t("endpoint-enabled")
+      : t("endpoint-disabled");
     Object.assign(button.style, {
       width: "42px",
       height: "22px",
@@ -727,7 +749,7 @@ export class EndpointSettingsPanel {
     });
 
     const label = document.createElement("label");
-    label.textContent = "API 地址 *";
+    label.textContent = t("endpoint-api-url-label");
     Object.assign(label.style, {
       display: "block",
       marginBottom: "8px",
@@ -762,7 +784,7 @@ export class EndpointSettingsPanel {
     });
 
     const required = document.createElement("span");
-    required.textContent = "【必填】";
+    required.textContent = t("endpoint-required");
     Object.assign(required.style, {
       flex: "0 0 auto",
     });
@@ -802,7 +824,7 @@ export class EndpointSettingsPanel {
       `endpoint-${endpoint.id}-key`,
       "password",
       endpoint.apiKey,
-      allowsEmptyKey ? "可留空" : "sk-...",
+      allowsEmptyKey ? t("endpoint-optional") : "sk-...",
     );
     Object.assign(apiKeyInput.style, {
       flex: "1 1 auto",
@@ -816,7 +838,7 @@ export class EndpointSettingsPanel {
     const toggleButton = document.createElement("button");
     toggleButton.type = "button";
     toggleButton.textContent = "👁";
-    toggleButton.title = "显示/隐藏密钥";
+    toggleButton.title = t("endpoint-toggle-key");
     Object.assign(toggleButton.style, {
       flex: "0 0 auto",
       width: "38px",
@@ -840,12 +862,14 @@ export class EndpointSettingsPanel {
     wrapper.appendChild(apiKeyInput);
     wrapper.appendChild(toggleButton);
     return createFormGroup(
-      allowsEmptyKey ? "API 密钥" : "API 密钥 *",
+      allowsEmptyKey
+        ? t("endpoint-api-key-label")
+        : t("endpoint-api-key-required-label"),
       wrapper,
       fieldDescription(
         allowsEmptyKey
-          ? "Ollama 本地服务通常无需 API 密钥；如服务设置了鉴权，可填写 Bearer token。"
-          : "【必填】该供应商的单个 API 密钥，将安全存储在本地。",
+          ? t("endpoint-ollama-key-help")
+          : t("endpoint-api-key-help"),
       ),
     );
   }
@@ -879,7 +903,11 @@ export class EndpointSettingsPanel {
     });
     row.appendChild(modelInput);
 
-    const fetchButton = createStyledButton("获取模型", "#667eea", "small");
+    const fetchButton = createStyledButton(
+      t("endpoint-fetch-models"),
+      "#667eea",
+      "small",
+    );
     row.appendChild(fetchButton);
     wrapper.appendChild(row);
 
@@ -899,11 +927,9 @@ export class EndpointSettingsPanel {
     });
 
     return createFormGroup(
-      "模型 *",
+      t("endpoint-model-label"),
       wrapper,
-      fieldDescription(
-        "【必填】要使用的模型 ID。可手动填写，也可尝试从供应商接口获取模型列表。",
-      ),
+      fieldDescription(t("endpoint-model-help")),
     );
   }
 
@@ -936,8 +962,7 @@ export class EndpointSettingsPanel {
 
     const effectiveMode =
       LLMEndpointManager.getEffectivePdfProcessMode(endpoint);
-    const effectiveLabel =
-      LLMEndpointManager.pdfProcessModeLabel(effectiveMode);
+    const effectiveLabel = localizedPdfProcessModeLabel(effectiveMode);
     const supportsBase64 = this.endpointSupportsPdfBase64(endpoint);
     const status = document.createElement("div");
     Object.assign(status.style, {
@@ -951,7 +976,9 @@ export class EndpointSettingsPanel {
     });
 
     const badge = document.createElement("span");
-    badge.textContent = `实际使用：${effectiveLabel}`;
+    badge.textContent = t("endpoint-effective-pdf-mode", {
+      mode: effectiveLabel,
+    });
     Object.assign(badge.style, {
       display: "inline-flex",
       alignItems: "center",
@@ -973,24 +1000,20 @@ export class EndpointSettingsPanel {
 
     const hint = document.createElement("span");
     if (effectiveMode === "base64" && !supportsBase64) {
-      hint.textContent =
-        "该供应商声明不支持 PDF Base64；建议为这个模型单独改为文本提取或 MinerU。";
+      hint.textContent = t("endpoint-pdf-unsupported");
       hint.style.color = "#f57c00";
     } else if (value === "global") {
-      hint.textContent =
-        "当前模型未单独覆盖，会随“API 配置”中的全局 PDF 处理模式一起变化。";
+      hint.textContent = t("endpoint-pdf-global-help");
     } else {
-      hint.textContent = "该模型会使用这里指定的 PDF 处理方式。";
+      hint.textContent = t("endpoint-pdf-override-help");
     }
     status.appendChild(hint);
     wrapper.appendChild(status);
 
     return createFormGroup(
-      "PDF 处理方式",
+      t("endpoint-pdf-mode-label"),
       wrapper,
-      fieldDescription(
-        "为这个模型单独设置 PDF 输入模式。用于避免不支持文件输入的模型在全局 Base64 模式下报错。",
-      ),
+      fieldDescription(t("endpoint-pdf-mode-help")),
     );
   }
 
@@ -1015,7 +1038,7 @@ export class EndpointSettingsPanel {
       },
     );
 
-    return createFormGroup("思维链长度", select);
+    return createFormGroup(t("endpoint-reasoning-label"), select);
   }
 
   private renderConnectionTest(endpoint: LLMEndpoint): HTMLElement {
@@ -1033,10 +1056,18 @@ export class EndpointSettingsPanel {
       gap: "8px",
       flexWrap: "wrap",
     });
-    const testButton = createStyledButton("测试连接", "#2196f3", "small");
+    const testButton = createStyledButton(
+      t("endpoint-test-connection"),
+      "#2196f3",
+      "small",
+    );
     testButton.id = `endpoint-test-button-${endpoint.id}`;
     testButton.classList.add("ai-butler-endpoint-test-button");
-    const copyButton = createStyledButton("复制详情", "#777", "small");
+    const copyButton = createStyledButton(
+      t("endpoint-copy-details"),
+      "#777",
+      "small",
+    );
     const status = document.createElement("pre");
     status.id = `endpoint-status-${endpoint.id}`;
     Object.assign(status.style, {
@@ -1067,9 +1098,9 @@ export class EndpointSettingsPanel {
     wrapper.appendChild(actions);
     wrapper.appendChild(status);
     return createFormGroup(
-      "连接测试",
+      t("endpoint-connection-test"),
       wrapper,
-      fieldDescription("使用当前 API 地址、密钥和模型测试连接。"),
+      fieldDescription(t("endpoint-test-help")),
     );
   }
 
@@ -1079,7 +1110,7 @@ export class EndpointSettingsPanel {
     modelInput: HTMLInputElement,
   ): Promise<void> {
     container.style.display = "block";
-    container.textContent = "正在获取模型列表...";
+    container.textContent = t("endpoint-fetching-models");
     try {
       this.persist();
       const models = await LLMService.listModels(endpoint.providerType, {
@@ -1105,7 +1136,7 @@ export class EndpointSettingsPanel {
     container.innerHTML = "";
     container.style.color = "var(--ai-text)";
     if (models.length === 0) {
-      container.textContent = "未获取到模型列表";
+      container.textContent = t("endpoint-no-models");
       return;
     }
 
@@ -1173,7 +1204,7 @@ export class EndpointSettingsPanel {
     });
 
     const title = document.createElement("h3");
-    title.textContent = "添加提供商";
+    title.textContent = t("endpoint-add-provider-title");
     Object.assign(title.style, {
       margin: "0 0 14px 0",
       fontSize: "16px",
@@ -1192,9 +1223,9 @@ export class EndpointSettingsPanel {
       "new-endpoint-name",
       "text",
       "",
-      "例如 OpenAI",
+      t("endpoint-provider-name-placeholder"),
     );
-    const nameGroup = createFormGroup("供应商名称", nameInput);
+    const nameGroup = createFormGroup(t("endpoint-provider-name"), nameInput);
     dialog.appendChild(nameGroup);
 
     const providerSelect = createSelect(
@@ -1219,7 +1250,10 @@ export class EndpointSettingsPanel {
         zIndex: "10000",
       });
     }
-    const providerGroup = createFormGroup("供应商类型", providerSelect);
+    const providerGroup = createFormGroup(
+      t("endpoint-provider-type"),
+      providerSelect,
+    );
     Object.assign(providerGroup.style, {
       position: "relative",
       zIndex: "2",
@@ -1243,8 +1277,16 @@ export class EndpointSettingsPanel {
       gap: "8px",
       marginTop: "16px",
     });
-    const cancelButton = createStyledButton("取消", "#777", "small");
-    const confirmButton = createStyledButton("确定", "#4caf50", "small");
+    const cancelButton = createStyledButton(
+      t("endpoint-cancel"),
+      "#777",
+      "small",
+    );
+    const confirmButton = createStyledButton(
+      t("endpoint-ok"),
+      "#4caf50",
+      "small",
+    );
     confirmButton.disabled = true;
     confirmButton.style.opacity = "0.45";
     actions.appendChild(cancelButton);
@@ -1269,8 +1311,9 @@ export class EndpointSettingsPanel {
     const validate = () => {
       draft.name = nameInput.value.trim();
       let message = "";
-      if (!draft.name) message = "请填写供应商名称";
-      else if (!this.isNameUnique(draft.name)) message = "供应商名称必须唯一";
+      if (!draft.name) message = t("endpoint-name-required");
+      else if (!this.isNameUnique(draft.name))
+        message = t("endpoint-name-unique");
       error.textContent = message;
       confirmButton.disabled = Boolean(message);
       confirmButton.style.opacity = message ? "0.45" : "1";
@@ -1327,9 +1370,9 @@ export class EndpointSettingsPanel {
       endpoint.pdfProcessMode,
     );
     const effective = LLMEndpointManager.getEffectivePdfProcessMode(endpoint);
-    const effectiveLabel = LLMEndpointManager.pdfProcessModeLabel(effective);
+    const effectiveLabel = localizedPdfProcessModeLabel(effective);
     return configured === "global"
-      ? `跟随全局（${effectiveLabel}）`
+      ? t("endpoint-follow-global", { mode: effectiveLabel })
       : effectiveLabel;
   }
 
@@ -1337,13 +1380,13 @@ export class EndpointSettingsPanel {
     endpoint: LLMEndpoint,
     status: HTMLElement,
   ): Promise<void> {
-    status.textContent = "正在测试...";
+    status.textContent = t("endpoint-testing");
     status.style.color = "var(--ai-text-muted)";
 
     try {
       this.persist();
       const result = await LLMService.testEndpointConnection(endpoint);
-      status.textContent = result || "连接成功";
+      status.textContent = result || t("endpoint-connection-success");
       status.style.color = "#4caf50";
     } catch (error: any) {
       status.textContent = error?.message || String(error);
@@ -1362,7 +1405,7 @@ export class EndpointSettingsPanel {
       ) as HTMLElement | null);
     if (!preview) return;
     const endpointUrl = this.buildEndpointPreview(endpoint);
-    preview.textContent = `预览：${endpointUrl}`;
+    preview.textContent = t("endpoint-preview", { url: endpointUrl });
     preview.title = endpointUrl;
   }
 
@@ -1434,8 +1477,10 @@ export class EndpointSettingsPanel {
   private async copyConnectionDetails(status: HTMLElement): Promise<void> {
     const text = (status.textContent || "").trim();
     if (!text) {
-      new ztoolkit.ProgressWindow("连接测试", { closeTime: 1800 })
-        .createLine({ text: "暂无可复制的测试详情", type: "default" })
+      new ztoolkit.ProgressWindow(t("endpoint-connection-test"), {
+        closeTime: 1800,
+      })
+        .createLine({ text: t("endpoint-no-test-details"), type: "default" })
         .show();
       return;
     }
@@ -1466,15 +1511,19 @@ export class EndpointSettingsPanel {
         document.execCommand("copy");
         textarea.remove();
       } catch {
-        new ztoolkit.ProgressWindow("连接测试", { closeTime: 2200 })
-          .createLine({ text: "复制失败，可手动选择详情文本", type: "fail" })
+        new ztoolkit.ProgressWindow(t("endpoint-connection-test"), {
+          closeTime: 2200,
+        })
+          .createLine({ text: t("endpoint-copy-failed"), type: "fail" })
           .show();
         return;
       }
     }
 
-    new ztoolkit.ProgressWindow("连接测试", { closeTime: 1500 })
-      .createLine({ text: "已复制测试详情", type: "success" })
+    new ztoolkit.ProgressWindow(t("endpoint-connection-test"), {
+      closeTime: 1500,
+    })
+      .createLine({ text: t("endpoint-copy-success"), type: "success" })
       .show();
   }
 }

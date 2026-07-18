@@ -1,3 +1,4 @@
+import { getString } from "../utils/locale";
 import type { NoteExportConflictStrategy } from "./noteExportConfig";
 
 export interface ExportWriteResult {
@@ -100,7 +101,7 @@ export function getCollectionPathInfo(
   while (current) {
     pathSegments.unshift(
       sanitizePathSegment(
-        (current as any).name || "未命名分类",
+        (current as any).name || getString("note-export-untitled-collection"),
         `collection-${current.id}`,
       ),
     );

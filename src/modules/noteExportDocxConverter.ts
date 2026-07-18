@@ -16,6 +16,7 @@ import {
 import JSZip from "jszip";
 import { latexToDocxMath, splitTextWithMath } from "./noteExportMath";
 import { withZoteroBrowserGlobals } from "./noteExportBrowserGlobals";
+import { getString } from "../utils/locale";
 
 type DocxBlock = Paragraph | Table;
 type InlineDocxChild = ParagraphChild;
@@ -535,18 +536,27 @@ function hasHeadingNumberPrefix(
   text: string,
   tagName: "h2" | "h3" | "h4" | "h5",
 ): boolean {
-  if (tagName === "h2")
-    return /^[一二三四五六七八九十百千零〇两]+[、.．]/.test(text);
-  if (tagName === "h3")
-    return /^（[一二三四五六七八九十百千零〇两]+）/.test(text);
-  if (tagName === "h4") return /^\d+[、.．]/.test(text);
-  return /^（\d+）/.test(text);
+  if (/^\d+[、.．-]/.test(text) || /^[(（]\d+[)）]/.test(text)) {
+    return true;
+  }
+  if (/^[一二三四五六七八九十百千零〇两]+[、.．-]/.test(text)) {
+    return true;
+  }
+  return /^[(（][一二三四五六七八九十百千零〇两]+[)）]/.test(text);
+}
+
+function useDecimalHeadingNumbers(): boolean {
+  return getString("note-export-heading-number-style") === "decimal";
 }
 
 function formatHeadingNumber(
   tagName: "h2" | "h3" | "h4" | "h5",
   value: number,
 ): string {
+  if (useDecimalHeadingNumbers()) {
+    if (tagName === "h2" || tagName === "h4") return `${value}.`;
+    return `(${value})`;
+  }
   if (tagName === "h2") return `${toChineseNumber(value)}、`;
   if (tagName === "h3") return `（${toChineseNumber(value)}）`;
   if (tagName === "h4") return `${value}、`;
@@ -554,13 +564,17 @@ function formatHeadingNumber(
 }
 
 function toChineseNumber(value: number): string {
-  const digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
-  if (value <= 10) return value === 10 ? "十" : digits[value];
-  if (value < 20) return `十${digits[value % 10]}`;
+  const digits = getString("note-export-chinese-digits").split("");
+  const ten = getString("note-export-chinese-ten");
+  if (digits.length < 10 || ten === "note-export-chinese-ten") {
+    return String(value);
+  }
+  if (value <= 10) return value === 10 ? ten : digits[value];
+  if (value < 20) return `${ten}${digits[value % 10]}`;
   if (value < 100) {
     const tens = Math.floor(value / 10);
     const ones = value % 10;
-    return `${digits[tens]}十${ones ? digits[ones] : ""}`;
+    return `${digits[tens]}${ten}${ones ? digits[ones] : ""}`;
   }
   return String(value);
 }

@@ -9,6 +9,7 @@
  */
 
 import { getPref, setPref } from "../utils/prefs";
+import { getString } from "../utils/locale";
 
 /**
  * 支持的提供商 ID
@@ -449,7 +450,7 @@ export class ApiKeyManager {
    */
   static maskKey(key: string): string {
     if (!key) {
-      return "(空)";
+      return getString("settings-api-key-empty");
     }
     // 短密钥直接显示
     if (key.length <= 8) {

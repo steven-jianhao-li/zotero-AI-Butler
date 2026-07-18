@@ -10,7 +10,8 @@ import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs, logPromptCacheUsage } from "./shared/llmutils";
 import {
   getConnectionTestInput,
-  getConnectionTestModeLabel,
+  formatConnectionTestSuccess,
+  formatProviderTimeout,
 } from "./shared/connectionTest";
 import {
   deriveVersionedModelsUrl,
@@ -24,6 +25,18 @@ import {
   normalizeAbortError,
   throwIfAborted,
 } from "./shared/requestAbort";
+import {
+  providerHttpRequestFailed,
+  providerMissingApiKey,
+  providerMissingApiUrl,
+  providerNoPdfFiles,
+  providerNoPdfProcessed,
+  providerRequestFailed,
+  providerStreamMissingDone,
+  providerStreamParseFailed,
+  providerStreamTruncated,
+  providerStreamUnexpectedEnd,
+} from "./shared/localizedErrors";
 
 /**
  * OpenAI 旧接口兼容 Provider（Chat Completions 格式）
@@ -58,8 +71,8 @@ export class OpenAICompatProvider implements ILlmProvider {
     ).trim();
     const apiUrl = this.normalizeChatCompletionsUrl(rawApiUrl);
     const apiKey = (options.apiKey || "").trim();
-    if (!apiUrl) throw new Error("API URL 未配置");
-    if (!apiKey) throw new Error("API Key 未配置");
+    if (!apiUrl) throw new Error(providerMissingApiUrl());
+    if (!apiKey) throw new Error(providerMissingApiKey());
     return { apiUrl, apiKey };
   }
 
@@ -184,11 +197,11 @@ export class OpenAICompatProvider implements ILlmProvider {
                     : null;
                   const err = parsed?.error || parsed || {};
                   const code = err?.code || `HTTP ${status}`;
-                  const msg = err?.message || "请求失败";
+                  const msg = err?.message || providerRequestFailed("API");
                   abortError = new Error(`${code}: ${msg}`);
                   xmlhttp.abort();
                 } catch {
-                  abortError = new Error(`HTTP ${status}: 请求失败`);
+                  abortError = new Error(providerHttpRequestFailed(status));
                   xmlhttp.abort();
                 }
                 return;
@@ -238,7 +251,7 @@ export class OpenAICompatProvider implements ILlmProvider {
                       }
                     } catch {
                       abortError = new Error(
-                        "OpenAI 兼容流式响应解析失败，响应可能已被截断",
+                        providerStreamParseFailed("OpenAI Compatible"),
                       );
                       xmlhttp.abort();
                       return;
@@ -249,7 +262,7 @@ export class OpenAICompatProvider implements ILlmProvider {
                 ztoolkit.log("[AI-Butler] OpenAI Compat SSE parse error:", err);
                 if (!abortError) {
                   abortError = new Error(
-                    "OpenAI 兼容流式响应解析失败，响应可能已被截断",
+                    providerStreamParseFailed("OpenAI Compatible"),
                   );
                 }
                 xmlhttp.abort();
@@ -262,7 +275,9 @@ export class OpenAICompatProvider implements ILlmProvider {
             xmlhttp.ontimeout = () => {
               if (!abortError)
                 abortError = new Error(
-                  `Timeout: 请求超过 ${options.requestTimeoutMs ?? getRequestTimeoutMs()} ms`,
+                  formatProviderTimeout(
+                    options.requestTimeoutMs ?? getRequestTimeoutMs(),
+                  ),
                 );
             };
           },
@@ -277,7 +292,8 @@ export class OpenAICompatProvider implements ILlmProvider {
         if (isAbortError(error, options.abortSignal)) {
           throw normalizeAbortError(error, options.abortSignal);
         }
-        let errorMessage = error?.message || "OpenAI 兼容请求失败";
+        let errorMessage =
+          error?.message || providerRequestFailed("OpenAI Compatible");
         try {
           const responseText =
             error?.xmlhttp?.response || error?.xmlhttp?.responseText;
@@ -333,7 +349,8 @@ export class OpenAICompatProvider implements ILlmProvider {
       if (abortError || isAbortError(e, options.abortSignal)) {
         throw normalizeAbortError(abortError || e, options.abortSignal);
       }
-      let errorMessage = e?.message || "OpenAI 兼容请求失败";
+      let errorMessage =
+        e?.message || providerRequestFailed("OpenAI Compatible");
       try {
         const responseText = e?.xmlhttp?.response || e?.xmlhttp?.responseText;
         if (responseText) {
@@ -440,11 +457,11 @@ export class OpenAICompatProvider implements ILlmProvider {
                 const parsed = errorResponse ? JSON.parse(errorResponse) : null;
                 const err = parsed?.error || parsed || {};
                 const code = err?.code || `HTTP ${status}`;
-                const msg = err?.message || "请求失败";
+                const msg = err?.message || providerRequestFailed("API");
                 abortError = new Error(`${code}: ${msg}`);
                 xmlhttp.abort();
               } catch {
-                abortError = new Error(`HTTP ${status}: 请求失败`);
+                abortError = new Error(providerHttpRequestFailed(status));
                 xmlhttp.abort();
               }
               return;
@@ -497,7 +514,7 @@ export class OpenAICompatProvider implements ILlmProvider {
                     }
                   } catch {
                     abortError = new Error(
-                      "OpenAI 兼容流式响应解析失败，响应可能已被截断",
+                      providerStreamParseFailed("OpenAI Compatible"),
                     );
                     xmlhttp.abort();
                     return;
@@ -511,7 +528,7 @@ export class OpenAICompatProvider implements ILlmProvider {
               );
               if (!abortError) {
                 abortError = new Error(
-                  "OpenAI 兼容流式响应解析失败，响应可能已被截断",
+                  providerStreamParseFailed("OpenAI Compatible"),
                 );
               }
               xmlhttp.abort();
@@ -524,7 +541,9 @@ export class OpenAICompatProvider implements ILlmProvider {
           xmlhttp.ontimeout = () => {
             if (!abortError)
               abortError = new Error(
-                `Timeout: 请求超过 ${options.requestTimeoutMs ?? getRequestTimeoutMs()} ms`,
+                formatProviderTimeout(
+                  options.requestTimeoutMs ?? getRequestTimeoutMs(),
+                ),
               );
           };
         },
@@ -539,7 +558,8 @@ export class OpenAICompatProvider implements ILlmProvider {
       if (isAbortError(error, options.abortSignal)) {
         throw normalizeAbortError(error, options.abortSignal);
       }
-      let errorMessage = error?.message || "OpenAI 兼容请求失败";
+      let errorMessage =
+        error?.message || providerRequestFailed("OpenAI Compatible");
       try {
         const responseText =
           error?.xmlhttp?.response || error?.xmlhttp?.responseText;
@@ -574,13 +594,15 @@ export class OpenAICompatProvider implements ILlmProvider {
     partialLine: string,
   ): void {
     if (partialLine.trim()) {
-      throw new Error("OpenAI 兼容流式响应未完整结束，最后一个 SSE 事件被截断");
+      throw new Error(providerStreamTruncated("OpenAI Compatible"));
     }
     if (!streamComplete) {
-      throw new Error("OpenAI 兼容流式响应未收到完成标记，已拒绝使用半截输出");
+      throw new Error(providerStreamMissingDone("OpenAI Compatible"));
     }
     if (finishReason && finishReason !== "stop") {
-      throw new Error(`OpenAI 兼容流式响应未正常结束: ${finishReason}`);
+      throw new Error(
+        providerStreamUnexpectedEnd("OpenAI Compatible", finishReason),
+      );
     }
   }
 
@@ -668,7 +690,8 @@ export class OpenAICompatProvider implements ILlmProvider {
       const status = error?.xmlhttp?.status;
       const responseBody =
         error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
-      let errorMessage = error?.message || "OpenAI 兼容请求失败";
+      let errorMessage =
+        error?.message || providerRequestFailed("OpenAI Compatible");
       let errorName = "NetworkError";
       try {
         if (responseBody) {
@@ -706,13 +729,18 @@ export class OpenAICompatProvider implements ILlmProvider {
       const json =
         typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
       const content = json?.choices?.[0]?.message?.content || "";
-      return `Mode: ${getConnectionTestModeLabel(testInput.mode)}\n✅ 连接成功!\n模型: ${model}\n响应: ${content}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
+      return formatConnectionTestSuccess({
+        mode: testInput.mode,
+        model,
+        response: content,
+        rawResponse,
+      });
     }
 
     const { APITestError } = await import("./types");
     throw new APITestError(`HTTP ${status}`, {
       errorName: `HTTP_${status}`,
-      errorMessage: `HTTP ${status}: ${response.statusText || "请求失败"}`,
+      errorMessage: `HTTP ${status}: ${response.statusText || providerRequestFailed("API")}`,
       statusCode: status,
       requestUrl: apiUrl,
       requestBody: payloadStr,
@@ -739,7 +767,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     const model = (options.model || "gpt-3.5-turbo").trim();
     throwIfAborted(options.abortSignal);
 
-    if (pdfFiles.length === 0) throw new Error("没有要处理的 PDF 文件");
+    if (pdfFiles.length === 0) throw new Error(providerNoPdfFiles());
 
     // 构建 Chat Completions file 部分（使用 PDF data URI）
     const fileParts: any[] = [];
@@ -763,7 +791,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     }
 
     if (fileParts.length === 0) {
-      throw new Error("没有成功处理任何 PDF 文件");
+      throw new Error(providerNoPdfProcessed());
     }
 
     ztoolkit.log(
@@ -818,11 +846,11 @@ export class OpenAICompatProvider implements ILlmProvider {
                 const parsed = errorResponse ? JSON.parse(errorResponse) : null;
                 const err = parsed?.error || parsed || {};
                 const code = err?.code || `HTTP ${status}`;
-                const msg = err?.message || "请求失败";
+                const msg = err?.message || providerRequestFailed("API");
                 abortError = new Error(`${code}: ${msg}`);
                 xmlhttp.abort();
               } catch {
-                abortError = new Error(`HTTP ${status}: 请求失败`);
+                abortError = new Error(providerHttpRequestFailed(status));
                 xmlhttp.abort();
               }
               return;
@@ -881,7 +909,9 @@ export class OpenAICompatProvider implements ILlmProvider {
           xmlhttp.ontimeout = () => {
             if (!abortError)
               abortError = new Error(
-                `Timeout: 请求超过 ${options.requestTimeoutMs ?? getRequestTimeoutMs()} ms`,
+                formatProviderTimeout(
+                  options.requestTimeoutMs ?? getRequestTimeoutMs(),
+                ),
               );
           };
         },
@@ -897,7 +927,8 @@ export class OpenAICompatProvider implements ILlmProvider {
       if (isAbortError(error, options.abortSignal)) {
         throw normalizeAbortError(error, options.abortSignal);
       }
-      let errorMessage = error?.message || "OpenAI 兼容多文件请求失败";
+      let errorMessage =
+        error?.message || providerRequestFailed("OpenAI Compatible");
       try {
         const responseText =
           error?.xmlhttp?.response || error?.xmlhttp?.responseText;

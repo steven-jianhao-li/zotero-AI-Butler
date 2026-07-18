@@ -10,6 +10,9 @@ import {
   getDefaultTableTemplate,
   getDefaultTableFillPrompt,
   getDefaultTableReviewPrompt,
+  getConfiguredTableTemplate,
+  getConfiguredTableFillPrompt,
+  getConfiguredTableReviewPrompt,
   PROMPT_VERSION,
   getDefaultMultiRoundPromptTemplate,
   DEFAULT_MULTI_ROUND_PLANNING_PROMPT,
@@ -21,6 +24,7 @@ import {
   type MultiRoundContextStrategy,
   type MultiRoundPromptItem,
   type MultiRoundPromptTemplate,
+  type MultiRoundPromptPhase,
 } from "../../../utils/prompts";
 import {
   createFormGroup,
@@ -32,13 +36,12 @@ import {
   createNotice,
   createCheckbox,
 } from "../ui/components";
+import { getString } from "../../../utils/locale";
 
 type PresetMap = Record<string, string>;
 type PromptSettingsKind = "summary" | "deepRead" | "table" | "all";
 const CURRENT_MULTI_ROUND_TEMPLATE_ID = "__current_multi_round_template__";
 const MULTI_ROUND_TEMPLATE_ID_PREF = "multiRoundPromptTemplateId";
-const DEEP_READ_PROMPT_NOTICE =
-  "AI 精读目标是把论文读厚：按多轮提示词依次追问论文，并把每一轮回答完整沉淀到 AI 精读笔记。<br/>下面的模板是一组可复用的多轮提示词；每一轮的“标题”用于标识本轮阅读主题，“提示词”是实际发给 AI 的问题。";
 
 export class PromptsSettingsPage {
   private container: HTMLElement;
@@ -66,26 +69,26 @@ export class PromptsSettingsPage {
   private getPageTitle(): string {
     switch (this.pageKind) {
       case "summary":
-        return "\u{1f4dd} AI \u603b\u7ed3\u63d0\u793a\u8bcd";
+        return getString("settings-prompts-title-summary");
       case "deepRead":
-        return "📚 AI精读多轮提示词模板";
+        return getString("settings-prompts-title-deep-read");
       case "table":
-        return "\u{1f4ca} \u8868\u683c\u603b\u7ed3\u63d0\u793a\u8bcd";
+        return getString("settings-prompts-title-table");
       default:
-        return "\u{1f4dd} \u63d0\u793a\u8bcd\u6a21\u677f";
+        return getString("settings-prompts-title-all");
     }
   }
 
   private getPageNotice(): string {
     switch (this.pageKind) {
       case "summary":
-        return "AI \u603b\u7ed3\u7528\u4e8e\u628a\u6587\u7ae0\u8bfb\u8584\u3002\u672c\u9875\u53ea\u7ba1\u7406\u5355\u8f6e\u603b\u7ed3\u63d0\u793a\u8bcd\u3001\u9884\u8bbe\u6a21\u677f\u3001\u53d8\u91cf\u9884\u89c8\u3001\u4fdd\u5b58\u548c\u6062\u590d\u9ed8\u8ba4\u3002";
+        return getString("settings-prompts-notice-summary");
       case "deepRead":
-        return DEEP_READ_PROMPT_NOTICE;
+        return getString("settings-prompts-notice-deep-read");
       case "table":
-        return "\u8868\u683c\u603b\u7ed3\u7528\u4e8e\u7ed3\u6784\u5316\u9605\u8bfb\u548c\u6587\u732e\u7efc\u8ff0\u3002\u672c\u9875\u53ea\u7ba1\u7406\u8868\u683c\u6a21\u677f\u3001\u9010\u7bc7\u586b\u8868\u63d0\u793a\u8bcd\u548c\u6c47\u603b\u7efc\u8ff0\u63d0\u793a\u8bcd\u3002";
+        return getString("settings-prompts-notice-table");
       default:
-        return "\u63d0\u793a: \u652f\u6301\u9884\u8bbe\u6a21\u677f\u3001\u81ea\u5b9a\u4e49\u7f16\u8f91\u4e0e\u53d8\u91cf\u63d2\u503c\u9884\u89c8\u3002\u53ef\u7528\u53d8\u91cf: <code>${title}</code>\u3001<code>${authors}</code>\u3001<code>${year}</code>\u3002";
+        return getString("settings-prompts-notice-all");
     }
   }
 
@@ -121,7 +124,9 @@ export class PromptsSettingsPage {
     });
 
     if (this.pageKind === "all") {
-      modeSection.appendChild(createNotice(DEEP_READ_PROMPT_NOTICE, "info"));
+      modeSection.appendChild(
+        createNotice(getString("settings-prompts-notice-deep-read"), "info"),
+      );
     }
 
     const multiRoundContainer =
@@ -144,7 +149,9 @@ export class PromptsSettingsPage {
     });
 
     const multiRoundTitle = Zotero.getMainWindow().document.createElement("h4");
-    multiRoundTitle.textContent = "📋 AI 精读多轮提示词模板";
+    multiRoundTitle.textContent = getString(
+      "settings-prompts-multi-round-title",
+    );
     Object.assign(multiRoundTitle.style, {
       color: "#59c0bc",
       margin: "0",
@@ -213,9 +220,9 @@ export class PromptsSettingsPage {
     ) as any;
     left.appendChild(
       createFormGroup(
-        "选择预设",
+        getString("settings-prompts-select-preset-label"),
         this.presetSelect,
-        "选择后可在右侧编辑器中查看与修改",
+        getString("settings-prompts-select-preset-help"),
       ),
     );
 
@@ -228,7 +235,10 @@ export class PromptsSettingsPage {
       marginBottom: "16px",
     });
 
-    const btnApplyPreset = createStyledButton("📋 应用预设", "#2196f3");
+    const btnApplyPreset = createStyledButton(
+      getString("settings-prompts-apply-preset"),
+      "#2196f3",
+    );
     Object.assign(btnApplyPreset.style, {
       width: "100%",
       padding: "12px 20px",
@@ -236,7 +246,10 @@ export class PromptsSettingsPage {
     });
     btnApplyPreset.addEventListener("click", () => this.loadPresetToEditor());
 
-    const btnSaveAsPreset = createStyledButton("💾 保存为新预设", "#4caf50");
+    const btnSaveAsPreset = createStyledButton(
+      getString("settings-prompts-save-as-preset"),
+      "#4caf50",
+    );
     Object.assign(btnSaveAsPreset.style, {
       width: "100%",
       padding: "12px 20px",
@@ -244,7 +257,10 @@ export class PromptsSettingsPage {
     });
     btnSaveAsPreset.addEventListener("click", () => this.saveAsPreset());
 
-    const btnDeletePreset = createStyledButton("🗑️ 删除预设", "#f44336");
+    const btnDeletePreset = createStyledButton(
+      getString("settings-prompts-delete-preset"),
+      "#f44336",
+    );
     Object.assign(btnDeletePreset.style, {
       width: "100%",
       padding: "12px 20px",
@@ -258,23 +274,45 @@ export class PromptsSettingsPage {
     left.appendChild(presetBtnCol);
 
     // 示例变量输入
-    left.appendChild(createSectionTitle("示例元数据(用于预览)"));
+    left.appendChild(
+      createSectionTitle(getString("settings-prompts-sample-metadata-title")),
+    );
     this.sampleTitle = createInput(
       "sample-title",
       "text",
       "A Great Paper",
-      "论文标题",
+      getString("settings-prompts-sample-title-placeholder"),
     );
-    left.appendChild(createFormGroup("标题", this.sampleTitle));
+    left.appendChild(
+      createFormGroup(
+        getString("settings-prompts-sample-title-label"),
+        this.sampleTitle,
+      ),
+    );
     this.sampleAuthors = createInput(
       "sample-authors",
       "text",
       "Alice; Bob",
-      "作者,用分号分隔",
+      getString("settings-prompts-sample-authors-placeholder"),
     );
-    left.appendChild(createFormGroup("作者", this.sampleAuthors));
-    this.sampleYear = createInput("sample-year", "text", "2024", "年份");
-    left.appendChild(createFormGroup("年份", this.sampleYear));
+    left.appendChild(
+      createFormGroup(
+        getString("settings-prompts-sample-authors-label"),
+        this.sampleAuthors,
+      ),
+    );
+    this.sampleYear = createInput(
+      "sample-year",
+      "text",
+      "2024",
+      getString("settings-prompts-sample-year-placeholder"),
+    );
+    left.appendChild(
+      createFormGroup(
+        getString("settings-prompts-sample-year-label"),
+        this.sampleYear,
+      ),
+    );
 
     // 右侧: 编辑器 + 操作 + 预览
     const right = Zotero.getMainWindow().document.createElement("div");
@@ -284,13 +322,13 @@ export class PromptsSettingsPage {
       "prompt-editor",
       currentPrompt,
       18,
-      "在此编辑提示词模板...",
+      getString("settings-prompts-editor-placeholder"),
     );
     right.appendChild(
       createFormGroup(
-        "模板编辑器",
+        getString("settings-prompts-editor-label"),
         this.editor,
-        "可直接编辑; 支持变量 ${title}/${authors}/${year}",
+        getString("settings-prompts-editor-help"),
       ),
     );
 
@@ -302,11 +340,20 @@ export class PromptsSettingsPage {
       marginTop: "8px",
       marginBottom: "16px",
     });
-    const btnSave = createStyledButton("💾 保存", "#4caf50");
+    const btnSave = createStyledButton(
+      getString("settings-prompts-save"),
+      "#4caf50",
+    );
     btnSave.addEventListener("click", () => this.saveCurrent());
-    const btnReset = createStyledButton("🔄 恢复", "#9e9e9e");
+    const btnReset = createStyledButton(
+      getString("settings-prompts-restore"),
+      "#9e9e9e",
+    );
     btnReset.addEventListener("click", () => this.resetDefault());
-    const btnPreview = createStyledButton("👁️ 预览", "#2196f3");
+    const btnPreview = createStyledButton(
+      getString("settings-prompts-preview"),
+      "#2196f3",
+    );
     btnPreview.addEventListener("click", () => this.updatePreview());
     actionRow.appendChild(btnSave);
     actionRow.appendChild(btnReset);
@@ -328,9 +375,9 @@ export class PromptsSettingsPage {
     });
     right.appendChild(
       createFormGroup(
-        "插值预览",
+        getString("settings-prompts-preview-label"),
         this.previewBox,
-        "展示变量替换后的实际请求内容片段",
+        getString("settings-prompts-preview-help"),
       ),
     );
 
@@ -352,10 +399,14 @@ export class PromptsSettingsPage {
   // ===== helpers =====
   private getAllPresets(): PresetMap {
     const builtins: PresetMap = {
-      默认模板: getDefaultSummaryPrompt(),
-      精简摘要: `你是一名学术助手。请用中文以简洁的要点方式总结论文主要问题、方法、关键结果与结论。文章信息: 标题=${"${title}"}; 作者=${"${authors}"}; 年份=${"${year}"}`,
-      结构化报告: `请以"背景/方法/结果/讨论/局限/结论"六部分结构化总结论文; 开头写:《${"${title}"}》(${" ${year} "}).`,
-      计算机默认: `帮我用中文讲一下这篇计算机领域的论文，讲的越详细越好，我有通用计算机专业基础，但是没有这个小方向的基础。输出的时候只包含关于论文的讲解，不要包含寒暄的内容。开始时先用一段话总结这篇论文的核心内容。`,
+      [getString("settings-prompts-builtin-default")]:
+        getDefaultSummaryPrompt(),
+      [getString("settings-prompts-builtin-concise")]:
+        `你是一名学术助手。请用中文以简洁的要点方式总结论文主要问题、方法、关键结果与结论。文章信息: 标题=${"${title}"}; 作者=${"${authors}"}; 年份=${"${year}"}`,
+      [getString("settings-prompts-builtin-structured")]:
+        `请以"背景/方法/结果/讨论/局限/结论"六部分结构化总结论文; 开头写:《${"${title}"}》(${" ${year} "}).`,
+      [getString("settings-prompts-builtin-computer")]:
+        `帮我用中文讲一下这篇计算机领域的论文，讲的越详细越好，我有通用计算机专业基础，但是没有这个小方向的基础。输出的时候只包含关于论文的讲解，不要包含寒暄的内容。开始时先用一段话总结这篇论文的核心内容。`,
     };
 
     // 自定义预设
@@ -380,11 +431,11 @@ export class PromptsSettingsPage {
 
   private detectPresetName(current: string, presets: PresetMap): string {
     // 防止 null/undefined 值导致错误
-    if (!current) return "默认模板";
+    if (!current) return getString("settings-prompts-builtin-default");
     const entry = Object.entries(presets).find(([, v]) => {
       return v && typeof v === "string" && v.trim() === current.trim();
     });
-    return entry ? entry[0] : "默认模板";
+    return entry ? entry[0] : getString("settings-prompts-builtin-default");
   }
 
   private loadPresetToEditor(): void {
@@ -394,13 +445,21 @@ export class PromptsSettingsPage {
     if (tpl && typeof tpl === "string") {
       this.editor.value = tpl;
       setPref("summaryPrompt", tpl); // 保存到配置，确保立即生效
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: `已应用并保存预设: ${name}`, type: "success" })
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+        .createLine({
+          text: getString("settings-prompts-preset-applied", {
+            args: { name },
+          }),
+          type: "success",
+        })
         .show();
       this.updatePreview();
     } else {
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "预设模板为空或无效", type: "fail" })
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+        .createLine({
+          text: getString("settings-prompts-preset-empty"),
+          type: "fail",
+        })
         .show();
     }
   }
@@ -410,8 +469,8 @@ export class PromptsSettingsPage {
     const name = { value: "" } as any;
     const ok = Services.prompt.prompt(
       win,
-      "保存为新预设",
-      "请输入预设名称:",
+      getString("settings-prompts-save-as-dialog-title"),
+      getString("settings-prompts-save-as-dialog-message"),
       name,
       "",
       { value: false },
@@ -422,8 +481,11 @@ export class PromptsSettingsPage {
     const editorValue = this.editor.value || "";
 
     if (!editorValue.trim()) {
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "❌ 模板内容为空", type: "fail" })
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+        .createLine({
+          text: getString("settings-prompts-template-empty"),
+          type: "fail",
+        })
         .show();
       return;
     }
@@ -453,8 +515,13 @@ export class PromptsSettingsPage {
       (this.presetSelect as any).setValue(presetName);
     }, 0);
 
-    new ztoolkit.ProgressWindow("提示词")
-      .createLine({ text: `✅ 预设已保存: ${presetName}`, type: "success" })
+    new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+      .createLine({
+        text: getString("settings-prompts-preset-saved", {
+          args: { name: presetName },
+        }),
+        type: "success",
+      })
       .show();
   }
 
@@ -475,15 +542,18 @@ export class PromptsSettingsPage {
     }
 
     if (!(name in custom)) {
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "只能删除自定义预设", type: "default" })
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+        .createLine({
+          text: getString("settings-prompts-delete-custom-only"),
+          type: "default",
+        })
         .show();
       return;
     }
     const ok = Services.prompt.confirm(
       Zotero.getMainWindow() as any,
-      "删除预设",
-      `确定删除自定义预设: ${name} ?`,
+      getString("settings-prompts-delete-dialog-title"),
+      getString("settings-prompts-delete-dialog-message", { args: { name } }),
     );
     if (!ok) return;
     delete custom[name];
@@ -494,11 +564,16 @@ export class PromptsSettingsPage {
 
     // 设置下拉框为默认模板
     setTimeout(() => {
-      (this.presetSelect as any).setValue("默认模板");
+      (this.presetSelect as any).setValue(
+        getString("settings-prompts-builtin-default"),
+      );
     }, 0);
 
-    new ztoolkit.ProgressWindow("提示词")
-      .createLine({ text: `✅ 已删除预设: ${name}`, type: "success" })
+    new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+      .createLine({
+        text: getString("settings-prompts-preset-deleted", { args: { name } }),
+        type: "success",
+      })
       .show();
   }
 
@@ -527,16 +602,21 @@ export class PromptsSettingsPage {
       // 更新自定义预设
       custom[currentPresetName] = text;
       setPref("customPrompts", JSON.stringify(custom));
-      new ztoolkit.ProgressWindow("提示词")
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
         .createLine({
-          text: `✅ 预设「${currentPresetName}」已更新`,
+          text: getString("settings-prompts-preset-updated", {
+            args: { name: currentPresetName },
+          }),
           type: "success",
         })
         .show();
     } else {
       // 内置预设，仅保存到 summaryPrompt
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "✅ 当前模板已保存", type: "success" })
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+        .createLine({
+          text: getString("settings-prompts-current-saved"),
+          type: "success",
+        })
         .show();
     }
   }
@@ -544,8 +624,8 @@ export class PromptsSettingsPage {
   private resetDefault(): void {
     const ok = Services.prompt.confirm(
       Zotero.getMainWindow() as any,
-      "恢复默认",
-      "确定将模板恢复为默认吗?",
+      getString("settings-prompts-reset-dialog-title"),
+      getString("settings-prompts-reset-dialog-message"),
     );
     if (!ok) return;
     const def = getDefaultSummaryPrompt();
@@ -553,16 +633,25 @@ export class PromptsSettingsPage {
     setPref("promptVersion" as any, PROMPT_VERSION as any);
     this.editor.value = def;
     this.updatePreview();
-    new ztoolkit.ProgressWindow("提示词")
-      .createLine({ text: "已恢复为默认模板", type: "success" })
+    new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+      .createLine({
+        text: getString("settings-prompts-reset-done"),
+        type: "success",
+      })
       .show();
   }
 
   private updatePreview(): void {
     const vars = {
-      title: this.sampleTitle?.value || "(示例标题)",
-      authors: this.sampleAuthors?.value || "(示例作者)",
-      year: this.sampleYear?.value || "(年份)",
+      title:
+        this.sampleTitle?.value ||
+        getString("settings-prompts-sample-title-fallback"),
+      authors:
+        this.sampleAuthors?.value ||
+        getString("settings-prompts-sample-authors-fallback"),
+      year:
+        this.sampleYear?.value ||
+        getString("settings-prompts-sample-year-fallback"),
     };
     const content = this.interpolate(this.editor.value || "", vars);
     this.previewBox.textContent = content.substring(0, 2000);
@@ -589,7 +678,7 @@ export class PromptsSettingsPage {
     });
 
     const btnNewTemplate = createStyledButton(
-      "\u65b0\u5efa\u6a21\u677f",
+      getString("settings-prompts-new-template"),
       "#4caf50",
       "small",
     );
@@ -597,7 +686,7 @@ export class PromptsSettingsPage {
       this.createMultiRoundPromptTemplate(),
     );
     const btnRenameTemplate = createStyledButton(
-      "\u91cd\u547d\u540d",
+      getString("settings-prompts-rename"),
       "#2196f3",
       "small",
     );
@@ -605,7 +694,7 @@ export class PromptsSettingsPage {
       this.renameCurrentMultiRoundPromptTemplate(),
     );
     const btnCopyTemplate = createStyledButton(
-      "\u590d\u5236\u6a21\u677f",
+      getString("settings-prompts-copy-template"),
       "#673ab7",
       "small",
     );
@@ -613,7 +702,7 @@ export class PromptsSettingsPage {
       this.copyCurrentMultiRoundPromptTemplate(),
     );
     const btnDeleteTemplate = createStyledButton(
-      "\u5220\u9664\u6a21\u677f",
+      getString("settings-prompts-delete-template"),
       "#e53935",
       "small",
     );
@@ -646,26 +735,26 @@ export class PromptsSettingsPage {
     );
     if (sequential && sequential.type === "sequential_dynamic") {
       const card = this.createDeepReadPhaseCard(
-        sequential.title,
-        sequential.description,
+        this.localizeBuiltinDeepReadPhaseTitle(template, sequential),
+        this.localizeBuiltinDeepReadPhaseDescription(template, sequential),
       );
       card.appendChild(
         this.createContextStrategySelector(sequential.contextStrategy),
       );
       card.appendChild(
         this.createBuiltinPromptHelp(
-          "\u89e3\u6790\u7ae0\u8282\u7ed3\u6784",
+          getString("settings-prompts-planning-title"),
           DEFAULT_MULTI_ROUND_PLANNING_PROMPT,
-          "\u5185\u7f6e\u63d0\u793a\u8bcd\uff0c\u7528\u4e8e\u8ba9 AI \u8bc6\u522b\u8bba\u6587\u7ae0\u8282\u5e76\u8fd4\u56de chapters JSON\u3002\u60ac\u505c\u95ee\u53f7\u53ef\u67e5\u770b\u5b8c\u6574\u5185\u7f6e\u63d0\u793a\u8bcd\u3002",
+          getString("settings-prompts-planning-help"),
         ),
       );
       card.appendChild(this.renderFixedPromptCards(sequential.fixedPrompts));
       card.appendChild(
         this.createPromptDetails(
-          "\u9010\u7ae0\u7cbe\u8bfb\u63d0\u793a\u8bcd\u6a21\u677f",
+          getString("settings-prompts-chapter-template-title"),
           sequential.chapterTemplate,
           "deep-read-chapter-template",
-          "\u89e3\u6790\u51fa\u7684\u6bcf\u4e2a\u7ae0\u8282\u90fd\u4f1a\u5957\u7528\u8fd9\u4e2a\u6a21\u677f\u751f\u6210\u9010\u7ae0\u7cbe\u8bfb\u4efb\u52a1\u3002",
+          getString("settings-prompts-chapter-template-help"),
         ),
       );
       card.appendChild(this.createVariableNotice());
@@ -677,22 +766,22 @@ export class PromptsSettingsPage {
     );
     if (independent && independent.type === "independent") {
       const card = this.createDeepReadPhaseCard(
-        independent.title,
-        independent.description,
+        this.localizeBuiltinDeepReadPhaseTitle(template, independent),
+        this.localizeBuiltinDeepReadPhaseDescription(template, independent),
       );
       card.appendChild(
         this.createCheckboxSetting(
           "deep-read-independent-parallelizable",
-          "允许并行执行",
-          "开启后，重点追问会按最大并发数分批执行；关闭后严格串行。",
+          getString("settings-prompts-parallel-enabled"),
+          getString("settings-prompts-parallel-enabled-help"),
           independent.parallelizable,
         ),
       );
       card.appendChild(
         this.createLabeledInput(
           "deep-read-independent-max-concurrency",
-          "\u6700\u5927\u5e76\u884c\u6570",
-          "\u91cd\u70b9\u8ffd\u95ee\u5e76\u884c\u6267\u884c\u65f6\u6700\u591a\u540c\u65f6\u53d1\u9001\u7684 API \u8bf7\u6c42\u6570\u3002\u9ed8\u8ba4 1 \u8868\u793a\u4e32\u884c\u6267\u884c\u3002",
+          getString("settings-prompts-max-concurrency"),
+          getString("settings-prompts-max-concurrency-help"),
           String(independent.maxConcurrency || 1),
           "1",
         ),
@@ -716,7 +805,10 @@ export class PromptsSettingsPage {
           marginBottom: "10px",
         });
         const cardTitle = doc.createElement("div");
-        cardTitle.textContent = `\u8ffd\u95ee\u8f6e\u6b21 ${index + 1}`;
+        cardTitle.textContent = getString(
+          "settings-prompts-independent-round-title",
+          { args: { index: index + 1 } },
+        );
         Object.assign(cardTitle.style, {
           fontWeight: "700",
           color: "var(--ai-text, #1f2937)",
@@ -724,7 +816,7 @@ export class PromptsSettingsPage {
         cardHeader.appendChild(cardTitle);
 
         const deleteButton = createStyledButton(
-          "\u5220\u9664\u8f6e\u6b21",
+          getString("settings-prompts-delete-round"),
           "#e53935",
           "small",
         );
@@ -737,25 +829,25 @@ export class PromptsSettingsPage {
         promptCard.appendChild(
           this.createLabeledInput(
             `deep-read-independent-title-${index}`,
-            "\u8f6e\u6b21\u6807\u9898",
-            "\u7528\u4e8e\u5728 UI \u548c\u7b14\u8bb0\u4e2d\u6807\u8bc6\u8fd9\u4e00\u8f6e\u8ffd\u95ee\u7684\u9605\u8bfb\u4e3b\u9898\u3002",
-            prompt.title,
-            "\u8ffd\u95ee\u6807\u9898",
+            getString("settings-prompts-round-title-label"),
+            getString("settings-prompts-round-title-help"),
+            this.localizeBuiltinDeepReadPromptTitle(template, prompt),
+            getString("settings-prompts-round-title-placeholder"),
           ),
         );
         promptCard.appendChild(
           this.createPromptDetails(
-            "\u5b9e\u9645\u53d1\u7ed9 AI \u7684\u63d0\u793a\u8bcd",
+            getString("settings-prompts-actual-prompt-label"),
             prompt.prompt,
             `deep-read-independent-prompt-${index}`,
-            "\u8fd9\u91cc\u662f\u672c\u8f6e\u771f\u6b63\u53d1\u7ed9 AI \u7684\u95ee\u9898\u6216\u6307\u4ee4\u3002",
+            getString("settings-prompts-independent-prompt-help"),
           ),
         );
         card.appendChild(promptCard);
       });
 
       const addButton = createStyledButton(
-        "+ \u6dfb\u52a0\u8ffd\u95ee\u8f6e\u6b21",
+        getString("settings-prompts-add-independent-round"),
         "#4caf50",
         "small",
       );
@@ -809,18 +901,13 @@ export class PromptsSettingsPage {
       fontSize: "13px",
       lineHeight: "1.6",
     });
-    notice.innerHTML =
-      "<strong>\u53d8\u91cf\u8bf4\u660e</strong>\uff1a" +
-      "<code>{{chapter_index}}</code> \u4f1a\u66ff\u6362\u4e3a\u7ae0\u8282\u5e8f\u53f7\uff1b" +
-      "<code>{{title_zh}}</code> \u4f1a\u66ff\u6362\u4e3a JSON \u91cc\u7684 <code>title_zh</code>\uff1b" +
-      "<code>{{title_en}}</code> \u4f1a\u66ff\u6362\u4e3a JSON \u91cc\u7684 <code>title_en</code>\uff1b" +
-      "<code>id</code> \u4ec5\u7528\u4e8e\u5185\u90e8\u7ae0\u8282\u6807\u8bc6\u3002";
+    notice.innerHTML = getString("settings-prompts-variable-notice");
     return notice;
   }
 
   private normalizeOverallReadingTitle(title: string): string {
-    return title.trim() === "\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb"
-      ? "\u6587\u7ae0\u6574\u4f53\u901a\u8bfb"
+    return title.trim() === getString("settings-prompts-legacy-overview-title")
+      ? getString("settings-prompts-fixed-reading-title")
       : title;
   }
 
@@ -830,10 +917,8 @@ export class PromptsSettingsPage {
     Object.assign(wrapper.style, { margin: "10px 0" });
 
     const label = doc.createElement("label");
-    label.textContent =
-      "\u9010\u7ae0\u7cbe\u8bfb\u4e0a\u4e0b\u6587\u6a21\u5f0f \u24d8";
-    label.title =
-      "\u7cbe\u7b80\u4e0a\u4e0b\u6587\uff1a\u6bcf\u8f6e\u53ea\u5e26\u4e0a\u4e00\u8f6e\u7cbe\u8bfb\u5185\u5bb9\uff1b\u5b8c\u6574\u4e0a\u4e0b\u6587\uff1a\u6bcf\u8f6e\u5e26\u4e0a\u7ae0\u8282\u89e3\u6790\u548c\u6240\u6709\u5df2\u5b8c\u6210\u8f6e\u6b21\u3002";
+    label.textContent = getString("settings-prompts-context-mode-label");
+    label.title = getString("settings-prompts-context-mode-help");
     label.setAttribute("for", "setting-deep-read-context-strategy");
     Object.assign(label.style, {
       display: "block",
@@ -848,8 +933,14 @@ export class PromptsSettingsPage {
       createSelect(
         "deep-read-context-strategy",
         [
-          { value: "last_round", label: "\u7cbe\u7b80\u4e0a\u4e0b\u6587" },
-          { value: "full_history", label: "\u5b8c\u6574\u4e0a\u4e0b\u6587" },
+          {
+            value: "last_round",
+            label: getString("settings-prompts-context-last-round"),
+          },
+          {
+            value: "full_history",
+            label: getString("settings-prompts-context-full-history"),
+          },
         ],
         value === "full_history" ? "full_history" : "last_round",
       ),
@@ -857,9 +948,9 @@ export class PromptsSettingsPage {
     wrapper.appendChild(
       this.createDeepReadFlow(
         [
-          "\u89e3\u6790\u7ae0\u8282\u7ed3\u6784",
-          "\u6587\u7ae0\u6574\u4f53\u901a\u8bfb",
-          "\u9010\u7ae0\u7cbe\u8bfb",
+          getString("settings-prompts-planning-title"),
+          getString("settings-prompts-fixed-reading-title"),
+          getString("settings-prompts-chapter-deep-read"),
         ],
         "phase",
       ),
@@ -879,7 +970,7 @@ export class PromptsSettingsPage {
     });
 
     const heading = doc.createElement("div");
-    heading.textContent = "\u6587\u7ae0\u6574\u4f53\u901a\u8bfb";
+    heading.textContent = getString("settings-prompts-fixed-reading-title");
     Object.assign(heading.style, {
       fontWeight: "700",
       marginBottom: "8px",
@@ -888,8 +979,7 @@ export class PromptsSettingsPage {
     wrapper.appendChild(heading);
 
     const desc = doc.createElement("p");
-    desc.textContent =
-      "\u8fd9\u4e9b\u8f6e\u6b21\u4f1a\u5728\u9010\u7ae0\u7cbe\u8bfb\u524d\u5148\u6267\u884c\uff0c\u9002\u5408\u6574\u4f53\u901a\u8bfb\u3001\u6458\u8981\u7b49\u4e0d\u4f9d\u8d56\u5355\u4e2a\u7ae0\u8282\u7684\u4efb\u52a1\u3002";
+    desc.textContent = getString("settings-prompts-fixed-reading-help");
     Object.assign(desc.style, {
       margin: "0 0 10px 0",
       opacity: "0.78",
@@ -899,8 +989,7 @@ export class PromptsSettingsPage {
 
     if (!prompts.length) {
       const empty = doc.createElement("p");
-      empty.textContent =
-        "\u5f53\u524d\u6ca1\u6709\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u8f6e\u6b21\u3002";
+      empty.textContent = getString("settings-prompts-no-fixed-rounds");
       Object.assign(empty.style, { margin: "0 0 10px 0", opacity: "0.72" });
       wrapper.appendChild(empty);
     }
@@ -923,10 +1012,12 @@ export class PromptsSettingsPage {
         marginBottom: "8px",
       });
       const rowTitle = doc.createElement("div");
-      rowTitle.textContent = `\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u8f6e\u6b21 ${index + 1}`;
+      rowTitle.textContent = getString("settings-prompts-fixed-round-title", {
+        args: { index: index + 1 },
+      });
       Object.assign(rowTitle.style, { fontWeight: "700" });
       const deleteButton = createStyledButton(
-        "\u5220\u9664\u901a\u8bfb\u8f6e",
+        getString("settings-prompts-delete-fixed-round"),
         "#e53935",
         "small",
       );
@@ -940,25 +1031,27 @@ export class PromptsSettingsPage {
       promptCard.appendChild(
         this.createLabeledInput(
           `deep-read-fixed-title-${index}`,
-          `\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u8f6e\u6b21 ${index + 1} \u6807\u9898`,
-          "\u7528\u4e8e\u5728 UI \u548c\u7b14\u8bb0\u4e2d\u6807\u8bc6\u8fd9\u4e2a\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u4efb\u52a1\u3002",
+          getString("settings-prompts-fixed-round-title-label", {
+            args: { index: index + 1 },
+          }),
+          getString("settings-prompts-fixed-round-title-help"),
           this.normalizeOverallReadingTitle(prompt.title),
-          "\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u8f6e\u6b21\u6807\u9898",
+          getString("settings-prompts-fixed-round-title-placeholder"),
         ),
       );
       promptCard.appendChild(
         this.createPromptDetails(
-          "\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u63d0\u793a\u8bcd",
+          getString("settings-prompts-fixed-prompt-label"),
           prompt.prompt,
           `deep-read-fixed-prompt-${index}`,
-          "\u8fd9\u91cc\u662f\u5728\u9010\u7ae0\u7cbe\u8bfb\u524d\u53d1\u7ed9 AI \u7684\u6574\u4f53\u901a\u8bfb\u3001\u6458\u8981\u6216\u5168\u6587\u7406\u89e3\u4efb\u52a1\u3002",
+          getString("settings-prompts-fixed-prompt-help"),
         ),
       );
       wrapper.appendChild(promptCard);
     });
 
     const addButton = createStyledButton(
-      "+ \u6dfb\u52a0\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u8f6e\u6b21",
+      getString("settings-prompts-add-fixed-round"),
       "#4caf50",
       "small",
     );
@@ -1043,7 +1136,7 @@ export class PromptsSettingsPage {
 
       if (index < steps.length - 1) {
         const arrow = doc.createElement("span");
-        arrow.textContent = "\u2192";
+        arrow.textContent = "→";
         Object.assign(arrow.style, {
           color: variant === "template" ? "#59c0bc" : "#2196f3",
           fontWeight: "700",
@@ -1146,7 +1239,7 @@ export class PromptsSettingsPage {
     });
 
     const label = doc.createElement("span");
-    label.textContent = `${title} \u24d8`;
+    label.textContent = `${title} ⓘ`;
     label.title = `${helpText}\n\n${content}`;
     Object.assign(label.style, {
       fontWeight: "600",
@@ -1175,16 +1268,16 @@ export class PromptsSettingsPage {
         ? [
             {
               value: CURRENT_MULTI_ROUND_TEMPLATE_ID,
-              label: "当前配置（未保存为模板）",
+              label: getString("settings-prompts-current-unsaved-template"),
             },
             ...templates.map((template) => ({
               value: template.id,
-              label: template.name,
+              label: this.localizeBuiltinDeepReadTemplateName(template),
             })),
           ]
         : templates.map((template) => ({
             value: template.id,
-            label: template.name,
+            label: this.localizeBuiltinDeepReadTemplateName(template),
           }));
 
     const container = doc.createElement("div");
@@ -1210,11 +1303,14 @@ export class PromptsSettingsPage {
     const templateGroup = createFormGroup(
       "",
       this.multiRoundTemplateSelect,
-      "选择模板后会立即切换当前 AI 精读轮次提示词。",
+      getString("settings-prompts-template-select-help"),
     );
     templateGroup.appendChild(
       this.createDeepReadFlow(
-        ["\u9010\u7ae0\u7cbe\u8bfb", "\u91cd\u70b9\u8ffd\u95ee\u7cbe\u8bfb"],
+        [
+          getString("settings-prompts-chapter-deep-read"),
+          getString("settings-prompts-focused-followup"),
+        ],
         "template",
       ),
     );
@@ -1243,7 +1339,7 @@ export class PromptsSettingsPage {
     });
 
     const btnSaveTemplate = createStyledButton(
-      "\u4fdd\u5b58\u6a21\u677f",
+      getString("settings-prompts-save-template"),
       "#2196f3",
       "small",
     );
@@ -1251,7 +1347,7 @@ export class PromptsSettingsPage {
       this.confirmSaveCurrentMultiRoundTemplate(),
     );
     const btnExportTemplate = createStyledButton(
-      "\u5bfc\u51fa\u6a21\u677f",
+      getString("settings-prompts-export-template"),
       "#673ab7",
       "small",
     );
@@ -1259,7 +1355,7 @@ export class PromptsSettingsPage {
       this.exportCurrentMultiRoundTemplate(),
     );
     const btnImportTemplate = createStyledButton(
-      "\u5bfc\u5165\u6a21\u677f",
+      getString("settings-prompts-import-template"),
       "#ff9800",
       "small",
     );
@@ -1279,7 +1375,7 @@ export class PromptsSettingsPage {
     return mergeMultiRoundPromptTemplates(
       getBuiltinMultiRoundPromptTemplates(),
       parseMultiRoundPromptTemplates(customTemplatesJson),
-    );
+    ).map((template) => this.localizeDefaultLikeDeepReadTemplate(template));
   }
 
   private resolveSelectedMultiRoundTemplateId(
@@ -1331,6 +1427,187 @@ export class PromptsSettingsPage {
     );
   }
 
+  private isDefaultDeepReadTemplate(
+    template: MultiRoundPromptTemplate,
+  ): boolean {
+    return template.id === "default-v2-chapter-reading";
+  }
+
+  private isLegacyDefaultDeepReadText(
+    value: string | undefined,
+    patterns: string[],
+  ): boolean {
+    return Boolean(
+      value && patterns.some((pattern) => value.includes(pattern)),
+    );
+  }
+
+  private isDefaultLikeDeepReadTemplate(
+    template: MultiRoundPromptTemplate,
+  ): boolean {
+    return (
+      this.isDefaultDeepReadTemplate(template) ||
+      this.isLegacyDefaultDeepReadText(template.name, [
+        "默认：双阶段逐章精读",
+        "双阶段逐章精读",
+      ]) ||
+      this.isLegacyDefaultDeepReadText(template.description, [
+        "先解析章节 JSON",
+        "按章节顺序逐章精读",
+      ]) ||
+      template.phases.some(
+        (phase) =>
+          this.isLegacyDefaultDeepReadText(phase.title, [
+            "逐章精读",
+            "重点追问",
+          ]) ||
+          this.isLegacyDefaultDeepReadText(phase.description, [
+            "先让 AI 识别论文章节结构",
+            "基于论文原文，先自动识别章节结构",
+            "逐章深入精读",
+            "按章节顺序串行执行",
+            "每个追问独立阅读全文全文",
+            "不携带其他轮次上下文",
+          ]),
+      )
+    );
+  }
+
+  private localizeBuiltinDeepReadTemplateName(
+    template: MultiRoundPromptTemplate,
+  ): string {
+    return this.isDefaultDeepReadTemplate(template) ||
+      this.isLegacyDefaultDeepReadText(template.name, [
+        "默认：双阶段逐章精读",
+        "双阶段逐章精读",
+      ])
+      ? getString("settings-prompts-builtin-deep-read-template-name")
+      : template.name;
+  }
+
+  private localizeBuiltinDeepReadTemplateDescription(
+    template: MultiRoundPromptTemplate,
+  ): string {
+    return this.isDefaultDeepReadTemplate(template) ||
+      this.isLegacyDefaultDeepReadText(template.description, [
+        "先解析章节 JSON",
+        "按章节顺序逐章精读",
+      ])
+      ? getString("settings-prompts-builtin-deep-read-template-description")
+      : template.description;
+  }
+
+  private localizeBuiltinDeepReadPhaseTitle(
+    template: MultiRoundPromptTemplate,
+    phase: MultiRoundPromptPhase,
+  ): string {
+    const isDefaultLike = this.isDefaultLikeDeepReadTemplate(template);
+    if (
+      phase.id === "chapter_reading" ||
+      (isDefaultLike && phase.type === "sequential_dynamic") ||
+      this.isLegacyDefaultDeepReadText(phase.title, ["逐章精读"])
+    ) {
+      return getString(
+        "settings-prompts-builtin-deep-read-phase-chapter-title",
+      );
+    }
+    if (phase.id === "deep_questions") {
+      return getString(
+        "settings-prompts-builtin-deep-read-phase-followup-title",
+      );
+    }
+    return phase.title;
+  }
+
+  private localizeBuiltinDeepReadPhaseDescription(
+    template: MultiRoundPromptTemplate,
+    phase: MultiRoundPromptPhase,
+  ): string {
+    const isDefaultLike = this.isDefaultLikeDeepReadTemplate(template);
+    if (
+      phase.id === "chapter_reading" ||
+      (isDefaultLike && phase.type === "sequential_dynamic") ||
+      this.isLegacyDefaultDeepReadText(phase.description, [
+        "先让 AI 识别论文章节结构",
+        "基于论文原文，先自动识别章节结构",
+        "逐章深入精读",
+        "按章节顺序串行执行",
+      ])
+    ) {
+      return getString(
+        "settings-prompts-builtin-deep-read-phase-chapter-description",
+      );
+    }
+    if (
+      phase.id === "deep_questions" ||
+      (isDefaultLike && phase.type === "independent") ||
+      this.isLegacyDefaultDeepReadText(phase.description, [
+        "每个追问独立阅读全文全文",
+        "不携带其他轮次上下文",
+      ])
+    ) {
+      return getString(
+        "settings-prompts-builtin-deep-read-phase-followup-description",
+      );
+    }
+    return phase.description;
+  }
+
+  private localizeBuiltinDeepReadPromptTitle(
+    template: MultiRoundPromptTemplate,
+    prompt: MultiRoundPromptItem,
+  ): string {
+    if (
+      prompt.id === "q_core_contribution" ||
+      this.isLegacyDefaultDeepReadText(prompt.title, ["核心贡献判断"])
+    ) {
+      return getString(
+        "settings-prompts-builtin-deep-read-question-core-title",
+      );
+    }
+    if (
+      prompt.id === "q_limits_questions" ||
+      this.isLegacyDefaultDeepReadText(prompt.title, ["局限与疑问"])
+    ) {
+      return getString(
+        "settings-prompts-builtin-deep-read-question-limits-title",
+      );
+    }
+    return prompt.title;
+  }
+
+  private localizeDefaultLikeDeepReadTemplate(
+    template: MultiRoundPromptTemplate,
+  ): MultiRoundPromptTemplate {
+    if (!this.isDefaultLikeDeepReadTemplate(template)) {
+      return template;
+    }
+    return {
+      ...template,
+      name: this.localizeBuiltinDeepReadTemplateName(template),
+      description: this.localizeBuiltinDeepReadTemplateDescription(template),
+      phases: template.phases.map((phase) => ({
+        ...phase,
+        title: this.localizeBuiltinDeepReadPhaseTitle(template, phase),
+        description: this.localizeBuiltinDeepReadPhaseDescription(
+          template,
+          phase,
+        ),
+        ...(phase.type === "independent"
+          ? {
+              prompts: phase.prompts.map((prompt) => ({
+                ...prompt,
+                title: this.localizeBuiltinDeepReadPromptTitle(
+                  template,
+                  prompt,
+                ),
+              })),
+            }
+          : {}),
+      })),
+    };
+  }
+
   private detectMultiRoundTemplateId(
     currentPrompts: MultiRoundPromptItem[],
     templates: MultiRoundPromptTemplate[],
@@ -1366,17 +1643,22 @@ export class PromptsSettingsPage {
       (item) => item.id === templateId,
     );
     if (!template) {
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "模板不存在", type: "fail" })
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+        .createLine({
+          text: getString("settings-prompts-template-missing"),
+          type: "fail",
+        })
         .show();
       return;
     }
 
     this.rememberSelectedMultiRoundTemplate(template.id);
     this.render();
-    new ztoolkit.ProgressWindow("提示词")
+    new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
       .createLine({
-        text: `✅ 已切换模板: ${template.name}`,
+        text: getString("settings-prompts-template-switched", {
+          args: { name: this.localizeBuiltinDeepReadTemplateName(template) },
+        }),
         type: "success",
       })
       .show();
@@ -1389,9 +1671,9 @@ export class PromptsSettingsPage {
       (getPref(MULTI_ROUND_TEMPLATE_ID_PREF as any) as string) ||
       "";
     if (!templateId || templateId === CURRENT_MULTI_ROUND_TEMPLATE_ID) {
-      new ztoolkit.ProgressWindow("\u63d0\u793a\u8bcd")
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
         .createLine({
-          text: "\u5f53\u524d\u914d\u7f6e\u672a\u7ed1\u5b9a\u6a21\u677f\uff0c\u8bf7\u5148\u65b0\u5efa\u6a21\u677f",
+          text: getString("settings-prompts-no-bound-template"),
           type: "fail",
         })
         .show();
@@ -1402,8 +1684,11 @@ export class PromptsSettingsPage {
       (item) => item.id === templateId,
     );
     if (!template) {
-      new ztoolkit.ProgressWindow("\u63d0\u793a\u8bcd")
-        .createLine({ text: "\u6a21\u677f\u4e0d\u5b58\u5728", type: "fail" })
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+        .createLine({
+          text: getString("settings-prompts-template-missing"),
+          type: "fail",
+        })
         .show();
       return;
     }
@@ -1412,16 +1697,22 @@ export class PromptsSettingsPage {
       this.createWritableMultiRoundPromptTemplate(template),
     );
     this.showInlineConfirm({
-      title: "\u4fdd\u5b58\u63d0\u793a\u8bcd\u6a21\u677f\uff1f",
-      message: `\u5c06\u4fdd\u5b58\u5f53\u524d\u9875\u9762\u4e2d\u7684\u9636\u6bb5\u63d0\u793a\u8bcd\u5230\u300c${saveTarget.name}\u300d\u6a21\u677f\u3002`,
-      confirmText: "\u4fdd\u5b58\u6a21\u677f",
+      title: getString("settings-prompts-save-template-title"),
+      message: getString("settings-prompts-save-template-message", {
+        args: { name: saveTarget.name },
+      }),
+      confirmText: getString("settings-prompts-save-template"),
       confirmColor: "#4caf50",
       onConfirm: () => {
         const savedTemplate = this.saveMultiRoundTemplate(saveTarget);
         this.render();
-        new ztoolkit.ProgressWindow("\u63d0\u793a\u8bcd")
+        new ztoolkit.ProgressWindow(
+          getString("settings-prompts-progress-title"),
+        )
           .createLine({
-            text: `\u2705 \u5df2\u4fdd\u5b58\u6a21\u677f: ${savedTemplate.name}`,
+            text: getString("settings-prompts-template-saved", {
+              args: { name: savedTemplate.name },
+            }),
             type: "success",
           })
           .show();
@@ -1554,7 +1845,7 @@ export class PromptsSettingsPage {
     );
 
     this.showJsonDialog({
-      title: "\u5bfc\u51fa AI \u7cbe\u8bfb\u63d0\u793a\u8bcd\u6a21\u677f",
+      title: getString("settings-prompts-export-dialog-title"),
       value: serializeMultiRoundPromptTemplate(template),
       readOnly: true,
     });
@@ -1562,10 +1853,10 @@ export class PromptsSettingsPage {
 
   private importMultiRoundPromptTemplate(): void {
     this.showJsonDialog({
-      title: "导入 AI 精读提示词模板",
+      title: getString("settings-prompts-import-dialog-title"),
       value: "",
-      placeholder: "粘贴导出的提示词模板 JSON...",
-      confirmText: "导入模板",
+      placeholder: getString("settings-prompts-import-placeholder"),
+      confirmText: getString("settings-prompts-import-template"),
       onConfirm: (json) => {
         try {
           const imported = parseMultiRoundPromptTemplateExport(json);
@@ -1584,17 +1875,25 @@ export class PromptsSettingsPage {
           );
           this.rememberSelectedMultiRoundTemplate(templateToImport.id);
           this.render();
-          new ztoolkit.ProgressWindow("提示词")
+          new ztoolkit.ProgressWindow(
+            getString("settings-prompts-progress-title"),
+          )
             .createLine({
-              text: `✅ 已导入模板: ${templateToImport.name}`,
+              text: getString("settings-prompts-template-imported", {
+                args: { name: templateToImport.name },
+              }),
               type: "success",
             })
             .show();
           return true;
         } catch (error: any) {
-          new ztoolkit.ProgressWindow("提示词")
+          new ztoolkit.ProgressWindow(
+            getString("settings-prompts-progress-title"),
+          )
             .createLine({
-              text: `❌ 导入失败: ${error.message || String(error)}`,
+              text: getString("settings-prompts-import-failed", {
+                args: { error: error.message || String(error) },
+              }),
               type: "fail",
             })
             .show();
@@ -1606,10 +1905,12 @@ export class PromptsSettingsPage {
 
   private createMultiRoundPromptTemplate(): void {
     this.showTemplateMetadataDialog({
-      title: "新建 AI 精读提示词模板",
+      title: getString("settings-prompts-new-dialog-title"),
       onConfirm: (name, description) => {
         const template = this.collectDeepReadTemplateFromEditor({
-          ...getDefaultMultiRoundPromptTemplate(),
+          ...this.localizeDefaultLikeDeepReadTemplate(
+            getDefaultMultiRoundPromptTemplate(),
+          ),
           id: `custom-${Date.now()}`,
           name,
           description,
@@ -1624,8 +1925,15 @@ export class PromptsSettingsPage {
         setPref("multiRoundPromptTemplates", JSON.stringify(nextTemplates));
         this.rememberSelectedMultiRoundTemplate(template.id);
         this.render();
-        new ztoolkit.ProgressWindow("提示词")
-          .createLine({ text: `✅ 已新建模板: ${name}`, type: "success" })
+        new ztoolkit.ProgressWindow(
+          getString("settings-prompts-progress-title"),
+        )
+          .createLine({
+            text: getString("settings-prompts-template-created", {
+              args: { name },
+            }),
+            type: "success",
+          })
           .show();
       },
     });
@@ -1634,23 +1942,29 @@ export class PromptsSettingsPage {
   private renameCurrentMultiRoundPromptTemplate(): void {
     const template = this.getSelectedMultiRoundTemplate();
     if (!template) {
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "请先选择一个模板", type: "fail" })
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+        .createLine({
+          text: getString("settings-prompts-select-template-first"),
+          type: "fail",
+        })
         .show();
       return;
     }
     if (this.isBuiltinMultiRoundPromptTemplate(template.id)) {
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "默认模板不可重命名，请先复制模板", type: "fail" })
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+        .createLine({
+          text: getString("settings-prompts-cannot-rename-default"),
+          type: "fail",
+        })
         .show();
       return;
     }
 
     this.showTemplateMetadataDialog({
-      title: "重命名 AI 精读提示词模板",
+      title: getString("settings-prompts-rename-dialog-title"),
       name: template.name,
       description: template.description || "",
-      confirmText: "重命名",
+      confirmText: getString("settings-prompts-rename"),
       onConfirm: (name, description) => {
         const customTemplates = parseMultiRoundPromptTemplates(
           (getPref("multiRoundPromptTemplates") as string) || "[]",
@@ -1666,8 +1980,15 @@ export class PromptsSettingsPage {
         setPref("multiRoundPromptTemplates", JSON.stringify(nextTemplates));
         this.rememberSelectedMultiRoundTemplate(template.id);
         this.render();
-        new ztoolkit.ProgressWindow("提示词")
-          .createLine({ text: `✅ 已重命名模板: ${name}`, type: "success" })
+        new ztoolkit.ProgressWindow(
+          getString("settings-prompts-progress-title"),
+        )
+          .createLine({
+            text: getString("settings-prompts-template-renamed", {
+              args: { name },
+            }),
+            type: "success",
+          })
           .show();
       },
     });
@@ -1676,18 +1997,27 @@ export class PromptsSettingsPage {
   private copyCurrentMultiRoundPromptTemplate(): void {
     const template = this.getSelectedMultiRoundTemplate();
     if (!template) {
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "请先选择一个模板", type: "fail" })
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+        .createLine({
+          text: getString("settings-prompts-select-template-first"),
+          type: "fail",
+        })
         .show();
       return;
     }
 
-    const copyName = `${template.name} 副本`;
+    const copyName = getString("settings-prompts-copy-name", {
+      args: { name: template.name },
+    });
     const copiedTemplate: MultiRoundPromptTemplate = {
       ...template,
       id: `custom-${Date.now()}`,
       name: copyName,
-      description: template.description || `从模板「${template.name}」复制。`,
+      description:
+        template.description ||
+        getString("settings-prompts-copy-description", {
+          args: { name: this.localizeBuiltinDeepReadTemplateName(template) },
+        }),
     };
     const customTemplates = parseMultiRoundPromptTemplates(
       (getPref("multiRoundPromptTemplates") as string) || "[]",
@@ -1699,30 +2029,43 @@ export class PromptsSettingsPage {
     setPref("multiRoundPromptTemplates", JSON.stringify(nextTemplates));
     this.rememberSelectedMultiRoundTemplate(copiedTemplate.id);
     this.render();
-    new ztoolkit.ProgressWindow("提示词")
-      .createLine({ text: `✅ 已复制模板: ${copyName}`, type: "success" })
+    new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+      .createLine({
+        text: getString("settings-prompts-template-copied", {
+          args: { name: copyName },
+        }),
+        type: "success",
+      })
       .show();
   }
 
   private deleteCurrentMultiRoundPromptTemplate(): void {
     const template = this.getSelectedMultiRoundTemplate();
     if (!template) {
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "请先选择一个模板", type: "fail" })
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+        .createLine({
+          text: getString("settings-prompts-select-template-first"),
+          type: "fail",
+        })
         .show();
       return;
     }
     if (this.isBuiltinMultiRoundPromptTemplate(template.id)) {
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "默认模板不可删除", type: "fail" })
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+        .createLine({
+          text: getString("settings-prompts-cannot-delete-default"),
+          type: "fail",
+        })
         .show();
       return;
     }
 
     this.showInlineConfirm({
-      title: "删除提示词模板？",
-      message: `将删除「${template.name}」模板。当前轮次提示词不会被清空，但该模板会从模板列表移除。`,
-      confirmText: "删除模板",
+      title: getString("settings-prompts-delete-template-title"),
+      message: getString("settings-prompts-delete-template-message", {
+        args: { name: template.name },
+      }),
+      confirmText: getString("settings-prompts-delete-template"),
       confirmColor: "#e53935",
       onConfirm: () => {
         const customTemplates = parseMultiRoundPromptTemplates(
@@ -1731,9 +2074,13 @@ export class PromptsSettingsPage {
         setPref("multiRoundPromptTemplates", JSON.stringify(customTemplates));
         this.rememberSelectedMultiRoundTemplate(null);
         this.render();
-        new ztoolkit.ProgressWindow("提示词")
+        new ztoolkit.ProgressWindow(
+          getString("settings-prompts-progress-title"),
+        )
           .createLine({
-            text: `✅ 已删除模板: ${template.name}`,
+            text: getString("settings-prompts-template-deleted", {
+              args: { name: template.name },
+            }),
             type: "success",
           })
           .show();
@@ -1757,7 +2104,9 @@ export class PromptsSettingsPage {
             ...phase.fixedPrompts,
             {
               id: `fixed_custom_${Date.now()}`,
-              title: `\u6587\u7ae0\u6574\u4f53\u901a\u8bfb ${nextIndex}`,
+              title: getString("settings-prompts-fixed-reading-new-title", {
+                args: { index: nextIndex },
+              }),
               prompt:
                 "\u8bf7\u57fa\u4e8e\u8bba\u6587\u5168\u6587\u5b8c\u6210\u4e00\u4e2a\u6587\u7ae0\u6574\u4f53\u901a\u8bfb\u4efb\u52a1\uff0c\u8f93\u51fa Markdown\u3002",
               order: nextIndex,
@@ -1808,7 +2157,9 @@ export class PromptsSettingsPage {
             ...phase.prompts,
             {
               id: `q_custom_${Date.now()}`,
-              title: `\u81ea\u5b9a\u4e49\u8ffd\u95ee ${nextIndex}`,
+              title: getString("settings-prompts-custom-followup-new-title", {
+                args: { index: nextIndex },
+              }),
               prompt:
                 "\u8bf7\u57fa\u4e8e\u8bba\u6587\u5168\u6587\u63d0\u51fa\u4e00\u4e2a\u4f60\u8ba4\u4e3a\u6700\u5173\u952e\u7684\u8ffd\u95ee\uff0c\u5e76\u7528\u4e2d\u6587\u56de\u7b54\u3002\u8f93\u51fa Markdown\uff0c\u6807\u9898\u5c42\u7ea7\u4ece\u4e09\u7ea7\u6807\u9898\u5f00\u59cb\u3002",
               order: nextIndex,
@@ -1884,11 +2235,16 @@ export class PromptsSettingsPage {
       return template;
     }
     return {
-      ...template,
+      ...this.localizeDefaultLikeDeepReadTemplate(template),
       id: `custom-${Date.now()}`,
-      name: `${template.name}（自定义）`,
+      name: getString("settings-prompts-customized-name", {
+        args: { name: this.localizeBuiltinDeepReadTemplateName(template) },
+      }),
       description:
-        template.description || `从内置模板「${template.name}」保存。`,
+        this.localizeBuiltinDeepReadTemplateDescription(template) ||
+        getString("settings-prompts-save-builtin-description", {
+          args: { name: this.localizeBuiltinDeepReadTemplateName(template) },
+        }),
     };
   }
 
@@ -1905,29 +2261,48 @@ export class PromptsSettingsPage {
       "multi-round-template-name",
       "text",
       options.name || "",
-      "例如：系统论文精读模板",
+      getString("settings-prompts-template-name-placeholder"),
     );
     const descriptionInput = createTextarea(
       "multi-round-template-description",
       options.description || "",
       4,
-      "模板用途说明，可留空",
+      getString("settings-prompts-template-description-placeholder"),
     );
-    body.appendChild(createFormGroup("模板名称", nameInput));
-    body.appendChild(createFormGroup("模板说明", descriptionInput));
+    body.appendChild(
+      createFormGroup(
+        getString("settings-prompts-template-name-label"),
+        nameInput,
+      ),
+    );
+    body.appendChild(
+      createFormGroup(
+        getString("settings-prompts-template-description-label"),
+        descriptionInput,
+      ),
+    );
 
-    const btnCancel = createStyledButton("取消", "#9e9e9e", "small");
+    const btnCancel = createStyledButton(
+      getString("settings-prompts-cancel"),
+      "#9e9e9e",
+      "small",
+    );
     btnCancel.addEventListener("click", close);
     const btnConfirm = createStyledButton(
-      options.confirmText || "保存模板",
+      options.confirmText || getString("settings-prompts-save-template"),
       "#4caf50",
       "small",
     );
     btnConfirm.addEventListener("click", () => {
       const name = nameInput.value.trim();
       if (!name) {
-        new ztoolkit.ProgressWindow("提示词")
-          .createLine({ text: "模板名称不能为空", type: "fail" })
+        new ztoolkit.ProgressWindow(
+          getString("settings-prompts-progress-title"),
+        )
+          .createLine({
+            text: getString("settings-prompts-template-name-required"),
+            type: "fail",
+          })
           .show();
         return;
       }
@@ -1972,7 +2347,11 @@ export class PromptsSettingsPage {
     });
     body.appendChild(textarea);
 
-    const btnClose = createStyledButton("关闭", "#9e9e9e", "small");
+    const btnClose = createStyledButton(
+      getString("settings-prompts-close"),
+      "#9e9e9e",
+      "small",
+    );
     btnClose.addEventListener("click", close);
     actions.appendChild(btnClose);
 
@@ -2091,7 +2470,11 @@ export class PromptsSettingsPage {
     });
     body.appendChild(message);
 
-    const btnCancel = createStyledButton("取消", "#9e9e9e", "small");
+    const btnCancel = createStyledButton(
+      getString("settings-prompts-cancel"),
+      "#9e9e9e",
+      "small",
+    );
     btnCancel.addEventListener("click", close);
 
     const btnConfirm = createStyledButton(
@@ -2128,13 +2511,13 @@ export class PromptsSettingsPage {
       "table-template-editor",
       currentTemplate,
       10,
-      "输入 Markdown 格式的表格模板...",
+      getString("settings-prompts-table-template-placeholder"),
     );
     tableSection.appendChild(
       createFormGroup(
-        "表格模板 (Markdown)",
+        getString("settings-prompts-table-template-label"),
         templateEditor,
-        "定义每篇论文需要填写的结构化维度",
+        getString("settings-prompts-table-template-help"),
       ),
     );
 
@@ -2146,13 +2529,13 @@ export class PromptsSettingsPage {
       "table-fill-prompt-editor",
       currentFillPrompt,
       8,
-      "输入逐篇论文填表的提示词...",
+      getString("settings-prompts-table-fill-placeholder"),
     );
     tableSection.appendChild(
       createFormGroup(
-        "逐篇填表提示词",
+        getString("settings-prompts-table-fill-label"),
         fillPromptEditor,
-        "指导 LLM 阅读单篇论文并填写表格。可用变量: ${tableTemplate}",
+        getString("settings-prompts-table-fill-help"),
       ),
     );
 
@@ -2164,13 +2547,13 @@ export class PromptsSettingsPage {
       "table-review-prompt-editor",
       currentReviewPrompt,
       8,
-      "输入基于汇总表生成综述的提示词...",
+      getString("settings-prompts-table-review-placeholder"),
     );
     tableSection.appendChild(
       createFormGroup(
-        "汇总综述提示词",
+        getString("settings-prompts-table-review-label"),
         reviewPromptEditor,
-        "基于所有文献的填表结果生成综合文献综述",
+        getString("settings-prompts-table-review-help"),
       ),
     );
 
@@ -2191,9 +2574,9 @@ export class PromptsSettingsPage {
     });
     tableSection.appendChild(
       createFormGroup(
-        "生成笔记时额外填表",
+        getString("settings-prompts-enable-table-on-note"),
         enableTableCheckbox,
-        "开启后，生成单篇文献笔记时将异步并行生成填表数据",
+        getString("settings-prompts-enable-table-on-note-help"),
       ),
     );
 
@@ -2218,9 +2601,9 @@ export class PromptsSettingsPage {
     });
     tableSection.appendChild(
       createFormGroup(
-        "并行填表任务数",
+        getString("settings-prompts-table-concurrency"),
         concurrencyInput,
-        "同时并行处理的最大文献填表数量 (1-10)",
+        getString("settings-prompts-table-concurrency-help"),
       ),
     );
 
@@ -2232,22 +2615,31 @@ export class PromptsSettingsPage {
       marginTop: "16px",
     });
 
-    const btnSaveTable = createStyledButton("💾 保存表格设置", "#4caf50");
+    const btnSaveTable = createStyledButton(
+      getString("settings-prompts-save-table-settings"),
+      "#4caf50",
+    );
     btnSaveTable.addEventListener("click", () => {
       setPref("tableTemplate" as any, templateEditor.value as any);
       setPref("tableFillPrompt" as any, fillPromptEditor.value as any);
       setPref("tableReviewPrompt" as any, reviewPromptEditor.value as any);
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "✅ 表格设置已保存", type: "success" })
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+        .createLine({
+          text: getString("settings-prompts-table-settings-saved"),
+          type: "success",
+        })
         .show();
     });
 
-    const btnResetTable = createStyledButton("🔄 恢复默认", "#9e9e9e");
+    const btnResetTable = createStyledButton(
+      getString("settings-prompts-restore"),
+      "#9e9e9e",
+    );
     btnResetTable.addEventListener("click", () => {
       const ok = Services.prompt.confirm(
         Zotero.getMainWindow() as any,
-        "恢复默认",
-        "确定将表格设置恢复为默认吗?",
+        getString("settings-prompts-reset-dialog-title"),
+        getString("settings-prompts-reset-table-message"),
       );
       if (!ok) return;
       templateEditor.value = getDefaultTableTemplate();
@@ -2263,8 +2655,11 @@ export class PromptsSettingsPage {
       ) as HTMLInputElement;
       if (checkbox) checkbox.checked = true;
       concurrencyInput.value = "3";
-      new ztoolkit.ProgressWindow("提示词")
-        .createLine({ text: "✅ 表格设置已恢复默认", type: "success" })
+      new ztoolkit.ProgressWindow(getString("settings-prompts-progress-title"))
+        .createLine({
+          text: getString("settings-prompts-table-settings-reset"),
+          type: "success",
+        })
         .show();
     });
 

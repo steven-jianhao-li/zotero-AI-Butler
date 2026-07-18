@@ -8,6 +8,7 @@
  */
 
 import { getPref, setPref } from "../../../utils/prefs";
+import { getString } from "../../../utils/locale";
 import {
   createStyledButton,
   createFormGroup,
@@ -41,7 +42,7 @@ export class ApiSettingsPage {
 
     // 标题
     const title = this.createElement("h2", {
-      textContent: "🔌 API 配置",
+      textContent: getString("settings-api-page-title"),
       styles: {
         color: "#59c0bc",
         marginBottom: "20px",
@@ -64,8 +65,7 @@ export class ApiSettingsPage {
         color: "#1565c0",
       },
     });
-    notice.innerHTML =
-      "📝 <strong>说明</strong>: 标有 <strong style='color: #d32f2f;'>*</strong> 的字段为必填项";
+    notice.innerHTML = getString("settings-api-required-fields-note");
     this.container.appendChild(notice);
 
     // 表单容器
@@ -88,14 +88,23 @@ export class ApiSettingsPage {
         [
           {
             value: "openai-compat",
-            label: "OpenAI兼容 (旧 ChatCompletions / 第三方)",
+            label: getString("settings-api-provider-openai-compat"),
           },
-          { value: "openai", label: "OpenAI (Responses 新接口)" },
-          { value: "google", label: "Google Gemini" },
-          { value: "anthropic", label: "Anthropic Claude" },
-          { value: "openrouter", label: "OpenRouter" },
-          { value: "volcanoark", label: "火山方舟 (Volcano Ark)" },
-          { value: "ollama", label: "Ollama" },
+          { value: "openai", label: getString("settings-api-provider-openai") },
+          { value: "google", label: getString("settings-api-provider-google") },
+          {
+            value: "anthropic",
+            label: getString("settings-api-provider-anthropic"),
+          },
+          {
+            value: "openrouter",
+            label: getString("settings-api-provider-openrouter"),
+          },
+          {
+            value: "volcanoark",
+            label: getString("settings-api-provider-volcanoark"),
+          },
+          { value: "ollama", label: getString("settings-api-provider-ollama") },
         ],
         providerValue,
         (newVal) => {
@@ -203,9 +212,9 @@ export class ApiSettingsPage {
       );
       legacyProviderForm.appendChild(
         this.createFormGroup(
-          "API 提供商",
+          getString("settings-api-provider-label"),
           providerSelect,
-          "选择您使用的 AI 模型提供商",
+          getString("settings-api-provider-help"),
         ),
       );
 
@@ -235,7 +244,7 @@ export class ApiSettingsPage {
       // OpenAI 字段（Responses 新接口）
       sectionOpenAI.appendChild(
         this.createEndpointFormGroup(
-          "API 地址 *",
+          getString("settings-api-api-url-required"),
           "openaiApiUrl",
           getPref("openaiApiUrl") as string,
           "https://api.openai.com/v1/responses",
@@ -247,32 +256,31 @@ export class ApiSettingsPage {
       );
       sectionOpenAI.appendChild(
         this.createFormGroup(
-          "API 密钥 *",
+          getString("settings-api-api-key-required"),
           this.createPasswordInput(
             "openaiApiKey",
             getPref("openaiApiKey") as string,
             "sk-...",
             "openai",
           ),
-          "【必填】您的 API 密钥,将安全存储在本地。点击 + 添加更多密钥启用轮换。",
+          getString("settings-api-openai-key-help"),
           "openai",
         ),
       );
       sectionOpenAI.appendChild(
         this.createModelFormGroup(
-          "模型 *",
+          getString("settings-api-model-required"),
           "openai",
           "openaiApiModel",
           getPref("openaiApiModel") as string,
           "gpt-5",
-          "【必填】要使用的模型名称",
+          getString("settings-api-openai-model-help"),
         ),
       );
 
       // OpenAI 新接口说明
       const openaiNote = this.createElement("div", {
-        innerHTML:
-          "ℹ️ <strong>说明</strong>：当前配置使用 OpenAI 官方新接口 <code>/v1/responses</code>（多模态统一）。如果你需要兼容第三方旧的 Chat Completions 服务（如 SiliconFlow 代理），请选择上方下拉中的 <strong>OpenAI兼容</strong> 提供商。",
+        innerHTML: getString("settings-api-openai-responses-note"),
         styles: {
           padding: "10px 12px",
           backgroundColor: "#e8f5e9",
@@ -288,7 +296,7 @@ export class ApiSettingsPage {
       // OpenAI 兼容（旧 Chat Completions / 第三方）字段
       sectionOpenAICompat.appendChild(
         this.createEndpointFormGroup(
-          "兼容 API 地址 *",
+          getString("settings-api-compatible-api-url-required"),
           "openaiCompatApiUrl",
           (getPref("openaiCompatApiUrl") as string) ||
             "https://api.openai.com/v1/chat/completions",
@@ -301,7 +309,7 @@ export class ApiSettingsPage {
       );
       sectionOpenAICompat.appendChild(
         this.createFormGroup(
-          "兼容 API 密钥 *",
+          getString("settings-api-compatible-api-key-required"),
           this.createPasswordInput(
             "openaiCompatApiKey",
             (getPref("openaiCompatApiKey") as string) ||
@@ -309,25 +317,24 @@ export class ApiSettingsPage {
             "sk-...",
             "openai-compat",
           ),
-          "【必填】对应第三方服务的密钥。点击 + 添加更多密钥启用轮换。",
+          getString("settings-api-compatible-key-help"),
           "openai-compat",
         ),
       );
       sectionOpenAICompat.appendChild(
         this.createModelFormGroup(
-          "兼容模型 *",
+          getString("settings-api-compatible-model-required"),
           "openai-compat",
           "openaiCompatModel",
           (getPref("openaiCompatModel") as string) ||
             (getPref("openaiApiModel") as string) ||
             "gpt-3.5-turbo",
           "gpt-3.5-turbo",
-          "【必填】第三方提供的模型名称，如 Qwen/QwQ-32B、deepseek-ai/DeepSeek-V3 等",
+          getString("settings-api-compatible-model-help"),
         ),
       );
       const openaiCompatNote = this.createElement("div", {
-        innerHTML:
-          '⚠️ <strong>用途</strong>：用于兼容旧的 <code>/v1/chat/completions</code> 格式，适配第三方聚合/代理服务（SiliconFlow、OpenAI 兼容网关等）。<br/>若使用官方 OpenAI，请选择 <strong>OpenAI (Responses 新接口)</strong>。<br/>若第三方不支持PDF Base64多模态处理方式，请在 PDF 处理配置中改为"文本提取"模式。',
+        innerHTML: getString("settings-api-openai-compatible-note"),
         styles: {
           padding: "10px 12px",
           backgroundColor: "#fff8e1",
@@ -343,7 +350,7 @@ export class ApiSettingsPage {
       // Gemini 字段
       sectionGemini.appendChild(
         this.createEndpointFormGroup(
-          "API 基础地址 *",
+          getString("settings-api-base-url-required"),
           "geminiApiUrl",
           getPref("geminiApiUrl") as string,
           "https://generativelanguage.googleapis.com",
@@ -356,32 +363,32 @@ export class ApiSettingsPage {
       );
       sectionGemini.appendChild(
         this.createFormGroup(
-          "API 密钥 *",
+          getString("settings-api-api-key-required"),
           this.createPasswordInput(
             "geminiApiKey",
             getPref("geminiApiKey") as string,
             "sk-...",
             "google",
           ),
-          "【必填】您的 Gemini API Key。点击 + 添加更多密钥启用轮换。",
+          getString("settings-api-gemini-key-help"),
           "google",
         ),
       );
       sectionGemini.appendChild(
         this.createModelFormGroup(
-          "模型 *",
+          getString("settings-api-model-required"),
           "google",
           "geminiModel",
           getPref("geminiModel") as string,
           "gemini-2.5-pro",
-          "【必填】Gemini 模型名称, 如 gemini-2.5-pro",
+          getString("settings-api-gemini-model-help"),
         ),
       );
 
       // Anthropic 字段
       sectionAnthropic.appendChild(
         this.createEndpointFormGroup(
-          "API 基础地址 *",
+          getString("settings-api-base-url-required"),
           "anthropicApiUrl",
           getPref("anthropicApiUrl") as string,
           "https://api.anthropic.com",
@@ -393,32 +400,32 @@ export class ApiSettingsPage {
       );
       sectionAnthropic.appendChild(
         this.createFormGroup(
-          "API 密钥 *",
+          getString("settings-api-api-key-required"),
           this.createPasswordInput(
             "anthropicApiKey",
             getPref("anthropicApiKey") as string,
             "sk-ant-...",
             "anthropic",
           ),
-          "【必填】您的 Anthropic API Key。点击 + 添加更多密钥启用轮换。",
+          getString("settings-api-anthropic-key-help"),
           "anthropic",
         ),
       );
       sectionAnthropic.appendChild(
         this.createModelFormGroup(
-          "模型 *",
+          getString("settings-api-model-required"),
           "anthropic",
           "anthropicModel",
           getPref("anthropicModel") as string,
           "claude-3-5-sonnet-20241022",
-          "【必填】Claude 模型名称, 如 claude-3-5-sonnet-20241022",
+          getString("settings-api-anthropic-model-help"),
         ),
       );
 
       // OpenRouter 字段
       sectionOpenRouter.appendChild(
         this.createEndpointFormGroup(
-          "API 基础地址 *",
+          getString("settings-api-base-url-required"),
           "openRouterApiUrl",
           getPref("openRouterApiUrl") as string,
           "https://openrouter.ai/api/v1/chat/completions",
@@ -430,32 +437,32 @@ export class ApiSettingsPage {
       );
       sectionOpenRouter.appendChild(
         this.createFormGroup(
-          "API 密钥 *",
+          getString("settings-api-api-key-required"),
           this.createPasswordInput(
             "openRouterApiKey",
             getPref("openRouterApiKey") as string,
             "sk-or-...",
             "openrouter",
           ),
-          "【必填】您的 OpenRouter API Key。点击 + 添加更多密钥启用轮换。",
+          getString("settings-api-openrouter-key-help"),
           "openrouter",
         ),
       );
       sectionOpenRouter.appendChild(
         this.createModelFormGroup(
-          "模型 *",
+          getString("settings-api-model-required"),
           "openrouter",
           "openRouterModel",
           getPref("openRouterModel") as string,
           "google/gemma-3-27b-it",
-          "【必填】OpenRouter 模型名称, 如 google/gemma-3-27b-it",
+          getString("settings-api-openrouter-model-help"),
         ),
       );
 
       // 火山方舟字段
       sectionVolcanoArk.appendChild(
         this.createEndpointFormGroup(
-          "API 地址 *",
+          getString("settings-api-api-url-required"),
           "volcanoArkApiUrl",
           getPref("volcanoArkApiUrl") as string,
           "https://ark.cn-beijing.volces.com/api/v3/responses",
@@ -468,31 +475,30 @@ export class ApiSettingsPage {
       );
       sectionVolcanoArk.appendChild(
         this.createFormGroup(
-          "API 密钥 *",
+          getString("settings-api-api-key-required"),
           this.createPasswordInput(
             "volcanoArkApiKey",
             getPref("volcanoArkApiKey") as string,
             "ark-...",
             "volcanoark",
           ),
-          "【必填】您的火山方舟 API Key。点击 + 添加更多密钥启用轮换。",
+          getString("settings-api-volcanoark-key-help"),
           "volcanoark",
         ),
       );
       sectionVolcanoArk.appendChild(
         this.createModelFormGroup(
-          "模型 *",
+          getString("settings-api-model-required"),
           "volcanoark",
           "volcanoArkModel",
           getPref("volcanoArkModel") as string,
           "doubao-seed-1-8-251228",
-          "【必填】豆包大模型名称, 如 doubao-seed-1-8-251228",
+          getString("settings-api-volcanoark-model-help"),
         ),
       );
       // 火山方舟说明
       const volcanoArkNote = this.createElement("div", {
-        innerHTML:
-          "ℹ️ <strong>说明</strong>：火山方舟提供每日 200 万 tokens 免费额度，支持多模态理解。<br/>推荐模型：<code>doubao-seed-1-8-251228</code>、<code>doubao-seed-1-6-250615</code>",
+        innerHTML: getString("settings-api-volcanoark-note"),
         styles: {
           padding: "10px 12px",
           backgroundColor: "#e8f5e9",
@@ -508,7 +514,7 @@ export class ApiSettingsPage {
       // Ollama 字段
       sectionOllama.appendChild(
         this.createEndpointFormGroup(
-          "API 基础地址 *",
+          getString("settings-api-base-url-required"),
           "ollamaApiUrl",
           getPref("ollamaApiUrl") as string,
           "http://localhost:11434",
@@ -520,30 +526,29 @@ export class ApiSettingsPage {
       );
       sectionOllama.appendChild(
         this.createFormGroup(
-          "API 密钥",
+          getString("settings-api-api-key"),
           this.createPasswordInput(
             "ollamaApiKey",
             getPref("ollamaApiKey") as string,
-            "可留空",
+            getString("settings-api-optional-placeholder"),
             "ollama",
           ),
-          "Ollama 本地服务通常无需 API 密钥；如果你的服务设置了鉴权，可填写 Bearer token。",
+          getString("settings-api-ollama-key-help"),
           "ollama",
         ),
       );
       sectionOllama.appendChild(
         this.createModelFormGroup(
-          "模型 *",
+          getString("settings-api-model-required"),
           "ollama",
           "ollamaModel",
           getPref("ollamaModel") as string,
           "llama3.2",
-          "【必填】本地 Ollama 模型名称, 如 llama3.2、qwen2.5:7b、deepseek-r1:8b",
+          getString("settings-api-ollama-model-help"),
         ),
       );
       const ollamaNote = this.createElement("div", {
-        innerHTML:
-          "<strong>说明</strong>：Ollama 使用原生 <code>/api/chat</code> 接口，默认地址为 <code>http://localhost:11434</code>。Ollama 不支持直接上传 PDF Base64；请在 PDF 处理配置中选择“文本提取”或“MinerU”。",
+        innerHTML: getString("settings-api-ollama-note"),
         styles: {
           padding: "10px 12px",
           backgroundColor: "#e8f5e9",
@@ -636,9 +641,9 @@ export class ApiSettingsPage {
     tempContainer.appendChild(tempSlider);
     form.appendChild(
       this.createFormGroup(
-        "Temperature",
+        getString("settings-api-temperature-label"),
         tempContainer,
-        "控制输出的随机性 (0-2),值越高输出越随机；未勾选时将不发送该参数",
+        getString("settings-api-temperature-help"),
       ),
     );
 
@@ -682,9 +687,9 @@ export class ApiSettingsPage {
     maxContainer.appendChild(maxInput);
     form.appendChild(
       this.createFormGroup(
-        "Max Tokens",
+        getString("settings-api-max-tokens-label"),
         maxContainer,
-        "生成内容的最大 token 数；未勾选时将不发送该参数（某些服务可选）",
+        getString("settings-api-max-tokens-help"),
       ),
     );
 
@@ -719,49 +724,49 @@ export class ApiSettingsPage {
     topPContainer.appendChild(topPSlider);
     form.appendChild(
       this.createFormGroup(
-        "Top P",
+        getString("settings-api-top-p-label"),
         topPContainer,
-        "核采样参数 (0-1),控制输出的多样性；未勾选时将不发送该参数",
+        getString("settings-api-top-p-help"),
       ),
     );
 
     // 流式输出开关
     form.appendChild(
       this.createFormGroup(
-        "流式输出",
+        getString("settings-api-stream-label"),
         this.createCheckbox("stream", getPref("stream") as boolean),
-        "启用后将实时显示生成过程",
+        getString("settings-api-stream-help"),
       ),
     );
 
     form.appendChild(
       this.createFormGroup(
-        "上下文缓存优化（实验性）",
+        getString("settings-api-prompt-cache-label"),
         this.createCheckbox(
           "enablePromptCacheOptimization",
           (getPref("enablePromptCacheOptimization" as any) as boolean) === true,
         ),
-        "开启后，多轮精读将复用 AI 服务商的上下文缓存，大幅降低 token 费用——以 DeepSeek 为例，从第 2 轮对话起，论文全文部分约按原价 1/10 计费。对 DeepSeek、OpenAI、Claude 官方接口及大多数兼容服务有效；不支持缓存的服务开启后无收益、也不受影响。\n\n这是实验性功能：极少数第三方服务可能不兼容。若开启后总结或精读功能报错，关闭本开关即可完全恢复原有行为，已生成的笔记不受影响。",
+        getString("settings-api-prompt-cache-help"),
       ),
     );
 
     // 请求超时配置
     form.appendChild(
       this.createFormGroup(
-        "请求超时时间 (毫秒)",
+        getString("settings-api-request-timeout-label"),
         this.createInput(
           "requestTimeout",
           "number",
           getPref("requestTimeout") as string,
           "300000",
         ),
-        "API请求的超时时间,默认300000ms(5分钟),最小30000ms(30秒)",
+        getString("settings-api-request-timeout-help"),
       ),
     );
 
     // === 调度配置分隔线 ===
     const scheduleTitle = this.createElement("h3", {
-      textContent: "📅 调度配置",
+      textContent: getString("settings-api-schedule-section-title"),
       styles: {
         color: "#667eea",
         marginTop: "40px",
@@ -776,48 +781,48 @@ export class ApiSettingsPage {
     // 每批次处理论文数量
     form.appendChild(
       this.createFormGroup(
-        "每批次处理论文数量",
+        getString("settings-api-batch-size-label"),
         this.createInput(
           "batchSize",
           "number",
           getPref("batchSize") as string,
           "1",
         ),
-        "同时处理的论文数量,建议设置为 1 以避免 API 限流",
+        getString("settings-api-batch-size-help"),
       ),
     );
 
     // 批次间隔时间
     form.appendChild(
       this.createFormGroup(
-        "批次间隔时间(秒)",
+        getString("settings-api-batch-interval-label"),
         this.createInput(
           "batchInterval",
           "number",
           getPref("batchInterval") as string,
           "60",
         ),
-        "每批次之间的等待时间,用于控制 API 调用频率",
+        getString("settings-api-batch-interval-help"),
       ),
     );
 
     // 自动扫描间隔
     form.appendChild(
       this.createFormGroup(
-        "自动扫描间隔(秒)",
+        getString("settings-api-scan-interval-label"),
         this.createInput(
           "scanInterval",
           "number",
           getPref("scanInterval") as string,
           "300",
         ),
-        "后台自动扫描新文献的时间间隔,默认 5 分钟",
+        getString("settings-api-scan-interval-help"),
       ),
     );
 
     // === PDF 处理配置分隔线 ===
     const pdfTitle = this.createElement("h3", {
-      textContent: "📄 PDF 处理配置",
+      textContent: getString("settings-api-pdf-section-title"),
       styles: {
         color: "#ff9800",
         marginTop: "40px",
@@ -834,21 +839,20 @@ export class ApiSettingsPage {
     const pdfModeSelect = createSelect(
       "pdfProcessMode",
       [
-        { value: "base64", label: "Base64 编码(推荐,支持多模态)" },
-        { value: "text", label: "文本提取(仅文字内容)" },
-        { value: "mineru", label: "MinerU (高质量排版还原)" },
+        { value: "base64", label: getString("settings-api-pdf-mode-base64") },
+        { value: "text", label: getString("settings-api-pdf-mode-text") },
+        { value: "mineru", label: getString("settings-api-pdf-mode-mineru") },
       ],
       pdfModeValue,
       (newVal) => {
         // 当用户手动调整 PDF 模式，也给出一个轻量提示
         let msg = "";
         if (newVal === "base64")
-          msg = "已选择 Base64 模式：多模态更强，适用于 Gemini 等。";
+          msg = getString("settings-api-pdf-mode-selected-base64");
         else if (newVal === "text")
-          msg = "已选择 文本提取 模式：仅文字，适用于 Anthropic 等。";
+          msg = getString("settings-api-pdf-mode-selected-text");
         else if (newVal === "mineru")
-          msg =
-            "已选择 MinerU 模式：需要填写 API Key 以启用高级公式/表格还原。";
+          msg = getString("settings-api-pdf-mode-selected-mineru");
 
         try {
           new ztoolkit.ProgressWindow("AI Butler", {
@@ -868,9 +872,9 @@ export class ApiSettingsPage {
     );
     form.appendChild(
       this.createFormGroup(
-        "全局 PDF 处理模式",
+        getString("settings-api-pdf-mode-label"),
         pdfModeSelect,
-        "默认 PDF 输入方式。“模型平台”页面的单个模型详情中可以单独覆盖，适合让支持多模态的模型使用 Base64，让本地或文本模型使用文本提取/MinerU。",
+        getString("settings-api-pdf-mode-help"),
       ),
     );
 
@@ -896,7 +900,7 @@ export class ApiSettingsPage {
     });
     mineruHeader.appendChild(
       this.createElement("div", {
-        textContent: "MinerU 解析配置",
+        textContent: getString("settings-api-mineru-section-title"),
         styles: {
           fontSize: "14px",
           fontWeight: "700",
@@ -906,7 +910,7 @@ export class ApiSettingsPage {
     );
     mineruHeader.appendChild(
       this.createElement("div", {
-        textContent: "全局或单个模型选择 MinerU 时共用",
+        textContent: getString("settings-api-mineru-section-subtitle"),
         styles: {
           fontSize: "12px",
           color: "#8a6d3b",
@@ -918,14 +922,17 @@ export class ApiSettingsPage {
     const mineruInputWrapper = this.createPasswordInput(
       "mineruApiKey",
       (getPref("mineruApiKey") as string) || "",
-      "配置以启用高质量公式与表格识别...",
+      getString("settings-api-mineru-key-placeholder"),
     );
     const mineruModelVersion = String(getPref("mineruModelVersion") || "vlm");
     const mineruModelSelect = createSelect(
       "mineruModelVersion",
       [
-        { value: "vlm", label: "VLM（推荐，高质量解析）" },
-        { value: "pipeline", label: "Pipeline（轻量模型）" },
+        { value: "vlm", label: getString("settings-api-mineru-model-vlm") },
+        {
+          value: "pipeline",
+          label: getString("settings-api-mineru-model-pipeline"),
+        },
       ],
       mineruModelVersion === "pipeline" ? "pipeline" : "vlm",
       (newVal) => {
@@ -938,9 +945,9 @@ export class ApiSettingsPage {
 
     sectionMineru.appendChild(
       this.createFormGroup(
-        "MinerU 模型版本",
+        getString("settings-api-mineru-model-version-label"),
         mineruModelSelect,
-        "VLM 解析质量更高；Pipeline 更轻量，适合速度优先或额度敏感的场景。",
+        getString("settings-api-mineru-model-version-help"),
       ),
     );
 
@@ -967,42 +974,42 @@ export class ApiSettingsPage {
 
     sectionMineru.appendChild(
       this.createFormGroup(
-        "MinerU API Key *",
+        getString("settings-api-mineru-key-label"),
         mineruInputWrapper,
-        "只要全局 PDF 处理模式或“模型平台”页面任一模型的 PDF 处理方式选择 MinerU，就需要填写。请访问 https://mineru.net/ 申请 API Key。",
+        getString("settings-api-mineru-key-help"),
       ),
     );
 
     sectionMineru.appendChild(
       this.createFormGroup(
-        "保存解析后的全文 Markdown",
+        getString("settings-api-mineru-save-markdown-label"),
         this.createCheckbox(
           "mineruSaveMarkdown",
           Boolean(getPref("mineruSaveMarkdown" as any)),
         ),
-        "启用后，MinerU 解析完成时会保存全文 Markdown；后续处理同一条目会优先复用已保存的 Markdown，避免重复解析。",
+        getString("settings-api-mineru-save-markdown-help"),
       ),
     );
 
     sectionMineru.appendChild(
       this.createFormGroup(
-        "保存为 Zotero 子附件",
+        getString("settings-api-mineru-save-attachment-label"),
         this.createCheckbox(
           "mineruSaveAsAttachment",
           Boolean(getPref("mineruSaveAsAttachment" as any) ?? true),
         ),
-        "将 Markdown 作为当前文献条目下的 text/markdown 附件保存，并在再次解析时更新同一附件。",
+        getString("settings-api-mineru-save-attachment-help"),
       ),
     );
 
     sectionMineru.appendChild(
       this.createFormGroup(
-        "同步到外部文件夹",
+        getString("settings-api-mineru-sync-external-label"),
         this.createCheckbox(
           "mineruSyncExternal",
           Boolean(getPref("mineruSyncExternal" as any)),
         ),
-        "可用于同步到 Obsidian Vault 或本地 RAG 知识库目录。",
+        getString("settings-api-mineru-sync-external-help"),
       ),
     );
 
@@ -1010,21 +1017,21 @@ export class ApiSettingsPage {
       "mineruExternalPath",
       "text",
       String(getPref("mineruExternalPath" as any) || ""),
-      "例如 D:\\ObsidianVault\\Literature",
+      getString("settings-api-mineru-external-path-placeholder"),
     );
     const mineruPathWrapper = this.createElement("div", {
       styles: { display: "flex", gap: "8px", alignItems: "center" },
     });
     mineruPathWrapper.appendChild(mineruExternalPathInput);
     const mineruBrowseButton = createStyledButton(
-      "选择目录",
+      getString("settings-api-mineru-browse-button"),
       "#2196f3",
       "small",
     );
     mineruBrowseButton.addEventListener("click", async () => {
       try {
         const selected = await pickFolder(
-          "选择 MinerU Markdown 同步目录",
+          getString("settings-api-mineru-pick-folder-title"),
           this.container.ownerDocument?.defaultView || null,
         );
         if (selected) {
@@ -1041,26 +1048,35 @@ export class ApiSettingsPage {
     mineruPathWrapper.appendChild(mineruBrowseButton);
     sectionMineru.appendChild(
       this.createFormGroup(
-        "外部文件夹路径",
+        getString("settings-api-mineru-external-path-label"),
         mineruPathWrapper,
-        "开启外部同步后生效；每篇论文会写入该目录下独立的论文子文件夹，包含 Markdown 和 images/ 等资源。",
+        getString("settings-api-mineru-external-path-help"),
       ),
     );
 
     const mineruFileNameModeSelect = createSelect(
       "mineruFileNameMode",
       [
-        { value: "citationKey-title", label: "Citation Key + 标题（推荐）" },
-        { value: "citationKey", label: "仅 Citation Key" },
-        { value: "title", label: "仅 Zotero 标题" },
+        {
+          value: "citationKey-title",
+          label: getString("settings-api-mineru-filename-citation-title"),
+        },
+        {
+          value: "citationKey",
+          label: getString("settings-api-mineru-filename-citation"),
+        },
+        {
+          value: "title",
+          label: getString("settings-api-mineru-filename-title"),
+        },
       ],
       String(getPref("mineruFileNameMode" as any) || "citationKey-title"),
     );
     sectionMineru.appendChild(
       this.createFormGroup(
-        "Markdown 文件命名",
+        getString("settings-api-mineru-filename-mode-label"),
         mineruFileNameModeSelect,
-        "优先读取 Zotero/Better BibTeX citationKey；没有 citationKey 时自动回退到条目标题。",
+        getString("settings-api-mineru-filename-mode-help"),
       ),
     );
     form.appendChild(sectionMineru);
@@ -1112,9 +1128,9 @@ export class ApiSettingsPage {
     sizeLimitContainer.appendChild(mbLabel);
     form.appendChild(
       this.createFormGroup(
-        "附件大小限制",
+        getString("settings-api-pdf-size-limit-label"),
         sizeLimitContainer,
-        "启用后,超过指定大小的 PDF 文件将在自动扫描时被跳过,避免大型扫描版书籍触发 API 限制",
+        getString("settings-api-pdf-size-limit-help"),
       ),
     );
 
@@ -1124,15 +1140,18 @@ export class ApiSettingsPage {
     const pdfAttachmentModeSelect = createSelect(
       "pdfAttachmentMode",
       [
-        { value: "default", label: "仅默认 PDF (最早添加的附件)" },
-        { value: "all", label: "全部 PDF (多文件上传)" },
+        {
+          value: "default",
+          label: getString("settings-api-pdf-attachment-default"),
+        },
+        { value: "all", label: getString("settings-api-pdf-attachment-all") },
       ],
       pdfAttachmentModeValue,
       (newVal) => {
         const msg =
           newVal === "all"
-            ? "已选择全部 PDF 模式：将同时发送所有附件给大模型"
-            : "已选择默认 PDF 模式：仅使用最早添加的附件";
+            ? getString("settings-api-pdf-attachment-selected-all")
+            : getString("settings-api-pdf-attachment-selected-default");
         try {
           new ztoolkit.ProgressWindow("AI Butler", {
             closeOnClick: true,
@@ -1147,9 +1166,9 @@ export class ApiSettingsPage {
     );
     form.appendChild(
       this.createFormGroup(
-        "多 PDF 附件模式",
+        getString("settings-api-pdf-attachment-mode-label"),
         pdfAttachmentModeSelect,
-        "当论文有多个 PDF 附件时的处理方式。选择“全部 PDF”时会使用当前 Provider 的多 PDF 上传能力；具体可用性取决于所选模型和服务端是否支持 PDF 输入",
+        getString("settings-api-pdf-attachment-mode-help"),
       ),
     );
 
@@ -1166,12 +1185,18 @@ export class ApiSettingsPage {
     });
 
     // 保存按钮
-    const saveButton = this.createButton("💾 保存设置", "#4caf50");
+    const saveButton = this.createButton(
+      getString("settings-api-save-button"),
+      "#4caf50",
+    );
     saveButton.addEventListener("click", () => this.saveSettings());
     buttonGroup.appendChild(saveButton);
 
     // 重置按钮
-    const resetButton = this.createButton("🔄 重置默认", "#9e9e9e");
+    const resetButton = this.createButton(
+      getString("settings-api-reset-default-button"),
+      "#9e9e9e",
+    );
     resetButton.addEventListener("click", () => this.resetSettings());
     buttonGroup.appendChild(resetButton);
 
@@ -1360,9 +1385,13 @@ export class ApiSettingsPage {
   ): HTMLElement {
     const input = this.createInput(id, "text", value, placeholder);
     const official = this.createEndpointMeta(
-      `官方 Endpoint：${options.officialEndpoint}`,
+      getString("settings-api-official-endpoint", {
+        args: { endpoint: options.officialEndpoint },
+      }),
     );
-    const preview = this.createEndpointMeta("预览：");
+    const preview = this.createEndpointMeta(
+      getString("settings-api-preview", { args: { endpoint: "" } }),
+    );
     preview.style.maxWidth = "440px";
 
     const desc = this.createElement("div", {
@@ -1377,7 +1406,7 @@ export class ApiSettingsPage {
     });
     desc.appendChild(
       this.createElement("span", {
-        textContent: "【必填】",
+        textContent: getString("settings-api-required"),
         styles: {
           flex: "0 0 auto",
         },
@@ -1392,7 +1421,9 @@ export class ApiSettingsPage {
         placeholder,
         options.modelInputId,
       );
-      preview.textContent = `预览：${endpoint}`;
+      preview.textContent = getString("settings-api-preview", {
+        args: { endpoint },
+      });
       preview.title = endpoint;
     };
 
@@ -1428,7 +1459,9 @@ export class ApiSettingsPage {
         color: "#666",
       },
     });
-    el.title = text.replace(/^官方 Endpoint：|^预览：/, "");
+    el.title = text
+      .replace(/^官方 Endpoint：|^预览：/, "")
+      .replace(/^Official Endpoint: |^Preview: /, "");
     return el;
   }
 
@@ -1459,7 +1492,7 @@ export class ApiSettingsPage {
           `#setting-${modelInputId}`,
         ) as HTMLInputElement | null)
       : null;
-    const model = (modelInput?.value || modelInput?.placeholder || "{模型}")
+    const model = (modelInput?.value || modelInput?.placeholder || "{model}")
       .trim()
       .replace(/^models\//, "");
 
@@ -1593,7 +1626,7 @@ export class ApiSettingsPage {
         lineHeight: "1",
       },
     }) as HTMLButtonElement;
-    toggleButton.title = "选择模型；如未获取列表，将自动获取";
+    toggleButton.title = getString("settings-api-model-select-tooltip");
 
     const dropdown = this.createElement("div", {
       id: `setting-${modelInputId}-modelDropdown`,
@@ -1677,11 +1710,11 @@ export class ApiSettingsPage {
     wrapper.appendChild(inputShell);
 
     const fetchButton = createStyledButton(
-      "🔄 获取模型列表",
+      getString("settings-api-fetch-models"),
       "#59c0bc",
       "small",
     );
-    fetchButton.title = "使用当前填写的 endpoint 和密钥获取模型列表";
+    fetchButton.title = getString("settings-api-fetch-models-tooltip");
     Object.assign(fetchButton.style, {
       minHeight: "30px",
       padding: "6px 12px",
@@ -1727,31 +1760,33 @@ export class ApiSettingsPage {
     button: HTMLButtonElement,
     openAfterSuccess = false,
   ): Promise<boolean> {
-    const previousText = button.textContent || "🔄 获取模型列表";
+    const previousText =
+      button.textContent || getString("settings-api-fetch-models");
     button.disabled = true;
     toggleButton.disabled = true;
-    button.textContent = "🔄 获取中...";
+    button.textContent = getString("settings-api-fetching-models-button");
     button.style.opacity = "0.75";
     button.style.cursor = "wait";
     toggleButton.style.opacity = "0.75";
     toggleButton.style.cursor = "wait";
     status.style.display = "block";
     status.style.color = "#666";
-    status.textContent = "正在从供应商获取模型列表...";
+    status.textContent = getString("settings-api-fetching-models-status");
 
     try {
       const options = this.getModelListOptions(providerId);
-      if (!options.apiUrl?.trim()) throw new Error("请先填写 API 地址");
+      if (!options.apiUrl?.trim())
+        throw new Error(getString("settings-api-error-missing-api-url"));
       if (
         !LLMEndpointManager.providerAllowsEmptyApiKey(providerId) &&
         !options.apiKey?.trim()
       ) {
-        throw new Error("请先填写 API 密钥");
+        throw new Error(getString("settings-api-error-missing-api-key"));
       }
 
       const models = await LLMClient.listModels(providerId, options);
       if (models.length === 0) {
-        throw new Error("供应商未返回可用模型");
+        throw new Error(getString("settings-api-error-no-models"));
       }
 
       this.renderFetchedModelDropdown(modelInputId, input, dropdown, models);
@@ -1759,13 +1794,17 @@ export class ApiSettingsPage {
       dropdown.style.display = openAfterSuccess ? "block" : "none";
       toggleButton.textContent = openAfterSuccess ? "▲" : "▼";
       status.style.color = "#2e7d32";
-      status.textContent = `已获取 ${models.length} 个模型`;
+      status.textContent = getString("settings-api-models-fetched", {
+        args: { count: models.length },
+      });
 
-      new ztoolkit.ProgressWindow("模型列表", {
+      new ztoolkit.ProgressWindow(getString("settings-api-model-list-title"), {
         closeTime: 1800,
       })
         .createLine({
-          text: `✅ 已获取 ${models.length} 个模型`,
+          text: getString("settings-api-models-fetched-success", {
+            args: { count: models.length },
+          }),
           type: "success",
         })
         .show();
@@ -1777,9 +1816,11 @@ export class ApiSettingsPage {
       toggleButton.textContent = "▼";
       status.style.display = "block";
       status.style.color = "#b71c1c";
-      status.textContent = `获取失败：${message}`;
+      status.textContent = getString("settings-api-fetch-models-failed", {
+        args: { message },
+      });
 
-      new ztoolkit.ProgressWindow("模型列表", {
+      new ztoolkit.ProgressWindow(getString("settings-api-model-list-title"), {
         closeTime: 3500,
       })
         .createLine({ text: `❌ ${message}`, type: "fail" })
@@ -1989,8 +2030,14 @@ export class ApiSettingsPage {
         },
       });
       const getTooltip = (disabled: boolean, configured: boolean) => {
-        const status = disabled ? "已禁用" : configured ? "已配置" : "未配置";
-        const action = disabled ? "点击启用" : "点击禁用";
+        const status = disabled
+          ? getString("settings-api-key-disabled")
+          : configured
+            ? getString("settings-api-key-configured")
+            : getString("settings-api-key-not-configured");
+        const action = disabled
+          ? getString("settings-api-key-click-enable")
+          : getString("settings-api-key-click-disable");
         return `${status} | ${action}`;
       };
       statusIcon.title = getTooltip(isDisabled, hasValue);
@@ -2014,7 +2061,9 @@ export class ApiSettingsPage {
     // 密钥1标签
     if (providerId) {
       const keyLabel = this.createElement("span", {
-        textContent: "密钥1",
+        textContent: getString("settings-api-key-short-label", {
+          args: { index: 1 },
+        }),
         styles: {
           fontSize: "12px",
           color: "#666",
@@ -2089,7 +2138,7 @@ export class ApiSettingsPage {
         justifyContent: "center",
       },
     });
-    toggleButton.title = "显示/隐藏密钥";
+    toggleButton.title = getString("settings-api-toggle-key-tooltip");
 
     let isVisible = false;
     toggleButton.addEventListener("click", (e) => {
@@ -2119,7 +2168,7 @@ export class ApiSettingsPage {
           justifyContent: "center",
         },
       });
-      addButton.title = "添加更多密钥";
+      addButton.title = getString("settings-api-add-key-tooltip");
 
       addButton.addEventListener("mouseenter", () => {
         addButton.style.backgroundColor = "#4caf50";
@@ -2161,9 +2210,13 @@ export class ApiSettingsPage {
     const valid = allKeys.filter((k) => k?.trim()).length;
     const disabled = ApiKeyManager.getDisabledCount(providerId);
     if (disabled > 0) {
-      badge.textContent = `共 ${total} 个，${valid} 有效，${disabled} 禁用`;
+      badge.textContent = getString("settings-api-key-badge-with-disabled", {
+        args: { total, valid, disabled },
+      });
     } else {
-      badge.textContent = `共 ${total} 个密钥，${valid} 个有效`;
+      badge.textContent = getString("settings-api-key-badge", {
+        args: { total, valid },
+      });
     }
   }
 
@@ -2227,8 +2280,14 @@ export class ApiSettingsPage {
       },
     });
     const getTooltip = (disabled: boolean, configured: boolean) => {
-      const status = disabled ? "已禁用" : configured ? "已配置" : "未配置";
-      const action = disabled ? "点击启用" : "点击禁用";
+      const status = disabled
+        ? getString("settings-api-key-disabled")
+        : configured
+          ? getString("settings-api-key-configured")
+          : getString("settings-api-key-not-configured");
+      const action = disabled
+        ? getString("settings-api-key-click-enable")
+        : getString("settings-api-key-click-disable");
       return `${status} | ${action}`;
     };
     statusIcon.title = getTooltip(isDisabled, hasValue);
@@ -2247,7 +2306,9 @@ export class ApiSettingsPage {
 
     // 密钥标签
     const label = this.createElement("span", {
-      textContent: `密钥${index + 2}`,
+      textContent: getString("settings-api-key-short-label", {
+        args: { index: index + 2 },
+      }),
       styles: {
         fontSize: "12px",
         color: "#666",
@@ -2285,7 +2346,9 @@ export class ApiSettingsPage {
       ) as HTMLElement;
       if (statusIconEl) {
         statusIconEl.style.color = newKey ? "#4caf50" : "#bbb";
-        statusIconEl.title = newKey ? "已配置" : "未配置";
+        statusIconEl.title = newKey
+          ? getString("settings-api-key-configured")
+          : getString("settings-api-key-not-configured");
       }
       // 更新徽标
       this.updateAllKeyBadges(providerId);
@@ -2318,7 +2381,7 @@ export class ApiSettingsPage {
         justifyContent: "center",
       },
     });
-    toggleBtn.title = "显示/隐藏";
+    toggleBtn.title = getString("settings-api-toggle-visibility-tooltip");
     let isVisible = false;
     toggleBtn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -2346,7 +2409,7 @@ export class ApiSettingsPage {
         justifyContent: "center",
       },
     });
-    deleteBtn.title = "删除此密钥";
+    deleteBtn.title = getString("settings-api-delete-key-tooltip");
     deleteBtn.addEventListener("click", (e) => {
       e.preventDefault();
       const currentIdx = parseInt(
@@ -2376,7 +2439,9 @@ export class ApiSettingsPage {
       container.setAttribute("data-extra-key-index", String(idx));
       const label = container.querySelector("span:first-child") as HTMLElement;
       if (label && !label.hasAttribute("data-key-status")) {
-        label.textContent = `密钥 ${idx + 2}:`;
+        label.textContent = getString("settings-api-key-label-index", {
+          args: { index: idx + 2 },
+        });
       }
       // 更新状态指示器的ID
       const statusIcon = container.querySelector("[data-key-status]");
@@ -2466,7 +2531,9 @@ export class ApiSettingsPage {
     });
 
     const label = this.createElement("span", {
-      textContent: checked ? "已启用" : "已禁用",
+      textContent: checked
+        ? getString("endpoint-enabled")
+        : getString("endpoint-disabled"),
       styles: {
         fontSize: "14px",
         color: "#666",
@@ -2474,7 +2541,9 @@ export class ApiSettingsPage {
     });
 
     checkbox.addEventListener("change", () => {
-      label.textContent = checkbox.checked ? "已启用" : "已禁用";
+      label.textContent = checkbox.checked
+        ? getString("endpoint-enabled")
+        : getString("endpoint-disabled");
     });
 
     container.appendChild(checkbox);
@@ -2556,7 +2625,7 @@ export class ApiSettingsPage {
       setPref("stream", checkboxValue("stream", true));
       setPref(
         "enablePromptCacheOptimization" as any,
-        checkboxValue("enablePromptCacheOptimization", false),
+        checkboxValue("enablePromptCacheOptimization", true),
       );
       setPref("requestTimeout", inputValue("requestTimeout", "300000"));
       setPref("batchSize", inputValue("batchSize", "1"));
@@ -2608,17 +2677,25 @@ export class ApiSettingsPage {
 
       ztoolkit.log("[API Settings] Global API settings saved successfully");
 
-      new ztoolkit.ProgressWindow("API 配置", {
+      new ztoolkit.ProgressWindow(getString("settings-api-page-title"), {
         closeTime: 2000,
       })
-        .createLine({ text: "✅ 设置已保存", type: "success" })
+        .createLine({
+          text: getString("settings-api-save-success"),
+          type: "success",
+        })
         .show();
     } catch (error: any) {
       ztoolkit.log(`[API Settings] Save error: ${error}`);
-      new ztoolkit.ProgressWindow("API 配置", {
+      new ztoolkit.ProgressWindow(getString("settings-api-page-title"), {
         closeTime: 3000,
       })
-        .createLine({ text: `❌ 保存失败: ${error.message}`, type: "fail" })
+        .createLine({
+          text: getString("settings-api-save-failed", {
+            args: { message: error.message },
+          }),
+          type: "fail",
+        })
         .show();
     }
   }
@@ -2788,7 +2865,7 @@ export class ApiSettingsPage {
         enableMaxTokens: enableMaxEl?.checked ?? false,
         enableTopP: enableTopPEl?.checked ?? false,
         stream: streamEl?.checked ?? true,
-        enablePromptCacheOptimization: promptCacheEl?.checked ?? false,
+        enablePromptCacheOptimization: promptCacheEl?.checked ?? true,
         requestTimeout:
           (
             this.container.querySelector(
@@ -2821,50 +2898,84 @@ export class ApiSettingsPage {
       );
       if (!hasUsableEndpoint) {
         if (provider === "google") {
-          if (!values.geminiApiUrl) missingFields.push("API 基础地址(Gemini)");
-          if (!values.geminiApiKey) missingFields.push("API 密钥(Gemini)");
-          if (!values.geminiModel) missingFields.push("模型名称(Gemini)");
+          if (!values.geminiApiUrl)
+            missingFields.push(getString("settings-api-field-gemini-api-url"));
+          if (!values.geminiApiKey)
+            missingFields.push(getString("settings-api-field-gemini-api-key"));
+          if (!values.geminiModel)
+            missingFields.push(getString("settings-api-field-gemini-model"));
         } else if (provider === "anthropic") {
           if (!values.anthropicApiUrl)
-            missingFields.push("API 基础地址(Anthropic)");
+            missingFields.push(
+              getString("settings-api-field-anthropic-api-url"),
+            );
           if (!values.anthropicApiKey)
-            missingFields.push("API 密钥(Anthropic)");
-          if (!values.anthropicModel) missingFields.push("模型名称(Anthropic)");
+            missingFields.push(
+              getString("settings-api-field-anthropic-api-key"),
+            );
+          if (!values.anthropicModel)
+            missingFields.push(getString("settings-api-field-anthropic-model"));
         } else if (provider === "openrouter") {
           if (!values.openRouterApiUrl)
-            missingFields.push("API 基础地址(OpenRouter)");
+            missingFields.push(
+              getString("settings-api-field-openrouter-api-url"),
+            );
           if (!values.openRouterApiKey)
-            missingFields.push("API 密钥(OpenRouter)");
+            missingFields.push(
+              getString("settings-api-field-openrouter-api-key"),
+            );
           if (!values.openRouterModel)
-            missingFields.push("模型名称(OpenRouter)");
+            missingFields.push(
+              getString("settings-api-field-openrouter-model"),
+            );
         } else if (provider === "volcanoark") {
           if (!values.volcanoArkApiUrl)
-            missingFields.push("API 地址(火山方舟)");
+            missingFields.push(
+              getString("settings-api-field-volcanoark-api-url"),
+            );
           if (!values.volcanoArkApiKey)
-            missingFields.push("API 密钥(火山方舟)");
-          if (!values.volcanoArkModel) missingFields.push("模型名称(火山方舟)");
+            missingFields.push(
+              getString("settings-api-field-volcanoark-api-key"),
+            );
+          if (!values.volcanoArkModel)
+            missingFields.push(
+              getString("settings-api-field-volcanoark-model"),
+            );
         } else if (provider === "ollama") {
-          if (!values.ollamaApiUrl) missingFields.push("API 地址(Ollama)");
-          if (!values.ollamaModel) missingFields.push("模型名称(Ollama)");
+          if (!values.ollamaApiUrl)
+            missingFields.push(getString("settings-api-field-ollama-api-url"));
+          if (!values.ollamaModel)
+            missingFields.push(getString("settings-api-field-ollama-model"));
         } else if (provider === "openai-compat") {
           if (!values.openaiCompatApiUrl)
-            missingFields.push("兼容 API 地址(OpenAI兼容)");
+            missingFields.push(
+              getString("settings-api-field-openai-compat-api-url"),
+            );
           if (!values.openaiCompatApiKey)
-            missingFields.push("兼容 API 密钥(OpenAI兼容)");
+            missingFields.push(
+              getString("settings-api-field-openai-compat-api-key"),
+            );
           if (!values.openaiCompatModel)
-            missingFields.push("兼容 模型名称(OpenAI兼容)");
+            missingFields.push(
+              getString("settings-api-field-openai-compat-model"),
+            );
         } else {
-          if (!values.openaiApiUrl) missingFields.push("API 地址");
-          if (!values.openaiApiKey) missingFields.push("API 密钥");
-          if (!values.openaiApiModel) missingFields.push("模型名称");
+          if (!values.openaiApiUrl)
+            missingFields.push(getString("settings-api-field-api-url"));
+          if (!values.openaiApiKey)
+            missingFields.push(getString("settings-api-field-api-key"));
+          if (!values.openaiApiModel)
+            missingFields.push(getString("settings-api-field-model"));
         }
       }
 
       if (missingFields.length > 0) {
-        const errorMsg = `请填写以下必填项:\n\n• ${missingFields.join("\n• ")}`;
+        const errorMsg = getString("settings-api-validation-missing-fields", {
+          args: { fields: `• ${missingFields.join("\n• ")}` },
+        });
         ztoolkit.log("[API Settings] Validation failed:", missingFields);
 
-        new ztoolkit.ProgressWindow("API 配置", {
+        new ztoolkit.ProgressWindow(getString("settings-api-page-title"), {
           closeTime: 4000,
         })
           .createLine({ text: `❌ ${errorMsg}`, type: "fail" })
@@ -2970,17 +3081,25 @@ export class ApiSettingsPage {
 
       ztoolkit.log("[API Settings] Settings saved successfully");
 
-      new ztoolkit.ProgressWindow("API 配置", {
+      new ztoolkit.ProgressWindow(getString("settings-api-page-title"), {
         closeTime: 2000,
       })
-        .createLine({ text: "✅ 设置已保存", type: "success" })
+        .createLine({
+          text: getString("settings-api-save-success"),
+          type: "success",
+        })
         .show();
     } catch (error: any) {
       ztoolkit.log(`[API Settings] Save error: ${error}`);
-      new ztoolkit.ProgressWindow("API 配置", {
+      new ztoolkit.ProgressWindow(getString("settings-api-page-title"), {
         closeTime: 3000,
       })
-        .createLine({ text: `❌ 保存失败: ${error.message}`, type: "fail" })
+        .createLine({
+          text: getString("settings-api-save-failed", {
+            args: { message: error.message },
+          }),
+          type: "fail",
+        })
         .show();
     }
   }
@@ -3051,7 +3170,7 @@ export class ApiSettingsPage {
 
     // 标题
     const title = this.createElement("div", {
-      textContent: "选择要测试的密钥",
+      textContent: getString("settings-api-key-selection-title"),
       styles: {
         fontSize: "16px",
         fontWeight: "600",
@@ -3064,7 +3183,9 @@ export class ApiSettingsPage {
     // 密钥列表
     keys.forEach((key, index) => {
       const btn = this.createElement("button", {
-        textContent: `密钥 ${index + 1}: ${ApiKeyManager.maskKey(key)}`,
+        textContent: getString("settings-api-key-selection-item", {
+          args: { index: index + 1, key: ApiKeyManager.maskKey(key) },
+        }),
         styles: {
           display: "block",
           width: "100%",
@@ -3095,7 +3216,7 @@ export class ApiSettingsPage {
 
     // 取消按钮
     const cancelBtn = this.createElement("button", {
-      textContent: "取消",
+      textContent: getString("dialog-button-cancel"),
       styles: {
         display: "block",
         width: "100%",
@@ -3128,10 +3249,16 @@ export class ApiSettingsPage {
    * 执行测试连接（使用当前活动密钥）
    */
   private async runTestConnection(): Promise<void> {
-    const progressWindow = new ztoolkit.ProgressWindow("API 连接测试", {
-      closeTime: -1,
+    const progressWindow = new ztoolkit.ProgressWindow(
+      getString("settings-api-connection-test-title"),
+      {
+        closeTime: -1,
+      },
+    );
+    progressWindow.createLine({
+      text: getString("settings-api-testing-connection-progress"),
+      type: "default",
     });
-    progressWindow.createLine({ text: "正在测试连接...", type: "default" });
     progressWindow.show();
 
     // 页面内结果区域（避免进度窗文本截断）
@@ -3145,7 +3272,7 @@ export class ApiSettingsPage {
       resultBox.style.display = "block";
       resultBox.style.backgroundColor = "#fff8e1";
       resultBox.style.border = "1px solid #ffe082";
-      resultPre.textContent = "正在测试连接…\n请稍候。";
+      resultPre.textContent = getString("settings-api-testing-connection-wait");
     }
 
     try {
@@ -3183,7 +3310,13 @@ export class ApiSettingsPage {
       }
 
       progressWindow.changeLine({
-        text: `❌ ${error?.message || "连接失败"}`,
+        text: getString("settings-api-connection-failed", {
+          args: {
+            message:
+              error?.message ||
+              getString("settings-api-connection-failed-generic"),
+          },
+        }),
         type: "fail",
         progress: 100,
       });
@@ -3208,11 +3341,16 @@ export class ApiSettingsPage {
     apiKey: string,
     keyIndex: number,
   ): Promise<void> {
-    const progressWindow = new ztoolkit.ProgressWindow("API 连接测试", {
-      closeTime: -1,
-    });
+    const progressWindow = new ztoolkit.ProgressWindow(
+      getString("settings-api-connection-test-title"),
+      {
+        closeTime: -1,
+      },
+    );
     progressWindow.createLine({
-      text: `正在测试密钥 ${keyIndex + 1}...`,
+      text: getString("settings-api-testing-key-progress", {
+        args: { index: keyIndex + 1 },
+      }),
       type: "default",
     });
     progressWindow.show();
@@ -3227,7 +3365,9 @@ export class ApiSettingsPage {
       resultBox.style.display = "block";
       resultBox.style.backgroundColor = "#fff8e1";
       resultBox.style.border = "1px solid #ffe082";
-      resultPre.textContent = `正在测试密钥 ${keyIndex + 1}…\n请稍候。`;
+      resultPre.textContent = getString("settings-api-testing-key-wait", {
+        args: { index: keyIndex + 1 },
+      });
     }
 
     try {
@@ -3235,7 +3375,9 @@ export class ApiSettingsPage {
       const result = await LLMClient.testConnectionWithKey(apiKey);
 
       progressWindow.changeLine({
-        text: `✅ 密钥 ${keyIndex + 1} 测试成功`,
+        text: getString("settings-api-key-test-success", {
+          args: { index: keyIndex + 1 },
+        }),
         type: "success",
         progress: 100,
       });
@@ -3245,7 +3387,9 @@ export class ApiSettingsPage {
         resultBox.style.backgroundColor = "#e8f5e9";
         resultBox.style.border = "1px solid #a5d6a7";
         resultPre.style.color = "#1b5e20";
-        resultPre.textContent = `密钥 ${keyIndex + 1} 测试结果:\n${result}`;
+        resultPre.textContent = getString("settings-api-key-test-result", {
+          args: { index: keyIndex + 1, result },
+        });
       }
 
       // 更新成功密钥的状态指示器为绿色
@@ -3256,7 +3400,9 @@ export class ApiSettingsPage {
       const fullMsg = error?.message || String(error);
 
       progressWindow.changeLine({
-        text: `❌ 密钥 ${keyIndex + 1} 测试失败`,
+        text: getString("settings-api-key-test-failed", {
+          args: { index: keyIndex + 1 },
+        }),
         type: "fail",
         progress: 100,
       });
@@ -3266,7 +3412,12 @@ export class ApiSettingsPage {
         resultBox.style.backgroundColor = "#ffebee";
         resultBox.style.border = "1px solid #ffcdd2";
         resultPre.style.color = "#b71c1c";
-        resultPre.textContent = `密钥 ${keyIndex + 1} 测试失败:\n${fullMsg}`;
+        resultPre.textContent = getString(
+          "settings-api-key-test-failed-detail",
+          {
+            args: { index: keyIndex + 1, message: fullMsg },
+          },
+        );
       }
 
       // 更新失败密钥的状态指示器为红色
@@ -3288,7 +3439,9 @@ export class ApiSettingsPage {
     ) as HTMLElement | null;
     if (statusIcon) {
       statusIcon.style.color = isValid ? "#4caf50" : "#f44336";
-      statusIcon.title = isValid ? "测试成功" : "测试失败";
+      statusIcon.title = isValid
+        ? getString("settings-api-test-success-title")
+        : getString("settings-api-test-failed-title");
     }
   }
 
@@ -3298,20 +3451,49 @@ export class ApiSettingsPage {
   private formatAPITestError(error: any): string {
     const d = error?.details;
     if (!d) return error?.message || String(error);
+    const unknownValue = getString("common-unknown-value");
     const lines: string[] = [];
-    lines.push(`错误名称: ${d.errorName || "Unknown"}`);
-    lines.push(`错误信息: ${d.errorMessage || error?.message || "Unknown"}`);
+    lines.push(
+      getString("settings-api-test-error-name", {
+        args: { name: d.errorName || unknownValue },
+      }),
+    );
+    lines.push(
+      getString("settings-api-test-error-message", {
+        args: { message: d.errorMessage || error?.message || unknownValue },
+      }),
+    );
     if (d.statusCode !== undefined) {
-      lines.push(`状态码: ${d.statusCode}`);
+      lines.push(
+        getString("settings-api-test-error-status", {
+          args: { status: d.statusCode },
+        }),
+      );
     }
-    lines.push(`请求路径: ${d.requestUrl || "Unknown"}`);
+    lines.push(
+      getString("settings-api-test-error-url", {
+        args: { url: d.requestUrl || unknownValue },
+      }),
+    );
     if (d.responseBody) {
-      lines.push(`响应内容: ${d.responseBody}`);
+      lines.push(
+        getString("settings-api-test-error-response-body", {
+          args: { body: d.responseBody },
+        }),
+      );
     }
     if (d.responseHeaders && Object.keys(d.responseHeaders).length > 0) {
-      lines.push(`响应首部: ${JSON.stringify(d.responseHeaders, null, 2)}`);
+      lines.push(
+        getString("settings-api-test-error-response-headers", {
+          args: { headers: JSON.stringify(d.responseHeaders, null, 2) },
+        }),
+      );
     }
-    lines.push(`请求体: ${d.requestBody || "Unknown"}`);
+    lines.push(
+      getString("settings-api-test-error-request-body", {
+        args: { body: d.requestBody || unknownValue },
+      }),
+    );
     return lines.join("\n");
   }
 
@@ -3321,8 +3503,8 @@ export class ApiSettingsPage {
   private resetSettings(): void {
     const confirmed = Services.prompt.confirm(
       Zotero.getMainWindow() as any,
-      "重置 API 配置",
-      "确定要重置 API 全局配置为默认值吗？模型平台、供应商密钥和路由设置不会被重置。",
+      getString("settings-api-reset-global-title"),
+      getString("settings-api-reset-global-confirm"),
     );
 
     if (!confirmed) {
@@ -3336,7 +3518,7 @@ export class ApiSettingsPage {
     setPref("enableMaxTokens", false as any);
     setPref("enableTopP", false as any);
     setPref("stream", true);
-    setPref("enablePromptCacheOptimization" as any, false);
+    setPref("enablePromptCacheOptimization" as any, true);
     setPref("requestTimeout", "300000");
     setPref("batchSize", "1");
     setPref("batchInterval", "60");
@@ -3355,8 +3537,11 @@ export class ApiSettingsPage {
 
     this.render();
 
-    new ztoolkit.ProgressWindow("API 配置")
-      .createLine({ text: "已重置 API 全局配置", type: "success" })
+    new ztoolkit.ProgressWindow(getString("settings-api-page-title"))
+      .createLine({
+        text: getString("settings-api-reset-global-success"),
+        type: "success",
+      })
       .show();
   }
 
@@ -3366,8 +3551,8 @@ export class ApiSettingsPage {
   private resetLegacySettings(): void {
     const confirmed = Services.prompt.confirm(
       Zotero.getMainWindow() as any,
-      "重置设置",
-      "确定要重置为默认设置吗?",
+      getString("settings-api-reset-legacy-title"),
+      getString("settings-api-reset-legacy-confirm"),
     );
 
     if (!confirmed) {
@@ -3421,14 +3606,17 @@ export class ApiSettingsPage {
     setPref("enableMaxTokens", false as any);
     setPref("enableTopP", false as any);
     setPref("stream", true);
-    setPref("enablePromptCacheOptimization" as any, false);
+    setPref("enablePromptCacheOptimization" as any, true);
     setPref("requestTimeout", "300000");
 
     // 重新渲染
     this.render();
 
-    new ztoolkit.ProgressWindow("API 配置")
-      .createLine({ text: "已重置为默认设置", type: "success" })
+    new ztoolkit.ProgressWindow(getString("settings-api-page-title"))
+      .createLine({
+        text: getString("settings-api-reset-defaults-success"),
+        type: "success",
+      })
       .show();
   }
 }

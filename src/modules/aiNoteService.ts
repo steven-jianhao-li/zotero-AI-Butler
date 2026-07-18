@@ -15,6 +15,7 @@ import {
   LLMNoteMetadataService,
   type LLMNoteMetadata,
 } from "./llmNoteMetadata";
+import { getString } from "../utils/locale";
 
 export type AiNoteKind = "summary" | "deepRead";
 
@@ -28,16 +29,16 @@ const NOTE_KIND_TAG: Record<AiNoteKind, string> = {
   deepRead: DEEP_READ_NOTE_TAG,
 };
 
-const NOTE_KIND_TITLE: Record<AiNoteKind, string> = {
-  summary: "AI 总结",
-  deepRead: "AI 精读",
+const NOTE_KIND_TITLE_KEY: Record<AiNoteKind, string> = {
+  summary: "note-kind-summary",
+  deepRead: "note-kind-deep-read",
 };
 
 export class AiNoteService {
   private static noteWriteLocks = new Map<string, Promise<void>>();
 
   public static getTitle(kind: AiNoteKind): string {
-    return NOTE_KIND_TITLE[kind];
+    return getString(NOTE_KIND_TITLE_KEY[kind]);
   }
 
   public static getTag(kind: AiNoteKind): string {
@@ -95,10 +96,7 @@ export class AiNoteService {
 
       return target ? { note: target, rawHtml } : null;
     } catch (error) {
-      ztoolkit.log(
-        `[AI-Butler] 查找 ${NOTE_KIND_TITLE[kind]} 笔记失败:`,
-        error,
-      );
+      ztoolkit.log(`[AI-Butler] find ${kind} note failed:`, error);
       return null;
     }
   }
@@ -248,11 +246,15 @@ export class AiNoteService {
       const existing = await this.findNote(parentItem, "deepRead");
       if (existing) return existing;
 
-      const title = (parentItem.getField("title") as string) || "文献";
+      const title =
+        (parentItem.getField("title") as string) ||
+        getString("common-paper-title");
       const note = new Zotero.Item("note");
       note.libraryID = parentItem.libraryID;
       note.parentID = parentItem.id;
-      note.setNote(`<h1>AI 精读 - ${escapeHtml(title)}</h1>`);
+      note.setNote(
+        `<h1>${getString("deep-read-note-title", { args: { title: escapeHtml(title) } })}</h1>`,
+      );
       note.addTag(DEEP_READ_NOTE_TAG);
       await note.saveTx();
       return note;

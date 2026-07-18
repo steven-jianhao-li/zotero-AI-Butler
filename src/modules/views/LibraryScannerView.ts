@@ -21,9 +21,14 @@ import { BaseView } from "./BaseView";
 import { AiNoteService, type AiNoteKind } from "../aiNoteService";
 import { TaskQueueManager } from "../taskQueue";
 import { MainWindow } from "./MainWindow";
+import { getString } from "../../utils/locale";
 
 export function getLibraryScannerTargetLabel(target: AiNoteKind): string {
-  return target === "summary" ? "AI 总结" : "AI 精读";
+  return getString(
+    target === "summary"
+      ? "library-scanner-target-summary"
+      : "library-scanner-target-deep-read",
+  );
 }
 
 export function getLibraryScannerTaskType(
@@ -116,7 +121,9 @@ export class LibraryScannerView extends BaseView {
             margin: "0 0 10px 0",
             fontSize: "18px",
           },
-          textContent: `📚 缺 ${this.getScanTargetLabel()} 文献`,
+          textContent: getString("library-scanner-heading", {
+            args: { target: this.getScanTargetLabel() },
+          }),
         }),
         this.createElement("p", {
           id: this.scannerInfoId,
@@ -125,7 +132,7 @@ export class LibraryScannerView extends BaseView {
             fontSize: "14px",
             opacity: "0.9",
           },
-          textContent: "正在扫描...",
+          textContent: getString("library-scanner-scanning"),
         }),
       ],
     });
@@ -182,7 +189,7 @@ export class LibraryScannerView extends BaseView {
         cursor: "pointer",
         fontSize: "14px",
       },
-      textContent: "返回",
+      textContent: getString("common-back"),
     }) as HTMLButtonElement;
 
     cancelButton.addEventListener("click", () => {
@@ -202,7 +209,7 @@ export class LibraryScannerView extends BaseView {
         fontSize: "14px",
         fontWeight: "600",
       },
-      textContent: "添加到队列",
+      textContent: getString("library-scanner-add-to-queue"),
     }) as HTMLButtonElement;
 
     confirmButton.addEventListener("click", () => {
@@ -234,7 +241,7 @@ export class LibraryScannerView extends BaseView {
     try {
       const startedAt = Date.now();
       this.log(
-        `[LibraryScanner] 开始扫描缺 ${this.getScanTargetLabel()} 文献 scanId=${scanId}`,
+        `[LibraryScanner] Start scanning papers missing ${this.getScanTargetLabel()} scanId=${scanId}`,
       );
 
       await this.scanLibrary(scanId);
@@ -274,7 +281,11 @@ export class LibraryScannerView extends BaseView {
           library.name,
           `Library ${libraryID}`,
         );
-        this.setInfo(`正在扫描「${libraryLabel}」...`);
+        this.setInfo(
+          getString("library-scanner-scanning-library", {
+            args: { library: libraryLabel },
+          }),
+        );
         await this.yieldToUI();
 
         const libraryNode: TreeNode = {
@@ -319,7 +330,7 @@ export class LibraryScannerView extends BaseView {
           const unfiledNode: TreeNode = {
             id: `unfiled-${libraryID}`,
             type: "collection",
-            name: "未分类文献",
+            name: getString("library-scanner-unfiled-items"),
             children: [],
             checked: false,
             expanded: false, // 默认收起
@@ -491,7 +502,13 @@ export class LibraryScannerView extends BaseView {
       checkedCount++;
       if (checkedCount === 1 || checkedCount % 100 === 0) {
         this.setInfo(
-          `正在扫描「${libraryLabel}」... ${checkedCount}/${itemIDs.length}`,
+          getString("library-scanner-scanning-library-progress", {
+            args: {
+              library: libraryLabel,
+              current: checkedCount,
+              total: itemIDs.length,
+            },
+          }),
         );
         await this.yieldToUI();
       }
@@ -612,7 +629,9 @@ export class LibraryScannerView extends BaseView {
   }
 
   private getItemTitle(item: Zotero.Item): string {
-    const fallback = `未命名条目 ${this.getItemDebugID(item)}`;
+    const fallback = getString("library-scanner-unnamed-item", {
+      args: { id: this.getItemDebugID(item) },
+    });
 
     try {
       const displayTitle = item.getDisplayTitle?.();
@@ -714,9 +733,15 @@ export class LibraryScannerView extends BaseView {
     this.selectedCount = 0;
     const title = this.container?.querySelector("h2");
     if (title) {
-      title.textContent = `📚 缺 ${this.getScanTargetLabel()} 文献`;
+      title.textContent = getString("library-scanner-heading", {
+        args: { target: this.getScanTargetLabel() },
+      });
     }
-    this.setInfo(`正在扫描缺 ${this.getScanTargetLabel()} 的 Zotero 文献...`);
+    this.setInfo(
+      getString("library-scanner-scanning-target", {
+        args: { target: this.getScanTargetLabel() },
+      }),
+    );
     if (this.treeContainer) {
       this.treeContainer.innerHTML = "";
     }
@@ -726,7 +751,9 @@ export class LibraryScannerView extends BaseView {
   private showScanError(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
     const errorDetails = this.formatErrorDetails(error);
-    this.setInfo(`扫描失败: ${message}`);
+    this.setInfo(
+      getString("library-scanner-scan-failed", { args: { error: message } }),
+    );
 
     if (this.treeContainer) {
       this.treeContainer.innerHTML = "";
@@ -742,7 +769,7 @@ export class LibraryScannerView extends BaseView {
           fontWeight: "600",
           alignSelf: "flex-start",
         },
-        textContent: "复制错误详情",
+        textContent: getString("library-scanner-copy-error-details"),
       }) as HTMLButtonElement;
 
       copyButton.addEventListener("click", () => {
@@ -767,7 +794,7 @@ export class LibraryScannerView extends BaseView {
             styles: {
               fontSize: "15px",
             },
-            textContent: "扫描过程中出现错误",
+            textContent: getString("library-scanner-error-title"),
           }),
           this.createElement("div", {
             textContent: this.toSafeDOMText(message, "Unknown error"),
@@ -894,7 +921,7 @@ export class LibraryScannerView extends BaseView {
       } catch {
         new ztoolkit.ProgressWindow("AI Butler", { closeTime: 2200 })
           .createLine({
-            text: "复制失败，可手动选择错误文本",
+            text: getString("library-scanner-copy-failed"),
             type: "fail",
           })
           .show();
@@ -903,8 +930,9 @@ export class LibraryScannerView extends BaseView {
     }
 
     if (button) {
-      const previousText = button.textContent || "复制错误详情";
-      button.textContent = "已复制";
+      const previousText =
+        button.textContent || getString("library-scanner-copy-error-details");
+      button.textContent = getString("library-scanner-copied");
       button.disabled = true;
       button.style.cursor = "default";
       void Zotero.Promise.delay(1500).then(() => {
@@ -915,7 +943,10 @@ export class LibraryScannerView extends BaseView {
     }
 
     new ztoolkit.ProgressWindow("AI Butler", { closeTime: 1500 })
-      .createLine({ text: "已复制错误详情", type: "success" })
+      .createLine({
+        text: getString("library-scanner-error-details-copied"),
+        type: "success",
+      })
       .show();
   }
 
@@ -936,9 +967,9 @@ export class LibraryScannerView extends BaseView {
       textContent: String(count),
     });
     this.selectedCountElement.replaceChildren(
-      doc.createTextNode("已选择: "),
+      doc.createTextNode(`${getString("library-scanner-selected-prefix")} `),
       countElement,
-      doc.createTextNode(" 篇"),
+      doc.createTextNode(getString("library-scanner-selected-suffix")),
     );
   }
 
@@ -1034,7 +1065,9 @@ export class LibraryScannerView extends BaseView {
     const infoElement = this.getScannerInfoElement();
     if (infoElement) {
       if (this.totalUnprocessed === 0) {
-        infoElement.textContent = `🎉 所有文献都已有 ${this.getScanTargetLabel()}!`;
+        infoElement.textContent = getString("library-scanner-all-have-target", {
+          args: { target: this.getScanTargetLabel() },
+        });
       } else {
         const strong = this.createElement("strong", {
           textContent: String(this.totalUnprocessed),
@@ -1042,9 +1075,13 @@ export class LibraryScannerView extends BaseView {
         const doc =
           infoElement.ownerDocument || Zotero.getMainWindow().document;
         infoElement.replaceChildren(
-          doc.createTextNode("发现 "),
+          doc.createTextNode(`${getString("library-scanner-found-prefix")} `),
           strong,
-          doc.createTextNode(` 篇文献缺 ${this.getScanTargetLabel()}`),
+          doc.createTextNode(
+            getString("library-scanner-found-suffix", {
+              args: { target: this.getScanTargetLabel() },
+            }),
+          ),
         );
       }
     }
@@ -1060,7 +1097,9 @@ export class LibraryScannerView extends BaseView {
             color: "#999",
             fontSize: "16px",
           },
-          textContent: `🎉\n\n所有文献都已有 ${this.getScanTargetLabel()}!`,
+          textContent: getString("library-scanner-empty-message", {
+            args: { target: this.getScanTargetLabel() },
+          }),
         });
         emptyMessage.style.whiteSpace = "pre-line";
         this.treeContainer.appendChild(emptyMessage);
@@ -1125,7 +1164,12 @@ export class LibraryScannerView extends BaseView {
         fontWeight: "600",
         color: "#fff",
       },
-      textContent: `📚 全选/全不选 (共 ${this.totalUnprocessed} 篇缺 ${this.getScanTargetLabel()})`,
+      textContent: getString("library-scanner-select-all-label", {
+        args: {
+          count: this.totalUnprocessed,
+          target: this.getScanTargetLabel(),
+        },
+      }),
     });
 
     content.appendChild(checkbox);
@@ -1595,8 +1639,11 @@ export class LibraryScannerView extends BaseView {
     const selectedItems = this.collectSelectedItems(this.treeRoot);
 
     if (selectedItems.length === 0) {
-      new ztoolkit.ProgressWindow("AI 管家")
-        .createLine({ text: "请先选择要分析的文献", type: "default" })
+      new ztoolkit.ProgressWindow(getString("app-name"))
+        .createLine({
+          text: getString("library-scanner-select-items-first"),
+          type: "default",
+        })
         .show();
       return;
     }
@@ -1612,9 +1659,14 @@ export class LibraryScannerView extends BaseView {
       }
     }
 
-    new ztoolkit.ProgressWindow("AI 管家")
+    new ztoolkit.ProgressWindow(getString("app-name"))
       .createLine({
-        text: `✅ 已将 ${selectedItems.length} 篇文献添加到 ${this.getScanTargetLabel()} 队列`,
+        text: getString("library-scanner-queue-added", {
+          args: {
+            count: selectedItems.length,
+            target: this.getScanTargetLabel(),
+          },
+        }),
         type: "success",
       })
       .show();

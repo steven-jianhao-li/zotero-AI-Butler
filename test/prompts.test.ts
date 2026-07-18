@@ -1,7 +1,11 @@
 ﻿import { expect } from "chai";
 import {
   DEFAULT_CHAPTER_FALLBACKS,
+  DEFAULT_TABLE_TEMPLATE,
+  buildUserMessage,
   generateChapterPrompts,
+  getConfiguredTableTemplate,
+  getDefaultMultiRoundPromptTemplate,
   getBuiltinMultiRoundPromptTemplates,
   mergeMultiRoundPromptTemplates,
   parseChapterStructure,
@@ -17,6 +21,7 @@ import {
   extractDeepReadPlanMetadata,
   fillDeepReadSlot,
   getDeepReadSlotStatus,
+  hasIncompleteDeepReadContent,
   isDeepReadSlotDone,
   markDeepReadSlotRunning,
   planDeepReadSlots,
@@ -218,6 +223,43 @@ describe("multi-round prompt templates v2", function () {
     expect(shouldRunDeepReadSlot(filled, "chapter_ch2")).to.equal(true);
   });
 
+  it("detects stripped localized placeholders as incomplete deep-read content", function () {
+    const exportedHtml = [
+      "<h1>AI Deep Reading - Paper</h1>",
+      "<h2>Chapter Analysis</h2>",
+      "<p>Chapter 1: Intro</p>",
+      "<h2>Intro</h2>",
+      "<p>Done content with enough detail for the first chapter.</p>",
+      "<h2>Method</h2>",
+      "<p>⏳ Waiting for generation...</p>",
+      "<h2>Limitations</h2>",
+      "<p>🔄 Generating...</p>",
+    ].join("\n");
+
+    expect(hasIncompleteDeepReadContent(exportedHtml)).to.equal(true);
+    expect(
+      hasIncompleteDeepReadContent("<h2>Intro</h2><p>Finished analysis.</p>"),
+    ).to.equal(false);
+  });
+
+  it("keeps stripped English placeholder sections runnable in legacy slot fallback", function () {
+    const template = v2Template();
+    const planned = planDeepReadSlots(template, DEFAULT_CHAPTER_FALLBACKS);
+    const pendingSlot = planned.sequentialSlots[1];
+    const legacyHtml = [
+      "<h1>AI Deep Reading - Paper</h1>",
+      `<h2>${pendingSlot.title}</h2>`,
+      "<p>⏳ Waiting for generation...</p>",
+    ].join("\n");
+
+    expect(
+      getDeepReadSlotStatus(legacyHtml, pendingSlot.id, pendingSlot),
+    ).to.equal("pending");
+    expect(
+      shouldRunDeepReadSlot(legacyHtml, pendingSlot.id, pendingSlot),
+    ).to.equal(true);
+  });
+
   it("persists plan metadata and marks running slots", function () {
     const template = v2Template();
     const planned = planDeepReadSlots(template, DEFAULT_CHAPTER_FALLBACKS);
@@ -248,6 +290,30 @@ describe("multi-round prompt templates v2", function () {
     expect(chapters).to.deep.equal(DEFAULT_CHAPTER_FALLBACKS);
     expect(planDeepReadSlots(template, chapters).slots[0].id).to.equal(
       "chapter_ch1",
+    );
+  });
+
+  it("recovers chapters from English rendered deep-read notes when metadata is missing", function () {
+    const template = v2Template();
+    const html = [
+      "<h1>AI Deep Reading - Paper</h1>",
+      "<h2>Chapter Analysis</h2>",
+      "<p>Chapter 1: Introduction</p>",
+      "<p>Chapter 2: Simulation vs. Emulation</p>",
+      "<h2>Introduction</h2>",
+      "<p>Already generated content.</p>",
+      "<h2>Simulation vs. Emulation</h2>",
+      "<p>⏳ Waiting for generation...</p>",
+    ].join("\n");
+
+    const chapters = extractDeepReadChaptersFromHtml(html);
+
+    expect(chapters).to.deep.equal([
+      { id: "ch1", title_zh: "Introduction", title_en: "" },
+      { id: "ch2", title_zh: "Simulation vs. Emulation", title_en: "" },
+    ]);
+    expect(planDeepReadSlots(template, chapters).slots[1].id).to.equal(
+      "chapter_ch2",
     );
   });
 
@@ -295,5 +361,66 @@ describe("multi-round prompt templates v2", function () {
     expect(filled).to.include("<h3>论文概述与核心背景</h3>");
     expect(filled).to.include(`<p>${prose}</p>`);
     expect(filled).to.not.include(`<h1>${prose}</h1>`);
+  });
+
+  describe("localized prompt defaults", function () {
+    let previousAddon: any;
+    let previousLocale: any;
+
+    beforeEach(function () {
+      previousAddon = (globalThis as any).addon;
+      previousLocale = previousAddon?.data?.locale;
+      const addon = previousAddon || { data: {} };
+      addon.data = addon.data || {};
+      (globalThis as any).addon = addon;
+      addon.data.locale = {
+        current: {
+          formatMessagesSync(requests: Array<{ id: string }>) {
+            return requests.map(({ id }) => ({
+              value: id.endsWith("settings-image-summary-default-language")
+                ? "English"
+                : undefined,
+            }));
+          },
+        },
+      };
+    });
+
+    afterEach(function () {
+      if (previousAddon) {
+        (globalThis as any).addon = previousAddon;
+        previousAddon.data = previousAddon.data || {};
+        previousAddon.data.locale = previousLocale;
+      } else {
+        delete (globalThis as any).addon;
+      }
+    });
+
+    it("uses an English language instruction when building English requests", function () {
+      const message = buildUserMessage("Explain the paper.", "Paper body");
+
+      expect(message).to.include("Please answer in English.");
+      expect(message).to.not.include("请用中文回答");
+    });
+
+    it("treats saved Chinese table defaults as defaults in English locale", function () {
+      const table = getConfiguredTableTemplate(DEFAULT_TABLE_TEMPLATE);
+
+      expect(table).to.include("| Dimension | Content |");
+      expect(table).to.not.include("| 维度 | 内容 |");
+    });
+
+    it("does not include Chinese title placeholders in the English chapter prompt", function () {
+      const template = getDefaultMultiRoundPromptTemplate();
+      const chapterPhase = template.phases.find(
+        (phase) => phase.type === "sequential_dynamic",
+      );
+
+      expect(chapterPhase?.type).to.equal("sequential_dynamic");
+      if (chapterPhase?.type === "sequential_dynamic") {
+        expect(chapterPhase.chapterTemplate).to.include("{{title_en}}");
+        expect(chapterPhase.chapterTemplate).to.not.include("{{title_zh}}");
+      }
+    });
   });
 });

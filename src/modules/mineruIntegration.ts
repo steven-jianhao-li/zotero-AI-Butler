@@ -15,6 +15,7 @@
  * @author AI-Butler Team
  */
 
+import { getString } from "../utils/locale";
 import { getPref } from "../utils/prefs";
 import { PDFExtractor } from "./pdfExtractor";
 import {
@@ -76,7 +77,7 @@ export class MineruClient {
   ): Promise<string> {
     const apiKey = (getPref("mineruApiKey") as string) || "";
     if (!apiKey) {
-      throw new Error("MinerU API Key not configured.");
+      throw new Error(getString("mineru-error-api-key-missing"));
     }
 
     if (MineruMarkdownSaver.isSaveEnabled()) {
@@ -85,10 +86,10 @@ export class MineruClient {
         ztoolkit.log(
           "[MineruIntegration] Reusing saved MinerU Markdown attachment.",
         );
-        progressCallback?.("复用已保存的 MinerU Markdown", 38, {
+        progressCallback?.(getString("progress-mineru-cache-message"), 38, {
           stage: "mineru-parsing",
-          label: "复用 MinerU 缓存",
-          detail: "已找到此前保存的 MinerU Markdown 附件，跳过重新解析",
+          label: getString("progress-mineru-cache"),
+          detail: getString("progress-mineru-cache-detail"),
         });
         return cachedMarkdown;
       }
@@ -97,19 +98,21 @@ export class MineruClient {
     // Get PDF file path
     const pdfAttachments = await PDFExtractor.getAllPdfAttachments(item);
     if (!pdfAttachments || pdfAttachments.length === 0) {
-      throw new Error("No PDF attachment found.");
+      throw new Error(getString("mineru-error-no-pdf-attachment"));
     }
     const pdfAttachment = pdfAttachments[0];
     const filePath = await pdfAttachment.getFilePathAsync();
     if (!filePath) {
-      throw new Error("PDF file path not found.");
+      throw new Error(getString("mineru-error-pdf-path-not-found"));
     }
 
     ztoolkit.log(`[MineruIntegration] Starting MinerU parsing of ${filePath}`);
-    progressCallback?.("正在读取 PDF 并准备提交 MinerU...", 12, {
+    progressCallback?.(getString("progress-mineru-preparing-message"), 12, {
       stage: "mineru-uploading",
-      label: "MinerU 准备中",
-      detail: `PDF 路径：${filePath}`,
+      label: getString("progress-mineru-preparing"),
+      detail: getString("progress-mineru-pdf-path-detail", {
+        args: { path: filePath },
+      }),
     });
 
     // Read PDF binary
@@ -119,10 +122,12 @@ export class MineruClient {
     // Get Batch & Upload URLs
     // Assuming simple payload for /api/v4/file-urls/batch based on standard implementations
     const fileName = "document.pdf";
-    progressCallback?.("正在获取 MinerU 上传地址...", 14, {
+    progressCallback?.(getString("progress-mineru-upload-url-message"), 14, {
       stage: "mineru-uploading",
-      label: "MinerU 获取上传地址",
-      detail: `模型版本：${modelVersion}`,
+      label: getString("progress-mineru-upload-url"),
+      detail: getString("progress-mineru-model-detail", {
+        args: { model: modelVersion },
+      }),
     });
     const batchRes = await fetch("https://mineru.net/api/v4/file-urls/batch", {
       method: "POST",
@@ -138,7 +143,9 @@ export class MineruClient {
 
     if (!batchRes.ok) {
       const err = await batchRes.text();
-      throw new Error(`Failed to get upload URL: ${err}`);
+      throw new Error(
+        getString("mineru-error-upload-url-failed", { args: { message: err } }),
+      );
     }
 
     const batchData = (await batchRes.json()) as any;
@@ -162,10 +169,12 @@ export class MineruClient {
 
     // Upload file content to the presigned URL
     ztoolkit.log(`[MineruIntegration] Uploading PDF to Mineru PUT URL...`);
-    progressCallback?.("MinerU 上传中...", 16, {
+    progressCallback?.(getString("progress-mineru-uploading-message"), 16, {
       stage: "mineru-uploading",
-      label: "MinerU 上传中",
-      detail: `正在上传 PDF，大小约 ${(fileData.byteLength / 1024 / 1024).toFixed(2)} MB`,
+      label: getString("progress-mineru-uploading"),
+      detail: getString("progress-mineru-upload-size-detail", {
+        args: { size: (fileData.byteLength / 1024 / 1024).toFixed(2) },
+      }),
     });
     const putRes = await fetch(putUrl, {
       method: "PUT",
@@ -175,7 +184,9 @@ export class MineruClient {
     if (!putRes.ok) {
       const errText = await putRes.text();
       throw new Error(
-        `Failed to put upload file, status: ${putRes.status}, error: ${errText}`,
+        getString("mineru-error-upload-file-failed", {
+          args: { status: putRes.status, message: errText },
+        }),
       );
     }
 
@@ -186,17 +197,19 @@ export class MineruClient {
     );
     const result = await this.pollStatusAndDownload(apiKey, batchId, timeoutMs);
     if (MineruMarkdownSaver.isSaveEnabled()) {
-      progressCallback?.("正在保存 MinerU Markdown 缓存...", 39, {
+      progressCallback?.(getString("progress-mineru-save-cache-message"), 39, {
         stage: "mineru-parsing",
-        label: "保存 MinerU 缓存",
-        detail: "正在把 MinerU Markdown 和图片资源保存为 Zotero 附件",
+        label: getString("progress-mineru-save-cache"),
+        detail: getString("progress-mineru-save-cache-detail"),
       });
       await MineruMarkdownSaver.save(item, result.markdown, result.assets);
     }
-    progressCallback?.("MinerU 解析完成", 40, {
+    progressCallback?.(getString("progress-mineru-complete-message"), 40, {
       stage: "mineru-parsing",
-      label: "MinerU 完成",
-      detail: `已提取约 ${result.markdown.length} 个 Markdown 字符`,
+      label: getString("progress-mineru-complete"),
+      detail: getString("progress-mineru-extracted-detail", {
+        args: { count: result.markdown.length },
+      }),
     });
     return result.markdown;
   }
@@ -228,7 +241,9 @@ export class MineruClient {
       if (!res.ok) {
         const errText = await res.text();
         throw new Error(
-          `Failed to poll MinerU task, status: ${res.status}, error: ${errText}`,
+          getString("mineru-error-poll-failed", {
+            args: { status: res.status, message: errText },
+          }),
         );
       }
       const data = (await res.json()) as any;
@@ -242,33 +257,48 @@ export class MineruClient {
         35,
         20 + Math.floor((elapsedMs / timeoutMs) * 15),
       );
-      progressCallback?.("MinerU 解析中...", estimatedProgress, {
-        stage: "mineru-processing",
-        label: "MinerU 解析中",
-        detail: `第 ${attempt} 次轮询；状态：${state || "pending"}；已等待 ${Math.floor(elapsedMs / 1000)} 秒；Batch ID：${batchId}`,
-        attempt,
-      });
+      progressCallback?.(
+        getString("progress-mineru-processing-message"),
+        estimatedProgress,
+        {
+          stage: "mineru-processing",
+          label: getString("progress-mineru-processing"),
+          detail: getString("progress-mineru-poll-detail", {
+            args: {
+              attempt,
+              state: state || "pending",
+              seconds: Math.floor(elapsedMs / 1000),
+              batchId,
+            },
+          }),
+          attempt,
+        },
+      );
 
       if (state === "done") {
         const zipUrl = result?.full_zip_url;
         if (!zipUrl) {
-          throw new Error(
-            "MinerU Task completed but no full_zip_url returned.",
-          );
+          throw new Error(getString("mineru-error-missing-result-url"));
         }
-        progressCallback?.("MinerU 解析完成，正在下载结果...", 36, {
-          stage: "mineru-downloading",
-          label: "MinerU 下载结果",
-          detail: "MinerU 已完成解析，正在下载结果压缩包",
-        });
+        progressCallback?.(
+          getString("progress-mineru-downloading-message"),
+          36,
+          {
+            stage: "mineru-downloading",
+            label: getString("progress-mineru-downloading"),
+            detail: getString("progress-mineru-download-ready-detail"),
+          },
+        );
         return await this.downloadAndExtractMarkdown(zipUrl, progressCallback);
       } else if (state === "error") {
-        throw new Error(`MinerU Task failed processing.`);
+        throw new Error(getString("mineru-error-task-failed"));
       }
 
       // continue polling...
     }
-    throw new Error(`MinerU Task timed out after ${timeoutMs} ms.`);
+    throw new Error(
+      getString("mineru-error-task-timeout", { args: { timeoutMs } }),
+    );
   }
 
   private static async downloadAndExtractMarkdown(
@@ -278,13 +308,19 @@ export class MineruClient {
     ztoolkit.log(`[MineruIntegration] Downloading zip result from ${zipUrl}`);
     const res = await fetch(zipUrl);
     if (!res.ok) {
-      throw new Error(`Failed to download zip file from ${zipUrl}`);
+      throw new Error(
+        getString("mineru-error-download-zip-failed", {
+          args: { url: zipUrl },
+        }),
+      );
     }
     const arrayBuffer = await res.arrayBuffer();
-    progressCallback?.("正在解压 MinerU Markdown...", 37, {
+    progressCallback?.(getString("progress-mineru-unzipping-message"), 37, {
       stage: "mineru-parsing",
-      label: "MinerU 解压结果",
-      detail: `结果压缩包大小约 ${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)} MB`,
+      label: getString("progress-mineru-unzipping"),
+      detail: getString("progress-mineru-zip-size-detail", {
+        args: { size: (arrayBuffer.byteLength / 1024 / 1024).toFixed(2) },
+      }),
     });
 
     // Extract using JSZip
@@ -309,7 +345,7 @@ export class MineruClient {
     }
 
     if (!mdContent) {
-      throw new Error("No valid Markdown file found in the extracted zip.");
+      throw new Error(getString("mineru-error-no-valid-markdown"));
     }
 
     const assets = await this.extractMarkdownAssets(zip, mdContent);

@@ -16,7 +16,11 @@ import {
   createNotice,
   createInput,
 } from "../ui/components";
-import { getDefaultMindmapPrompt } from "../../../utils/prompts";
+import {
+  getDefaultMindmapPrompt,
+  getConfiguredMindmapPrompt,
+} from "../../../utils/prompts";
+import { getString } from "../../../utils/locale";
 
 /**
  * 思维导图设置页面类
@@ -59,7 +63,7 @@ export class MindmapSettingsPage {
 
     // 页面标题
     const title = this.createElement("h2", {
-      textContent: "🧠 思维导图设置",
+      textContent: getString("settings-mindmap-title"),
       styles: {
         color: "var(--ai-accent)",
         marginBottom: "20px",
@@ -72,8 +76,7 @@ export class MindmapSettingsPage {
 
     // 说明文字
     const description = this.createElement("p", {
-      textContent:
-        "配置思维导图生成的提示词模板和导出文件路径。自定义提示词可以改变思维导图的结构和内容风格。",
+      textContent: getString("settings-mindmap-description"),
       styles: {
         color: "var(--ai-text-muted)",
         fontSize: "13px",
@@ -91,11 +94,13 @@ export class MindmapSettingsPage {
     });
 
     // ==================== 提示词模板 ====================
-    form.appendChild(createSectionTitle("📝 提示词模板"));
+    form.appendChild(
+      createSectionTitle(getString("settings-mindmap-prompt-section")),
+    );
 
     // 提示信息
     const promptNotice = createNotice(
-      "提示词决定了思维导图的结构。默认包含四个大类（研究背景、研究方法、关键结果、结论），您可以自由修改。留空使用默认模板。",
+      getString("settings-mindmap-prompt-notice"),
       "info",
     );
     form.appendChild(promptNotice);
@@ -108,8 +113,8 @@ export class MindmapSettingsPage {
 
     const promptStatus = this.createElement("div", {
       textContent: isUsingDefaultPrompt
-        ? "当前使用：默认提示词（未保存自定义）"
-        : "当前使用：自定义提示词",
+        ? getString("settings-mindmap-status-using-default")
+        : getString("settings-mindmap-status-using-custom"),
       styles: {
         fontSize: "12px",
         color: "var(--ai-text-muted)",
@@ -121,14 +126,17 @@ export class MindmapSettingsPage {
       "mindmapPrompt",
       effectivePrompt,
       15, // 行数
-      "留空使用默认提示词模板...",
+      getString("settings-mindmap-prompt-placeholder"),
     );
     promptTextarea.style.fontFamily = "monospace";
     promptTextarea.style.fontSize = "12px";
     promptTextarea.style.lineHeight = "1.5";
     promptTextarea.style.width = "100%";
 
-    const promptGroup = createFormGroup("提示词内容", promptTextarea);
+    const promptGroup = createFormGroup(
+      getString("settings-mindmap-prompt-content"),
+      promptTextarea,
+    );
     form.appendChild(promptGroup);
 
     // 按钮组
@@ -142,28 +150,40 @@ export class MindmapSettingsPage {
 
     // 查看默认提示词按钮
     const viewDefaultBtn = createStyledButton(
-      "查看默认提示词",
+      getString("settings-mindmap-view-default-prompt"),
       "#9e9e9e",
       "medium",
     );
     viewDefaultBtn.addEventListener("click", () => {
       promptTextarea.value = defaultPrompt;
-      promptStatus.textContent = "当前编辑：默认提示词（未保存）";
+      promptStatus.textContent = getString(
+        "settings-mindmap-status-editing-default",
+      );
     });
     promptButtonGroup.appendChild(viewDefaultBtn);
 
     // 清空按钮（使用默认）
-    const clearBtn = createStyledButton("使用默认", "#ff9800", "medium");
+    const clearBtn = createStyledButton(
+      getString("settings-mindmap-use-default"),
+      "#ff9800",
+      "medium",
+    );
     clearBtn.addEventListener("click", () => {
       promptTextarea.value = defaultPrompt;
       setPref("mindmapPrompt" as any, "" as any);
-      promptStatus.textContent = "当前使用：默认提示词（未保存自定义）";
-      this.showToast("已重置为默认提示词");
+      promptStatus.textContent = getString(
+        "settings-mindmap-status-using-default",
+      );
+      this.showToast(getString("settings-mindmap-toast-reset-default-prompt"));
     });
     promptButtonGroup.appendChild(clearBtn);
 
     // 保存按钮
-    const savePromptBtn = createStyledButton("保存提示词", "#4caf50", "medium");
+    const savePromptBtn = createStyledButton(
+      getString("settings-mindmap-save-prompt"),
+      "#4caf50",
+      "medium",
+    );
     savePromptBtn.addEventListener("click", () => {
       const value = promptTextarea.value.trim();
       const defaultTrimmed = defaultPrompt.trim();
@@ -172,14 +192,20 @@ export class MindmapSettingsPage {
       if (!value || value === defaultTrimmed) {
         setPref("mindmapPrompt" as any, "" as any);
         promptTextarea.value = defaultPrompt;
-        promptStatus.textContent = "当前使用：默认提示词（未保存自定义）";
-        this.showToast("已使用默认提示词");
+        promptStatus.textContent = getString(
+          "settings-mindmap-status-using-default",
+        );
+        this.showToast(
+          getString("settings-mindmap-toast-using-default-prompt"),
+        );
         return;
       }
 
       setPref("mindmapPrompt" as any, value as any);
-      promptStatus.textContent = "当前使用：自定义提示词";
-      this.showToast("提示词已保存");
+      promptStatus.textContent = getString(
+        "settings-mindmap-status-using-custom",
+      );
+      this.showToast(getString("settings-mindmap-toast-prompt-saved"));
     });
     promptButtonGroup.appendChild(savePromptBtn);
 
@@ -193,11 +219,13 @@ export class MindmapSettingsPage {
     });
     form.appendChild(exportDivider);
 
-    form.appendChild(createSectionTitle("📂 导出路径设置"));
+    form.appendChild(
+      createSectionTitle(getString("settings-mindmap-export-section")),
+    );
 
     // 说明
     const exportNotice = createNotice(
-      "设置思维导图导出（PNG/OPML）的默认保存路径。留空默认保存到桌面。",
+      getString("settings-mindmap-export-notice"),
       "info",
     );
     form.appendChild(exportNotice);
@@ -208,11 +236,14 @@ export class MindmapSettingsPage {
       "mindmapExportPath",
       "text",
       currentPath,
-      "留空使用桌面目录...",
+      getString("settings-mindmap-export-path-placeholder"),
     );
     pathInput.style.width = "100%";
 
-    const pathGroup = createFormGroup("导出路径", pathInput);
+    const pathGroup = createFormGroup(
+      getString("settings-mindmap-export-path"),
+      pathInput,
+    );
     form.appendChild(pathGroup);
 
     // 路径按钮组
@@ -225,7 +256,11 @@ export class MindmapSettingsPage {
     });
 
     // 浏览按钮
-    const browseBtn = createStyledButton("浏览...", "#2196f3", "medium");
+    const browseBtn = createStyledButton(
+      getString("settings-mindmap-browse"),
+      "#2196f3",
+      "medium",
+    );
     browseBtn.addEventListener("click", async () => {
       try {
         // 使用 Zotero 文件夹选择器
@@ -233,7 +268,11 @@ export class MindmapSettingsPage {
           "@mozilla.org/filepicker;1"
         ].createInstance(Components.interfaces.nsIFilePicker);
         const win = Zotero.getMainWindow();
-        fp.init(win, "选择导出目录", fp.modeGetFolder);
+        fp.init(
+          win,
+          getString("settings-mindmap-select-export-folder"),
+          fp.modeGetFolder,
+        );
 
         const result = await new Promise<number>((resolve) => {
           fp.open((res: number) => resolve(res));
@@ -243,30 +282,40 @@ export class MindmapSettingsPage {
           const selectedPath = fp.file.path;
           (pathInput as HTMLInputElement).value = selectedPath;
           setPref("mindmapExportPath" as any, selectedPath as any);
-          this.showToast("导出路径已保存");
+          this.showToast(getString("settings-mindmap-toast-export-path-saved"));
         }
       } catch (e) {
         ztoolkit.log("[AI-Butler] 选择导出目录失败:", e);
-        this.showToast("选择目录失败，请手动输入路径");
+        this.showToast(
+          getString("settings-mindmap-toast-select-folder-failed"),
+        );
       }
     });
     pathButtonGroup.appendChild(browseBtn);
 
     // 重置为桌面
-    const resetPathBtn = createStyledButton("重置为桌面", "#ff9800", "medium");
+    const resetPathBtn = createStyledButton(
+      getString("settings-mindmap-reset-desktop"),
+      "#ff9800",
+      "medium",
+    );
     resetPathBtn.addEventListener("click", () => {
       (pathInput as HTMLInputElement).value = "";
       setPref("mindmapExportPath" as any, "" as any);
-      this.showToast("已重置为桌面目录");
+      this.showToast(getString("settings-mindmap-toast-reset-desktop"));
     });
     pathButtonGroup.appendChild(resetPathBtn);
 
     // 保存路径按钮
-    const savePathBtn = createStyledButton("保存路径", "#4caf50", "medium");
+    const savePathBtn = createStyledButton(
+      getString("settings-mindmap-save-path"),
+      "#4caf50",
+      "medium",
+    );
     savePathBtn.addEventListener("click", () => {
       const value = (pathInput as HTMLInputElement).value.trim();
       setPref("mindmapExportPath" as any, value as any);
-      this.showToast("导出路径已保存");
+      this.showToast(getString("settings-mindmap-toast-export-path-saved"));
     });
     pathButtonGroup.appendChild(savePathBtn);
 
@@ -280,7 +329,9 @@ export class MindmapSettingsPage {
     });
     form.appendChild(previewDivider);
 
-    form.appendChild(createSectionTitle("📊 当前配置预览"));
+    form.appendChild(
+      createSectionTitle(getString("settings-mindmap-preview-section")),
+    );
 
     const previewBox = this.createElement("div", {
       styles: {
@@ -299,18 +350,22 @@ export class MindmapSettingsPage {
       promptText.length > 100
         ? promptText.substring(0, 100) + "..."
         : promptText;
-    const promptLabel = promptPref.trim() ? "自定义" : "默认";
-    const path = (getPref("mindmapExportPath" as any) as string) || "(桌面)";
+    const promptLabel = promptPref.trim()
+      ? getString("settings-mindmap-preview-custom")
+      : getString("settings-mindmap-preview-default");
+    const path =
+      (getPref("mindmapExportPath" as any) as string) ||
+      getString("settings-mindmap-preview-desktop");
 
     previewBox.innerHTML = `
       <div style="margin-bottom: 10px;">
-        <strong>提示词：</strong>
+        <strong>${getString("settings-mindmap-preview-prompt")}：</strong>
         <span style="color: var(--ai-text-muted);">
           (${promptLabel}) ${this.escapeHtml(promptPreview)}
         </span>
       </div>
       <div>
-        <strong>导出路径：</strong>
+        <strong>${getString("settings-mindmap-preview-export-path")}：</strong>
         <span style="color: var(--ai-text-muted);">${path}</span>
       </div>
     `;
@@ -324,7 +379,7 @@ export class MindmapSettingsPage {
    * 显示提示消息
    */
   private showToast(message: string): void {
-    new ztoolkit.ProgressWindow("思维导图设置")
+    new ztoolkit.ProgressWindow(getString("settings-mindmap-title"))
       .createLine({
         text: message,
         type: "success",

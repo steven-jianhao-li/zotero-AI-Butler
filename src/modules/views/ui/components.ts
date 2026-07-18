@@ -8,6 +8,8 @@
 /**
  * 检测是否为暗色模式
  */
+import { getString } from "../../../utils/locale";
+
 function isDarkMode(): boolean {
   try {
     return (
@@ -528,14 +530,18 @@ export function createCheckbox(id: string, checked: boolean): HTMLElement {
   });
 
   const label = doc.createElement("span");
-  label.textContent = checked ? "已启用" : "已禁用";
+  label.textContent = checked
+    ? getString("endpoint-enabled")
+    : getString("endpoint-disabled");
   Object.assign(label.style, {
     fontSize: "14px",
     color: "var(--ai-text-muted)",
   });
 
   checkbox.addEventListener("change", () => {
-    label.textContent = checkbox.checked ? "已启用" : "已禁用";
+    label.textContent = checkbox.checked
+      ? getString("endpoint-enabled")
+      : getString("endpoint-disabled");
   });
 
   container.appendChild(checkbox);

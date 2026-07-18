@@ -19,6 +19,7 @@
 
 import { AiNoteService, type AiNoteKind } from "./aiNoteService";
 import { TaskQueueManager } from "./taskQueue";
+import { getString } from "../utils/locale";
 
 /**
  * 树节点接口
@@ -57,7 +58,11 @@ export class LibraryScannerDialog {
   }
 
   private getScanTargetLabel(): string {
-    return this.scanTarget === "summary" ? "AI 总结" : "AI 精读";
+    return getString(
+      this.scanTarget === "summary"
+        ? "library-scanner-target-summary"
+        : "library-scanner-target-deep-read",
+    );
   }
 
   /**
@@ -69,11 +74,13 @@ export class LibraryScannerDialog {
 
     if (this.totalUnprocessed === 0) {
       // 没有未处理的条目
-      new ztoolkit.ProgressWindow("AI 管家", {
+      new ztoolkit.ProgressWindow(getString("app-name"), {
         closeTime: 3000,
       })
         .createLine({
-          text: `🎉 所有文献都已有 ${this.getScanTargetLabel()}！`,
+          text: getString("library-scanner-all-have-target", {
+            args: { target: this.getScanTargetLabel() },
+          }),
           type: "success",
         })
         .show();
@@ -150,7 +157,7 @@ export class LibraryScannerDialog {
         const unfiledNode: TreeNode = {
           id: `unfiled-${library.libraryID}`,
           type: "collection",
-          name: "未分类文献",
+          name: getString("library-scanner-unfiled-items"),
           children: [],
           checked: false,
           parentNode: libraryNode,
@@ -289,7 +296,9 @@ export class LibraryScannerDialog {
 
     // 设置窗口标题
     if (doc.title) {
-      doc.title = `扫描缺 ${this.getScanTargetLabel()} 文献 - AI 管家`;
+      doc.title = getString("library-scanner-dialog-title", {
+        args: { target: this.getScanTargetLabel() },
+      });
     }
 
     // 创建根容器
@@ -322,9 +331,9 @@ export class LibraryScannerDialog {
       border-radius: 8px 8px 0 0;
     `;
     header.innerHTML = `
-      <h2 style="margin: 0 0 10px 0; font-size: 18px;">📚 缺 ${this.getScanTargetLabel()} 文献</h2>
+      <h2 style="margin: 0 0 10px 0; font-size: 18px;">${getString("library-scanner-heading", { args: { target: this.getScanTargetLabel() } })}</h2>
       <p style="margin: 0; font-size: 14px; opacity: 0.9;">
-        发现 <strong>${this.totalUnprocessed}</strong> 篇文献缺 ${this.getScanTargetLabel()}
+        ${getString("library-scanner-found-html", { args: { count: this.totalUnprocessed, target: this.getScanTargetLabel() } })}
       </p>
     `;
     root.appendChild(header);
@@ -356,7 +365,9 @@ export class LibraryScannerDialog {
 
     const selectedLabel = doc.createElement("span");
     selectedLabel.id = "selected-count";
-    selectedLabel.textContent = `已选择: 0 篇`;
+    selectedLabel.textContent = getString("library-scanner-selected-count", {
+      args: { count: 0 },
+    });
     selectedLabel.style.color = "#666";
     footer.appendChild(selectedLabel);
 
@@ -365,7 +376,7 @@ export class LibraryScannerDialog {
     buttonGroup.style.gap = "10px";
 
     const cancelBtn = doc.createElement("button");
-    cancelBtn.textContent = "取消";
+    cancelBtn.textContent = getString("dialog-button-cancel");
     cancelBtn.style.cssText = `
       padding: 8px 20px;
       border: 1px solid #ddd;
@@ -378,7 +389,7 @@ export class LibraryScannerDialog {
     });
 
     const confirmBtn = doc.createElement("button");
-    confirmBtn.textContent = "确认并加入队列";
+    confirmBtn.textContent = getString("library-scanner-confirm-add");
     confirmBtn.id = "confirm-btn";
     confirmBtn.style.cssText = `
       padding: 8px 20px;
@@ -510,7 +521,9 @@ export class LibraryScannerDialog {
 
     const label = doc.getElementById("selected-count");
     if (label) {
-      label.textContent = `已选择: ${this.selectedCount} 篇`;
+      label.textContent = getString("library-scanner-selected-count", {
+        args: { count: this.selectedCount },
+      });
     }
 
     // 更新确认按钮状态
@@ -583,21 +596,28 @@ export class LibraryScannerDialog {
       win.close();
 
       // 显示成功提示
-      new ztoolkit.ProgressWindow("AI 管家", {
+      new ztoolkit.ProgressWindow(getString("app-name"), {
         closeTime: 3000,
       })
         .createLine({
-          text: `✅ 已将 ${selectedItems.length} 篇文献加入 ${this.getScanTargetLabel()} 队列`,
+          text: getString("library-scanner-queue-added", {
+            args: {
+              count: selectedItems.length,
+              target: this.getScanTargetLabel(),
+            },
+          }),
           type: "success",
         })
         .show();
     } catch (error: any) {
-      ztoolkit.log("[LibraryScanner] 加入队列失败:", error);
-      new ztoolkit.ProgressWindow("AI 管家", {
+      ztoolkit.log("[LibraryScanner] Failed to add items to queue:", error);
+      new ztoolkit.ProgressWindow(getString("app-name"), {
         closeTime: 3000,
       })
         .createLine({
-          text: `❌ 加入队列失败: ${error.message}`,
+          text: getString("library-scanner-queue-failed", {
+            args: { error: error.message },
+          }),
           type: "error",
         })
         .show();

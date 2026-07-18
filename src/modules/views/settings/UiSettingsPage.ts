@@ -3,6 +3,7 @@
  */
 
 import { getPref, setPref } from "../../../utils/prefs";
+import { getString } from "../../../utils/locale";
 import { AutoScanManager } from "../../autoScanManager";
 import {
   CONTEXT_MENU_ITEMS,
@@ -48,7 +49,7 @@ export class UiSettingsPage {
     this.container.innerHTML = "";
 
     const title = Zotero.getMainWindow().document.createElement("h2");
-    title.textContent = "🎨 界面设置";
+    title.textContent = getString("settings-ui-title");
     Object.assign(title.style, {
       color: "#59c0bc",
       marginBottom: "20px",
@@ -59,9 +60,7 @@ export class UiSettingsPage {
     this.container.appendChild(title);
 
     this.container.appendChild(
-      createNotice(
-        "界面与行为设置：自动滚动、自动扫描；以及已有 AI 总结 / AI 精读时的处理策略。",
-      ),
+      createNotice(getString("settings-ui-description")),
     );
 
     const form = Zotero.getMainWindow().document.createElement("div");
@@ -72,9 +71,9 @@ export class UiSettingsPage {
     const autoScrollBox = createCheckbox("autoScroll", !!autoScroll);
     form.appendChild(
       createFormGroup(
-        "自动滚动到最新输出",
+        getString("settings-ui-auto-scroll"),
         autoScrollBox,
-        "生成笔记时，自动滚动到输出窗口底部",
+        getString("settings-ui-auto-scroll-help"),
       ),
     );
 
@@ -83,9 +82,9 @@ export class UiSettingsPage {
     const autoScanBox = createCheckbox("autoScan", !!autoScan);
     form.appendChild(
       createFormGroup(
-        "自动扫描新文献",
+        getString("settings-ui-auto-scan"),
         autoScanBox,
-        "监听文献库变化，新加入的文献自动加入分析队列",
+        getString("settings-ui-auto-scan-help"),
       ),
     );
 
@@ -97,9 +96,9 @@ export class UiSettingsPage {
     );
     form.appendChild(
       createFormGroup(
-        "自动扫描时生成 AI 总结",
+        getString("settings-ui-auto-scan-summary"),
         autoScanSummaryBox,
-        "开启后，自动扫描到的新文献会加入 AI 总结队列。",
+        getString("settings-ui-auto-scan-summary-help"),
       ),
     );
 
@@ -110,9 +109,9 @@ export class UiSettingsPage {
       !!autoScanDeepRead,
     );
     const autoScanDeepReadGroup = createFormGroup(
-      "自动扫描时生成 AI 精读",
+      getString("settings-ui-auto-scan-deep-read"),
       autoScanDeepReadBox,
-      "开启后，自动扫描到的新文献会加入 AI 精读队列；可关闭以节省 token。",
+      getString("settings-ui-auto-scan-deep-read-help"),
     );
     autoScanDeepReadGroup.id = "ui-setting-auto-scan-deep-read";
     form.appendChild(autoScanDeepReadGroup);
@@ -125,9 +124,9 @@ export class UiSettingsPage {
     );
     form.appendChild(
       createFormGroup(
-        "保存追问对话记录",
+        getString("settings-ui-save-chat-history"),
         saveChatHistoryBox,
-        "开启后，追问对话的内容会自动保存到论文的 AI 管家笔记中",
+        getString("settings-ui-save-chat-history-help"),
       ),
     );
 
@@ -139,9 +138,9 @@ export class UiSettingsPage {
     );
     form.appendChild(
       createFormGroup(
-        "召唤 AI 后自动打开任务面板",
+        getString("settings-ui-open-task-panel-on-summon"),
         openTaskPanelOnSummonBox,
-        "关闭后，右键召唤 AI 只在右下角提示入队结果，不弹出 AI 管家任务面板",
+        getString("settings-ui-open-task-panel-on-summon-help"),
       ),
     );
 
@@ -153,9 +152,9 @@ export class UiSettingsPage {
     );
     form.appendChild(
       createFormGroup(
-        "启用表格功能",
+        getString("settings-ui-enable-table"),
         enableTableFeatureBox,
-        "关闭后将隐藏填表右键菜单和侧边栏表格归纳，并阻止新建填表任务。",
+        getString("settings-ui-enable-table-help"),
       ),
     );
 
@@ -165,17 +164,20 @@ export class UiSettingsPage {
     const policySelect = createSelect(
       "notePolicy",
       [
-        { value: "skip", label: "跳过(默认)" },
-        { value: "overwrite", label: "覆盖" },
-        { value: "append", label: "追加" },
+        { value: "skip", label: getString("settings-ui-policy-skip-default") },
+        {
+          value: "overwrite",
+          label: getString("settings-ui-policy-overwrite"),
+        },
+        { value: "append", label: getString("settings-ui-policy-append") },
       ],
       policy,
     );
     form.appendChild(
       createFormGroup(
-        "已有 AI 总结 / AI 精读时的策略",
+        getString("settings-ui-note-strategy"),
         policySelect,
-        "当检测到条目已有 AI 总结笔记时该如何处理",
+        getString("settings-ui-note-strategy-help"),
       ),
     );
 
@@ -186,16 +188,19 @@ export class UiSettingsPage {
     const tablePolicySelect = createSelect(
       "tablePolicy",
       [
-        { value: "skip", label: "跳过(默认)" },
-        { value: "overwrite", label: "覆盖" },
+        { value: "skip", label: getString("settings-ui-policy-skip-default") },
+        {
+          value: "overwrite",
+          label: getString("settings-ui-policy-overwrite"),
+        },
       ],
       tablePolicy,
     );
     form.appendChild(
       createFormGroup(
-        "已有 AI 表格时的策略",
+        getString("settings-ui-table-strategy"),
         tablePolicySelect,
-        "当检测到条目已有 AI 填表笔记时该如何处理",
+        getString("settings-ui-table-strategy-help"),
       ),
     );
 
@@ -206,17 +211,20 @@ export class UiSettingsPage {
     const themeSelect = createSelect(
       "markdownTheme",
       [
-        { value: "github", label: "GitHub (默认)" },
-        { value: "redstriking", label: "红印 (Redstriking)" },
+        { value: "github", label: getString("settings-ui-theme-github") },
+        {
+          value: "redstriking",
+          label: getString("settings-ui-theme-redstriking"),
+        },
         // 更多主题可在此添加
       ],
       currentTheme,
     );
     form.appendChild(
       createFormGroup(
-        "侧边栏笔记样式",
+        getString("settings-ui-sidebar-note-theme"),
         themeSelect,
-        "设置侧边栏 AI 总结 / AI 精读的 Markdown 渲染样式",
+        getString("settings-ui-sidebar-note-theme-help"),
       ),
     );
 
@@ -350,12 +358,18 @@ export class UiSettingsPage {
       gap: "12px",
       marginTop: "16px",
     });
-    const btnSave = createStyledButton("💾 保存设置", "#4caf50");
+    const btnSave = createStyledButton(
+      getString("settings-ui-save-settings"),
+      "#4caf50",
+    );
     btnSave.addEventListener("click", async () => {
       await saveCurrentSettings(true);
     });
 
-    const btnReset = createStyledButton("🔄 重置默认", "#9e9e9e");
+    const btnReset = createStyledButton(
+      getString("settings-ui-reset-default"),
+      "#9e9e9e",
+    );
     btnReset.addEventListener("click", async () => {
       setPref("autoScroll", true as any);
       setPref("autoScan", true as any);
@@ -370,8 +384,11 @@ export class UiSettingsPage {
       AutoScanManager.getInstance().reload();
       await this.applyLiveUICustomization();
       this.render();
-      new ztoolkit.ProgressWindow("界面设置")
-        .createLine({ text: "已重置为默认", type: "success" })
+      new ztoolkit.ProgressWindow(getString("settings-ui-progress-title"))
+        .createLine({
+          text: getString("settings-ui-reset-done"),
+          type: "success",
+        })
         .show();
     });
     actions.appendChild(btnSave);
@@ -384,11 +401,14 @@ export class UiSettingsPage {
   }
 
   private showSavedNotice(): void {
-    new ztoolkit.ProgressWindow("界面设置", {
+    new ztoolkit.ProgressWindow(getString("settings-ui-progress-title"), {
       closeOnClick: true,
       closeTime: 2200,
     })
-      .createLine({ text: "✅ 设置已保存", type: "success" })
+      .createLine({
+        text: getString("settings-ui-settings-saved"),
+        type: "success",
+      })
       .show();
   }
 
@@ -441,8 +461,8 @@ export class UiSettingsPage {
   ): HTMLElement {
     const doc = Zotero.getMainWindow().document;
     const panel = this.createSettingsPanel(
-      "右键菜单个性化",
-      "关闭不常用入口，并用上下按钮调整它们在 Zotero 右键菜单或 AI 管家子菜单里的顺序。",
+      getString("settings-ui-context-menu-title"),
+      getString("settings-ui-context-menu-description"),
     );
 
     const collapseRow = doc.createElement("label");
@@ -475,7 +495,7 @@ export class UiSettingsPage {
 
     const collapseText = doc.createElement("div");
     const collapseTitle = doc.createElement("div");
-    collapseTitle.textContent = "折叠到「AI 管家」子菜单";
+    collapseTitle.textContent = getString("settings-ui-collapse-context-menu");
     Object.assign(collapseTitle.style, {
       fontSize: "13px",
       fontWeight: "600",
@@ -483,8 +503,9 @@ export class UiSettingsPage {
     });
 
     const collapseDesc = doc.createElement("div");
-    collapseDesc.textContent =
-      "开启后，Zotero 右键菜单只显示一个「AI 管家」入口，悬停后展开已启用的具体功能。";
+    collapseDesc.textContent = getString(
+      "settings-ui-collapse-context-menu-help",
+    );
     Object.assign(collapseDesc.style, {
       marginTop: "3px",
       fontSize: "12px",
@@ -539,7 +560,7 @@ export class UiSettingsPage {
 
         const textWrap = doc.createElement("div");
         const label = doc.createElement("div");
-        label.textContent = item.label;
+        label.textContent = getString(item.labelKey);
         Object.assign(label.style, {
           fontSize: "13px",
           fontWeight: "600",
@@ -547,7 +568,7 @@ export class UiSettingsPage {
         });
 
         const desc = doc.createElement("div");
-        desc.textContent = item.description;
+        desc.textContent = getString(item.descriptionKey);
         Object.assign(desc.style, {
           marginTop: "3px",
           fontSize: "12px",
@@ -558,7 +579,10 @@ export class UiSettingsPage {
         textWrap.appendChild(desc);
 
         const scope = doc.createElement("span");
-        scope.textContent = item.scope === "collection" ? "分类" : "文献";
+        scope.textContent =
+          item.scope === "collection"
+            ? getString("settings-ui-scope-collection")
+            : getString("settings-ui-scope-item");
         Object.assign(scope.style, {
           padding: "2px 6px",
           borderRadius: "4px",
@@ -613,8 +637,8 @@ export class UiSettingsPage {
   ): HTMLElement {
     const doc = Zotero.getMainWindow().document;
     const panel = this.createSettingsPanel(
-      "侧边栏功能与排序",
-      "勾选要显示的条目侧边栏功能，用上下按钮调整它们在侧边栏里的出现顺序。",
+      getString("settings-ui-sidebar-modules-title"),
+      getString("settings-ui-sidebar-modules-description"),
     );
 
     const list = doc.createElement("div");
@@ -659,7 +683,7 @@ export class UiSettingsPage {
 
         const textWrap = doc.createElement("div");
         const label = doc.createElement("div");
-        label.textContent = module.label;
+        label.textContent = getString(module.labelKey);
         Object.assign(label.style, {
           fontSize: "13px",
           fontWeight: "600",
@@ -667,7 +691,7 @@ export class UiSettingsPage {
         });
 
         const desc = doc.createElement("div");
-        desc.textContent = module.description;
+        desc.textContent = getString(module.descriptionKey);
         Object.assign(desc.style, {
           marginTop: "3px",
           fontSize: "12px",
@@ -725,13 +749,21 @@ export class UiSettingsPage {
       gap: "6px",
     });
 
-    const upBtn = this.createOrderButton("↑", "上移", index === 0);
+    const upBtn = this.createOrderButton(
+      "↑",
+      getString("settings-ui-move-up"),
+      index === 0,
+    );
     upBtn.addEventListener("click", () => {
       if (index === 0) return;
       onMoveUp();
     });
 
-    const downBtn = this.createOrderButton("↓", "下移", index === length - 1);
+    const downBtn = this.createOrderButton(
+      "↓",
+      getString("settings-ui-move-down"),
+      index === length - 1,
+    );
     downBtn.addEventListener("click", () => {
       if (index === length - 1) return;
       onMoveDown();

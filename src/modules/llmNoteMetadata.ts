@@ -1,3 +1,4 @@
+import { getString } from "../utils/locale";
 import type { LLMResponse } from "./llmproviders/types";
 import type { LLMTask } from "./llmService";
 
@@ -80,22 +81,43 @@ function formatGeneratedAt(value: string): string {
   return Number.isNaN(generated.getTime()) ? value : generated.toLocaleString();
 }
 
+function joinLocalizedLabelValue(label: string, value: string): string {
+  return label.endsWith("：") ? `${label}${value}` : `${label} ${value}`;
+}
+
+function displayProviderName(value?: string): string {
+  const trimmed = value?.trim();
+  return !trimmed || trimmed === "Unknown provider"
+    ? getString("llm-metadata-unknown-provider")
+    : trimmed;
+}
+
+function displayModelId(value?: string): string {
+  const trimmed = value?.trim();
+  return !trimmed || trimmed === "(unknown)" || trimmed === "unknown"
+    ? getString("llm-metadata-unknown-model")
+    : trimmed;
+}
+
 function renderVisibleMetadata(
   metadata: LLMNoteMetadata,
   encodedMetadata: string,
 ): string {
-  const providerName = escapeHtml(metadata.providerName || "Unknown provider");
-  const modelId = escapeHtml(metadata.modelId || "(unknown)");
+  const providerName = escapeHtml(displayProviderName(metadata.providerName));
+  const modelId = escapeHtml(displayModelId(metadata.modelId));
   const generatedAt = escapeHtml(formatGeneratedAt(metadata.generatedAt));
   const generatedAtRaw = escapeHtml(metadata.generatedAt);
   const blockId = escapeHtml(metadata.blockId);
   const encoded = escapeHtml(encodedMetadata);
   return [
     `<p data-ai-butler-llm-source="v1" data-ai-butler-llm-block-id="${blockId}" data-ai-butler-llm-meta="${encoded}" style="margin: 0 0 12px 0; padding: 6px 8px; border-left: 3px solid #59c0bc; background: #f4fbfb; color: #3d5f5d; font-size: 12px; line-height: 1.45;">`,
-    `<strong>AI 来源：</strong>`,
-    `供应商：${providerName}`,
-    ` · 模型：${modelId}`,
-    ` · 生成时间：<span title="${generatedAtRaw}">${generatedAt}</span>`,
+    `<strong>${getString("llm-metadata-source-label")}</strong>`,
+    joinLocalizedLabelValue(
+      getString("llm-metadata-provider-label"),
+      providerName,
+    ),
+    ` · ${joinLocalizedLabelValue(getString("llm-metadata-model-label"), modelId)}`,
+    ` · ${joinLocalizedLabelValue(getString("llm-metadata-generated-at-label"), `<span title="${generatedAtRaw}">${generatedAt}</span>`)}`,
     `</p>`,
   ].join("");
 }
@@ -461,7 +483,11 @@ export class LLMNoteMetadataService {
     );
     if (visibleUpdated !== null) return visibleUpdated;
 
-    throw new Error(`LLM note block not found: ${blockId}`);
+    throw new Error(
+      getString("llm-note-metadata-error-block-not-found", {
+        args: { blockId },
+      }),
+    );
   }
 
   static replaceSummaryBlockContent(
@@ -514,7 +540,11 @@ export class LLMNoteMetadataService {
     const visibleUpdated = this.removeVisibleBlock(html, blockId);
     if (visibleUpdated !== null) return visibleUpdated;
 
-    throw new Error(`LLM note block not found: ${blockId}`);
+    throw new Error(
+      getString("llm-note-metadata-error-block-not-found", {
+        args: { blockId },
+      }),
+    );
   }
 
   static hasSummaryBlocks(html: string): boolean {
@@ -552,20 +582,34 @@ export class LLMNoteMetadataService {
   }
 
   static formatTooltip(metadata: LLMNoteMetadata | null): string {
-    if (!metadata) return "未记录模型信息。";
+    if (!metadata) return getString("llm-metadata-not-recorded-detail");
     const generatedText = formatGeneratedAt(metadata.generatedAt);
     return [
-      `Provider: ${metadata.providerName}`,
-      `Model: ${metadata.modelId || "(unknown)"}`,
-      `Generated: ${generatedText}`,
+      getString("llm-metadata-tooltip-provider", {
+        args: { provider: displayProviderName(metadata.providerName) },
+      }),
+      getString("llm-metadata-tooltip-model", {
+        args: { model: displayModelId(metadata.modelId) },
+      }),
+      getString("llm-metadata-tooltip-generated", {
+        args: { generated: generatedText },
+      }),
     ].join("\n");
   }
 
   static formatSelectorLabel(metadata: LLMNoteMetadata): string {
     const generatedText = formatGeneratedAt(metadata.generatedAt);
     return metadata.modelId
-      ? `供应商: ${metadata.providerName} 模型: ${metadata.modelId} · ${generatedText} ⓘ`
-      : `供应商: ${metadata.providerName} · ${generatedText} ⓘ`;
+      ? getString("llm-metadata-selector-provider-model", {
+          args: {
+            provider: displayProviderName(metadata.providerName),
+            model: displayModelId(metadata.modelId),
+            generated: generatedText,
+          },
+        })
+      : getString("llm-metadata-selector-provider", {
+          args: { provider: metadata.providerName, generated: generatedText },
+        });
   }
 
   static formatSummaryBlockSelectorLabel(
@@ -573,13 +617,13 @@ export class LLMNoteMetadataService {
   ): string {
     return block.metadata
       ? this.formatSelectorLabel(block.metadata)
-      : "未记录模型";
+      : getString("llm-metadata-not-recorded");
   }
 
   static formatSummaryBlockTooltip(block: ParsedLLMNoteSummaryBlock): string {
     return block.metadata
       ? this.formatTooltip(block.metadata)
-      : "未记录模型信息。";
+      : getString("llm-metadata-not-recorded-detail");
   }
 
   private static parseCommentMetadataBlocks(

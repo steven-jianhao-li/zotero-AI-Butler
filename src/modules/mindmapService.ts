@@ -19,8 +19,9 @@ import {
   type LLMNoteMetadata,
 } from "./llmNoteMetadata";
 import type { LLMAbortSignal, LLMResponse } from "./llmproviders/types";
+import { getString } from "../utils/locale";
 import { getPref } from "../utils/prefs";
-import { getDefaultMindmapPrompt } from "../utils/prompts";
+import { getConfiguredMindmapPrompt } from "../utils/prompts";
 
 /**
  * 工作流阶段类型
@@ -61,7 +62,11 @@ export class MindmapService {
 
     try {
       // ========== 阶段 1: 获取论文内容 ==========
-      progressCallback?.("extracting", "正在提取论文内容...", 10);
+      progressCallback?.(
+        "extracting",
+        getString("mindmap-progress-extracting"),
+        10,
+      );
 
       // 检查 PDF 文件大小限制
       const enableSizeLimit =
@@ -73,13 +78,19 @@ export class MindmapService {
         const fileSizeMB = await PDFExtractor.getPdfFileSize(item);
         if (fileSizeMB > maxPdfSizeMB) {
           throw new Error(
-            `PDF 文件过大 (${fileSizeMB.toFixed(1)} MB)，超过设置的阈值 ${maxPdfSizeMB} MB`,
+            getString("mindmap-error-pdf-too-large", {
+              args: { size: fileSizeMB.toFixed(1), max: maxPdfSizeMB },
+            }),
           );
         }
       }
 
       // ========== 阶段 2: 生成思维导图 Markdown ==========
-      progressCallback?.("generating", "正在生成思维导图...", 40);
+      progressCallback?.(
+        "generating",
+        getString("mindmap-progress-generating"),
+        40,
+      );
 
       const mindmapResult = await this.generateMindmapMarkdown(
         item,
@@ -93,7 +104,7 @@ export class MindmapService {
       );
 
       // ========== 阶段 3: 保存笔记 ==========
-      progressCallback?.("saving", "正在保存思维导图笔记...", 80);
+      progressCallback?.("saving", getString("mindmap-progress-saving"), 80);
 
       const note = await this.createMindmapNote(
         item,
@@ -101,11 +112,21 @@ export class MindmapService {
         LLMNoteMetadataService.fromResponse("mindmap", mindmapResult.response),
       );
 
-      progressCallback?.("completed", "思维导图生成完成！", 100);
+      progressCallback?.(
+        "completed",
+        getString("mindmap-progress-completed"),
+        100,
+      );
 
       return note;
     } catch (error: any) {
-      progressCallback?.("failed", `生成失败: ${error.message}`, 0);
+      progressCallback?.(
+        "failed",
+        getString("mindmap-progress-failed", {
+          args: { message: error.message },
+        }),
+        0,
+      );
 
       ztoolkit.log("[AI-Butler] 思维导图生成失败:", error);
 
@@ -122,8 +143,9 @@ export class MindmapService {
     abortSignal?: LLMAbortSignal,
   ): Promise<{ markdown: string; response: LLMResponse }> {
     // 获取思维导图提示词
-    const prompt =
-      (getPref("mindmapPrompt" as any) as string) || getDefaultMindmapPrompt();
+    const prompt = getConfiguredMindmapPrompt(
+      getPref("mindmapPrompt" as any) as string,
+    );
 
     // 调用 LLM 生成思维导图 Markdown
     const response = await LLMService.generate({
@@ -142,20 +164,24 @@ export class MindmapService {
     const trimmedContent = mindmapContent.trim();
     if (!trimmedContent) {
       const errorInfo = this.buildErrorDebugInfo(
-        "空内容",
+        getString("mindmap-debug-empty-content"),
         mindmapContent,
         itemTitle,
         false,
         prompt,
       );
-      throw new Error(`LLM 返回了空内容，无法生成思维导图\n\n${errorInfo}`);
+      throw new Error(
+        getString("mindmap-error-empty-llm-response", {
+          args: { details: errorInfo },
+        }),
+      );
     }
 
     // 检查是否包含有效的 Markdown 列表结构 (至少有一个 # 或 - 或 * 开头的行)
     const hasValidStructure = /^[#\-*]/m.test(trimmedContent);
     if (!hasValidStructure) {
       const errorInfo = this.buildErrorDebugInfo(
-        "格式不符",
+        getString("mindmap-debug-invalid-format"),
         mindmapContent,
         itemTitle,
         false,
@@ -166,7 +192,9 @@ export class MindmapService {
         trimmedContent.substring(0, 500),
       );
       throw new Error(
-        `LLM 返回的内容不符合思维导图格式要求（需包含 # 或 - 开头的列表）\n\n${errorInfo}`,
+        getString("mindmap-error-invalid-format", {
+          args: { details: errorInfo },
+        }),
       );
     }
 
@@ -186,35 +214,44 @@ export class MindmapService {
     // 截断 LLM 响应（最多 500 字符）
     const truncatedResponse =
       llmResponse.length > 500
-        ? llmResponse.substring(0, 500) + "...[已截断]"
-        : llmResponse || "(空)";
+        ? llmResponse.substring(0, 500) + getString("mindmap-debug-truncated")
+        : llmResponse || getString("mindmap-debug-empty-content");
 
     // 截断请求内容（如果是 base64 只显示前 100 字符）
     let truncatedRequest: string;
     if (isBase64) {
-      truncatedRequest = `[Base64 PDF] ${pdfContent.substring(0, 100)}...[已截断，原长度: ${pdfContent.length}]`;
+      truncatedRequest = getString("mindmap-debug-base64-truncated", {
+        args: {
+          content: pdfContent.substring(0, 100),
+          length: pdfContent.length,
+        },
+      });
     } else {
       truncatedRequest =
         pdfContent.length > 300
-          ? pdfContent.substring(0, 300) + "...[已截断]"
+          ? pdfContent.substring(0, 300) + getString("mindmap-debug-truncated")
           : pdfContent;
     }
 
     // 截断 prompt
     const truncatedPrompt =
-      prompt.length > 200 ? prompt.substring(0, 200) + "...[已截断]" : prompt;
+      prompt.length > 200
+        ? prompt.substring(0, 200) + getString("mindmap-debug-truncated")
+        : prompt;
 
-    return `===== 调试信息 =====
-错误类型: ${errorType}
-
------ LLM 实际响应 -----
-${truncatedResponse}
-
------ 请求 Prompt -----
-${truncatedPrompt}
-
------ 请求内容 -----
-${truncatedRequest}`;
+    return [
+      getString("mindmap-debug-heading"),
+      getString("mindmap-debug-error-type", { args: { type: errorType } }),
+      "",
+      getString("mindmap-debug-llm-response-heading"),
+      truncatedResponse,
+      "",
+      getString("mindmap-debug-prompt-heading"),
+      truncatedPrompt,
+      "",
+      getString("mindmap-debug-request-content-heading"),
+      truncatedRequest,
+    ].join("\n");
   }
 
   /**
@@ -242,7 +279,9 @@ ${truncatedRequest}`;
       itemTitle.length > maxTitleLength
         ? itemTitle.substring(0, maxTitleLength) + "..."
         : itemTitle;
-    const noteTitle = `AI 管家思维导图 - ${truncatedTitle}`;
+    const noteTitle = getString("mindmap-note-title", {
+      args: { title: truncatedTitle },
+    });
 
     // 将 Markdown 包裹在 markmap 代码块中
     // 注意：不要对 markmap 代码块进行 HTML 转义，否则侧边栏正则无法匹配

@@ -9,6 +9,7 @@
  */
 
 import { BaseView } from "./BaseView";
+import { getString } from "../../utils/locale";
 import { ApiSettingsPage } from "./settings/ApiSettingsPage";
 import { ModelPlatformSettingsPage } from "./settings/ModelPlatformSettingsPage";
 import { PromptsSettingsPage } from "./settings/PromptsSettingsPage";
@@ -89,28 +90,21 @@ export class SettingsView extends BaseView {
     }
 
     const categories: Array<SettingsNavDescriptor<SettingCategory>> = [
-      { id: "modelPlatform", label: "🧩 模型平台" },
-      { id: "api", label: "🔌 API 配置" },
-      {
-        id: "summaryPrompt",
-        label: "\u{1f4dd} AI \u603b\u7ed3\u63d0\u793a\u8bcd",
-      },
+      { id: "modelPlatform", label: getString("settings-nav-model-platform") },
+      { id: "api", label: getString("settings-nav-api") },
+      { id: "summaryPrompt", label: getString("settings-nav-summary-prompt") },
       {
         id: "deepReadPrompt",
-        label: "\u{1f4da} AI \u7cbe\u8bfb\u63d0\u793a\u8bcd",
+        label: getString("settings-nav-deep-read-prompt"),
       },
-      {
-        id: "tablePrompt",
-        label: "\u{1f4ca} \u8868\u683c\u603b\u7ed3\u63d0\u793a\u8bcd",
-      },
-      { id: "mindmap", label: "🧠 思维导图" },
-      { id: "imageSummary", label: "🖼️ 一图总结" },
-      { id: "noteExport", label: "📤 笔记自动导出" },
-      { id: "ui", label: "🎨 界面设置" },
-      { id: "data", label: "💾 数据管理" },
-      { id: "about", label: "ℹ️ 关于" },
+      { id: "tablePrompt", label: getString("settings-nav-table-prompt") },
+      { id: "mindmap", label: getString("settings-nav-mindmap") },
+      { id: "imageSummary", label: getString("settings-nav-image-summary") },
+      { id: "noteExport", label: getString("settings-nav-note-export") },
+      { id: "ui", label: getString("settings-nav-ui") },
+      { id: "data", label: getString("settings-nav-data") },
+      { id: "about", label: getString("settings-nav-about") },
     ];
-
     this.scaffold = createSettingsScaffold(
       this.container,
       categories,

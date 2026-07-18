@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en-US">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>一图总结</title>
+    <title></title>
     <style>
       html,
       body {
@@ -58,13 +58,48 @@
         line-height: 1.5;
       }
     </style>
+    <script>
+      (function () {
+        const zh = {
+          pageTitle: "一图总结",
+          alt: "一图总结",
+          hint: "点击关闭，或按 Esc",
+          noImage: "未提供图片数据。",
+          failed: "图片加载失败。",
+        };
+        const en = {
+          pageTitle: "One-image Summary",
+          alt: "One-image Summary",
+          hint: "Click to close, or press Esc",
+          noImage: "No image data provided.",
+          failed: "Failed to load image.",
+        };
+        function locale() {
+          try {
+            if (typeof Zotero !== "undefined" && Zotero.locale)
+              return String(Zotero.locale);
+          } catch (e) {}
+          try {
+            if (navigator.language) return navigator.language;
+          } catch (e) {}
+          return "zh-CN";
+        }
+        const map = locale().toLowerCase().startsWith("zh") ? zh : en;
+        window.aiButlerL10n = function (key) {
+          return map[key] || zh[key] || key;
+        };
+        document.documentElement.lang = locale().toLowerCase().startsWith("zh")
+          ? "zh-CN"
+          : "en-US";
+      })();
+    </script>
   </head>
   <body>
     <div id="root">
-      <img id="img" alt="一图总结" />
+      <img id="img" alt="" />
       <div id="error" style="display: none"></div>
     </div>
-    <div id="hint">Click to close, or press Esc</div>
+    <div id="hint"></div>
 
     <script>
       (function () {
@@ -80,7 +115,7 @@
         const title =
           (args && args.title ? String(args.title) : "") ||
           (window.__aiButlerTitle ? String(window.__aiButlerTitle) : "") ||
-          "一图总结";
+          window.aiButlerL10n("pageTitle");
         const src =
           (args && args.imageDataUri ? String(args.imageDataUri) : "") ||
           (window.__aiButlerImageDataUri
@@ -91,11 +126,14 @@
 
         const img = document.getElementById("img");
         const err = document.getElementById("error");
+        document.getElementById("hint").textContent =
+          window.aiButlerL10n("hint");
+        img.alt = window.aiButlerL10n("alt");
 
         if (!src) {
           img.style.display = "none";
           err.style.display = "block";
-          err.textContent = "No image data provided.";
+          err.textContent = window.aiButlerL10n("noImage");
           return;
         }
 
@@ -103,7 +141,7 @@
         img.addEventListener("error", () => {
           img.style.display = "none";
           err.style.display = "block";
-          err.textContent = "Failed to load image.";
+          err.textContent = window.aiButlerL10n("failed");
         });
 
         const close = () => {

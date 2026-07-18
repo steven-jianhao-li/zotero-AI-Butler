@@ -1,4 +1,5 @@
 import { getPref, setPref } from "../utils/prefs";
+import { getString } from "../utils/locale";
 import {
   isLegacySummaryNote,
   SUMMARY_NOTE_TAG,
@@ -95,7 +96,8 @@ async function findLegacyAiSummaryNotes(): Promise<LegacyAiNoteRecord[]> {
           itemId: item.id,
           noteId,
           title: String(
-            item.getField("title") || "\u672a\u547d\u540d\u6587\u732e",
+            item.getField("title") ||
+              getString("legacy-ai-note-migration-untitled-paper"),
           ),
         });
       }
@@ -137,24 +139,19 @@ async function confirmLegacyRename(
     .slice(0, MAX_EXAMPLE_TITLES)
     .map((record) => "\u2022 " + record.title)
     .join("\n");
-  const more =
+  const more = getString(
     records.length > MAX_EXAMPLE_TITLES
-      ? "\n\u7b49\u5171 " +
-        records.length +
-        " \u6761\u65e7 AI \u7b14\u8bb0\u3002"
-      : "\n\u5171 " + records.length + " \u6761\u65e7 AI \u7b14\u8bb0\u3002";
+      ? "legacy-ai-note-migration-more-count"
+      : "legacy-ai-note-migration-total-count",
+    { args: { count: records.length } },
+  );
 
   return Services.prompt.confirm(
     Zotero.getMainWindow() as any,
-    "AI \u7ba1\u5bb6\u7b14\u8bb0\u517c\u5bb9\u63d0\u793a",
-    [
-      "\u65b0\u7248 AI \u7ba1\u5bb6\u4f1a\u628a\u7b14\u8bb0\u5206\u6210\u201cAI \u603b\u7ed3\u201d\u548c\u201cAI \u7cbe\u8bfb\u201d\u3002",
-      "\u68c0\u6d4b\u5230\u4f60\u5df2\u6709\u65e7\u7248\u201cAI \u7b14\u8bb0\u201d\uff0c\u5efa\u8bae\u73b0\u5728\u5c06\u5b83\u4eec\u6807\u8bb0/\u66f4\u540d\u4e3a\u201cAI \u603b\u7ed3\u201d\uff0c\u4ee5\u540e\u4ecd\u53ef\u6b63\u5e38\u8bfb\u53d6\u3002",
-      "",
-      examples + more,
-      "",
-      "\u70b9\u51fb\u201c\u786e\u5b9a\u201d\u540e\u4f1a\u4e3a\u65e7\u7b14\u8bb0\u6dfb\u52a0 AI-Summary \u6807\u8bb0\uff0c\u5e76\u5c3d\u91cf\u628a\u65e7\u6807\u9898\u524d\u7f00\u6539\u4e3a AI \u603b\u7ed3\uff1b\u4e0d\u4f1a\u5220\u9664\u539f\u6709\u5185\u5bb9\u3002",
-    ].join("\n"),
+    getString("legacy-ai-note-migration-confirm-title"),
+    getString("legacy-ai-note-migration-confirm-message", {
+      args: { examples, more },
+    }),
   );
 }
 
@@ -194,7 +191,7 @@ async function markLegacyNotesAsSummary(
 function renameLegacyHeading(html: string): string {
   return html.replace(
     /<h2>\s*AI\s*\u7ba1\u5bb6\s*-\s*/,
-    "<h2>AI \u603b\u7ed3 - ",
+    `<h2>${getString("legacy-ai-note-migration-renamed-heading-prefix")}`,
   );
 }
 
@@ -205,12 +202,9 @@ function showRenameResult(renamed: number, total: number): void {
       closeTime: 5000,
     })
       .createLine({
-        text:
-          "\u5df2\u5c06 " +
-          renamed +
-          "/" +
-          total +
-          " \u6761\u65e7 AI \u7b14\u8bb0\u6807\u8bb0\u4e3a AI \u603b\u7ed3",
+        text: getString("legacy-ai-note-migration-renamed-count", {
+          args: { renamed, total },
+        }),
         type: renamed === total ? "success" : "warning",
       })
       .show();

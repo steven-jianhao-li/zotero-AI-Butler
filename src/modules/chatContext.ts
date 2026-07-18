@@ -1,3 +1,4 @@
+import { getString } from "../utils/locale";
 import type { ConversationMessage, LLMAbortSignal } from "./llmproviders/types";
 
 export type ChatAbortControllerLike = {
@@ -80,7 +81,9 @@ export function createChatAbortController(): ChatAbortControllerLike {
     },
     throwIfAborted() {
       if (aborted) {
-        throw new Error(String(reason || "用户已终止追问"));
+        throw new Error(
+          String(reason || getString("chat-error-follow-up-aborted")),
+        );
       }
     },
   };
@@ -90,7 +93,7 @@ export function createChatAbortController(): ChatAbortControllerLike {
     abort(nextReason?: unknown) {
       if (aborted) return;
       aborted = true;
-      reason = nextReason || "用户已终止追问";
+      reason = nextReason || getString("chat-error-follow-up-aborted");
       listeners.forEach((listener) => listener());
       listeners.clear();
     },

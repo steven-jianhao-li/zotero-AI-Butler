@@ -1,12 +1,17 @@
+import { getString } from "../../../utils/locale";
 import type { LLMAbortSignal } from "../types";
 
-export const LLM_REQUEST_ABORT_MESSAGE = "用户已终止任务";
+export const LLM_REQUEST_ABORT_MESSAGE = "LLM_REQUEST_ABORTED";
+
+export function getDefaultAbortMessage(): string {
+  return getString("provider-error-aborted");
+}
 
 export class LLMRequestAbortError extends Error {
   public readonly suppressTaskRetry = true;
 
-  constructor(message: string = LLM_REQUEST_ABORT_MESSAGE) {
-    super(message);
+  constructor(message?: string) {
+    super(message ?? getDefaultAbortMessage());
     this.name = "LLMRequestAbortError";
   }
 }
@@ -15,7 +20,7 @@ export function getAbortMessage(signal?: LLMAbortSignal): string {
   const reason = signal?.reason;
   if (reason instanceof Error && reason.message) return reason.message;
   if (typeof reason === "string" && reason.trim()) return reason.trim();
-  return LLM_REQUEST_ABORT_MESSAGE;
+  return getDefaultAbortMessage();
 }
 
 export function createAbortError(

@@ -2556,7 +2556,7 @@ export class ApiSettingsPage {
       setPref("stream", checkboxValue("stream", true));
       setPref(
         "enablePromptCacheOptimization" as any,
-        checkboxValue("enablePromptCacheOptimization", false),
+        checkboxValue("enablePromptCacheOptimization", true),
       );
       setPref("requestTimeout", inputValue("requestTimeout", "300000"));
       setPref("batchSize", inputValue("batchSize", "1"));
@@ -2788,7 +2788,7 @@ export class ApiSettingsPage {
         enableMaxTokens: enableMaxEl?.checked ?? false,
         enableTopP: enableTopPEl?.checked ?? false,
         stream: streamEl?.checked ?? true,
-        enablePromptCacheOptimization: promptCacheEl?.checked ?? false,
+        enablePromptCacheOptimization: promptCacheEl?.checked ?? true,
         requestTimeout:
           (
             this.container.querySelector(
@@ -3336,7 +3336,7 @@ export class ApiSettingsPage {
     setPref("enableMaxTokens", false as any);
     setPref("enableTopP", false as any);
     setPref("stream", true);
-    setPref("enablePromptCacheOptimization" as any, false);
+    setPref("enablePromptCacheOptimization" as any, true);
     setPref("requestTimeout", "300000");
     setPref("batchSize", "1");
     setPref("batchInterval", "60");
@@ -3421,7 +3421,7 @@ export class ApiSettingsPage {
     setPref("enableMaxTokens", false as any);
     setPref("enableTopP", false as any);
     setPref("stream", true);
-    setPref("enablePromptCacheOptimization" as any, false);
+    setPref("enablePromptCacheOptimization" as any, true);
     setPref("requestTimeout", "300000");
 
     // 重新渲染

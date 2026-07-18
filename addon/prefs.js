@@ -53,7 +53,7 @@ pref("__prefsPrefix__.topP", "1.0");
 pref("__prefsPrefix__.enableTopP", false);
 pref("__prefsPrefix__.reasoningEffort", "default");
 pref("__prefsPrefix__.stream", true);
-pref("__prefsPrefix__.enablePromptCacheOptimization", false);
+pref("__prefsPrefix__.enablePromptCacheOptimization", true);
 pref("__prefsPrefix__.requestTimeout", "300000"); // 5分钟超时
 // MINERU API KEY
 pref("__prefsPrefix__.mineruApiKey", "");

@@ -14,3 +14,5 @@ ai-butler-prefs-summaryPrompt = Butler Instruction Template
 ai-butler-prefs-summaryPrompt-description = You can customize the butler's work instructions to meet your unique reading needs.
 ai-butler-prefs-resetPrompt = Restore Default Instructions
 ai-butler-prefs-apiUrl-example = API Example (OpenAI-compatible): https://api.openai.com/v1/chat/completions
+settings-api-prompt-cache-label = Context cache optimization
+settings-api-prompt-cache-help = When enabled, multi-round Deep Reading reuses the AI provider context cache and can greatly reduce token cost. For DeepSeek, for example, from the second round onward the paper text portion is charged at about 1/10 of the original price. It works with DeepSeek, official OpenAI and Claude APIs, and most compatible services; services that do not support caching simply receive no benefit and are otherwise unaffected. A few third-party services may be incompatible. If summaries or Deep Reading fail after enabling it, turn this switch off to restore the original behavior completely. Existing notes are not affected.

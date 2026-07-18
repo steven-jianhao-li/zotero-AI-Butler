@@ -242,6 +242,24 @@ describe("multi-round prompt templates v2", function () {
     ).to.equal(false);
   });
 
+  it("keeps stripped English placeholder sections runnable in legacy slot fallback", function () {
+    const template = v2Template();
+    const planned = planDeepReadSlots(template, DEFAULT_CHAPTER_FALLBACKS);
+    const pendingSlot = planned.sequentialSlots[1];
+    const legacyHtml = [
+      "<h1>AI Deep Reading - Paper</h1>",
+      `<h2>${pendingSlot.title}</h2>`,
+      "<p>⏳ Waiting for generation...</p>",
+    ].join("\n");
+
+    expect(
+      getDeepReadSlotStatus(legacyHtml, pendingSlot.id, pendingSlot),
+    ).to.equal("pending");
+    expect(
+      shouldRunDeepReadSlot(legacyHtml, pendingSlot.id, pendingSlot),
+    ).to.equal(true);
+  });
+
   it("persists plan metadata and marks running slots", function () {
     const template = v2Template();
     const planned = planDeepReadSlots(template, DEFAULT_CHAPTER_FALLBACKS);
@@ -272,6 +290,30 @@ describe("multi-round prompt templates v2", function () {
     expect(chapters).to.deep.equal(DEFAULT_CHAPTER_FALLBACKS);
     expect(planDeepReadSlots(template, chapters).slots[0].id).to.equal(
       "chapter_ch1",
+    );
+  });
+
+  it("recovers chapters from English rendered deep-read notes when metadata is missing", function () {
+    const template = v2Template();
+    const html = [
+      "<h1>AI Deep Reading - Paper</h1>",
+      "<h2>Chapter Analysis</h2>",
+      "<p>Chapter 1: Introduction</p>",
+      "<p>Chapter 2: Simulation vs. Emulation</p>",
+      "<h2>Introduction</h2>",
+      "<p>Already generated content.</p>",
+      "<h2>Simulation vs. Emulation</h2>",
+      "<p>⏳ Waiting for generation...</p>",
+    ].join("\n");
+
+    const chapters = extractDeepReadChaptersFromHtml(html);
+
+    expect(chapters).to.deep.equal([
+      { id: "ch1", title_zh: "Introduction", title_en: "" },
+      { id: "ch2", title_zh: "Simulation vs. Emulation", title_en: "" },
+    ]);
+    expect(planDeepReadSlots(template, chapters).slots[1].id).to.equal(
+      "chapter_ch2",
     );
   });
 

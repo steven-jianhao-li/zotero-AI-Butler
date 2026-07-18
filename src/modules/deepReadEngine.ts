@@ -321,14 +321,10 @@ function getComparableSlotTitles(slot: DeepReadSlot): string[] {
 }
 
 function hasGeneratedSectionContent(html: string): boolean {
-  const text = decodeBasicHtmlEntities(stripHtml(removeLeadingHeading(html)))
-    .replace(/\s+/g, "")
-    .trim();
+  const text = decodeBasicHtmlEntities(stripHtml(removeLeadingHeading(html)));
   return (
-    text.length > 20 &&
-    !/(?:⏳等待生成\.\.\.|🔄正在生成\.\.\.|已取消，重新运行AI精读时会从这里继续。?)/.test(
-      text,
-    )
+    text.replace(/\s+/g, "").trim().length > 20 &&
+    !hasDeepReadPlaceholderText(text)
   );
 }
 
@@ -475,22 +471,31 @@ export function extractDeepReadChaptersFromHtml(
 ): ChapterInfo[] {
   const chapters: ChapterInfo[] = [];
   const seen = new Set<string>();
-  const pattern = /第\s*(\d+)\s*章\s*[：:]\s*([^<\n\r]+)/g;
-  let match: RegExpExecArray | null;
+  const patterns = [
+    /第\s*(\d+)\s*章\s*[：:]\s*([^<\n\r]+)/g,
+    /Chapter\s*(\d+)\s*[：:]\s*([^<\n\r]+)/gi,
+  ];
 
-  while ((match = pattern.exec(noteHtml))) {
-    const index = Number(match[1]);
-    const rawTitle = decodeBasicHtmlEntities(stripHtml(match[2])).trim();
-    if (!Number.isInteger(index) || index <= 0 || !rawTitle) continue;
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(noteHtml))) {
+      const index = Number(match[1]);
+      const rawTitle = decodeBasicHtmlEntities(stripHtml(match[2])).trim();
+      if (!Number.isInteger(index) || index <= 0 || !rawTitle) continue;
 
-    const parsed = parseRenderedChapterTitle(rawTitle);
-    const id = `ch${index}`;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    chapters.push({ id, ...parsed });
+      const parsed = parseRenderedChapterTitle(rawTitle);
+      const id = `ch${index}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      chapters.push({ id, ...parsed });
+    }
   }
 
-  return chapters;
+  return chapters.sort((left, right) => {
+    const leftIndex = Number(left.id.replace(/^ch/, ""));
+    const rightIndex = Number(right.id.replace(/^ch/, ""));
+    return leftIndex - rightIndex;
+  });
 }
 
 function parseRenderedChapterTitle(title: string): {

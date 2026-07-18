@@ -35,6 +35,7 @@ import { MainWindow } from "./MainWindow";
 import { TaskQueueManager, TaskItem, TaskStatus, TaskType } from "../taskQueue";
 import { TaskArtifacts } from "../taskArtifacts";
 import { createCard } from "./ui/components";
+import { getString } from "../../utils/locale";
 
 // 使用任务队列模块中定义的类型,避免重复定义导致的偏差
 
@@ -162,7 +163,7 @@ export class TaskQueueView extends BaseView {
             borderBottom: "2px solid #59c0bc",
             paddingBottom: "10px",
           },
-          innerHTML: "📋 任务队列管理",
+          textContent: getString("task-queue-title"),
         }),
       ],
     });
@@ -183,12 +184,42 @@ export class TaskQueueView extends BaseView {
         gap: "15px",
       },
       children: [
-        this.createStatCard("total", "总任务", "0", "#607d8b"),
-        this.createStatCard("priority", "优先处理", "0", "#ff9800"),
-        this.createStatCard("processing", "处理中", "0", "#2196f3"),
-        this.createStatCard("pending", "待处理", "0", "#9e9e9e"),
-        this.createStatCard("completed", "已完成", "0", "#4caf50"),
-        this.createStatCard("failed", "失败", "0", "#f44336"),
+        this.createStatCard(
+          "total",
+          getString("task-queue-stat-total"),
+          "0",
+          "#607d8b",
+        ),
+        this.createStatCard(
+          "priority",
+          getString("task-queue-status-priority"),
+          "0",
+          "#ff9800",
+        ),
+        this.createStatCard(
+          "processing",
+          getString("task-queue-status-processing"),
+          "0",
+          "#2196f3",
+        ),
+        this.createStatCard(
+          "pending",
+          getString("task-queue-status-pending"),
+          "0",
+          "#9e9e9e",
+        ),
+        this.createStatCard(
+          "completed",
+          getString("task-queue-status-completed"),
+          "0",
+          "#4caf50",
+        ),
+        this.createStatCard(
+          "failed",
+          getString("task-queue-status-failed"),
+          "0",
+          "#f44336",
+        ),
       ],
     });
   }
@@ -249,12 +280,27 @@ export class TaskQueueView extends BaseView {
 
     // 状态筛选按钮
     const filterButtons = [
-      { label: "全部", value: "all" },
-      { label: "优先处理", value: TaskStatus.PRIORITY },
-      { label: "处理中", value: TaskStatus.PROCESSING },
-      { label: "待处理", value: TaskStatus.PENDING },
-      { label: "失败", value: TaskStatus.FAILED },
-      { label: "已完成", value: TaskStatus.COMPLETED },
+      { label: getString("task-queue-filter-all"), value: "all" },
+      {
+        label: getString("task-queue-status-priority"),
+        value: TaskStatus.PRIORITY,
+      },
+      {
+        label: getString("task-queue-status-processing"),
+        value: TaskStatus.PROCESSING,
+      },
+      {
+        label: getString("task-queue-status-pending"),
+        value: TaskStatus.PENDING,
+      },
+      {
+        label: getString("task-queue-status-failed"),
+        value: TaskStatus.FAILED,
+      },
+      {
+        label: getString("task-queue-status-completed"),
+        value: TaskStatus.COMPLETED,
+      },
     ];
 
     filterButtons.forEach((btn) => {
@@ -306,7 +352,7 @@ export class TaskQueueView extends BaseView {
         color: "var(--ai-input-text)",
       },
       attributes: {
-        placeholder: "搜索标题...",
+        placeholder: getString("task-queue-search-placeholder"),
       },
     }) as HTMLInputElement;
     searchInput.value = this.searchQuery;
@@ -329,7 +375,7 @@ export class TaskQueueView extends BaseView {
         alignItems: "center",
         justifyContent: "center",
       },
-      textContent: "🗑️ 清除已完成",
+      textContent: getString("task-queue-clear-completed"),
     });
 
     clearCompletedBtn.addEventListener("click", async () => {
@@ -340,13 +386,34 @@ export class TaskQueueView extends BaseView {
 
     // 任务类型筛选按钮放在第二行；再次点击当前类型会取消筛选，回到全部类型
     const typeButtons = [
-      { label: "📝 AI 总结", value: "summary" as TaskType },
-      { label: "📚 AI 精读", value: "deepRead" as TaskType },
-      { label: "🖼️ 一图总结", value: "imageSummary" as TaskType },
-      { label: "🧠 思维导图", value: "mindmap" as TaskType },
-      { label: "📊 填表", value: "tableFill" as TaskType },
-      { label: "📝 综述", value: "review" as TaskType },
-      { label: "🎯 针对性提问", value: "targetedQuestion" as TaskType },
+      {
+        label: getString("task-queue-type-summary"),
+        value: "summary" as TaskType,
+      },
+      {
+        label: getString("task-queue-type-deep-read"),
+        value: "deepRead" as TaskType,
+      },
+      {
+        label: getString("task-queue-type-image-summary"),
+        value: "imageSummary" as TaskType,
+      },
+      {
+        label: getString("task-queue-type-mindmap"),
+        value: "mindmap" as TaskType,
+      },
+      {
+        label: getString("task-queue-type-table-fill"),
+        value: "tableFill" as TaskType,
+      },
+      {
+        label: getString("task-queue-type-review"),
+        value: "review" as TaskType,
+      },
+      {
+        label: getString("task-queue-type-targeted-question"),
+        value: "targetedQuestion" as TaskType,
+      },
     ];
 
     const applyTypeButtonState = () => {
@@ -462,7 +529,7 @@ export class TaskQueueView extends BaseView {
           color: "#9e9e9e",
           fontSize: "14px",
         },
-        textContent: "暂无任务",
+        textContent: getString("task-queue-empty"),
       });
       this.taskListContainer!.appendChild(emptyMsg);
     } else {
@@ -474,19 +541,25 @@ export class TaskQueueView extends BaseView {
   }
 
   private getTaskStageLabel(task: TaskItem): string {
-    if (task.status === TaskStatus.COMPLETED) return "已完成";
-    if (task.status === TaskStatus.FAILED) return task.stageLabel || "失败";
+    if (task.status === TaskStatus.COMPLETED)
+      return getString("task-queue-status-completed");
+    if (task.status === TaskStatus.FAILED)
+      return task.stageLabel || getString("task-queue-status-failed");
     return (
       task.stageLabel || task.workflowStage || this.getFallbackStageLabel(task)
     );
   }
 
   private getFallbackStageLabel(task: TaskItem): string {
-    if (task.status === TaskStatus.PENDING) return "等待处理";
-    if (task.status === TaskStatus.PRIORITY) return "优先等待";
-    if (task.status === TaskStatus.PROCESSING) return "处理中";
-    if (task.status === TaskStatus.COMPLETED) return "已完成";
-    return "失败";
+    if (task.status === TaskStatus.PENDING)
+      return getString("task-queue-stage-waiting");
+    if (task.status === TaskStatus.PRIORITY)
+      return getString("task-queue-stage-priority-waiting");
+    if (task.status === TaskStatus.PROCESSING)
+      return getString("task-queue-status-processing");
+    if (task.status === TaskStatus.COMPLETED)
+      return getString("task-queue-status-completed");
+    return getString("task-queue-status-failed");
   }
 
   private getTaskStageColor(task: TaskItem): string {
@@ -503,15 +576,27 @@ export class TaskQueueView extends BaseView {
 
   private buildTaskStageTooltip(task: TaskItem): string {
     const lines = [
-      `当前阶段：${this.getTaskStageLabel(task)}`,
-      task.stageDetail ? `详情：${task.stageDetail}` : undefined,
+      getString("task-queue-tooltip-current-stage", {
+        args: { stage: this.getTaskStageLabel(task) },
+      }),
+      task.stageDetail
+        ? getString("task-queue-tooltip-detail", {
+            args: { detail: task.stageDetail },
+          })
+        : undefined,
       typeof task.progress === "number"
-        ? `进度：${Math.round(task.progress)}%`
+        ? getString("task-queue-tooltip-progress", {
+            args: { progress: Math.round(task.progress) },
+          })
         : undefined,
       task.stageUpdatedAt
-        ? `更新时间：${task.stageUpdatedAt.toLocaleString("zh-CN")}`
+        ? getString("task-queue-tooltip-updated-at", {
+            args: { time: task.stageUpdatedAt.toLocaleString() },
+          })
         : undefined,
-      task.error ? `错误：${task.error}` : undefined,
+      task.error
+        ? getString("task-queue-tooltip-error", { args: { error: task.error } })
+        : undefined,
     ];
     return lines.filter(Boolean).join("\n");
   }
@@ -553,7 +638,7 @@ export class TaskQueueView extends BaseView {
         : this.getTaskStageColor(task);
     const label =
       task.status === TaskStatus.FAILED
-        ? `失败于 ${progress}%`
+        ? getString("task-queue-progress-failed-at", { args: { progress } })
         : `${progress}%`;
     const wrapper = this.createElement("div", {
       styles: { marginBottom: "10px" },
@@ -618,11 +703,11 @@ export class TaskQueueView extends BaseView {
     };
 
     const statusLabels = {
-      [TaskStatus.PENDING]: "⏳ 待处理",
-      [TaskStatus.PROCESSING]: "⚙️ 处理中",
-      [TaskStatus.COMPLETED]: "✅ 已完成",
-      [TaskStatus.FAILED]: "❌ 失败",
-      [TaskStatus.PRIORITY]: "🔥 优先处理",
+      [TaskStatus.PENDING]: getString("task-queue-status-badge-pending"),
+      [TaskStatus.PROCESSING]: getString("task-queue-status-badge-processing"),
+      [TaskStatus.COMPLETED]: getString("task-queue-status-badge-completed"),
+      [TaskStatus.FAILED]: getString("task-queue-status-badge-failed"),
+      [TaskStatus.PRIORITY]: getString("task-queue-status-badge-priority"),
     };
 
     // 使用 card 标题作为唯一标题，移除重复显示；内容区域留空（后续信息在下方独立元素）
@@ -635,7 +720,7 @@ export class TaskQueueView extends BaseView {
     taskItem.dataset.itemId = String(task.itemId);
     taskItem.style.marginBottom = "10px";
     taskItem.style.cursor = "pointer";
-    taskItem.title = "双击可定位到对应文献"; // Tooltip hint
+    taskItem.title = getString("task-queue-locate-tooltip"); // Tooltip hint
 
     // 双击定位到 Zotero 文献列表中的对应条目
     taskItem.addEventListener("dblclick", async () => {
@@ -710,7 +795,7 @@ export class TaskQueueView extends BaseView {
           fontWeight: "600",
           lineHeight: "16px",
         },
-        textContent: "📝 AI 总结",
+        textContent: getString("task-queue-type-summary"),
       });
       taskHeader.appendChild(typeBadge);
     }
@@ -723,7 +808,7 @@ export class TaskQueueView extends BaseView {
           backgroundColor: "#3f51b5",
           color: "white",
         },
-        textContent: "📚 AI 精读",
+        textContent: getString("task-queue-type-deep-read"),
       });
       taskHeader.appendChild(typeBadge);
     }
@@ -736,7 +821,7 @@ export class TaskQueueView extends BaseView {
           backgroundColor: "#9c27b0",
           color: "white",
         },
-        textContent: "🖼️ 一图总结",
+        textContent: getString("task-queue-type-image-summary"),
       });
       taskHeader.appendChild(typeBadge);
     }
@@ -749,7 +834,7 @@ export class TaskQueueView extends BaseView {
           backgroundColor: "#4caf50",
           color: "white",
         },
-        textContent: "🧠 思维导图",
+        textContent: getString("task-queue-type-mindmap"),
       });
       taskHeader.appendChild(typeBadge);
     }
@@ -762,7 +847,7 @@ export class TaskQueueView extends BaseView {
           backgroundColor: "#ff9800",
           color: "white",
         },
-        textContent: "📊 填表",
+        textContent: getString("task-queue-type-table-fill"),
       });
       taskHeader.appendChild(typeBadge);
     }
@@ -775,7 +860,7 @@ export class TaskQueueView extends BaseView {
           backgroundColor: "#2196f3",
           color: "white",
         },
-        textContent: "📝 综述",
+        textContent: getString("task-queue-type-review"),
       });
       taskHeader.appendChild(typeBadge);
     }
@@ -788,7 +873,7 @@ export class TaskQueueView extends BaseView {
           backgroundColor: "#0ea5e9",
           color: "white",
         },
-        textContent: "🎯 针对性提问",
+        textContent: getString("task-queue-type-targeted-question"),
       });
       taskHeader.appendChild(typeBadge);
     }
@@ -798,9 +883,11 @@ export class TaskQueueView extends BaseView {
     const safeError = task.error ? this.escapeHtml(task.error) : "";
     const displayWorkflowStage =
       task.status === TaskStatus.COMPLETED
-        ? "已完成"
+        ? getString("task-queue-status-completed")
         : task.status === TaskStatus.FAILED
-          ? task.stageLabel || task.workflowStage || "失败"
+          ? task.stageLabel ||
+            task.workflowStage ||
+            getString("task-queue-status-failed")
           : task.workflowStage;
     const shouldShowInlineStage =
       task.status !== TaskStatus.COMPLETED && task.status !== TaskStatus.FAILED;
@@ -821,12 +908,12 @@ export class TaskQueueView extends BaseView {
         marginBottom: "10px",
       },
       innerHTML: `
-        创建时间: ${task.createdAt.toLocaleString("zh-CN")}
-        ${task.completedAt ? `<br/>完成时间: ${task.completedAt.toLocaleString("zh-CN")}` : ""}
-        ${safeError ? `<br/><span style="color: #f44336;">错误: ${safeError}</span>` : ""}
-        ${task.retryCount > 0 ? `<br/>重试次数: ${task.retryCount}` : ""}
-        ${safeWorkflowStage ? `<br/><strong style="color: ${this.getTaskStageColor(task)};">阶段: ${safeWorkflowStage}</strong>` : ""}
-        ${safeStageDetail ? `<br/><span title="${safeStageDetail}">详情: ${safeStageDetail}</span>` : ""}
+        ${getString("task-queue-created-at")}: ${task.createdAt.toLocaleString()}
+        ${task.completedAt ? `<br/>${getString("task-queue-completed-at")}: ${task.completedAt.toLocaleString()}` : ""}
+        ${safeError ? `<br/><span style="color: #f44336;">${getString("task-queue-error-label")}: ${safeError}</span>` : ""}
+        ${task.retryCount > 0 ? `<br/>${getString("task-queue-retry-count")}: ${task.retryCount}` : ""}
+        ${safeWorkflowStage ? `<br/><strong style="color: ${this.getTaskStageColor(task)};">${getString("task-queue-stage-label")}: ${safeWorkflowStage}</strong>` : ""}
+        ${safeStageDetail ? `<br/><span title="${safeStageDetail}">${getString("task-queue-detail-label")}: ${safeStageDetail}</span>` : ""}
       `,
     });
 
@@ -856,7 +943,7 @@ export class TaskQueueView extends BaseView {
         cursor: "pointer",
         fontSize: "12px",
       },
-      textContent: "🔍 详情",
+      textContent: getString("task-queue-action-details"),
     });
     detailBtn.addEventListener("click", async () => {
       // 先取消之前的流式订阅，避免重复
@@ -871,7 +958,12 @@ export class TaskQueueView extends BaseView {
       view.clear();
       // 使用任务的 startedAt 作为计时起点，避免每次进入都从 0 开始
       const startedAt = task.startedAt || undefined;
-      view.showLoadingState(`正在分析「${task.title}」`, startedAt);
+      view.showLoadingState(
+        getString("task-queue-analyzing-title", {
+          args: { title: task.title },
+        }),
+        startedAt,
+      );
 
       // 若任务已完成,无法再接收流，回退展示已保存笔记
       if (task.status === TaskStatus.COMPLETED) {
@@ -888,7 +980,7 @@ export class TaskQueueView extends BaseView {
       const markedComplete =
         await this.manager.markTaskCompletedIfArtifactReady(
           task.id,
-          "AI 产物已完整，任务状态已修正",
+          getString("task-queue-artifact-complete-fixed"),
         );
       if (markedComplete) {
         this.syncFromManager();
@@ -944,7 +1036,7 @@ export class TaskQueueView extends BaseView {
         cursor: "pointer",
         fontSize: "12px",
       },
-      textContent: "🗑️ 删除",
+      textContent: getString("task-queue-action-delete"),
     });
 
     deleteBtn.addEventListener("click", () => {
@@ -969,15 +1061,15 @@ export class TaskQueueView extends BaseView {
           fontSize: "12px",
           fontWeight: "600",
         },
-        textContent: "🛑 终止",
+        textContent: getString("task-queue-action-abort"),
       }) as HTMLButtonElement;
-      abortBtn.title = "终止当前 AI 总结输出";
+      abortBtn.title = getString("task-queue-abort-tooltip");
 
       abortBtn.addEventListener("click", async (event: Event) => {
         event.stopPropagation();
         abortBtn.disabled = true;
         abortBtn.style.cursor = "wait";
-        abortBtn.textContent = "⏳ 终止中";
+        abortBtn.textContent = getString("task-queue-action-aborting");
         await this.abortTask(task.id);
       });
 
@@ -995,7 +1087,7 @@ export class TaskQueueView extends BaseView {
           cursor: "pointer",
           fontSize: "12px",
         },
-        textContent: "🔄 重试",
+        textContent: getString("task-queue-action-retry"),
       });
 
       retryBtn.addEventListener("click", () => {
@@ -1014,7 +1106,7 @@ export class TaskQueueView extends BaseView {
           cursor: "pointer",
           fontSize: "12px",
         },
-        textContent: "复制错误",
+        textContent: getString("task-queue-action-copy-error"),
       });
 
       copyErrorBtn.addEventListener("click", () => {
@@ -1037,22 +1129,27 @@ export class TaskQueueView extends BaseView {
           cursor: "pointer",
           fontSize: "12px",
         },
-        textContent: "🔁 补全精读",
+        textContent: getString("task-queue-action-complete-deep-read"),
       }) as HTMLButtonElement;
-      completeDeepReadBtn.title =
-        "重新检查 AI 精读笔记，并补跑仍在等待/生成中/失败的轮次";
+      completeDeepReadBtn.title = getString(
+        "task-queue-complete-deep-read-tooltip",
+      );
 
       completeDeepReadBtn.addEventListener("click", async (event: Event) => {
         event.stopPropagation();
         completeDeepReadBtn.disabled = true;
         completeDeepReadBtn.style.cursor = "wait";
-        completeDeepReadBtn.textContent = "⏳ 检查中";
+        completeDeepReadBtn.textContent = getString(
+          "task-queue-action-checking",
+        );
         try {
           await this.requeueDeepReadTask(task);
         } finally {
           completeDeepReadBtn.disabled = false;
           completeDeepReadBtn.style.cursor = "pointer";
-          completeDeepReadBtn.textContent = "🔁 补全精读";
+          completeDeepReadBtn.textContent = getString(
+            "task-queue-action-complete-deep-read",
+          );
         }
       });
 
@@ -1073,7 +1170,7 @@ export class TaskQueueView extends BaseView {
           cursor: "pointer",
           fontSize: "12px",
         },
-        textContent: "⚡ 优先处理",
+        textContent: getString("task-queue-action-prioritize"),
       });
 
       priorityBtn.addEventListener("click", () => {
@@ -1140,6 +1237,8 @@ export class TaskQueueView extends BaseView {
   }
 
   private buildTaskErrorCopyText(task: TaskItem): string {
+    const unknownValue = getString("common-unknown-value");
+    const noneValue = getString("common-none-value");
     return [
       "AI-Butler task error details",
       `generatedAt: ${new Date().toISOString()}`,
@@ -1148,13 +1247,13 @@ export class TaskQueueView extends BaseView {
       `itemId: ${task.itemId}`,
       `title: ${task.title}`,
       `status: ${task.status}`,
-      `createdAt: ${task.createdAt?.toISOString?.() || "unknown"}`,
-      `startedAt: ${task.startedAt?.toISOString?.() || "unknown"}`,
-      `completedAt: ${task.completedAt?.toISOString?.() || "unknown"}`,
+      `createdAt: ${task.createdAt?.toISOString?.() || unknownValue}`,
+      `startedAt: ${task.startedAt?.toISOString?.() || unknownValue}`,
+      `completedAt: ${task.completedAt?.toISOString?.() || unknownValue}`,
       `retryCount: ${task.retryCount}`,
       `maxRetries: ${task.maxRetries}`,
-      `workflowStage: ${task.workflowStage || "none"}`,
-      `errorMessage: ${task.error || "unknown"}`,
+      `workflowStage: ${task.workflowStage || noneValue}`,
+      `errorMessage: ${task.error || unknownValue}`,
     ].join("\n");
   }
 
@@ -1189,7 +1288,7 @@ export class TaskQueueView extends BaseView {
       } catch {
         new ztoolkit.ProgressWindow("AI Butler", { closeTime: 2200 })
           .createLine({
-            text: "复制失败，可手动选择错误文本",
+            text: getString("task-queue-copy-failed"),
             type: "fail",
           })
           .show();
@@ -1198,7 +1297,10 @@ export class TaskQueueView extends BaseView {
     }
 
     new ztoolkit.ProgressWindow("AI Butler", { closeTime: 1500 })
-      .createLine({ text: "已复制错误详情", type: "success" })
+      .createLine({
+        text: getString("task-queue-error-details-copied"),
+        type: "success",
+      })
       .show();
   }
 
@@ -1351,20 +1453,22 @@ export class TaskQueueView extends BaseView {
 
       const item = await Zotero.Items.getAsync(task.itemId);
       if (!item) {
-        throw new Error("找不到该 AI 精读任务对应的文献条目");
+        throw new Error(getString("task-queue-error-deep-read-item-not-found"));
       }
 
       const artifact = await TaskArtifacts.probe("deepRead", item);
       if (artifact.probeFailed) {
         throw new Error(
-          `无法确认 AI 精读是否完整（${artifact.reason || "probe-failed"}），已取消补全`,
+          getString("task-queue-deep-read-integrity-probe-failed", {
+            args: { reason: artifact.reason || "probe-failed" },
+          }),
         );
       }
 
       if (artifact.exists) {
         await this.manager.markTaskCompletedIfArtifactReady(
           task.id,
-          "AI 精读已完整，任务状态已修正",
+          getString("task-detail-deep-read-artifact-fixed"),
         );
         this.syncFromManager();
         new ztoolkit.ProgressWindow("AI Butler", {
@@ -1372,7 +1476,7 @@ export class TaskQueueView extends BaseView {
           closeTime: 3000,
         })
           .createLine({
-            text: "AI 精读已完整，无需补全",
+            text: getString("task-queue-deep-read-complete-no-need"),
             type: "success",
           })
           .show();
@@ -1388,7 +1492,7 @@ export class TaskQueueView extends BaseView {
         closeTime: 3000,
       })
         .createLine({
-          text: "已检查 AI 精读完整性；如有未完成轮次，将优先补跑",
+          text: getString("task-queue-deep-read-integrity-checked"),
           type: "success",
         })
         .show();
@@ -1550,9 +1654,15 @@ export class TaskQueueView extends BaseView {
           t.completedAt = new Date();
           t.progress = 100;
           t.stage = success ? "completed" : "failed";
-          t.stageLabel = success ? "已完成" : "失败";
-          t.workflowStage = success ? "已完成" : "失败";
-          t.stageDetail = success ? "任务已完成" : error || t.error;
+          t.stageLabel = success
+            ? getString("task-queue-status-completed")
+            : getString("task-queue-status-failed");
+          t.workflowStage = success
+            ? getString("task-queue-status-completed")
+            : getString("task-queue-status-failed");
+          t.stageDetail = success
+            ? getString("task-queue-detail-task-completed")
+            : error || t.error;
           t.stageUpdatedAt = new Date();
           this.updateStats();
           this.renderTaskList();
@@ -1578,17 +1688,17 @@ export class TaskQueueView extends BaseView {
       return {
         ...task,
         stage: "completed",
-        stageLabel: "已完成",
-        workflowStage: "已完成",
-        stageDetail: "任务已完成",
+        stageLabel: getString("task-queue-status-completed"),
+        workflowStage: getString("task-queue-status-completed"),
+        stageDetail: getString("task-queue-detail-task-completed"),
       };
     }
     if (task.status === TaskStatus.FAILED) {
       return {
         ...task,
         stage: "failed",
-        stageLabel: "失败",
-        workflowStage: "失败",
+        stageLabel: getString("task-queue-status-failed"),
+        workflowStage: getString("task-queue-status-failed"),
         stageDetail: task.errorDetails || task.error || task.stageDetail,
       };
     }

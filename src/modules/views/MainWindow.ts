@@ -36,6 +36,7 @@ import { LibraryScannerView } from "./LibraryScannerView";
 import { LiteratureReviewView } from "./LiteratureReviewView";
 import { BaseView } from "./BaseView";
 import type { AiNoteKind } from "../aiNoteService";
+import { getString } from "../../utils/locale";
 import {
   createMainWindowScaffold,
   type MainTabDescriptor,
@@ -230,7 +231,7 @@ export class MainWindow {
           },
         })
         .setDialogData(dialogData)
-        .open("AI Butler - 智能文献管家", {
+        .open(getString("main-window-title"), {
           width: dialogSize.width,
           height: dialogSize.height,
           centerscreen: true,
@@ -284,7 +285,7 @@ export class MainWindow {
 
     if (!opener || typeof opener.openDialog !== "function") {
       const error = new Error(
-        "Cannot open AI Butler window: openDialog is not available on Zotero main window",
+        getString("main-window-error-open-dialog-unavailable"),
       );
       ztoolkit.log("[AI Butler] 打开主窗口失败:", error);
       throw error;
@@ -490,10 +491,22 @@ export class MainWindow {
 
       // 创建冻结式窗口脚手架
       const tabs: Array<MainTabDescriptor<TabType>> = [
-        { id: "dashboard", label: "仪表盘", icon: "📊" },
-        { id: "summary", label: "AI 总结", icon: "📝" },
-        { id: "tasks", label: "任务队列", icon: "📋" },
-        { id: "settings", label: "快捷设置", icon: "⚙️" },
+        {
+          id: "dashboard",
+          label: getString("main-window-tab-dashboard"),
+          icon: "📊",
+        },
+        {
+          id: "summary",
+          label: getString("main-window-tab-summary"),
+          icon: "📝",
+        },
+        { id: "tasks", label: getString("main-window-tab-tasks"), icon: "📋" },
+        {
+          id: "settings",
+          label: getString("main-window-tab-settings"),
+          icon: "⚙️",
+        },
       ];
       this.scaffold = createMainWindowScaffold(host, tabs, (tabId) => {
         this.switchTab(tabId);
@@ -659,8 +672,8 @@ export class MainWindow {
 
     placeholderDiv.innerHTML = `
       <div style="font-size: 64px; margin-bottom: 20px;">🚧</div>
-      <div>该功能正在开发中...</div>
-      <div style="font-size: 12px; margin-top: 10px; opacity: 0.7;">敬请期待</div>
+      <div>${getString("main-window-feature-in-development")}</div>
+      <div style="font-size: 12px; margin-top: 10px; opacity: 0.7;">${getString("main-window-coming-soon")}</div>
     `;
 
     this.viewContainer.appendChild(placeholderDiv);

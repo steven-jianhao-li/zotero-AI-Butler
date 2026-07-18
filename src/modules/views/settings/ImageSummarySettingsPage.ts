@@ -8,6 +8,7 @@
  */
 
 import { getPref, setPref } from "../../../utils/prefs";
+import { getString } from "../../../utils/locale";
 import {
   createStyledButton,
   createFormGroup,
@@ -21,6 +22,8 @@ import {
 import {
   getDefaultImageSummaryPrompt,
   getDefaultImageGenerationPrompt,
+  getConfiguredImageSummaryPrompt,
+  getConfiguredImageGenerationPrompt,
 } from "../../../utils/prompts";
 import { ImageClient, ImageGenerationError } from "../../imageClient";
 
@@ -42,14 +45,13 @@ export class ImageSummarySettingsPage {
     this.container.innerHTML = "";
     this.endpointPreviewUpdaters = [];
 
-    const title = this.createPageTitle("🖼️ 一图总结设置");
+    const title = this.createPageTitle(
+      getString("settings-image-summary-title"),
+    );
     this.container.appendChild(title);
 
     this.container.appendChild(
-      createNotice(
-        "一图总结使用生图模型为论文生成学术概念海报。支持 Gemini 原生接口与 OpenAI 兼容接口；可先用预设快速接入服务，再按需微调 API 与生成参数。",
-        "info",
-      ),
+      createNotice(getString("settings-image-summary-description"), "info"),
     );
 
     const form = this.createElement("div", {
@@ -64,8 +66,8 @@ export class ImageSummarySettingsPage {
     form.appendChild(this.createPresetPanel());
 
     const apiCard = this.createSettingsCard(
-      "🔌 API 连接",
-      "填写用于生成图片的服务地址、密钥和模型。首次使用可以先在上方选择一个常用服务。",
+      getString("settings-image-summary-api-title"),
+      getString("settings-image-summary-api-description"),
     );
 
     const requestModeValue =
@@ -73,8 +75,14 @@ export class ImageSummarySettingsPage {
     const requestModeSelect = createSelect(
       "imageSummaryRequestMode",
       [
-        { value: "gemini", label: "Gemini 原生接口 (x-goog-api-key)" },
-        { value: "openai", label: "OpenAI 兼容接口 (Bearer)" },
+        {
+          value: "gemini",
+          label: getString("settings-image-summary-request-mode-gemini"),
+        },
+        {
+          value: "openai",
+          label: getString("settings-image-summary-request-mode-openai"),
+        },
       ],
       requestModeValue,
       (newVal) => {
@@ -100,27 +108,27 @@ export class ImageSummarySettingsPage {
     );
     apiCard.body.appendChild(
       createFormGroup(
-        "请求方式",
+        getString("settings-image-summary-request-mode"),
         requestModeSelect,
-        "选择使用 Gemini 原生接口或 OpenAI 兼容接口来调用生图模型。",
+        getString("settings-image-summary-request-mode-help"),
       ),
     );
 
     apiCard.body.appendChild(
       createFormGroup(
-        "API Key *",
+        getString("settings-image-summary-api-key-label"),
         this.createPasswordInput(
           "imageSummaryApiKey",
           (getPref("imageSummaryApiKey" as any) as string) || "",
-          "您的 API Key",
+          getString("settings-image-summary-api-key-placeholder"),
         ),
-        "【必填】Gemini 模式使用 x-goog-api-key；OpenAI 模式使用 Authorization Bearer。",
+        getString("settings-image-summary-api-key-help"),
       ),
     );
 
     apiCard.body.appendChild(
       this.createEndpointFormGroup(
-        "API 地址 *",
+        getString("settings-image-summary-api-url"),
         "imageSummaryApiUrl",
         (getPref("imageSummaryApiUrl" as any) as string) ||
           (requestModeValue === "openai"
@@ -134,20 +142,20 @@ export class ImageSummarySettingsPage {
 
     apiCard.body.appendChild(
       createFormGroup(
-        "额外请求 Headers",
+        getString("settings-image-summary-extra-headers"),
         createTextarea(
           "imageSummaryCustomHeaders",
           (getPref("imageSummaryCustomHeaders" as any) as string) || "",
           4,
           '{"X-ModelScope-Async-Mode": "true"}',
         ),
-        '可选。填写 JSON 或 Python dict 对象，键值会附加到一图总结生图请求；例如 {"X-ModelScope-Async-Mode": "true"}。鉴权和 Content-Type 仍由插件配置管理。',
+        getString("settings-image-summary-extra-headers-help"),
       ),
     );
 
     apiCard.body.appendChild(
       createFormGroup(
-        "生图模型",
+        getString("settings-image-summary-model"),
         createInput(
           "imageSummaryModel",
           "text",
@@ -155,7 +163,7 @@ export class ImageSummarySettingsPage {
             "gemini-3-pro-image-preview",
           "gemini-3-pro-image-preview",
         ),
-        "Gemini 推荐 gemini-3-pro-image-preview；OpenAI 兼容生图可填写 gpt-image-2、agnes-image-2.1-flash、qwen-image-2.0 等模型。",
+        getString("settings-image-summary-model-help"),
       ),
     );
 
@@ -169,83 +177,84 @@ export class ImageSummarySettingsPage {
     timeoutInput.step = "1";
     apiCard.body.appendChild(
       createFormGroup(
-        "生图请求超时时间 (秒)",
+        getString("settings-image-summary-timeout"),
         timeoutInput,
-        "一图总结第二阶段生图请求的超时时间，默认 600 秒 (10 分钟)，最小 30 秒。",
+        getString("settings-image-summary-timeout-help"),
       ),
     );
     form.appendChild(apiCard.card);
 
     const generationCard = this.createSettingsCard(
-      "⚙️ 生成选项",
-      "控制图片文字语言、比例和分辨率。兼容服务较多时，建议先关闭高级参数跑通 API。",
+      getString("settings-image-summary-generation-title"),
+      getString("settings-image-summary-generation-description"),
     );
 
     generationCard.body.appendChild(
       createFormGroup(
-        "图片语言",
+        getString("settings-image-summary-language"),
         createInput(
           "imageSummaryLanguage",
           "text",
-          (getPref("imageSummaryLanguage" as any) as string) || "中文",
-          "中文",
+          (getPref("imageSummaryLanguage" as any) as string) ||
+            getString("settings-image-summary-default-language"),
+          getString("settings-image-summary-default-language"),
         ),
-        "生成图片中显示的文字语言。",
+        getString("settings-image-summary-language-help"),
       ),
     );
 
     generationCard.body.appendChild(
       createFormGroup(
-        "启用宽高比参数",
+        getString("settings-image-summary-enable-aspect-ratio"),
         createCheckbox(
           "imageSummaryAspectRatioEnabled",
           (getPref("imageSummaryAspectRatioEnabled" as any) as boolean) ??
             false,
         ),
-        "Gemini 模式发送 aspectRatio；OpenAI/gpt-image-2 模式会和分辨率一起合成为官方 size 参数。",
+        getString("settings-image-summary-enable-aspect-ratio-help"),
       ),
     );
 
     generationCard.body.appendChild(
       createFormGroup(
-        "图片宽高比",
+        getString("settings-image-summary-aspect-ratio"),
         createInput(
           "imageSummaryAspectRatio",
           "text",
           (getPref("imageSummaryAspectRatio" as any) as string) || "16:9",
           "16:9",
         ),
-        "如 16:9、1:1、9:16、4:3；Agnes 2.1 会作为 ratio 参数发送。",
+        getString("settings-image-summary-aspect-ratio-help"),
       ),
     );
 
     generationCard.body.appendChild(
       createFormGroup(
-        "启用分辨率参数",
+        getString("settings-image-summary-enable-resolution"),
         createCheckbox(
           "imageSummaryResolutionEnabled",
           (getPref("imageSummaryResolutionEnabled" as any) as boolean) ?? false,
         ),
-        "Gemini 模式发送 imageSize；OpenAI/gpt-image-2 模式会转换为官方 size 参数。",
+        getString("settings-image-summary-enable-resolution-help"),
       ),
     );
 
     generationCard.body.appendChild(
       createFormGroup(
-        "图片分辨率",
+        getString("settings-image-summary-resolution"),
         this.createResolutionSetting(),
-        "不知道怎么选时用 1K；想要更清晰可选 2K/4K。特殊尺寸可选择“自定义”。",
+        getString("settings-image-summary-resolution-help"),
       ),
     );
 
     generationCard.body.appendChild(
       createFormGroup(
-        "使用已有 AI 总结",
+        getString("settings-image-summary-use-existing-note"),
         createCheckbox(
           "imageSummaryUseExistingNote",
           (getPref("imageSummaryUseExistingNote" as any) as boolean) || false,
         ),
-        "开启后，将使用已存在的 AI 管家笔记内容作为视觉摘要输入，可节省 API 调用费用。",
+        getString("settings-image-summary-use-existing-note-help"),
       ),
     );
 
@@ -267,17 +276,23 @@ export class ImageSummarySettingsPage {
           if (!confirmed) {
             autoSummaryCheckbox.checked = false;
             if (autoSummaryLabel) {
-              autoSummaryLabel.textContent = "已禁用";
+              autoSummaryLabel.textContent = getString(
+                "settings-image-summary-disabled",
+              );
             }
           } else {
             if (autoSummaryLabel) {
-              autoSummaryLabel.textContent = "已启用";
+              autoSummaryLabel.textContent = getString(
+                "settings-image-summary-enabled",
+              );
             }
             setPref("autoImageSummaryOnComplete" as any, true);
           }
         } else {
           if (autoSummaryLabel) {
-            autoSummaryLabel.textContent = "已禁用";
+            autoSummaryLabel.textContent = getString(
+              "settings-image-summary-disabled",
+            );
           }
           setPref("autoImageSummaryOnComplete" as any, false);
         }
@@ -286,16 +301,16 @@ export class ImageSummarySettingsPage {
 
     generationCard.body.appendChild(
       createFormGroup(
-        "自动添加一图总结",
+        getString("settings-image-summary-auto-add"),
         autoSummaryContainer,
-        "⚠️ 开启后，论文 AI 总结完成时将自动生成一图总结，可能消耗大量 API 费用。",
+        getString("settings-image-summary-auto-add-help"),
       ),
     );
     form.appendChild(generationCard.card);
 
     const promptCard = this.createSettingsCard(
-      "📝 提示词配置",
-      "这里决定图片里讲什么、怎么讲。通常保持默认即可，有固定风格需求时再调整。",
+      getString("settings-image-summary-prompt-title"),
+      getString("settings-image-summary-prompt-description"),
     );
 
     // 变量说明
@@ -310,37 +325,40 @@ export class ImageSummarySettingsPage {
         color: "#e65100",
       },
     });
-    varsNotice.innerHTML =
-      "📌 <strong>可用变量</strong>：<code>${context}</code> 论文内容, <code>${title}</code> 论文标题, <code>${language}</code> 语言设置, <code>${summaryForImage}</code> 视觉摘要结果";
+    varsNotice.innerHTML = getString(
+      "settings-image-summary-available-variables",
+    );
     promptCard.body.appendChild(varsNotice);
 
     // 视觉信息提取提示词
     promptCard.body.appendChild(
       createFormGroup(
-        "视觉信息提取提示词",
+        getString("settings-image-summary-visual-prompt"),
         createTextarea(
           "imageSummaryPrompt",
-          (getPref("imageSummaryPrompt" as any) as string) ||
-            getDefaultImageSummaryPrompt(),
+          getConfiguredImageSummaryPrompt(
+            getPref("imageSummaryPrompt" as any) as string,
+          ),
           10,
-          "用于从论文中提取视觉信息的提示词...",
+          getString("settings-image-summary-visual-prompt-placeholder"),
         ),
-        "第一阶段：从论文中提取用于生成图片的关键视觉信息",
+        getString("settings-image-summary-visual-prompt-help"),
       ),
     );
 
     // 生图提示词
     promptCard.body.appendChild(
       createFormGroup(
-        "生图提示词",
+        getString("settings-image-summary-image-prompt"),
         createTextarea(
           "imageSummaryImagePrompt",
-          (getPref("imageSummaryImagePrompt" as any) as string) ||
-            getDefaultImageGenerationPrompt(),
+          getConfiguredImageGenerationPrompt(
+            getPref("imageSummaryImagePrompt" as any) as string,
+          ),
           12,
-          "用于生成学术概念海报的提示词...",
+          getString("settings-image-summary-image-prompt-placeholder"),
         ),
-        "第二阶段：根据视觉摘要生成学术概念海报图片",
+        getString("settings-image-summary-image-prompt-help"),
       ),
     );
 
@@ -358,18 +376,26 @@ export class ImageSummarySettingsPage {
     });
 
     // 测试连接按钮
-    const testButton = createStyledButton("🔍 测试 API", "#2196f3", "medium");
+    const testButton = createStyledButton(
+      getString("settings-image-summary-test-api"),
+      "#2196f3",
+      "medium",
+    );
     testButton.addEventListener("click", () => this.testConnection());
     buttonGroup.appendChild(testButton);
 
     // 保存按钮
-    const saveButton = createStyledButton("💾 保存设置", "#4caf50", "medium");
+    const saveButton = createStyledButton(
+      getString("settings-image-summary-save-settings"),
+      "#4caf50",
+      "medium",
+    );
     saveButton.addEventListener("click", () => this.saveSettings());
     buttonGroup.appendChild(saveButton);
 
     // 重置提示词按钮
     const resetButton = createStyledButton(
-      "🔄 重置提示词",
+      getString("settings-image-summary-reset-prompts"),
       "#9e9e9e",
       "medium",
     );
@@ -401,7 +427,7 @@ export class ImageSummarySettingsPage {
       },
     });
     const resultTitleText = this.createElement("span", {
-      textContent: "API 连接测试结果",
+      textContent: getString("settings-image-summary-test-result-title"),
       styles: { fontSize: "13px", fontWeight: "600" },
     });
     // 按钮容器
@@ -409,7 +435,7 @@ export class ImageSummarySettingsPage {
       styles: { display: "flex", gap: "8px" },
     });
     const copyBtn = this.createElement("button", {
-      textContent: "复制详情",
+      textContent: getString("settings-image-summary-copy-details"),
       styles: {
         border: "1px solid #ddd",
         background: "#fff",
@@ -435,8 +461,14 @@ export class ImageSummarySettingsPage {
         } else {
           throw new Error("clipboard api unavailable");
         }
-        new ztoolkit.ProgressWindow("一图总结", { closeTime: 1500 })
-          .createLine({ text: "已复制错误详情", type: "success" })
+        new ztoolkit.ProgressWindow(
+          getString("settings-image-summary-progress-title"),
+          { closeTime: 1500 },
+        )
+          .createLine({
+            text: getString("settings-image-summary-error-details-copied"),
+            type: "success",
+          })
           .show();
       } catch {
         try {
@@ -449,13 +481,22 @@ export class ImageSummarySettingsPage {
           (tmp as any).select?.();
           (doc as any).execCommand?.("copy");
           (tmp as any).remove?.();
-          new ztoolkit.ProgressWindow("一图总结", { closeTime: 1500 })
-            .createLine({ text: "已复制错误详情", type: "success" })
+          new ztoolkit.ProgressWindow(
+            getString("settings-image-summary-progress-title"),
+            { closeTime: 1500 },
+          )
+            .createLine({
+              text: getString("settings-image-summary-error-details-copied"),
+              type: "success",
+            })
             .show();
         } catch {
-          new ztoolkit.ProgressWindow("一图总结", { closeTime: 2500 })
+          new ztoolkit.ProgressWindow(
+            getString("settings-image-summary-progress-title"),
+            { closeTime: 2500 },
+          )
             .createLine({
-              text: "复制失败，可手动选择文本复制",
+              text: getString("settings-image-summary-copy-failed"),
               type: "default",
             })
             .show();
@@ -578,7 +619,7 @@ export class ImageSummarySettingsPage {
 
     const copy = doc.createElement("div");
     const title = doc.createElement("div");
-    title.textContent = "快速开始";
+    title.textContent = getString("settings-image-summary-quick-start");
     Object.assign(title.style, {
       fontSize: "15px",
       fontWeight: "750",
@@ -588,8 +629,9 @@ export class ImageSummarySettingsPage {
     copy.appendChild(title);
 
     const desc = doc.createElement("div");
-    desc.textContent =
-      "选择你准备用的生图服务，插件会自动填好地址、模型和推荐尺寸。";
+    desc.textContent = getString(
+      "settings-image-summary-quick-start-description",
+    );
     Object.assign(desc.style, {
       fontSize: "12px",
       lineHeight: "1.6",
@@ -599,7 +641,9 @@ export class ImageSummarySettingsPage {
     header.appendChild(copy);
 
     const badge = doc.createElement("span");
-    badge.textContent = "推荐首次配置使用";
+    badge.textContent = getString(
+      "settings-image-summary-recommended-first-setup",
+    );
     Object.assign(badge.style, {
       flex: "0 0 auto",
       padding: "5px 9px",
@@ -616,11 +660,26 @@ export class ImageSummarySettingsPage {
     const presetSelect = createSelect(
       "imageSummaryPreset",
       [
-        { value: "", label: "选择一个服务预设…" },
-        { value: "gemini", label: "Gemini 原生 / Nano Banana Pro" },
-        { value: "openai", label: "OpenAI 官方 gpt-image" },
-        { value: "agnes21", label: "Agnes Image 2.1 Flash" },
-        { value: "dashscope", label: "阿里云百炼 Qwen Image" },
+        {
+          value: "",
+          label: getString("settings-image-summary-preset-placeholder"),
+        },
+        {
+          value: "gemini",
+          label: getString("settings-image-summary-preset-gemini"),
+        },
+        {
+          value: "openai",
+          label: getString("settings-image-summary-preset-openai"),
+        },
+        {
+          value: "agnes21",
+          label: getString("settings-image-summary-preset-agnes"),
+        },
+        {
+          value: "dashscope",
+          label: getString("settings-image-summary-preset-dashscope"),
+        },
       ],
       "",
       (newVal) => this.applyImageProviderPreset(newVal),
@@ -628,8 +687,7 @@ export class ImageSummarySettingsPage {
     panel.appendChild(presetSelect);
 
     const note = doc.createElement("div");
-    note.textContent =
-      "应用后只需要重新填写 API Key。已经能正常生成图片时，不必重复应用预设。";
+    note.textContent = getString("settings-image-summary-preset-note");
     Object.assign(note.style, {
       marginTop: "8px",
       fontSize: "11px",
@@ -659,10 +717,22 @@ export class ImageSummarySettingsPage {
     const select = createSelect(
       "imageSummaryResolutionPreset",
       [
-        { value: "1K", label: "标准清晰度 1K（通用，费用低）" },
-        { value: "2K", label: "高清 2K（更清晰）" },
-        { value: "4K", label: "超清 4K（更慢，成本更高）" },
-        { value: "custom", label: "自定义（输入尺寸或等级）" },
+        {
+          value: "1K",
+          label: getString("settings-image-summary-resolution-1k"),
+        },
+        {
+          value: "2K",
+          label: getString("settings-image-summary-resolution-2k"),
+        },
+        {
+          value: "4K",
+          label: getString("settings-image-summary-resolution-4k"),
+        },
+        {
+          value: "custom",
+          label: getString("settings-image-summary-resolution-custom"),
+        },
       ],
       isPreset ? current : "custom",
       (value) => this.updateResolutionCustomInputVisibility(value),
@@ -673,7 +743,7 @@ export class ImageSummarySettingsPage {
       "imageSummaryResolutionCustom",
       "text",
       isPreset ? "" : current,
-      "例如 1024x768、1536x1024、2K",
+      getString("settings-image-summary-resolution-custom-placeholder"),
     );
     customInput.style.display = isPreset ? "none" : "block";
     wrapper.appendChild(customInput);
@@ -755,7 +825,7 @@ export class ImageSummarySettingsPage {
     overlay.appendChild(dialog);
 
     const title = doc.createElement("div");
-    title.textContent = "应用生图预设";
+    title.textContent = getString("settings-image-summary-apply-preset-title");
     Object.assign(title.style, {
       fontSize: "16px",
       fontWeight: "700",
@@ -765,10 +835,12 @@ export class ImageSummarySettingsPage {
     dialog.appendChild(title);
 
     const message = doc.createElement("div");
-    message.innerHTML =
-      "将应用预设：<strong>" +
-      this.escapeHtml(presetName) +
-      "</strong><br><br>插件将把生图服务切换到这套推荐配置，包括地址、模型和图片尺寸。<br><br>你的提示词会保留；API Key 会清空，需要重新填写。";
+    message.innerHTML = getString(
+      "settings-image-summary-apply-preset-message",
+      {
+        args: { preset: this.escapeHtml(presetName) },
+      },
+    );
     Object.assign(message.style, {
       fontSize: "13px",
       lineHeight: "1.65",
@@ -791,11 +863,19 @@ export class ImageSummarySettingsPage {
       this.setSelectValue("imageSummaryPreset", "");
     };
 
-    const cancelButton = createStyledButton("取消", "#9e9e9e", "small");
+    const cancelButton = createStyledButton(
+      getString("settings-image-summary-cancel"),
+      "#9e9e9e",
+      "small",
+    );
     cancelButton.addEventListener("click", close);
     actions.appendChild(cancelButton);
 
-    const confirmButton = createStyledButton("确认应用", "#9c27b0", "small");
+    const confirmButton = createStyledButton(
+      getString("settings-image-summary-confirm-apply"),
+      "#9c27b0",
+      "small",
+    );
     confirmButton.addEventListener("click", () => {
       overlay.remove();
       onConfirm();
@@ -834,10 +914,10 @@ export class ImageSummarySettingsPage {
     if (!preset) return;
 
     const presetNames: Record<string, string> = {
-      gemini: "Gemini 原生 / Nano Banana Pro",
-      openai: "OpenAI 官方 gpt-image",
+      gemini: getString("settings-image-summary-preset-gemini"),
+      openai: getString("settings-image-summary-preset-openai"),
       agnes21: "Agnes Image 2.1 Flash",
-      dashscope: "阿里云百炼 Qwen Image",
+      dashscope: getString("settings-image-summary-preset-dashscope"),
     };
     const presetName = presetNames[preset] || preset;
 
@@ -919,7 +999,10 @@ export class ImageSummarySettingsPage {
     setPref("imageSummaryModel" as any, config.model);
     setPref("imageSummaryCustomHeaders" as any, config.customHeaders || "");
     setPref("imageSummaryRequestTimeoutSeconds" as any, timeoutSeconds);
-    setPref("imageSummaryLanguage" as any, "中文");
+    setPref(
+      "imageSummaryLanguage" as any,
+      getString("settings-image-summary-default-language"),
+    );
     setPref("imageSummaryAspectRatioEnabled" as any, config.aspectRatioEnabled);
     setPref("imageSummaryAspectRatio" as any, config.aspectRatio);
     setPref("imageSummaryResolutionEnabled" as any, config.resolutionEnabled);
@@ -929,11 +1012,19 @@ export class ImageSummarySettingsPage {
 
     this.render();
 
-    new ztoolkit.ProgressWindow("一图总结", {
-      closeOnClick: true,
-      closeTime: 2500,
-    })
-      .createLine({ text: "已切换到：" + presetName, type: "success" })
+    new ztoolkit.ProgressWindow(
+      getString("settings-image-summary-progress-title"),
+      {
+        closeOnClick: true,
+        closeTime: 2500,
+      },
+    )
+      .createLine({
+        text: getString("settings-image-summary-preset-applied", {
+          args: { preset: presetName },
+        }),
+        type: "success",
+      })
       .show();
   }
 
@@ -1066,7 +1157,10 @@ export class ImageSummarySettingsPage {
         closeOnClick: true,
         closeTime: 2000,
       })
-        .createLine({ text: "一图总结设置已保存", type: "success" })
+        .createLine({
+          text: getString("settings-image-summary-settings-saved"),
+          type: "success",
+        })
         .show();
     } catch (error: any) {
       ztoolkit.log("[AI-Butler] 保存一图总结设置失败:", error);
@@ -1074,7 +1168,12 @@ export class ImageSummarySettingsPage {
         closeOnClick: true,
         closeTime: 3000,
       })
-        .createLine({ text: `保存失败: ${error.message}`, type: "error" })
+        .createLine({
+          text: getString("settings-image-summary-save-failed", {
+            args: { message: error.message },
+          }),
+          type: "error",
+        })
         .show();
     }
   }
@@ -1137,7 +1236,9 @@ export class ImageSummarySettingsPage {
         resultBox.style.backgroundColor = "#ffebee";
         resultBox.style.border = "1px solid #ffcdd2";
         resultPre.style.color = "#b71c1c";
-        resultPre.textContent = "❌ 请先填写 API Key";
+        resultPre.textContent = getString(
+          "settings-image-summary-api-key-required",
+        );
       }
       return;
     }
@@ -1148,7 +1249,7 @@ export class ImageSummarySettingsPage {
       resultBox.style.backgroundColor = "#fff8e1";
       resultBox.style.border = "1px solid #ffe082";
       resultPre.style.color = "#5d4037";
-      resultPre.textContent = "正在测试连接…\n请稍候。";
+      resultPre.textContent = getString("settings-image-summary-testing-wait");
     }
 
     try {
@@ -1169,7 +1270,15 @@ export class ImageSummarySettingsPage {
         resultBox.style.backgroundColor = "#e8f5e9";
         resultBox.style.border = "1px solid #a5d6a7";
         resultPre.style.color = "#1b5e20";
-        resultPre.textContent = `✅ API 连接成功，生成了 ${result.mimeType} 图片 (${Math.round(result.imageBase64.length / 1024)} KB)`;
+        resultPre.textContent = getString(
+          "settings-image-summary-test-success",
+          {
+            args: {
+              mimeType: result.mimeType,
+              size: Math.round(result.imageBase64.length / 1024),
+            },
+          },
+        );
       }
     } catch (error: any) {
       ztoolkit.log("[AI-Butler] 一图总结 API 测试失败:", error);
@@ -1177,7 +1286,13 @@ export class ImageSummarySettingsPage {
       const fullMsg =
         error instanceof ImageGenerationError
           ? ImageClient.formatError(error)
-          : `错误信息: ${error?.message || "连接失败"}`;
+          : getString("settings-image-summary-error-message", {
+              args: {
+                message:
+                  error?.message ||
+                  getString("settings-image-summary-connection-failed"),
+              },
+            });
 
       if (resultBox && resultPre) {
         resultBox.style.display = "block";
@@ -1194,12 +1309,7 @@ export class ImageSummarySettingsPage {
    * @returns 用户是否确认开启
    */
   private showCostWarningDialog(): boolean {
-    const message =
-      "⚠️ 费用警告\n\n" +
-      "开启『自动添加一图总结』功能后，每当论文AI总结完成时，" +
-      "系统将自动调用生图 API 生成学术概念海报。\n\n" +
-      "这将消耗大量 API 调用次数和费用！\n\n" +
-      "确定要开启此功能吗？";
+    const message = getString("settings-image-summary-cost-warning");
 
     return ztoolkit.getGlobal("confirm")(message);
   }
@@ -1226,7 +1336,10 @@ export class ImageSummarySettingsPage {
       closeOnClick: true,
       closeTime: 2000,
     })
-      .createLine({ text: "提示词已重置为默认值", type: "success" })
+      .createLine({
+        text: getString("settings-image-summary-prompts-reset"),
+        type: "success",
+      })
       .show();
   }
 
@@ -1280,7 +1393,11 @@ export class ImageSummarySettingsPage {
       color: "var(--ai-text)",
     });
 
-    const official = this.createEndpointMeta("官方 Endpoint：");
+    const official = this.createEndpointMeta(
+      getString("settings-image-summary-official-endpoint", {
+        args: { endpoint: "" },
+      }),
+    );
     official.style.marginLeft = "auto";
     labelRow.appendChild(labelEl);
     labelRow.appendChild(official);
@@ -1300,10 +1417,12 @@ export class ImageSummarySettingsPage {
     });
 
     const required = doc.createElement("span");
-    required.textContent = "【必填】";
+    required.textContent = getString("settings-image-summary-required");
     required.style.flex = "0 0 auto";
 
-    const preview = this.createEndpointMeta("预览：");
+    const preview = this.createEndpointMeta(
+      getString("settings-image-summary-preview", { args: { endpoint: "" } }),
+    );
     preview.style.maxWidth = "440px";
 
     desc.appendChild(required);
@@ -1313,9 +1432,16 @@ export class ImageSummarySettingsPage {
     const update = () => {
       const endpoint = this.buildImageEndpointPreview(id, placeholder);
       const officialEndpoint = this.getImageOfficialEndpoint();
-      official.textContent = `官方 Endpoint：${officialEndpoint}`;
+      official.textContent = getString(
+        "settings-image-summary-official-endpoint",
+        {
+          args: { endpoint: officialEndpoint },
+        },
+      );
       official.title = officialEndpoint;
-      preview.textContent = `预览：${endpoint}`;
+      preview.textContent = getString("settings-image-summary-preview", {
+        args: { endpoint },
+      });
       preview.title = endpoint;
     };
 
@@ -1449,7 +1575,7 @@ export class ImageSummarySettingsPage {
 
     const toggleBtn = doc.createElement("button");
     toggleBtn.textContent = "👁";
-    toggleBtn.title = "显示/隐藏密钥";
+    toggleBtn.title = getString("settings-image-summary-toggle-key");
     toggleBtn.type = "button";
     toggleBtn.style.cssText = `
       border: 1px solid #ddd;

@@ -1,6 +1,7 @@
 import { AutoScanManager } from "../autoScanManager";
 import { LLMEndpointManager, type LLMEndpoint } from "../llmEndpointManager";
 import { getPref, setPref } from "../../utils/prefs";
+import { getString } from "../../utils/locale";
 import type {
   SetupPreset,
   SetupPresetChange,
@@ -13,87 +14,108 @@ const DEEPSEEK_MODEL = "deepseek-chat";
 
 function maskApiKey(apiKey: string): string {
   const trimmed = apiKey.trim();
-  if (trimmed.length <= 10) return "已填写";
+  if (trimmed.length <= 10) return getString("setup-preset-value-filled");
   return `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`;
 }
 
 function providerLabel(raw: unknown): string {
   const value = String(raw || "").trim();
   const labels: Record<string, string> = {
-    "openai-compat": "OpenAI 兼容接口",
+    "openai-compat": getString("setup-preset-provider-openai-compat"),
     openai: "OpenAI",
     google: "Google Gemini",
     anthropic: "Anthropic Claude",
     openrouter: "OpenRouter",
-    volcanoark: "火山方舟",
-    ollama: "Ollama 本地模型",
+    volcanoark: getString("setup-preset-provider-volcanoark"),
+    ollama: getString("setup-preset-provider-ollama"),
   };
-  return labels[value] || value || "未配置";
+  return (
+    labels[value] || value || getString("setup-preset-value-not-configured")
+  );
 }
 
 function pdfModeLabel(raw: unknown): string {
   const value = String(raw || "base64").trim();
   const labels: Record<string, string> = {
-    text: "文本提取",
-    base64: "Base64 文件输入",
-    mineru: "MinerU 解析",
+    text: getString("setup-preset-pdf-text"),
+    base64: getString("setup-preset-pdf-base64"),
+    mineru: getString("setup-preset-pdf-mineru"),
   };
   return labels[value] || value;
 }
 function getChanges(values: SetupPresetValues): SetupPresetChange[] {
   const endpoints = LLMEndpointManager.getEndpoints();
-  const currentTop = endpoints[0]?.name || "未配置";
+  const currentTop =
+    endpoints[0]?.name || getString("setup-preset-value-not-configured");
   return [
     {
-      label: "AI 平台",
+      label: getString("setup-preset-change-ai-platform"),
       before: providerLabel(getPref("provider")),
-      after: "DeepSeek（使用 OpenAI 兼容接口）",
+      after: getString("setup-preset-deepseek-provider-after"),
     },
     {
-      label: "DeepSeek API 地址",
-      before: String(getPref("openaiCompatApiUrl") || "空"),
+      label: getString("setup-preset-change-deepseek-api-url"),
+      before: String(
+        getPref("openaiCompatApiUrl") || getString("setup-preset-value-empty"),
+      ),
       after: DEEPSEEK_API_URL,
     },
     {
-      label: "DeepSeek 模型",
-      before: String(getPref("openaiCompatModel") || "空"),
+      label: getString("setup-preset-change-deepseek-model"),
+      before: String(
+        getPref("openaiCompatModel") || getString("setup-preset-value-empty"),
+      ),
       after: values.model || DEEPSEEK_MODEL,
     },
     {
-      label: "API Key",
-      before: "本地已有值会被替换",
+      label: getString("setup-preset-change-api-key"),
+      before: getString("setup-preset-local-key-replaced"),
       after: maskApiKey(values.apiKey),
     },
-    { label: "模型优先级", before: currentTop, after: "DeepSeek 排在第一位" },
     {
-      label: "PDF 处理",
+      label: getString("setup-preset-change-model-priority"),
+      before: currentTop,
+      after: getString("setup-preset-deepseek-priority-after"),
+    },
+    {
+      label: getString("setup-preset-change-pdf-processing"),
       before: pdfModeLabel(getPref("pdfProcessMode")),
-      after: "文本提取",
+      after: getString("setup-preset-pdf-text"),
     },
     {
-      label: "自动扫描",
-      before: getPref("autoScan") ? "已开启" : "已关闭",
-      after: "开启",
+      label: getString("setup-preset-change-auto-scan"),
+      before: getPref("autoScan")
+        ? getString("setup-preset-value-enabled")
+        : getString("setup-preset-value-disabled"),
+      after: getString("setup-preset-value-enable"),
     },
     {
-      label: "追问保存",
-      before: getPref("saveChatHistory") ? "已开启" : "已关闭",
-      after: "开启",
+      label: getString("setup-preset-change-save-chat"),
+      before: getPref("saveChatHistory")
+        ? getString("setup-preset-value-enabled")
+        : getString("setup-preset-value-disabled"),
+      after: getString("setup-preset-value-enable"),
     },
     {
-      label: "随机性参数（Temperature）",
-      before: getPref("enableTemperature") ? "发送" : "不发送",
-      after: "不发送",
+      label: getString("setup-preset-change-temperature"),
+      before: getPref("enableTemperature")
+        ? getString("setup-preset-value-send")
+        : getString("setup-preset-value-not-send"),
+      after: getString("setup-preset-value-not-send"),
     },
     {
-      label: "最大输出长度参数（Max Tokens）",
-      before: getPref("enableMaxTokens") ? "发送" : "不发送",
-      after: "不发送",
+      label: getString("setup-preset-change-max-tokens"),
+      before: getPref("enableMaxTokens")
+        ? getString("setup-preset-value-send")
+        : getString("setup-preset-value-not-send"),
+      after: getString("setup-preset-value-not-send"),
     },
     {
-      label: "采样参数（Top P）",
-      before: getPref("enableTopP") ? "发送" : "不发送",
-      after: "不发送",
+      label: getString("setup-preset-change-top-p"),
+      before: getPref("enableTopP")
+        ? getString("setup-preset-value-send")
+        : getString("setup-preset-value-not-send"),
+      after: getString("setup-preset-value-not-send"),
     },
   ];
 }
@@ -137,12 +159,21 @@ export const deepSeekPreset: SetupPreset = {
   id: "deepseek",
   name: "DeepSeek",
   title: "DeepSeek",
-  description: "适合国内网络环境，价格低，作为 OpenAI 兼容接口接入。",
-  guideTitle: "DeepSeek 配置教程",
-  guideSubtitle:
-    "只需要完成充值/创建密钥/粘贴密钥这几步，剩下的插件设置会自动处理。",
-  apiKeyPlaceholder: "粘贴 DeepSeek API Key，例如 sk-...",
-  successMessage: "✅ DeepSeek 配置已应用，可以开始使用了",
+  get description() {
+    return getString("setup-preset-deepseek-description");
+  },
+  get guideTitle() {
+    return getString("setup-preset-deepseek-guide-title");
+  },
+  get guideSubtitle() {
+    return getString("setup-preset-deepseek-guide-subtitle");
+  },
+  get apiKeyPlaceholder() {
+    return getString("setup-preset-deepseek-api-key-placeholder");
+  },
+  get successMessage() {
+    return getString("setup-preset-deepseek-success");
+  },
   endpoint: {
     id: DEEPSEEK_ENDPOINT_ID,
     name: "DeepSeek",
@@ -152,22 +183,24 @@ export const deepSeekPreset: SetupPreset = {
     reasoningEffort: "default",
     pdfProcessMode: "text",
   },
-  guideSteps: [
-    {
-      title: "打开 DeepSeek 开放平台",
-      detail: "登录后进入用量页，确认账户有可用余额。",
-      url: "https://platform.deepseek.com/usage",
-    },
-    {
-      title: "创建 API Key",
-      detail: "进入 API Keys 页面，新建密钥并立刻复制；密钥通常只展示一次。",
-      url: "https://platform.deepseek.com/api_keys",
-    },
-    {
-      title: "粘贴 API Key",
-      detail: "把刚复制的密钥粘贴到下方输入框，然后继续下一步。",
-    },
-  ],
+  get guideSteps() {
+    return [
+      {
+        title: getString("setup-preset-deepseek-step-open-title"),
+        detail: getString("setup-preset-deepseek-step-open-detail"),
+        url: "https://platform.deepseek.com/usage",
+      },
+      {
+        title: getString("setup-preset-deepseek-step-key-title"),
+        detail: getString("setup-preset-deepseek-step-key-detail"),
+        url: "https://platform.deepseek.com/api_keys",
+      },
+      {
+        title: getString("setup-preset-deepseek-step-paste-title"),
+        detail: getString("setup-preset-deepseek-step-paste-detail"),
+      },
+    ];
+  },
   getChanges,
   apply,
 };

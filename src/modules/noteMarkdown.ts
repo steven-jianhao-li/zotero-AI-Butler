@@ -1,5 +1,6 @@
 import { marked } from "marked";
 import katex from "katex";
+import { getString } from "../utils/locale";
 
 type ProtectedFormula = {
   content: string;
@@ -359,7 +360,7 @@ export function buildFollowUpChatPairNoteHtml(
   const savedAt =
     typeof options.savedAt === "string"
       ? options.savedAt
-      : (options.savedAt ?? new Date()).toLocaleString("zh-CN");
+      : (options.savedAt ?? new Date()).toLocaleString();
   const sourceSuffix = options.sourceLabel
     ? ` (${escapeHtml(options.sourceLabel)})`
     : "";
@@ -375,9 +376,9 @@ export function buildFollowUpChatPairNoteHtml(
 <!-- AI_BUTLER_CHAT_PAIR_START id=${pairId} -->
 ${jsonMarker}
 <div id="ai-butler-pair-${pairId}" style="${FOLLOW_UP_CHAT_PAIR_STYLE}">
-  <div style="${FOLLOW_UP_CHAT_USER_STYLE}"><strong>👤 用户:</strong><div>${renderedUserMessage}</div></div>
-  <div style="${FOLLOW_UP_CHAT_ASSISTANT_STYLE}"><strong>🤖 AI管家:</strong><div>${renderedAssistantMessage}</div></div>
-  <div style="${FOLLOW_UP_CHAT_TIME_STYLE}">保存时间: ${escapeHtml(savedAt)}${sourceSuffix}</div>
+  <div style="${FOLLOW_UP_CHAT_USER_STYLE}"><strong>${getString("follow-up-note-user-label")}</strong><div>${renderedUserMessage}</div></div>
+  <div style="${FOLLOW_UP_CHAT_ASSISTANT_STYLE}"><strong>${getString("follow-up-note-assistant-label")}</strong><div>${renderedAssistantMessage}</div></div>
+  <div style="${FOLLOW_UP_CHAT_TIME_STYLE}">${getString("follow-up-note-saved-at-label")} ${escapeHtml(savedAt)}${sourceSuffix}</div>
 </div>
 <!-- AI_BUTLER_CHAT_PAIR_END id=${pairId} -->
 `;

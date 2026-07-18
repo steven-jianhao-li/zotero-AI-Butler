@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en-US">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>思维导图</title>
+    <title></title>
     <style>
       html,
       body {
@@ -39,9 +39,59 @@
         display: none;
       }
     </style>
+    <script>
+      (function () {
+        const zh = {
+          pageTitle: "思维导图",
+          frameTitle: "思维导图预览",
+          noContent: "未提供思维导图内容。",
+          exportDone: "导出完成",
+          exportFailed: "导出失败",
+          postFailed: "发送思维导图数据失败。",
+          exportSavedTitle: "思维导图已导出",
+          exportSavedText: "已保存到: {path}",
+          errorPrefix: "错误: {message}",
+        };
+        const en = {
+          pageTitle: "Mind Map",
+          frameTitle: "Mind map preview",
+          noContent: "No mind map content was provided.",
+          exportDone: "Export complete",
+          exportFailed: "Export failed",
+          postFailed: "Failed to send mind map data.",
+          exportSavedTitle: "Mind map exported",
+          exportSavedText: "Saved to: {path}",
+          errorPrefix: "Error: {message}",
+        };
+        function locale() {
+          try {
+            if (typeof Zotero !== "undefined" && Zotero.locale)
+              return String(Zotero.locale);
+          } catch (e) {}
+          try {
+            if (navigator.language) return navigator.language;
+          } catch (e) {}
+          return "zh-CN";
+        }
+        const map = locale().toLowerCase().startsWith("zh") ? zh : en;
+        window.aiButlerL10n = function (key) {
+          return map[key] || zh[key] || key;
+        };
+        window.aiButlerL10nArgs = function (key, args) {
+          let value = window.aiButlerL10n(key);
+          Object.keys(args || {}).forEach((name) => {
+            value = value.replaceAll("{" + name + "}", String(args[name]));
+          });
+          return value;
+        };
+        document.documentElement.lang = locale().toLowerCase().startsWith("zh")
+          ? "zh-CN"
+          : "en-US";
+      })();
+    </script>
   </head>
   <body>
-    <iframe id="frame" title="Mindmap"></iframe>
+    <iframe id="frame" title=""></iframe>
     <div id="error"></div>
 
     <script>
@@ -55,10 +105,12 @@
         }
 
         const args = getArgs();
+        document.getElementById("frame").title =
+          window.aiButlerL10n("frameTitle");
         const title =
           (args && args.title ? String(args.title) : "") ||
           (window.__aiButlerTitle ? String(window.__aiButlerTitle) : "") ||
-          "思维导图";
+          window.aiButlerL10n("pageTitle");
         const markdown =
           (args && args.markdown ? String(args.markdown) : "") ||
           (window.__aiButlerMindmapMarkdown
@@ -81,7 +133,7 @@
 
         if (!markdown) {
           errorEl.style.display = "block";
-          errorEl.textContent = "未提供思维导图内容。";
+          errorEl.textContent = window.aiButlerL10n("noContent");
           return;
         }
 
@@ -162,7 +214,11 @@
             await IOUtils.write(filePath, encoder.encode(content));
           }
 
-          notify("思维导图已导出", `已保存到: ${filePath}`, "success");
+          notify(
+            window.aiButlerL10n("exportSavedTitle"),
+            window.aiButlerL10nArgs("exportSavedText", { path: filePath }),
+            "success",
+          );
           try {
             Zotero.launchFile(filePath);
           } catch (e) {}
@@ -179,13 +235,17 @@
               );
             } catch (e) {
               errorEl.style.display = "block";
-              errorEl.textContent = "发送思维导图数据失败。";
+              errorEl.textContent = window.aiButlerL10n("postFailed");
             }
           }
 
           if (event.data.type === "export-mindmap") {
             saveExport(event.data).catch((e) => {
-              notify("导出失败", `错误: ${e}`, "error");
+              notify(
+                window.aiButlerL10n("exportFailed"),
+                window.aiButlerL10nArgs("errorPrefix", { message: e }),
+                "error",
+              );
             });
           }
         });

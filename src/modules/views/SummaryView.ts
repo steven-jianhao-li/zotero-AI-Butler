@@ -27,6 +27,7 @@ import { BaseView } from "./BaseView";
 import { MainWindow } from "./MainWindow";
 import { marked } from "marked";
 import { getPref } from "../../utils/prefs";
+import { getDefaultSummaryPrompt } from "../../utils/prompts";
 import { getString } from "../../utils/locale";
 import { createStyledButton } from "./ui/components";
 import {
@@ -186,7 +187,7 @@ export class SummaryView extends BaseView {
             paddingBottom: "10px",
             color: "var(--ai-text)",
           },
-          innerHTML: "AI 总结输出",
+          textContent: getString("summary-title"),
         }),
       ],
     });
@@ -322,7 +323,7 @@ export class SummaryView extends BaseView {
 
     // 底部按钮区域：统一使用 createStyledButton，适配明暗主题
     const queueButton = createStyledButton(
-      "📋 返回任务队列",
+      getString("summary-back-task-queue"),
       "#59c0bc",
       "medium",
     );
@@ -381,7 +382,7 @@ export class SummaryView extends BaseView {
       minWidth: "0",
     });
     const chatButtonText = this.createElement("span", {
-      textContent: "💬 完整追问",
+      textContent: getString("summary-chat-open"),
     });
     chatButton.appendChild(chatButtonText);
     chatButton.appendChild(
@@ -395,10 +396,10 @@ export class SummaryView extends BaseView {
       if (inputArea) {
         if (inputArea.style.display === "none" || !inputArea.style.display) {
           inputArea.style.display = "flex";
-          chatButtonText.textContent = "🔽 收起完整追问";
+          chatButtonText.textContent = getString("summary-chat-collapse");
         } else {
           inputArea.style.display = "none";
-          chatButtonText.textContent = "💬 完整追问";
+          chatButtonText.textContent = getString("summary-chat-open");
         }
       }
     });
@@ -431,7 +432,7 @@ export class SummaryView extends BaseView {
         color: "var(--ai-input-text)",
       },
     }) as HTMLTextAreaElement;
-    this.chatInput.placeholder = "在这里输入您的问题...";
+    this.chatInput.placeholder = getString("summary-chat-input-placeholder");
 
     // 自动调整高度
     this.chatInput.addEventListener("input", () => {
@@ -443,7 +444,11 @@ export class SummaryView extends BaseView {
     });
 
     // 发送按钮 - 使用统一的按钮组件
-    this.chatSendButton = createStyledButton("📤 发送", "#4caf50", "medium");
+    this.chatSendButton = createStyledButton(
+      getString("summary-chat-send"),
+      "#4caf50",
+      "medium",
+    );
     this.chatSendButton.id = "ai-butler-chat-send";
     Object.assign(this.chatSendButton.style, {
       alignSelf: "flex-end",
@@ -509,16 +514,26 @@ export class SummaryView extends BaseView {
 
     const userMessage = stripInvalidXmlChars(this.chatInput.value).trim();
     if (!userMessage) {
-      new ztoolkit.ProgressWindow("追问", { closeTime: 2000 })
-        .createLine({ text: "请输入问题内容", type: "default" })
+      new ztoolkit.ProgressWindow(getString("summary-chat-progress-title"), {
+        closeTime: 2000,
+      })
+        .createLine({
+          text: getString("summary-chat-empty-question"),
+          type: "default",
+        })
         .show();
       return;
     }
 
     // 检查是否有PDF内容
     if (!this.currentPdfContent) {
-      new ztoolkit.ProgressWindow("追问", { closeTime: 3000 })
-        .createLine({ text: "没有可用的论文上下文,请先生成总结", type: "fail" })
+      new ztoolkit.ProgressWindow(getString("summary-chat-progress-title"), {
+        closeTime: 3000,
+      })
+        .createLine({
+          text: getString("summary-chat-no-context"),
+          type: "fail",
+        })
         .show();
       return;
     }
@@ -526,7 +541,7 @@ export class SummaryView extends BaseView {
     this.isChatting = true;
     this.chatAbortController = createChatAbortController();
     this.chatSendButton.disabled = false;
-    this.chatSendButton.innerHTML = "⏹ 终止";
+    this.chatSendButton.innerHTML = getString("summary-chat-stop");
     this.chatSendButton.style.backgroundColor = "#f44336";
     this.chatSendButton.style.color = "#ffffff";
     this.chatInput.disabled = true;
@@ -591,7 +606,7 @@ export class SummaryView extends BaseView {
         },
         innerHTML: "🗑️",
       }) as HTMLButtonElement;
-      deleteBtn.title = "删除该提问-响应对";
+      deleteBtn.title = getString("summary-chat-delete-pair");
       deleteBtn.addEventListener("click", async () => {
         await this.deleteChatPair(pairId);
       });
@@ -621,7 +636,7 @@ export class SummaryView extends BaseView {
           },
           innerHTML: "▾",
         }) as HTMLButtonElement;
-        collapseBtn.title = "折叠/展开";
+        collapseBtn.title = getString("summary-collapse-toggle");
         collapseBtn.addEventListener("click", () => {
           if ((asstBody as HTMLElement).style.display === "none") {
             (asstBody as HTMLElement).style.display = "block";
@@ -722,8 +737,8 @@ export class SummaryView extends BaseView {
           ) as HTMLElement;
           if (contentDiv) {
             const stoppedHtml = fullResponse
-              ? `${SummaryView.convertMarkdownToHTMLCore(fullResponse)}<p style="color: #777; font-size: 12px;">已终止，本轮不会保存或加入上下文。</p>`
-              : `<p style="color: #777;">已终止，未生成内容。</p>`;
+              ? `${SummaryView.convertMarkdownToHTMLCore(fullResponse)}<p style="color: #777; font-size: 12px;">${getString("summary-chat-stopped-not-saved")}</p>`
+              : `<p style="color: #777;">${getString("summary-chat-stopped-empty")}</p>`;
             contentDiv.innerHTML = stoppedHtml;
           }
         }
@@ -736,7 +751,7 @@ export class SummaryView extends BaseView {
           ".chat-message-content",
         ) as HTMLElement;
         if (contentDiv) {
-          contentDiv.innerHTML = `<p style="color: #d32f2f;">❌ 错误: ${error?.message || String(error)}</p>`;
+          contentDiv.innerHTML = `<p style="color: #d32f2f;">${getString("summary-error-inline", { args: { error: error?.message || String(error) } })}</p>`;
         }
       }
     } finally {
@@ -744,7 +759,7 @@ export class SummaryView extends BaseView {
       this.chatAbortController = null;
       if (this.chatSendButton) {
         this.chatSendButton.disabled = false;
-        this.chatSendButton.innerHTML = "📤 发送";
+        this.chatSendButton.innerHTML = getString("summary-chat-send");
         this.chatSendButton.style.backgroundColor = "var(--ai-accent)";
         this.chatSendButton.style.color = "#ffffff";
       }
@@ -759,10 +774,10 @@ export class SummaryView extends BaseView {
     if (!this.chatAbortController) return;
     if (this.chatSendButton) {
       this.chatSendButton.disabled = true;
-      this.chatSendButton.innerHTML = "⏳ 终止中...";
+      this.chatSendButton.innerHTML = getString("summary-chat-stopping");
       this.chatSendButton.style.backgroundColor = "#9e9e9e";
     }
-    this.chatAbortController.abort("用户已终止追问");
+    this.chatAbortController.abort(getString("summary-chat-abort-user"));
   }
 
   /**
@@ -790,7 +805,10 @@ export class SummaryView extends BaseView {
         marginBottom: "8px",
         color: "var(--ai-text)",
       },
-      innerHTML: role === "user" ? "👤 您" : "🤖 AI管家",
+      textContent:
+        role === "user"
+          ? getString("summary-chat-user-label")
+          : getString("summary-chat-assistant-label"),
     });
 
     const contentDiv = this.createElement("div", {
@@ -807,7 +825,7 @@ export class SummaryView extends BaseView {
       },
       innerHTML: content
         ? SummaryView.convertMarkdownToHTMLCore(content)
-        : "<em>思考中...</em>",
+        : `<em>${getString("summary-thinking")}</em>`,
     });
 
     messageDiv.appendChild(roleLabel);
@@ -879,13 +897,14 @@ export class SummaryView extends BaseView {
     const existingNote = await this.findChatNote(item);
     if (existingNote) return existingNote;
 
-    const title = (item.getField("title") as string) || "文献";
+    const title =
+      (item.getField("title") as string) || getString("summary-untitled-paper");
 
     // 创建新笔记
     const note = new Zotero.Item("note");
     note.libraryID = item.libraryID;
     note.parentID = item.id;
-    const header = `<h2>AI 管家 - 后续追问 - ${this.escapeHtml(title)}</h2>`;
+    const header = `<h2>${getString("summary-chat-note-title", { args: { title: this.escapeHtml(title) } })}</h2>`;
     note.setNote(header);
     note.addTag("AI-Butler-Chat");
     await note.saveTx();
@@ -982,7 +1001,7 @@ export class SummaryView extends BaseView {
         color: "var(--ai-accent)",
         flexShrink: "0",
       },
-      textContent: "📘 AI管家笔记",
+      textContent: getString("summary-note-title"),
     });
     // 预览：取前100字符，去掉换行
     const previewText = (aiSummary || "").replace(/\s+/g, " ").slice(0, 100);
@@ -997,7 +1016,11 @@ export class SummaryView extends BaseView {
         minWidth: "0",
       },
       textContent: previewText
-        ? `摘要：${previewText}${aiSummary.length > 100 ? "…" : ""}`
+        ? getString("summary-preview-prefix", {
+            args: {
+              text: `${previewText}${aiSummary.length > 100 ? "…" : ""}`,
+            },
+          })
         : "",
     }) as HTMLElement;
     header.appendChild(titleEl);
@@ -1027,7 +1050,7 @@ export class SummaryView extends BaseView {
           marginBottom: "8px",
           color: "var(--ai-text)",
         },
-        innerHTML: "🤖 AI管家",
+        textContent: getString("summary-chat-assistant-label"),
       }),
     );
     const contentDiv = this.createElement("div", {
@@ -1042,7 +1065,7 @@ export class SummaryView extends BaseView {
         userSelect: "text",
         cursor: "text",
       },
-      innerHTML: "<em>展开后渲染完整笔记...</em>",
+      innerHTML: `<em>${getString("summary-note-expand-placeholder")}</em>`,
     });
     assistantDiv.appendChild(contentDiv);
     body.appendChild(assistantDiv);
@@ -1061,7 +1084,7 @@ export class SummaryView extends BaseView {
       },
       innerHTML: "▸",
     }) as HTMLButtonElement;
-    collapseBtn.title = "折叠/展开";
+    collapseBtn.title = getString("summary-collapse-toggle");
     collapseBtn.addEventListener("click", () => {
       if ((body as HTMLElement).style.display === "none") {
         (body as HTMLElement).style.display = "block";
@@ -1166,7 +1189,7 @@ export class SummaryView extends BaseView {
     if (aiSummary && aiSummary.trim()) {
       // 获取用户的提示词
       const summaryPrompt =
-        (getPref("summaryPrompt") as string) || "请分析这篇论文";
+        (getPref("summaryPrompt") as string) || getDefaultSummaryPrompt();
 
       this.conversationHistory.push({
         role: "user",
@@ -1189,7 +1212,9 @@ export class SummaryView extends BaseView {
    * 清除论文上下文
    */
   public clearPaperContext(): void {
-    this.chatAbortController?.abort("论文上下文已清除");
+    this.chatAbortController?.abort(
+      getString("summary-chat-abort-context-cleared"),
+    );
     this.chatAbortController = null;
     this.isChatting = false;
     this.currentItemId = null;
@@ -1217,7 +1242,7 @@ export class SummaryView extends BaseView {
     try {
       // 清空并显示加载提示
       this.clear();
-      this.showLoadingState("正在加载文献...");
+      this.showLoadingState(getString("summary-loading-paper"));
 
       const item = await Zotero.Items.getAsync(itemId);
       if (!item) {
@@ -1227,14 +1252,16 @@ export class SummaryView extends BaseView {
           closeTime: 3000,
         })
           .createLine({
-            text: "无法加载该文献",
+            text: getString("summary-error-load-paper-failed"),
             type: "error",
           })
           .show();
         return;
       }
 
-      const title = (item.getField("title") as string) || "文献";
+      const title =
+        (item.getField("title") as string) ||
+        getString("summary-untitled-paper");
 
       // 显示标题
       this.startItem(title);
@@ -1293,11 +1320,10 @@ export class SummaryView extends BaseView {
               `;
               welcomeHint.innerHTML = `
                 <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px; color: #59c0bc;">
-                  🤖 准备好开始追问了！
+                  ${getString("summary-chat-welcome-title")}
                 </div>
                 <div style="font-size: 13px; color: var(--ai-text-muted); line-height: 1.6;">
-                  该文献尚未生成 AI 总结。您可以直接在下方输入问题与 AI 对话，
-                  或者先右键该文献选择“AI 管家生成 AI 总结”生成完整总结。
+                  ${getString("summary-chat-welcome-description")}
                 </div>
               `;
               this.outputContainer.appendChild(welcomeHint);
@@ -1320,7 +1346,7 @@ export class SummaryView extends BaseView {
           ) as HTMLElement;
           if (inputArea && toggleBtn) {
             inputArea.style.display = "flex";
-            toggleBtn.innerHTML = "🔽 收起完整追问";
+            toggleBtn.innerHTML = getString("summary-chat-collapse");
           }
 
           // 聚焦输入框
@@ -1337,7 +1363,7 @@ export class SummaryView extends BaseView {
             closeTime: 3000,
           })
             .createLine({
-              text: "该文献没有可用的 PDF 附件",
+              text: getString("summary-error-no-pdf-attachment"),
               type: "error",
             })
             .show();
@@ -1351,7 +1377,7 @@ export class SummaryView extends BaseView {
           closeTime: 3000,
         })
           .createLine({
-            text: "获取 PDF 内容失败",
+            text: getString("summary-error-pdf-content-failed"),
             type: "error",
           })
           .show();
@@ -1387,7 +1413,7 @@ export class SummaryView extends BaseView {
     try {
       // 清空并显示加载提示
       this.clear();
-      this.showLoadingState("正在加载已保存的总结...");
+      this.showLoadingState(getString("summary-loading-saved-summary"));
 
       const item = await Zotero.Items.getAsync(itemId);
       if (!item) {
@@ -1395,7 +1421,9 @@ export class SummaryView extends BaseView {
         return;
       }
 
-      const title = (item.getField("title") as string) || "文献";
+      const title =
+        (item.getField("title") as string) ||
+        getString("summary-untitled-paper");
 
       const summaryRecord = await AiNoteService.findNoteRecord(item, "summary");
       const targetNote = summaryRecord?.note || null;
@@ -1404,7 +1432,7 @@ export class SummaryView extends BaseView {
       if (!targetNote) {
         // 没有找到匹配的 AI 总结
         this.startItem(title);
-        this.appendContent("未找到已保存的 AI 总结笔记。");
+        this.appendContent(getString("summary-saved-note-not-found"));
         this.finishItem();
         return;
       }
@@ -1466,8 +1494,8 @@ export class SummaryView extends BaseView {
       }
     } catch (err) {
       this.hideLoading();
-      this.startItem("加载失败");
-      this.appendContent("无法加载该条目的已保存总结。");
+      this.startItem(getString("summary-load-failed-title"));
+      this.appendContent(getString("summary-saved-note-load-failed"));
       this.finishItem();
       this.clearPaperContext();
     }
@@ -1528,7 +1556,7 @@ export class SummaryView extends BaseView {
             },
             innerHTML: "🗑️",
           }) as HTMLButtonElement;
-          deleteBtn.title = "删除该提问-响应对";
+          deleteBtn.title = getString("summary-chat-delete-pair");
           deleteBtn.addEventListener("click", async () => {
             await this.deleteChatPair(p.id);
           });
@@ -1552,7 +1580,7 @@ export class SummaryView extends BaseView {
             },
             innerHTML: "▾",
           }) as HTMLButtonElement;
-          collapseBtn.title = "折叠/展开";
+          collapseBtn.title = getString("summary-collapse-toggle");
           collapseBtn.addEventListener("click", () => {
             if ((asstBody as HTMLElement).style.display === "none") {
               (asstBody as HTMLElement).style.display = "block";
@@ -1602,7 +1630,7 @@ export class SummaryView extends BaseView {
         const button = this.queueButton;
         if (button) {
           button.disabled = true;
-          button.innerHTML = "⏳ 正在打开任务队列...";
+          button.innerHTML = getString("summary-queue-button-opening");
           button.style.backgroundColor = "#9e9e9e";
           button.style.cursor = "not-allowed";
           button.style.opacity = "0.8";
@@ -1809,14 +1837,14 @@ export class SummaryView extends BaseView {
             color: "#666",
             marginBottom: "10px",
           },
-          textContent: "等待 AI 总结",
+          textContent: getString("summary-waiting-title"),
         }),
         this.createElement("p", {
           styles: {
             fontSize: "14px",
             lineHeight: "1.6",
           },
-          textContent: "右键点击文献条目,选择「AI 管家分析」开始生成总结",
+          textContent: getString("summary-waiting-description"),
         }),
       ],
     });
@@ -1831,7 +1859,7 @@ export class SummaryView extends BaseView {
    * @private
    */
   private showLoading(
-    message: string = "正在请求 AI 分析",
+    message: string = getString("summary-loading-default"),
     startedAt?: Date,
   ): void {
     // 清空初始提示
@@ -1881,7 +1909,9 @@ export class SummaryView extends BaseView {
             fontSize: "14px",
             color: "#999",
           },
-          textContent: "已请求: 0 秒",
+          textContent: getString("summary-loading-elapsed", {
+            args: { seconds: 0 },
+          }),
         }),
       ],
     });
@@ -1906,7 +1936,7 @@ export class SummaryView extends BaseView {
    * @param message 加载消息
    */
   public showLoadingState(
-    message: string = "正在请求 AI 分析",
+    message: string = getString("summary-loading-default"),
     startedAt?: Date,
   ): void {
     this.showLoading(message, startedAt);
@@ -1949,7 +1979,9 @@ export class SummaryView extends BaseView {
     if (!timerElement) return;
 
     const elapsed = Math.floor((Date.now() - this.loadingStartTime) / 1000);
-    timerElement.textContent = `已请求: ${elapsed} 秒`;
+    timerElement.textContent = getString("summary-loading-elapsed", {
+      args: { seconds: elapsed },
+    });
   }
 
   /**
@@ -2270,7 +2302,7 @@ export class SummaryView extends BaseView {
         fontSize: "12px",
         marginTop: "10px",
       },
-      textContent: "复制错误",
+      textContent: getString("summary-copy-error"),
     });
     copyButton.addEventListener("click", () => {
       void this.copyErrorToClipboard(copyText);
@@ -2300,7 +2332,9 @@ export class SummaryView extends BaseView {
             backgroundColor: "rgba(255, 87, 34, 0.1)",
             borderRadius: "4px",
           },
-          textContent: `错误: ${errorMessage}`,
+          textContent: getString("summary-error-message", {
+            args: { error: errorMessage },
+          }),
         }),
         copyButton,
       ],
@@ -2345,7 +2379,7 @@ export class SummaryView extends BaseView {
       } catch {
         new ztoolkit.ProgressWindow("AI Butler", { closeTime: 2200 })
           .createLine({
-            text: "复制失败，可手动选择错误文本",
+            text: getString("summary-copy-failed"),
             type: "fail",
           })
           .show();
@@ -2354,7 +2388,10 @@ export class SummaryView extends BaseView {
     }
 
     new ztoolkit.ProgressWindow("AI Butler", { closeTime: 1500 })
-      .createLine({ text: "已复制错误详情", type: "success" })
+      .createLine({
+        text: getString("summary-error-details-copied"),
+        type: "success",
+      })
       .show();
   }
 
@@ -2369,8 +2406,12 @@ export class SummaryView extends BaseView {
 
     const message =
       successCount === totalCount
-        ? `✅ 所有 ${totalCount} 个条目处理完成！`
-        : `✅ 完成 ${successCount}/${totalCount} 个条目`;
+        ? getString("summary-complete-all", {
+            args: { total: totalCount },
+          })
+        : getString("summary-complete-partial", {
+            args: { success: successCount, total: totalCount },
+          });
 
     const completeElement = this.createElement("div", {
       styles: {
@@ -2407,7 +2448,13 @@ export class SummaryView extends BaseView {
   ): void {
     if (!this.outputContainer) return;
 
-    const message = `⏸️ 已停止处理 - 成功: ${successCount}, 失败: ${failedCount}, 未处理: ${notProcessed}`;
+    const message = getString("summary-stopped-message", {
+      args: {
+        success: successCount,
+        failed: failedCount,
+        notProcessed,
+      },
+    });
 
     const stoppedElement = this.createElement("div", {
       styles: {
@@ -2465,23 +2512,23 @@ export class SummaryView extends BaseView {
 
     switch (state) {
       case "stopped":
-        button.innerHTML = "⏹️ 已中断, 查看任务队列";
+        button.innerHTML = getString("summary-queue-button-stopped");
         button.style.backgroundColor = "var(--ai-accent-tint)";
         button.style.color = "var(--ai-accent)";
         break;
       case "completed":
-        button.innerHTML = "✅ 查看任务队列";
+        button.innerHTML = getString("summary-queue-button-completed");
         button.style.backgroundColor = "var(--ai-accent-tint)";
         button.style.color = "var(--ai-accent)";
         break;
       case "error":
-        button.innerHTML = "⚠️ 查看任务队列";
+        button.innerHTML = getString("summary-queue-button-error");
         button.style.backgroundColor = "var(--ai-accent-tint)";
         button.style.color = "var(--ai-accent)";
         break;
       case "ready":
       default:
-        button.innerHTML = "📋 返回任务队列";
+        button.innerHTML = getString("summary-queue-button-ready");
         button.style.backgroundColor = "var(--ai-accent)";
         button.style.color = "var(--ai-accent)";
         break;
@@ -2586,7 +2633,9 @@ export class SummaryView extends BaseView {
    * @protected
    */
   protected onDestroy(): void {
-    this.chatAbortController?.abort("追问视图已关闭");
+    this.chatAbortController?.abort(
+      getString("summary-chat-abort-view-closed"),
+    );
     this.chatAbortController = null;
 
     // 清理计时器

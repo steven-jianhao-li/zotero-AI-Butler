@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en-US">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI Butler Mindmap</title>
+    <title></title>
     <style>
       * {
         margin: 0;
@@ -74,27 +74,85 @@
         text-align: center;
       }
     </style>
+    <script>
+      (function () {
+        const zh = {
+          pageTitle: "AI Butler 思维导图",
+          opmlTitle: "AI Butler 思维导图",
+          zoomOut: "缩小",
+          zoomIn: "放大",
+          fit: "适应画布",
+          open: "打开预览窗口",
+          png: "导出为PNG图片",
+          opml: "导出为OPML大纲",
+          loading: "正在加载思维导图...",
+          renderFailed: "思维导图渲染失败:",
+          noData: "未提供思维导图数据",
+          exportFailed: "导出失败:",
+          exporting: "⏳ 导出中...",
+        };
+        const en = {
+          pageTitle: "AI Butler Mind Map",
+          opmlTitle: "AI Butler Mind Map",
+          zoomOut: "Zoom out",
+          zoomIn: "Zoom in",
+          fit: "Fit to canvas",
+          open: "Open preview window",
+          png: "Export as PNG image",
+          opml: "Export as OPML outline",
+          loading: "Loading mind map...",
+          renderFailed: "Failed to render mind map:",
+          noData: "No mind map data was provided",
+          exportFailed: "Export failed:",
+          exporting: "⏳ Exporting...",
+        };
+        function locale() {
+          try {
+            if (typeof Zotero !== "undefined" && Zotero.locale)
+              return String(Zotero.locale);
+          } catch (e) {}
+          try {
+            if (navigator.language) return navigator.language;
+          } catch (e) {}
+          return "zh-CN";
+        }
+        const map = locale().toLowerCase().startsWith("zh") ? zh : en;
+        window.aiButlerL10n = function (key) {
+          return map[key] || zh[key] || key;
+        };
+        document.documentElement.lang = locale().toLowerCase().startsWith("zh")
+          ? "zh-CN"
+          : "en-US";
+      })();
+    </script>
     <!-- 本地打包的 markmap bundle（包含 d3, markmap-lib, markmap-view）-->
     <script src="markmap-bundle.js"></script>
   </head>
   <body>
     <div class="toolbar">
-      <button id="zoom-out" title="缩小">➖</button>
-      <button id="zoom-in" title="放大">➕</button>
-      <button id="fit" title="适应画布">🎯</button>
-      <button id="open-window" title="打开预览窗口">⛶</button>
-      <button id="export-png" class="primary" title="导出为PNG图片">
+      <button id="zoom-out" title="" data-i18n-title="zoomOut">➖</button>
+      <button id="zoom-in" title="" data-i18n-title="zoomIn">➕</button>
+      <button id="fit" title="" data-i18n-title="fit">🎯</button>
+      <button id="open-window" title="" data-i18n-title="open">⛶</button>
+      <button id="export-png" class="primary" title="" data-i18n-title="png">
         📷 PNG
       </button>
-      <button id="export-opml" class="primary" title="导出为OPML大纲">
+      <button id="export-opml" class="primary" title="" data-i18n-title="opml">
         📄 OPML
       </button>
     </div>
     <div id="mindmap-container">
-      <div class="loading">正在加载思维导图...</div>
+      <div class="loading" data-i18n-text="loading"></div>
     </div>
 
     <script>
+      document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+        el.title = window.aiButlerL10n(el.dataset.i18nTitle);
+      });
+      document.querySelectorAll("[data-i18n-text]").forEach((el) => {
+        el.textContent = window.aiButlerL10n(el.dataset.i18nText);
+      });
+      document.title = window.aiButlerL10n("pageTitle");
       let markmap = null;
       let currentMarkdown = "";
 
@@ -136,7 +194,10 @@
         } catch (err) {
           console.error("[AI-Butler Mindmap] 渲染失败:", err);
           container.innerHTML =
-            '<div class="error">渲染失败: ' + err.message + "</div>";
+            '<div class="error">' +
+            window.aiButlerL10n("renderFailed") +
+            err.message +
+            "</div>";
         }
       }
 
@@ -209,7 +270,7 @@
           if (!markmap) return;
 
           const exportBtn = document.getElementById("export-png");
-          exportBtn.textContent = "⏳ 导出中...";
+          exportBtn.textContent = window.aiButlerL10n("exporting");
           exportBtn.disabled = true;
 
           try {
@@ -338,7 +399,7 @@
           if (!currentMarkdown) return;
 
           const exportBtn = document.getElementById("export-opml");
-          exportBtn.textContent = "⏳ 导出中...";
+          exportBtn.textContent = window.aiButlerL10n("exporting");
           exportBtn.disabled = true;
 
           try {
@@ -366,13 +427,22 @@
           }
         });
 
+      function escapeOpmlText(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/"/g, "&quot;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
       // Markdown 转 OPML 函数
       function markdownToOpml(markdown) {
         const lines = markdown.split("\n").filter((l) => l.trim());
+        const opmlTitle = escapeOpmlText(window.aiButlerL10n("opmlTitle"));
         let opml = `<?xml version="1.0" encoding="UTF-8"?>
 <opml version="2.0">
   <head>
-    <title>思维导图</title>
+    <title>${opmlTitle}</title>
     <dateCreated>${new Date().toISOString()}</dateCreated>
   </head>
   <body>
@@ -409,11 +479,7 @@
           }
 
           // 添加新节点
-          const escapedText = text
-            .replace(/&/g, "&amp;")
-            .replace(/"/g, "&quot;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
+          const escapedText = escapeOpmlText(text);
           opml +=
             "    ".repeat(stack.length + 1) +
             `<outline text="${escapedText}">\n`;

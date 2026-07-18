@@ -22,16 +22,21 @@
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "zotero-plugin serve",
+    "prebuild": "node ./scripts/check-i18n.mjs",
     "build": "zotero-plugin build && tsc --noEmit",
+    "postbuild": "node ./scripts/check-i18n-build.mjs",
     "lint:check": "prettier --check . && eslint .",
     "lint:fix": "prettier --write . && eslint . --fix",
     "release": "zotero-plugin release",
-    "pretest": "node ./scripts/gen-env-setup.mjs",
+    "pretest": "node ./scripts/check-i18n.mjs && node ./scripts/gen-env-setup.mjs",
     "test": "zotero-plugin test --exit-on-finish",
     "pretest:watch": "node ./scripts/gen-env-setup.mjs",
     "test:watch": "zotero-plugin test",
     "scaffold:provider": "node ./scripts/create-provider.mjs",
-    "update-deps": "npm update --save"
+    "update-deps": "npm update --save",
+    "i18n:check": "node ./scripts/check-i18n.mjs",
+    "i18n:check:build": "node ./scripts/check-i18n-build.mjs",
+    "test:i18n": "node ./scripts/check-i18n.mjs"
   },
   "dependencies": {
     "@types/marked": "^5.0.2",

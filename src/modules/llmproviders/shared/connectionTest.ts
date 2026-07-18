@@ -1,3 +1,4 @@
+import { getString } from "../../../utils/locale";
 import type { LLMOptions } from "../types";
 
 export type ConnectionTestMode = "text" | "pdf-base64";
@@ -47,4 +48,28 @@ export function getConnectionTestInput(
 
 export function getConnectionTestModeLabel(mode: ConnectionTestMode): string {
   return mode === "pdf-base64" ? "PDF Base64" : "Text";
+}
+
+export function formatConnectionTestSuccess(options: {
+  mode: ConnectionTestMode;
+  model: string;
+  response: string;
+  rawResponse: unknown;
+}): string {
+  const rawResponse =
+    typeof options.rawResponse === "string"
+      ? options.rawResponse
+      : JSON.stringify(options.rawResponse, null, 2);
+  return getString("provider-test-success-detail", {
+    args: {
+      mode: getConnectionTestModeLabel(options.mode),
+      model: options.model,
+      response: options.response,
+      rawResponse,
+    },
+  });
+}
+
+export function formatProviderTimeout(ms: number): string {
+  return getString("provider-error-timeout", { args: { ms } });
 }

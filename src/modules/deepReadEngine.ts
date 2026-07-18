@@ -9,6 +9,7 @@ import {
   type MultiRoundPromptTemplate,
   type MultiRoundSequentialDynamicPhase,
 } from "../utils/prompts";
+import { getString } from "../utils/locale";
 
 export type DeepReadSlot = {
   id: string;
@@ -68,8 +69,8 @@ export function buildDeepReadSkeletonHtml(
 ): string {
   const parts: string[] = [
     buildPlanMetadataComment(template, planned.chapters),
-    `<h1>AI 精读 - ${escapeHtml(truncateTitle(itemTitle))}</h1>`,
-    `<h2>章节解析</h2>`,
+    `<h1>${getString("deep-read-note-title", { args: { title: escapeHtml(truncateTitle(itemTitle)) } })}</h1>`,
+    `<h2>${getString("deep-read-chapter-analysis-heading")}</h2>`,
     ...buildChapterListHtml(planned.chapters),
   ];
 
@@ -408,14 +409,22 @@ export function hasRunnableDeepReadSlots(noteHtml: string): boolean {
 
 export function hasIncompleteDeepReadContent(noteHtml: string): boolean {
   if (hasRunnableDeepReadSlots(noteHtml)) return true;
-  const textContent = decodeBasicHtmlEntities(stripHtml(noteHtml))
-    .replace(/\s+/g, "")
-    .trim();
-  return /(?:⏳等待生成\.\.\.|🔄正在生成\.\.\.|已取消，重新运行AI精读时会从这里继续。?)/.test(
-    textContent,
-  );
+  const textContent = decodeBasicHtmlEntities(stripHtml(noteHtml));
+  return hasDeepReadPlaceholderText(textContent);
 }
 
+function hasDeepReadPlaceholderText(text: string): boolean {
+  const compact = text.replace(/\s+/g, "").trim();
+  const spaced = text.replace(/\s+/g, " ").trim().toLowerCase();
+  return (
+    /(?:⏳等待生成\.\.\.|🔄正在生成\.\.\.|已取消，重新运行AI精读时会从这里继续。?|❌)/.test(
+      compact,
+    ) ||
+    /(?:waiting for generation|generating\.\.\.|cancelled\. re-run ai deep reading to continue from here|❌)/i.test(
+      spaced,
+    )
+  );
+}
 export function markDeepReadSlotRunning(
   noteHtml: string,
   slotId: string,
@@ -425,7 +434,7 @@ export function markDeepReadSlotRunning(
   return replaceDeepReadSlotHtml(
     noteHtml,
     slotId,
-    `<h2>${escapeHtml(slotTitle || "")}</h2>\n<p>🔄 正在生成...</p>`,
+    `<h2>${escapeHtml(slotTitle || "")}</h2>\n<p>${getString("deep-read-slot-running-placeholder")}</p>`,
     "running",
     slotTitle,
     slot,
@@ -436,7 +445,7 @@ export function resetRunningDeepReadSlots(noteHtml: string): string {
   return noteHtml.replace(
     /<!-- zab:slot:([^:]+):running -->[\s\S]*?<!-- zab:slot:\1:end -->/g,
     (_match, slotId: string) =>
-      `<!-- ${DEEP_READ_SLOT_PREFIX}:${slotId}:pending -->\n<p>已取消，重新运行 AI 精读时会从这里继续。</p>\n<!-- ${DEEP_READ_SLOT_PREFIX}:${slotId}:end -->`,
+      `<!-- ${DEEP_READ_SLOT_PREFIX}:${slotId}:pending -->\n<p>${getString("deep-read-slot-cancelled-placeholder")}</p>\n<!-- ${DEEP_READ_SLOT_PREFIX}:${slotId}:end -->`,
   );
 }
 
@@ -525,7 +534,11 @@ function validatePlannedSlotIds(slots: DeepReadSlot[]): void {
   const seen = new Set<string>();
   for (const slot of slots) {
     if (seen.has(slot.id)) {
-      throw new Error(`精读模板 slot ID 重复: ${slot.id}`);
+      throw new Error(
+        getString("deep-read-error-duplicate-slot-id", {
+          args: { id: slot.id },
+        }),
+      );
     }
     seen.add(slot.id);
   }
@@ -588,7 +601,9 @@ function normalizeDeepReadChapters(
     const titleZh = (
       chapter.title_zh ||
       chapter.title_en ||
-      `第 ${index + 1} 章`
+      getString("deep-read-chapter-default-title", {
+        args: { index: index + 1 },
+      })
     ).trim();
     const titleEn = (chapter.title_en || "").trim();
     const titleKey = `${titleZh}\n${titleEn}`.toLowerCase();
@@ -614,8 +629,8 @@ function normalizeDeepReadSlotId(id: string): string {
 }
 
 function normalizeDeepReadPromptTitle(title: string): string {
-  return title.trim() === "\u7efc\u8ff0\u6458\u8981\u7cbe\u8bfb"
-    ? "\u6587\u7ae0\u6574\u4f53\u901a\u8bfb"
+  return title.trim() === getString("deep-read-phase-review-summary")
+    ? getString("deep-read-phase-full-paper")
     : title;
 }
 
@@ -623,19 +638,19 @@ function buildPendingSlotHtml(slot: DeepReadSlot): string {
   return [
     `<!-- ${DEEP_READ_SLOT_PREFIX}:${slot.id}:pending -->`,
     `<h2>${escapeHtml(slot.title)}</h2>`,
-    `<p>⏳ 等待生成...</p>`,
+    `<p>${getString("deep-read-slot-waiting-placeholder")}</p>`,
     `<!-- ${DEEP_READ_SLOT_PREFIX}:${slot.id}:end -->`,
   ].join("\n");
 }
 
 function buildChapterListHtml(chapters: ChapterInfo[]): string[] {
   if (!chapters.length) {
-    return ["<p>未识别到章节结构。</p>"];
+    return [`<p>${getString("deep-read-no-chapters-placeholder")}</p>`];
   }
 
   return chapters.map((chapter, index) => {
     const title = formatChapterTitle(chapter);
-    return `<p>第${index + 1}章：${escapeHtml(title)}</p>`;
+    return `<p>${getString("deep-read-chapter-list-item", { args: { index: index + 1, title: escapeHtml(title) } })}</p>`;
   });
 }
 
@@ -645,7 +660,7 @@ function formatChapterTitle(chapter: ChapterInfo): string {
   if (titleZh && titleEn && titleZh !== titleEn) {
     return `${titleZh}（${titleEn}）`;
   }
-  return titleZh || titleEn || "未命名章节";
+  return titleZh || titleEn || getString("deep-read-untitled-chapter");
 }
 
 function truncateTitle(title: string): string {

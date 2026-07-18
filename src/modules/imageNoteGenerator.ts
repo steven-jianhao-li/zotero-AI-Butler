@@ -1,3 +1,4 @@
+import { getString } from "../utils/locale";
 /**
  * ================================================================
  * 一图总结笔记生成器模块
@@ -24,7 +25,14 @@ export class ImageNoteGenerator {
   private static readonly IMAGE_NOTE_TAG = "AI-Image-Summary";
 
   /** 一图总结笔记标题前缀 */
-  private static readonly NOTE_TITLE_PREFIX = "AI 管家一图总结 - ";
+  private static readonly LEGACY_NOTE_TITLE_PREFIX =
+    "AI " +
+    String.fromCodePoint(31649, 23478, 19968, 22270, 24635, 32467) +
+    " - ";
+
+  private static getNoteTitlePrefix(): string {
+    return getString("image-note-title-prefix");
+  }
 
   /**
    * 创建一图总结笔记
@@ -53,7 +61,7 @@ export class ImageNoteGenerator {
       note = new Zotero.Item("note");
       note.libraryID = item.libraryID;
       note.parentID = item.id;
-      note.setNote("<p>正在生成一图总结...</p>");
+      note.setNote(`<p>${getString("image-note-generating-placeholder")}</p>`);
       note.addTag(this.IMAGE_NOTE_TAG);
       await note.saveTx();
       ztoolkit.log(`[AI-Butler] 创建新的一图总结笔记: ${note.id}`);
@@ -217,7 +225,9 @@ export class ImageNoteGenerator {
     if (sniffedMime) return sniffedMime;
 
     throw new Error(
-      `Unsupported generated image content type: ${mimeType || "unknown"}`,
+      getString("image-note-error-unsupported-content-type", {
+        args: { mimeType: mimeType || "unknown" },
+      }),
     );
   }
 
@@ -240,12 +250,12 @@ export class ImageNoteGenerator {
     }
 
     // 构建笔记 HTML，使用 data-attachment-key 引用图片
-    return `<h2>${this.NOTE_TITLE_PREFIX}${this.escapeHtml(truncatedTitle)}</h2>
+    return `<h2>${this.getNoteTitlePrefix()} ${this.escapeHtml(truncatedTitle)}</h2>
 <div style="text-align: center; padding: 10px;">
-  <img data-attachment-key="${attachmentKey}" alt="学术概念海报" style="max-width: 100%; height: auto;" />
+  <img data-attachment-key="${attachmentKey}" alt="${getString("image-note-poster-alt")}" style="max-width: 100%; height: auto;" />
 </div>
 <p style="text-align: center; color: #666; font-size: 12px;">
-  由 AI 管家自动生成的学术概念海报
+  ${getString("image-note-caption")}
 </p>`;
   }
 
@@ -266,7 +276,11 @@ export class ImageNoteGenerator {
       // 使用 Zotero 的文件 API 读取图片
       const file = Zotero.File.pathToFile(imagePath);
       if (!file.exists()) {
-        throw new Error(`图片文件不存在: ${imagePath}`);
+        throw new Error(
+          getString("image-note-error-file-not-found", {
+            args: { path: imagePath },
+          }),
+        );
       }
 
       // 读取文件内容为字节数组
@@ -290,7 +304,11 @@ export class ImageNoteGenerator {
       return this.createImageNote(item, base64, mimeType);
     } catch (error: any) {
       ztoolkit.log(`[AI-Butler] 从文件创建一图总结笔记失败:`, error);
-      throw new Error(`读取图片文件失败: ${error.message || error}`);
+      throw new Error(
+        getString("image-note-error-read-file-failed", {
+          args: { message: error.message || error },
+        }),
+      );
     }
   }
 
@@ -321,15 +339,21 @@ export class ImageNoteGenerator {
         const noteHtml: string = (n as any).getNote?.() || "";
 
         // 模式1: 精确匹配 "AI 管家一图总结 -"
-        const titleMatch1 = new RegExp(
-          `<h2>\\s*${this.escapeRegExp(this.NOTE_TITLE_PREFIX)}`,
-        ).test(noteHtml);
+        const titleMatch1 = [
+          this.LEGACY_NOTE_TITLE_PREFIX,
+          this.getNoteTitlePrefix(),
+        ].some((prefix) =>
+          new RegExp(`<h2>\\s*${this.escapeRegExp(prefix)}`).test(noteHtml),
+        );
 
         // 模式2: 宽松匹配 "一图总结"
         const titleMatch2 = /<h2>[^<]*一图总结[^<]*<\/h2>/i.test(noteHtml);
 
         // 模式3: 匹配标题中包含 "AI 管家一图总结"
-        const titleMatch3 = noteHtml.includes("AI 管家一图总结");
+        const titleMatch3 = noteHtml.includes(
+          "AI " +
+            String.fromCodePoint(31649, 23478, 19968, 22270, 24635, 32467),
+        );
 
         if (hasTag || titleMatch1 || titleMatch2 || titleMatch3) {
           ztoolkit.log(
@@ -527,12 +551,12 @@ export class ImageNoteGenerator {
 
     // 构建笔记 HTML
     // 使用简单的 HTML 结构，确保 Zotero 兼容性
-    return `<h2>${this.NOTE_TITLE_PREFIX}${this.escapeHtml(truncatedTitle)}</h2>
+    return `<h2>${this.getNoteTitlePrefix()} ${this.escapeHtml(truncatedTitle)}</h2>
 <div style="text-align: center; padding: 10px;">
-  <img src="${imageDataUri}" alt="学术概念海报" style="max-width: 100%; height: auto;" />
+  <img src="${imageDataUri}" alt="${getString("image-note-poster-alt")}" style="max-width: 100%; height: auto;" />
 </div>
 <p style="text-align: center; color: #666; font-size: 12px;">
-  由 AI 管家自动生成的学术概念海报
+  ${getString("image-note-caption")}
 </p>`;
   }
 

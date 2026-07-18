@@ -20,6 +20,7 @@ import {
   writeBinaryFile,
   writeTextFile,
 } from "./noteExportPaths";
+import { getString } from "../utils/locale";
 
 export interface NoteExportItemResult {
   itemId: number;
@@ -57,15 +58,15 @@ type NoteArtifacts = Partial<
 
 const NOTE_OUTPUT_META: Record<
   AiNoteKind,
-  { label: string; docxName: string; markdownName: string }
+  { labelKey: string; docxName: string; markdownName: string }
 > = {
   summary: {
-    label: "AI 总结",
+    labelKey: "note-export-kind-summary",
     docxName: "summary.docx",
     markdownName: "summary.md",
   },
   deepRead: {
-    label: "AI 精读",
+    labelKey: "note-export-kind-deep-read",
     docxName: "deep-read.docx",
     markdownName: "deep-read.md",
   },
@@ -77,7 +78,8 @@ export class NoteExportService {
   ): Promise<NoteExportBatchResult> {
     const config = options.config || getNoteExportConfig();
     const rootPath = (options.rootPath || config.rootPath).trim();
-    if (!rootPath) throw new Error("请先选择导出目录");
+    if (!rootPath)
+      throw new Error(getString("note-export-error-select-directory"));
 
     const includeSubcollections =
       options.includeSubcollections ?? config.includeSubcollections;
@@ -95,7 +97,12 @@ export class NoteExportService {
       const progress = entries.length
         ? Math.round(((index + 1) / entries.length) * 100)
         : 100;
-      options.onProgress?.(`正在导出：${getItemTitle(entry.item)}`, progress);
+      options.onProgress?.(
+        getString("note-export-progress-exporting", {
+          args: { title: getItemTitle(entry.item) },
+        }),
+        progress,
+      );
       try {
         const itemResult = await this.exportItem({
           item: entry.item,
@@ -112,7 +119,12 @@ export class NoteExportService {
         });
         result.failedItems++;
         result.warnings.push(
-          `${getItemTitle(entry.item)} 导出失败：${error?.message || error}`,
+          getString("note-export-warning-item-failed", {
+            args: {
+              title: getItemTitle(entry.item),
+              message: error?.message || error,
+            },
+          }),
         );
       }
     }
@@ -127,7 +139,8 @@ export class NoteExportService {
     requireBothNotes?: boolean;
   }): Promise<NoteExportItemResult> {
     const config = options.config || getNoteExportConfig();
-    if (!config.rootPath.trim()) throw new Error("请先选择导出目录");
+    if (!config.rootPath.trim())
+      throw new Error(getString("note-export-error-select-directory"));
 
     const item = options.item;
     const title = getItemTitle(item);
@@ -270,6 +283,7 @@ export class NoteExportService {
     result: NoteExportItemResult;
   }): Promise<void> {
     const meta = NOTE_OUTPUT_META[options.kind];
+    const kindLabel = getString(meta.labelKey);
     if (!options.exportDocx && !options.exportMarkdown) return;
     if (!options.artifact) return;
 
@@ -278,7 +292,7 @@ export class NoteExportService {
         const bytes = await noteHtmlToDocxBytes({
           html: options.artifact.html,
           title: options.title,
-          kindLabel: meta.label,
+          kindLabel: kindLabel,
         });
         addWriteResult(
           options.result,
@@ -290,7 +304,9 @@ export class NoteExportService {
         );
       } catch (error: any) {
         options.result.warnings.push(
-          `${meta.label} DOCX 导出失败：${error?.message || error}`,
+          getString("note-export-warning-docx-failed", {
+            args: { kind: kindLabel, message: error?.message || error },
+          }),
         );
       }
     }
@@ -308,7 +324,9 @@ export class NoteExportService {
         );
       } catch (error: any) {
         options.result.warnings.push(
-          `${meta.label} Markdown 导出失败：${error?.message || error}`,
+          getString("note-export-warning-markdown-failed", {
+            args: { kind: kindLabel, message: error?.message || error },
+          }),
         );
       }
     }
@@ -329,7 +347,9 @@ export class NoteExportService {
         const sourcePath = await (attachment as any).getFilePathAsync?.();
         if (!sourcePath || !(await IOUtils.exists(sourcePath))) {
           options.result.warnings.push(
-            `附件不存在或不可读：${getItemTitle(attachment as Zotero.Item)}`,
+            getString("note-export-warning-attachment-unreadable", {
+              args: { title: getItemTitle(attachment as Zotero.Item) },
+            }),
           );
           continue;
         }
@@ -347,7 +367,9 @@ export class NoteExportService {
         );
       } catch (error: any) {
         options.result.warnings.push(
-          `附件 ${attachmentId} 导出失败：${error?.message || error}`,
+          getString("note-export-warning-attachment-failed", {
+            args: { id: attachmentId, message: error?.message || error },
+          }),
         );
       }
     }

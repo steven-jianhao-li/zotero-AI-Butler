@@ -1,3 +1,4 @@
+import { getString } from "../../utils/locale";
 export type ProgressCb = (chunk: string) => Promise<void> | void;
 
 export type LLMAbortSignal = {
@@ -126,19 +127,45 @@ export class APITestError extends Error {
   formatReport(): string {
     const d = this.details;
     const lines: string[] = [];
-    lines.push(`错误名称: ${d.errorName}`);
-    lines.push(`错误信息: ${d.errorMessage}`);
+    lines.push(
+      getString("provider-test-error-name", { args: { value: d.errorName } }),
+    );
+    lines.push(
+      getString("provider-test-error-message", {
+        args: { value: d.errorMessage },
+      }),
+    );
     if (d.statusCode !== undefined) {
-      lines.push(`状态码: ${d.statusCode}`);
+      lines.push(
+        getString("provider-test-error-status-code", {
+          args: { value: d.statusCode },
+        }),
+      );
     }
-    lines.push(`请求路径: ${d.requestUrl}`);
+    lines.push(
+      getString("provider-test-error-request-url", {
+        args: { value: d.requestUrl },
+      }),
+    );
     if (d.responseBody) {
-      lines.push(`响应内容: ${d.responseBody}`);
+      lines.push(
+        getString("provider-test-error-response-body", {
+          args: { value: d.responseBody },
+        }),
+      );
     }
     if (d.responseHeaders && Object.keys(d.responseHeaders).length > 0) {
-      lines.push(`响应首部: ${JSON.stringify(d.responseHeaders, null, 2)}`);
+      lines.push(
+        getString("provider-test-error-response-headers", {
+          args: { value: JSON.stringify(d.responseHeaders, null, 2) },
+        }),
+      );
     }
-    lines.push(`请求体: ${d.requestBody}`);
+    lines.push(
+      getString("provider-test-error-request-body", {
+        args: { value: d.requestBody },
+      }),
+    );
     return lines.join("\n");
   }
 }

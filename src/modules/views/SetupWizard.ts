@@ -1,4 +1,5 @@
 import LLMClient from "../llmClient";
+import { getString } from "../../utils/locale";
 import { createStyledButton } from "./ui/components";
 import {
   setupPresets,
@@ -115,19 +116,27 @@ function renderPresetSelectionStep(
 ): void {
   modal.innerHTML = "";
   const selectedPreset = getSelectedSetupPreset();
-  const nextButton = createStyledButton("下一步", "#00a67e", "medium");
+  const nextButton = createStyledButton(
+    getString("setup-wizard-next"),
+    "#00a67e",
+    "medium",
+  );
   nextButton.addEventListener("click", () =>
     renderSetupPresetGuideStep(doc, modal, close, selectedPreset, onApplied),
   );
 
-  const cancelButton = createStyledButton("取消", "#9e9e9e", "medium");
+  const cancelButton = createStyledButton(
+    getString("setup-wizard-cancel"),
+    "#9e9e9e",
+    "medium",
+  );
   cancelButton.addEventListener("click", close);
 
   modal.appendChild(
     createWizardShell(
       doc,
-      "🧭 一键初始化配置",
-      "选择一个适合新安装插件的预设，按教程填入 API Key 后即可自动完成常用设置。",
+      getString("setup-wizard-title"),
+      getString("setup-wizard-subtitle"),
       setupPresets.map((preset) => {
         const card = createPresetCard(
           doc,
@@ -188,12 +197,14 @@ function renderSetupPresetGuideStep(
     keyInput.type = showKeyBox.checked ? "text" : "password";
   });
   showKeyRow.appendChild(showKeyBox);
-  showKeyRow.appendChild(doc.createTextNode("显示密钥"));
+  showKeyRow.appendChild(
+    doc.createTextNode(getString("setup-wizard-show-key")),
+  );
 
   const modelInput = createElement(doc, "input", {
     attributes: {
       type: "text",
-      placeholder: "先填写 API Key，再点击获取模型",
+      placeholder: getString("setup-wizard-model-placeholder"),
     },
     styles: {
       flex: "1",
@@ -206,7 +217,7 @@ function renderSetupPresetGuideStep(
   }) as HTMLInputElement;
   modelInput.value = preset.endpoint.model;
   const modelStatus = createElement(doc, "div", {
-    textContent: "可手动填写模型，也可以用 API Key 获取模型列表后选择。",
+    textContent: getString("setup-wizard-model-help"),
     styles: {
       marginTop: "6px",
       fontSize: "12px",
@@ -223,7 +234,11 @@ function renderSetupPresetGuideStep(
       overflow: "auto",
     },
   });
-  const fetchModelsButton = createStyledButton("获取模型", "#3f51b5", "small");
+  const fetchModelsButton = createStyledButton(
+    getString("setup-wizard-fetch-models"),
+    "#3f51b5",
+    "small",
+  );
   fetchModelsButton.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -241,7 +256,7 @@ function renderSetupPresetGuideStep(
     styles: { display: "none", marginTop: "16px" },
     children: [
       createElement(doc, "div", {
-        textContent: "模型 *",
+        textContent: getString("setup-wizard-model-label"),
         styles: {
           marginBottom: "8px",
           fontSize: "14px",
@@ -270,17 +285,32 @@ function renderSetupPresetGuideStep(
     ],
   });
 
-  const backButton = createStyledButton("上一步", "#607d8b", "medium");
+  const backButton = createStyledButton(
+    getString("setup-wizard-back"),
+    "#607d8b",
+    "medium",
+  );
   backButton.addEventListener("click", () =>
     renderPresetSelectionStep(doc, modal, close, onApplied),
   );
-  const nextButton = createStyledButton("下一步", "#00a67e", "medium");
+  const nextButton = createStyledButton(
+    getString("setup-wizard-next"),
+    "#00a67e",
+    "medium",
+  );
   nextButton.addEventListener("click", () => {
     const apiKey = keyInput.value.trim();
     if (!apiKey) {
       keyInput.focus();
-      new ztoolkit.ProgressWindow("一键初始化配置", { closeTime: 2200 })
-        .createLine({ text: `请先填写 ${preset.name} API Key`, type: "fail" })
+      new ztoolkit.ProgressWindow(getString("setup-wizard-progress-title"), {
+        closeTime: 2200,
+      })
+        .createLine({
+          text: getString("setup-wizard-missing-api-key", {
+            args: { provider: preset.name },
+          }),
+          type: "fail",
+        })
         .show();
       return;
     }
@@ -333,9 +363,15 @@ function renderSetupPresetConfirmStep(
         color: "var(--ai-text-muted, #666)",
       },
       children: [
-        createElement(doc, "div", { textContent: "设置项" }),
-        createElement(doc, "div", { textContent: "当前设置" }),
-        createElement(doc, "div", { textContent: "将改为" }),
+        createElement(doc, "div", {
+          textContent: getString("setup-wizard-setting-item"),
+        }),
+        createElement(doc, "div", {
+          textContent: getString("setup-wizard-current-setting"),
+        }),
+        createElement(doc, "div", {
+          textContent: getString("setup-wizard-new-setting"),
+        }),
       ],
     }),
   );
@@ -361,7 +397,9 @@ function renderSetupPresetConfirmStep(
   });
 
   const warning = createElement(doc, "div", {
-    textContent: `确认后会立即保存这些设置，并启动自动扫描。原有其它模型端点会保留在 ${preset.name} 后面。`,
+    textContent: getString("setup-wizard-confirm-warning", {
+      args: { provider: preset.name },
+    }),
     styles: {
       marginTop: "14px",
       padding: "12px 14px",
@@ -374,15 +412,25 @@ function renderSetupPresetConfirmStep(
     },
   });
 
-  const backButton = createStyledButton("上一步", "#607d8b", "medium");
+  const backButton = createStyledButton(
+    getString("setup-wizard-back"),
+    "#607d8b",
+    "medium",
+  );
   backButton.addEventListener("click", () =>
     renderSetupPresetGuideStep(doc, modal, close, preset, onApplied),
   );
-  const applyButton = createStyledButton("确认并应用", "#00a67e", "medium");
+  const applyButton = createStyledButton(
+    getString("setup-wizard-apply"),
+    "#00a67e",
+    "medium",
+  );
   applyButton.addEventListener("click", () => {
     preset.apply(values);
     onApplied();
-    new ztoolkit.ProgressWindow("一键初始化配置", { closeTime: 3000 })
+    new ztoolkit.ProgressWindow(getString("setup-wizard-progress-title"), {
+      closeTime: 3000,
+    })
       .createLine({ text: preset.successMessage, type: "success" })
       .show();
     close();
@@ -391,8 +439,10 @@ function renderSetupPresetConfirmStep(
   modal.appendChild(
     createWizardShell(
       doc,
-      "保存并应用配置",
-      `请检查即将修改的配置清单。确认后，插件会切换到 ${preset.name} 新手推荐配置。`,
+      getString("setup-wizard-confirm-title"),
+      getString("setup-wizard-confirm-subtitle", {
+        args: { provider: preset.name },
+      }),
       [list, warning],
       [backButton, applyButton],
       close,
@@ -581,7 +631,7 @@ function createGuideList(
     );
     if (item.url) {
       const link = createElement(doc, "button", {
-        textContent: "打开",
+        textContent: getString("setup-wizard-open-link"),
         styles: {
           border: "none",
           background: "transparent",
@@ -625,7 +675,10 @@ export function openExternalUrl(url: string): void {
   } catch (error) {
     ztoolkit.log("[AI-Butler] 打开外部链接失败:", error);
     new ztoolkit.ProgressWindow("AI Butler", { closeTime: 3000 })
-      .createLine({ text: `无法打开链接：${url}`, type: "fail" })
+      .createLine({
+        text: getString("setup-wizard-open-link-failed", { args: { url } }),
+        type: "fail",
+      })
       .show();
   }
 }
@@ -641,16 +694,19 @@ async function fetchSetupPresetModels(
 ): Promise<void> {
   if (!apiKey) {
     status.style.color = "#b71c1c";
-    status.textContent = `请先填写 ${preset.name} API Key`;
+    status.textContent = getString("setup-wizard-missing-api-key", {
+      args: { provider: preset.name },
+    });
     return;
   }
 
-  const previousText = button.textContent || "获取模型";
+  const previousText =
+    button.textContent || getString("setup-wizard-fetch-models");
   button.disabled = true;
-  button.textContent = "获取中...";
+  button.textContent = getString("setup-wizard-fetching-models");
   button.style.opacity = "0.75";
   status.style.color = "var(--ai-text-muted, #666)";
-  status.textContent = "正在获取模型列表...";
+  status.textContent = getString("setup-wizard-fetching-models-status");
   modelList.style.display = "none";
 
   try {
@@ -660,7 +716,9 @@ async function fetchSetupPresetModels(
       model: modelInput.value.trim() || preset.endpoint.model,
       requestTimeoutMs: 30000,
     });
-    if (models.length === 0) throw new Error("供应商未返回可用模型");
+    if (models.length === 0) {
+      throw new Error(getString("setup-wizard-no-models"));
+    }
 
     modelList.innerHTML = "";
     models.forEach((model) => {
@@ -684,18 +742,26 @@ async function fetchSetupPresetModels(
         modelInput.value = model.id;
         modelList.style.display = "none";
         status.style.color = "#2e7d32";
-        status.textContent = `已选择模型：${model.id}`;
+        status.textContent = getString("setup-wizard-model-selected", {
+          args: { model: model.id },
+        });
       });
       modelList.appendChild(item);
     });
     modelList.style.display = "block";
     status.style.color = "#2e7d32";
-    status.textContent = `已获取 ${models.length} 个模型，请选择一个模型。`;
+    status.textContent = getString("setup-wizard-models-fetched", {
+      args: { count: models.length },
+    });
   } catch (error: any) {
     const message = error?.message || String(error);
     status.style.color = "#b71c1c";
-    status.textContent = `获取失败：${message}`;
-    new ztoolkit.ProgressWindow("模型列表", { closeTime: 3500 })
+    status.textContent = getString("setup-wizard-fetch-models-failed", {
+      args: { message },
+    });
+    new ztoolkit.ProgressWindow(getString("setup-wizard-model-list-title"), {
+      closeTime: 3500,
+    })
       .createLine({ text: `❌ ${message}`, type: "fail" })
       .show();
   } finally {

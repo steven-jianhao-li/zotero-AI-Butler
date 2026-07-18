@@ -1,4 +1,5 @@
 import { getPref, setPref, clearPref } from "../utils/prefs";
+import { getString } from "../utils/locale";
 import {
   getDefaultSummaryPrompt,
   getDefaultTableTemplate,
@@ -442,7 +443,9 @@ function bindOpenMainWindowButton(win: Window) {
             closeTime: 5000,
           })
             .createLine({
-              text: `打开主窗口失败: ${message}`,
+              text: getString("preferences-open-main-window-failed", {
+                args: { message },
+              }),
               type: "error",
             })
             .show();
@@ -456,7 +459,9 @@ function bindOpenMainWindowButton(win: Window) {
           closeTime: 5000,
         })
           .createLine({
-            text: `打开主窗口失败: ${message}`,
+            text: getString("preferences-open-main-window-failed", {
+              args: { message },
+            }),
             type: "error",
           })
           .show();

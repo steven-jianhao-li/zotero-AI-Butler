@@ -14,6 +14,7 @@ import {
   createSelect,
   createStyledButton,
 } from "../ui/components";
+import { getString } from "../../../utils/locale";
 
 export class NoteExportSettingsPage {
   private container: HTMLElement;
@@ -72,7 +73,7 @@ export class NoteExportSettingsPage {
 
     const copy = doc.createElement("div");
     const eyebrow = doc.createElement("div");
-    eyebrow.textContent = "AI Butler · Note Export";
+    eyebrow.textContent = getString("settings-note-export-eyebrow");
     Object.assign(eyebrow.style, {
       color: "var(--ai-accent)",
       fontSize: "12px",
@@ -82,7 +83,7 @@ export class NoteExportSettingsPage {
       marginBottom: "8px",
     });
     const title = doc.createElement("h2");
-    title.textContent = "📤 笔记自动导出";
+    title.textContent = getString("settings-note-export-title");
     Object.assign(title.style, {
       margin: "0 0 8px 0",
       fontSize: "24px",
@@ -92,8 +93,7 @@ export class NoteExportSettingsPage {
       padding: "0",
     });
     const subtitle = doc.createElement("p");
-    subtitle.textContent =
-      "当监听分类中的论文已生成 AI 总结与 AI 精读后，自动整理附件、DOCX 与 Markdown 到指定目录。";
+    subtitle.textContent = getString("settings-note-export-subtitle");
     Object.assign(subtitle.style, {
       margin: "0",
       maxWidth: "680px",
@@ -125,15 +125,17 @@ export class NoteExportSettingsPage {
     quickGrid.appendChild(
       createMetricCard(
         doc,
-        "监听分类",
+        getString("settings-note-export-watched-collections"),
         String(config.watchedCollectionIds.length),
-        config.includeSubcollections ? "包含子分类" : "仅当前分类",
+        config.includeSubcollections
+          ? getString("settings-note-export-include-subcollections-short")
+          : getString("settings-note-export-current-collection-only"),
       ),
     );
     quickGrid.appendChild(
       createMetricCard(
         doc,
-        "导出格式",
+        getString("settings-note-export-formats"),
         `${countEnabledFormats(config.formats)}/4`,
         getFormatSummary(config.formats),
       ),
@@ -141,11 +143,13 @@ export class NoteExportSettingsPage {
     quickGrid.appendChild(
       createMetricCard(
         doc,
-        "冲突策略",
-        config.conflictStrategy === "overwrite" ? "覆盖" : "跳过",
+        getString("settings-note-export-conflict-strategy"),
         config.conflictStrategy === "overwrite"
-          ? "已有文件会被替换"
-          : "保护已修改文件",
+          ? getString("settings-note-export-overwrite")
+          : getString("settings-note-export-skip"),
+        config.conflictStrategy === "overwrite"
+          ? getString("settings-note-export-overwrite-detail")
+          : getString("settings-note-export-skip-detail"),
       ),
     );
     page.appendChild(quickGrid);
@@ -154,15 +158,15 @@ export class NoteExportSettingsPage {
     basics.appendChild(
       createPanelHeader(
         doc,
-        "基础设置",
-        "控制笔记自动导出的启用状态与根目录。",
+        getString("settings-note-export-basic-settings"),
+        getString("settings-note-export-basic-description"),
       ),
     );
     basics.appendChild(
       createSettingRow(
         doc,
-        "启用笔记自动导出",
-        "开启后，任务队列完成 AI 总结或 AI 精读时会自动检查是否满足导出条件。",
+        getString("settings-note-export-enable"),
+        getString("settings-note-export-enable-description"),
         createCheckbox("noteExportEnabled", config.enabled),
       ),
     );
@@ -171,7 +175,7 @@ export class NoteExportSettingsPage {
       "noteExportRootPath",
       "text",
       config.rootPath,
-      "请选择或输入导出根目录...",
+      getString("settings-note-export-root-placeholder"),
     );
     Object.assign(pathInput.style, {
       borderRadius: "10px",
@@ -187,7 +191,11 @@ export class NoteExportSettingsPage {
       alignItems: "center",
       width: "100%",
     });
-    const browseButton = createStyledButton("选择目录", "#59c0bc", "medium");
+    const browseButton = createStyledButton(
+      getString("settings-note-export-choose-directory"),
+      "#59c0bc",
+      "medium",
+    );
     Object.assign(browseButton.style, {
       borderRadius: "10px",
       minHeight: "38px",
@@ -195,7 +203,7 @@ export class NoteExportSettingsPage {
     browseButton.addEventListener("click", async () => {
       try {
         const selected = await pickFolder(
-          "选择 AI 笔记导出目录",
+          getString("settings-note-export-folder-picker-title"),
           this.container.ownerDocument?.defaultView || null,
         );
         if (selected) {
@@ -204,7 +212,7 @@ export class NoteExportSettingsPage {
         }
       } catch (error) {
         ztoolkit.log("[AI-Butler][NoteExport] 选择导出目录失败:", error);
-        showToast("选择目录失败，请手动输入目录", "error");
+        showToast(getString("settings-note-export-folder-failed"), "error");
       }
     });
     pathControl.appendChild(pathInput);
@@ -212,8 +220,8 @@ export class NoteExportSettingsPage {
     basics.appendChild(
       createSettingRow(
         doc,
-        "导出根目录",
-        "导出结构为：根目录 / 分类路径 / 论文名 / 导出文件。",
+        getString("settings-note-export-root-path"),
+        getString("settings-note-export-root-path-description"),
         pathControl,
       ),
     );
@@ -223,8 +231,8 @@ export class NoteExportSettingsPage {
     collections.appendChild(
       createPanelHeader(
         doc,
-        "监听分类",
-        "只有位于这些分类中的论文会进入笔记自动导出检查。",
+        getString("settings-note-export-watched-collections"),
+        getString("settings-note-export-watched-description"),
       ),
     );
     collections.appendChild(
@@ -245,7 +253,7 @@ export class NoteExportSettingsPage {
       alignItems: "center",
     });
     const addSelectedButton = createStyledButton(
-      "添加当前选中分类",
+      getString("settings-note-export-add-selected-collection"),
       "#34a853",
       "medium",
     );
@@ -253,12 +261,15 @@ export class NoteExportSettingsPage {
     addSelectedButton.addEventListener("click", () => {
       const collection = Zotero.getActiveZoteroPane().getSelectedCollection();
       if (!collection) {
-        showToast("请先在 Zotero 左侧选择一个分类", "warning");
+        showToast(
+          getString("settings-note-export-select-collection-first"),
+          "warning",
+        );
         return;
       }
       addWatchedCollection(collection.id);
       AutoNoteExportManager.getInstance().reload();
-      showToast("笔记自动导出设置已保存", "success");
+      showToast(getString("settings-note-export-saved"), "success");
       this.render();
     });
     collectionActions.appendChild(addSelectedButton);
@@ -266,8 +277,8 @@ export class NoteExportSettingsPage {
     collectionFooter.appendChild(
       createSettingRow(
         doc,
-        "包含子分类",
-        "开启后，监听分类下的所有子分类也会触发笔记自动导出。",
+        getString("settings-note-export-include-subcollections"),
+        getString("settings-note-export-include-subcollections-description"),
         createCheckbox(
           "noteExportIncludeSubcollections",
           config.includeSubcollections,
@@ -280,7 +291,11 @@ export class NoteExportSettingsPage {
 
     const output = createPanel(doc);
     output.appendChild(
-      createPanelHeader(doc, "导出内容", "选择需要自动生成的笔记文件格式。"),
+      createPanelHeader(
+        doc,
+        getString("settings-note-export-output-content"),
+        getString("settings-note-export-output-description"),
+      ),
     );
     const formatGrid = doc.createElement("div");
     Object.assign(formatGrid.style, {
@@ -303,8 +318,14 @@ export class NoteExportSettingsPage {
     const strategySelect = createSelect(
       "noteExportConflictStrategy",
       [
-        { value: "skip", label: "跳过已有文件" },
-        { value: "overwrite", label: "覆盖已有文件" },
+        {
+          value: "skip",
+          label: getString("settings-note-export-skip-existing"),
+        },
+        {
+          value: "overwrite",
+          label: getString("settings-note-export-overwrite-existing"),
+        },
       ],
       config.conflictStrategy,
     );
@@ -312,16 +333,16 @@ export class NoteExportSettingsPage {
     output.appendChild(
       createSettingRow(
         doc,
-        "已存在文件策略",
-        "默认跳过，避免覆盖手动修改后的文件。",
+        getString("settings-note-export-existing-file-strategy"),
+        getString("settings-note-export-existing-file-description"),
         strategySelect,
       ),
     );
     output.appendChild(
       createSettingRow(
         doc,
-        "右键导出不再提醒目录",
-        "开启后，右键分类导出会优先使用这里保存的目录。",
+        getString("settings-note-export-suppress-directory-prompt"),
+        getString("settings-note-export-suppress-directory-description"),
         createCheckbox(
           "noteExportSuppressDirectoryPrompt",
           config.suppressDirectoryPrompt,
@@ -352,7 +373,8 @@ export class NoteExportSettingsPage {
         ),
       });
       AutoNoteExportManager.getInstance().reload();
-      if (showNotice) showToast("笔记自动导出设置已保存", "success");
+      if (showNotice)
+        showToast(getString("settings-note-export-saved"), "success");
     };
     const scheduleAutoSave = () => {
       if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
@@ -384,14 +406,15 @@ export class NoteExportSettingsPage {
         gap: "6px",
       });
       const title = doc.createElement("div");
-      title.textContent = "尚未添加监听分类";
+      title.textContent = getString("settings-note-export-no-watched-title");
       Object.assign(title.style, {
         color: "var(--ai-text)",
         fontWeight: "700",
       });
       const text = doc.createElement("div");
-      text.textContent =
-        "在 Zotero 左侧选择一个分类后，点击下方按钮即可加入笔记自动导出范围。";
+      text.textContent = getString(
+        "settings-note-export-no-watched-description",
+      );
       Object.assign(text.style, { fontSize: "13px", lineHeight: "1.6" });
       empty.appendChild(title);
       empty.appendChild(text);
@@ -424,7 +447,9 @@ export class NoteExportSettingsPage {
       const label = doc.createElement("div");
       label.textContent = collection
         ? getCollectionPathLabel(collection)
-        : `分类 ${collectionId}（已不存在）`;
+        : getString("settings-note-export-missing-collection", {
+            args: { id: collectionId },
+          });
       Object.assign(label.style, {
         fontWeight: "700",
         overflow: "hidden",
@@ -433,8 +458,8 @@ export class NoteExportSettingsPage {
       });
       const hint = doc.createElement("div");
       hint.textContent = collection
-        ? "监听该分类中的 AI 笔记生成状态"
-        : "该分类可能已被删除，可移除本条记录";
+        ? getString("settings-note-export-collection-hint")
+        : getString("settings-note-export-missing-collection-hint");
       Object.assign(hint.style, {
         color: "var(--ai-text-secondary)",
         fontSize: "12px",
@@ -442,12 +467,16 @@ export class NoteExportSettingsPage {
       labelWrap.appendChild(label);
       labelWrap.appendChild(hint);
       row.appendChild(labelWrap);
-      const removeButton = createStyledButton("移除", "#e25555", "small");
+      const removeButton = createStyledButton(
+        getString("settings-note-export-remove"),
+        "#e25555",
+        "small",
+      );
       Object.assign(removeButton.style, { borderRadius: "9px" });
       removeButton.addEventListener("click", () => {
         removeWatchedCollection(collectionId);
         AutoNoteExportManager.getInstance().reload();
-        showToast("笔记自动导出设置已保存", "success");
+        showToast(getString("settings-note-export-saved"), "success");
         this.render();
       });
       row.appendChild(removeButton);
@@ -609,7 +638,9 @@ function createStatusBadge(
     fontWeight: "800",
     whiteSpace: "nowrap",
   });
-  badge.textContent = ready ? "● 已就绪" : "● 待完善";
+  badge.textContent = ready
+    ? getString("settings-note-export-ready")
+    : getString("settings-note-export-incomplete");
   return badge;
 }
 
@@ -652,10 +683,26 @@ function createFormatCard(
 
 function getFormatRows(): Array<[keyof NoteExportFormats, string, string]> {
   return [
-    ["summaryDocx", "AI 总结 DOCX", "适合归档与二次编辑"],
-    ["deepReadDocx", "AI 精读 DOCX", "保留分轮精读结构"],
-    ["summaryMd", "AI 总结 Markdown", "适合知识库和版本管理"],
-    ["deepReadMd", "AI 精读 Markdown", "适合纯文本工作流"],
+    [
+      "summaryDocx",
+      getString("settings-note-export-summary-docx"),
+      getString("settings-note-export-summary-docx-description"),
+    ],
+    [
+      "deepReadDocx",
+      getString("settings-note-export-deep-read-docx"),
+      getString("settings-note-export-deep-read-docx-description"),
+    ],
+    [
+      "summaryMd",
+      getString("settings-note-export-summary-markdown"),
+      getString("settings-note-export-summary-markdown-description"),
+    ],
+    [
+      "deepReadMd",
+      getString("settings-note-export-deep-read-markdown"),
+      getString("settings-note-export-deep-read-markdown-description"),
+    ],
   ];
 }
 
@@ -667,7 +714,9 @@ function getFormatSummary(formats: NoteExportFormats): string {
   const enabled = getFormatRows()
     .filter(([key]) => formats[key])
     .map(([, label]) => label.replace("AI ", "").replace(" Markdown", " MD"));
-  return enabled.length ? enabled.join("、") : "未选择格式";
+  return enabled.length
+    ? enabled.join(getString("settings-note-export-format-separator"))
+    : getString("settings-note-export-no-format-selected");
 }
 
 function readFormats(root: ParentNode): NoteExportFormats {
@@ -713,10 +762,13 @@ function showToast(
   message: string,
   type: "success" | "warning" | "error",
 ): void {
-  new ztoolkit.ProgressWindow("AI 笔记导出", {
-    closeOnClick: true,
-    closeTime: 3000,
-  })
+  new ztoolkit.ProgressWindow(
+    getString("settings-note-export-progress-title"),
+    {
+      closeOnClick: true,
+      closeTime: 3000,
+    },
+  )
     .createLine({ text: message, type })
     .show();
 }

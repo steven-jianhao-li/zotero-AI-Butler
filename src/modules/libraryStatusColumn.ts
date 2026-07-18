@@ -1,4 +1,5 @@
-﻿import { config } from "../../package.json";
+import { config } from "../../package.json";
+import { getString } from "../utils/locale";
 import {
   isDeepReadNote,
   isRegularSummaryNote,
@@ -13,17 +14,17 @@ const COLUMN_CONFIGS = [
   {
     kind: "summary",
     dataKey: "aiButlerSummaryStatus",
-    label: "AI总结",
+    labelKey: "library-status-column-summary",
   },
   {
     kind: "deepRead",
     dataKey: "aiButlerDeepReadStatus",
-    label: "AI精读",
+    labelKey: "library-status-column-deep-read",
   },
 ] as const satisfies Array<{
   kind: AiStatusColumnKind;
   dataKey: string;
-  label: string;
+  labelKey: string;
 }>;
 
 const DEFAULT_STATUS_JSON = JSON.stringify({
@@ -90,14 +91,24 @@ export function resolveSummaryStatusFromTasks(
   tasks: SummaryTaskLike[],
   hasSummaryNote: boolean,
 ): LibraryStatusColumnData {
-  return resolveKindStatus(tasks, hasSummaryNote, "summary", "AI 总结");
+  return resolveKindStatus(
+    tasks,
+    hasSummaryNote,
+    "summary",
+    getString("library-status-summary"),
+  );
 }
 
 export function resolveDeepReadStatusFromTasks(
   tasks: SummaryTaskLike[],
   hasDeepReadNote: boolean,
 ): LibraryStatusColumnData {
-  return resolveKindStatus(tasks, hasDeepReadNote, "deepRead", "AI 精读");
+  return resolveKindStatus(
+    tasks,
+    hasDeepReadNote,
+    "deepRead",
+    getString("library-status-deep-read"),
+  );
 }
 
 export function resolveCombinedAiStatusFromTasks(
@@ -109,13 +120,13 @@ export function resolveCombinedAiStatusFromTasks(
     tasks,
     hasSummaryNote,
     "summary",
-    "AI 总结",
+    getString("library-status-summary"),
   );
   const deepRead = resolveKindStatus(
     tasks,
     hasDeepReadNote,
     "deepRead",
-    "AI 精读",
+    getString("library-status-deep-read"),
   );
   const parts = [summary.tooltip, deepRead.tooltip];
 
@@ -169,7 +180,9 @@ function resolveKindStatus(
       return {
         status: "processing",
         progress,
-        tooltip: `${label}处理中 ${progress}%`,
+        tooltip: getString("library-status-tooltip-processing", {
+          args: { label, progress },
+        }),
       };
     }
     return {
@@ -177,12 +190,20 @@ function resolveKindStatus(
       progress,
       tooltip:
         activeTask.status === TaskStatus.PRIORITY
-          ? `${label}排队（优先）`
-          : `${label}排队`,
+          ? getString("library-status-tooltip-queued-priority", {
+              args: { label },
+            })
+          : getString("library-status-tooltip-queued", { args: { label } }),
     };
   }
   if (hasNote) {
-    return { status: "completed", progress: 100, tooltip: `${label}已完成` };
+    return {
+      status: "completed",
+      progress: 100,
+      tooltip: getString("library-status-tooltip-completed", {
+        args: { label },
+      }),
+    };
   }
   const failedTask = pickLatestTaskByStatus(kindTasks, [TaskStatus.FAILED]);
   if (failedTask) {
@@ -190,14 +211,18 @@ function resolveKindStatus(
       status: "failed",
       progress: clampProgress(failedTask.progress),
       tooltip: failedTask.error
-        ? `${label}失败：${failedTask.error}`
-        : `${label}失败`,
+        ? getString("library-status-tooltip-failed-with-error", {
+            args: { label, error: failedTask.error },
+          })
+        : getString("library-status-tooltip-failed", { args: { label } }),
     };
   }
   return {
     status: "idle",
     progress: 0,
-    tooltip: `未${label.replace("AI ", "")}`,
+    tooltip: getString("library-status-tooltip-idle", {
+      args: { label: label.replace("AI ", "") },
+    }),
   };
 }
 
@@ -227,7 +252,7 @@ export function registerLibraryStatusColumn(): void {
     for (const columnConfig of COLUMN_CONFIGS) {
       const result = Zotero.ItemTreeManager.registerColumn({
         dataKey: columnConfig.dataKey,
-        label: columnConfig.label,
+        label: getString(columnConfig.labelKey),
         pluginID: config.addonID,
         enabledTreeIDs: ["main"],
         width: "64",
@@ -244,7 +269,7 @@ export function registerLibraryStatusColumn(): void {
       if (!result) {
         logLibraryStatusColumn(
           "[AI-Butler] AI 状态列注册失败",
-          columnConfig.label,
+          getString(columnConfig.labelKey),
         );
         continue;
       }

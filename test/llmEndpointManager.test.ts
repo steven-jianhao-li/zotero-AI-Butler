@@ -251,7 +251,7 @@ describe("LLMEndpointManager", function () {
     LLMEndpointManager.saveEndpoints([makeEndpoint("a", false)]);
 
     expect(() => LLMEndpointManager.prepareRoute()).to.throw(
-      "No enabled LLM endpoints are configured.",
+      "未配置可用的 LLM Endpoint",
     );
   });
 

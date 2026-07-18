@@ -7,6 +7,7 @@
  * - 执行密钥轮换与重试
  * - 返回统一 LLMResponse
  */
+import { getString } from "../utils/locale";
 import { getPref } from "../utils/prefs";
 import { getDefaultSummaryPrompt } from "../utils/prompts";
 import { ApiKeyManager, type ProviderId } from "./apiKeyManager";
@@ -195,7 +196,7 @@ export class LLMApiExhaustedError extends Error {
   public readonly providerId?: string;
 
   constructor(attempts: number, lastError?: Error) {
-    super(lastError?.message || "All configured LLM endpoints failed.");
+    super(lastError?.message || getString("llm-error-all-endpoints-failed"));
     this.name = "LLMApiExhaustedError";
     this.attempts = attempts;
     this.lastError = lastError;
@@ -238,7 +239,9 @@ export class LLMService {
       ProviderRegistry.get(providerId) || ProviderRegistry.get("openai");
     if (!impl) {
       const list = ProviderRegistry.list().join(", ");
-      const msg = `未知的供应商: ${providerId}。可用: ${list}`;
+      const msg = getString("llm-error-unknown-provider-with-list", {
+        args: { provider: providerId, list },
+      });
       this.notifyError(msg);
       throw new Error(msg);
     }
@@ -480,10 +483,16 @@ export class LLMService {
       .toLowerCase();
     const impl = ProviderRegistry.get(id) || ProviderRegistry.get("openai");
     if (!impl) {
-      throw new Error(`未知的供应商: ${id}`);
+      throw new Error(
+        getString("llm-error-unknown-provider", { args: { provider: id } }),
+      );
     }
     if (typeof impl.listModels !== "function") {
-      throw new Error(`Provider ${id} 暂不支持获取模型列表`);
+      throw new Error(
+        getString("llm-error-model-list-unsupported", {
+          args: { provider: id },
+        }),
+      );
     }
 
     const options = this.buildOptions(
@@ -523,10 +532,16 @@ export class LLMService {
   private static getRunnableEndpoint(endpointId: string): LLMEndpoint {
     const endpoint = LLMEndpointManager.getEndpoint(endpointId);
     if (!endpoint) {
-      throw new Error(`LLM endpoint not found: ${endpointId}`);
+      throw new Error(
+        getString("llm-error-endpoint-not-found", { args: { endpointId } }),
+      );
     }
     if (!endpoint.enabled) {
-      throw new Error(`LLM endpoint is disabled: ${endpoint.name}`);
+      throw new Error(
+        getString("llm-error-endpoint-disabled", {
+          args: { endpoint: endpoint.name },
+        }),
+      );
     }
     return endpoint;
   }
@@ -536,7 +551,13 @@ export class LLMService {
     if (!provider) {
       const list = ProviderRegistry.list().join(", ");
       throw new Error(
-        `Unknown provider type for endpoint "${endpoint.name}": ${endpoint.providerType}. Available: ${list}`,
+        getString("llm-error-unknown-provider-type", {
+          args: {
+            endpoint: endpoint.name,
+            provider: endpoint.providerType,
+            available: list,
+          },
+        }),
       );
     }
     return provider;
@@ -586,12 +607,14 @@ export class LLMService {
     const warnings: string[] = [];
     request.transport?.onStatus?.({
       stage: "llm-preparing",
-      label: "准备模型输入",
-      message: "正在准备模型输入...",
+      label: getString("progress-llm-preparing"),
+      message: getString("progress-llm-preparing-message"),
       progress: 40,
       endpointName: endpoint.name,
       model: endpoint.model,
-      detail: `Provider：${endpoint.providerType}；Endpoint：${endpoint.name}`,
+      detail: getString("progress-llm-endpoint-detail", {
+        args: { provider: endpoint.providerType, endpoint: endpoint.name },
+      }),
     });
     throwIfAborted(request.transport?.abortSignal);
     const resolved = await this.resolveContent(
@@ -617,12 +640,18 @@ export class LLMService {
     );
     request.transport?.onStatus?.({
       stage: "llm-uploading",
-      label: "调用大模型中（上传请求中）",
-      message: "调用大模型中（上传请求中）",
+      label: getString("progress-llm-uploading"),
+      message: getString("progress-llm-uploading-message"),
       progress: 42,
       endpointName: endpoint.name,
       model: options.model || endpoint.model,
-      detail: `Provider：${endpoint.providerType}；Endpoint：${endpoint.name}；Model：${options.model || endpoint.model || "unknown"}`,
+      detail: getString("progress-llm-endpoint-model-detail", {
+        args: {
+          provider: endpoint.providerType,
+          endpoint: endpoint.name,
+          model: options.model || endpoint.model || "unknown",
+        },
+      }),
     });
     let sawFirstChunk = false;
     const progressProxy: ProgressCb | undefined = request.onProgress
@@ -631,12 +660,12 @@ export class LLMService {
             sawFirstChunk = true;
             request.transport?.onStatus?.({
               stage: "llm-streaming",
-              label: "调用大模型中（接收响应中）",
-              message: "调用大模型中（接收响应中）",
+              label: getString("progress-llm-streaming"),
+              message: getString("progress-llm-streaming-message"),
               progress: 50,
               endpointName: endpoint.name,
               model: options.model || endpoint.model,
-              detail: "已收到首段模型响应，正在持续接收内容",
+              detail: getString("progress-llm-first-chunk-detail"),
             });
           }
           await request.onProgress?.(chunk);
@@ -644,18 +673,20 @@ export class LLMService {
       : undefined;
     request.transport?.onStatus?.({
       stage: "llm-waiting",
-      label: "调用大模型中（等待响应中）",
-      message: "调用大模型中（等待响应中）",
+      label: getString("progress-llm-waiting"),
+      message: getString("progress-llm-waiting-message"),
       progress: 45,
       endpointName: endpoint.name,
       model: options.model || endpoint.model,
-      detail: "请求已发出，正在等待模型返回首段内容或完整响应",
+      detail: getString("progress-llm-waiting-detail"),
     });
     let text: string;
     if (resolved.mode === "multi-file") {
       if (typeof provider.generateMultiFileSummary !== "function") {
         throw new Error(
-          `Provider ${endpoint.providerType} does not support multi-file generation`,
+          getString("llm-error-provider-multi-file-unsupported", {
+            args: { provider: endpoint.providerType },
+          }),
         );
       }
       try {
@@ -689,12 +720,14 @@ export class LLMService {
     }
     request.transport?.onStatus?.({
       stage: "llm-streaming",
-      label: "大模型响应完成",
-      message: "大模型响应完成",
+      label: getString("progress-llm-complete"),
+      message: getString("progress-llm-complete-message"),
       progress: 78,
       endpointName: endpoint.name,
       model: options.model || endpoint.model,
-      detail: `已收到完整响应，长度约 ${text.length} 个字符`,
+      detail: getString("progress-llm-complete-detail", {
+        args: { count: text.length },
+      }),
     });
     return this.toResponse(
       text,
@@ -770,12 +803,14 @@ export class LLMService {
     const warnings: string[] = [];
     request.transport?.onStatus?.({
       stage: "llm-preparing",
-      label: "准备模型输入",
-      message: "正在准备模型输入...",
+      label: getString("progress-llm-preparing"),
+      message: getString("progress-llm-preparing-message"),
       progress: 40,
       endpointName: endpoint.name,
       model: endpoint.model,
-      detail: `Provider：${endpoint.providerType}；Endpoint：${endpoint.name}`,
+      detail: getString("progress-llm-endpoint-detail", {
+        args: { provider: endpoint.providerType, endpoint: endpoint.name },
+      }),
     });
     throwIfAborted(request.transport?.abortSignal);
     const resolved = await this.resolveContent(
@@ -795,7 +830,7 @@ export class LLMService {
     );
     throwIfAborted(request.transport?.abortSignal);
     if (resolved.mode !== "single") {
-      throw new Error("Chat requests do not support multi-file input.");
+      throw new Error(getString("llm-error-chat-multi-file-unsupported"));
     }
     const options = this.buildOptions(
       endpoint,
@@ -804,12 +839,18 @@ export class LLMService {
     );
     request.transport?.onStatus?.({
       stage: "llm-uploading",
-      label: "调用大模型中（上传请求中）",
-      message: "调用大模型中（上传请求中）",
+      label: getString("progress-llm-uploading"),
+      message: getString("progress-llm-uploading-message"),
       progress: 42,
       endpointName: endpoint.name,
       model: options.model || endpoint.model,
-      detail: `Provider：${endpoint.providerType}；Endpoint：${endpoint.name}；Model：${options.model || endpoint.model || "unknown"}`,
+      detail: getString("progress-llm-endpoint-model-detail", {
+        args: {
+          provider: endpoint.providerType,
+          endpoint: endpoint.name,
+          model: options.model || endpoint.model || "unknown",
+        },
+      }),
     });
     let sawFirstChunk = false;
     const progressProxy: ProgressCb | undefined = request.onProgress
@@ -818,12 +859,12 @@ export class LLMService {
             sawFirstChunk = true;
             request.transport?.onStatus?.({
               stage: "llm-streaming",
-              label: "调用大模型中（接收响应中）",
-              message: "调用大模型中（接收响应中）",
+              label: getString("progress-llm-streaming"),
+              message: getString("progress-llm-streaming-message"),
               progress: 50,
               endpointName: endpoint.name,
               model: options.model || endpoint.model,
-              detail: "已收到首段模型响应，正在持续接收内容",
+              detail: getString("progress-llm-first-chunk-detail"),
             });
           }
           await request.onProgress?.(chunk);
@@ -831,12 +872,12 @@ export class LLMService {
       : undefined;
     request.transport?.onStatus?.({
       stage: "llm-waiting",
-      label: "调用大模型中（等待响应中）",
-      message: "调用大模型中（等待响应中）",
+      label: getString("progress-llm-waiting"),
+      message: getString("progress-llm-waiting-message"),
       progress: 45,
       endpointName: endpoint.name,
       model: options.model || endpoint.model,
-      detail: "请求已发出，正在等待模型返回首段内容或完整响应",
+      detail: getString("progress-llm-waiting-detail"),
     });
     let text: string;
     try {
@@ -855,12 +896,14 @@ export class LLMService {
     }
     request.transport?.onStatus?.({
       stage: "llm-streaming",
-      label: "大模型响应完成",
-      message: "大模型响应完成",
+      label: getString("progress-llm-complete"),
+      message: getString("progress-llm-complete-message"),
       progress: 78,
       endpointName: endpoint.name,
       model: options.model || endpoint.model,
-      detail: `已收到完整响应，长度约 ${text.length} 个字符`,
+      detail: getString("progress-llm-complete-detail", {
+        args: { count: text.length },
+      }),
     });
     return this.toResponse(
       text,
@@ -932,7 +975,11 @@ export class LLMService {
         let text: string;
         if (resolved.mode === "multi-file") {
           if (typeof provider.generateMultiFileSummary !== "function") {
-            throw new Error(`Provider ${providerId} 不支持多文件摘要生成`);
+            throw new Error(
+              getString("llm-error-multifile-unsupported", {
+                args: { provider: providerId },
+              }),
+            );
           }
           text = await provider.generateMultiFileSummary(
             resolved.files,
@@ -965,7 +1012,7 @@ export class LLMService {
       }
     }
 
-    throw lastError || new Error("所有 API 密钥均已耗尽");
+    throw lastError || new Error(getString("llm-error-api-keys-exhausted"));
   }
 
   private static toResponse(
@@ -1103,16 +1150,16 @@ export class LLMService {
           capabilities.maxPdfFiles <= 1 ||
           typeof provider.generateMultiFileSummary !== "function"
         ) {
-          throw new Error(
-            "当前 Provider 不支持多 PDF 上传。请将“多 PDF 附件模式”切换为“仅默认 PDF”，或更换支持多 PDF 的 Provider。",
-          );
+          throw new Error(getString("llm-error-multi-pdf-unsupported"));
         }
 
         const limit = Math.min(maxAttachments, capabilities.maxPdfFiles);
         const selected = allPdfs.slice(0, limit);
         if (allPdfs.length > selected.length) {
           warnings.push(
-            `PDF 附件数量超过 Provider 限制，已只发送前 ${selected.length} 个`,
+            getString("llm-warning-pdf-provider-limit", {
+              args: { count: selected.length },
+            }),
           );
         }
         const files = await Promise.all(
@@ -1221,14 +1268,16 @@ export class LLMService {
       const files = input.files.slice(0, limit);
       if (files.length < input.files.length) {
         warnings.push(
-          `PDF 附件数量超过 Provider 限制，已只发送前 ${files.length} 个`,
+          getString("llm-warning-pdf-provider-limit", {
+            args: { count: files.length },
+          }),
         );
       }
       return { mode: "multi-file", files, warnings };
     }
 
     const first = input.files[0];
-    if (!first) throw new Error("没有可用的 PDF 内容");
+    if (!first) throw new Error(getString("llm-error-no-pdf-content"));
 
     if (
       policy === "pdf-base64" &&
@@ -1237,9 +1286,7 @@ export class LLMService {
         capabilities.maxPdfFiles <= 1 ||
         typeof provider.generateMultiFileSummary !== "function")
     ) {
-      throw new Error(
-        "当前 Provider 不支持多 PDF 上传。请将“多 PDF 附件模式”切换为“仅默认 PDF”，或更换支持多 PDF 的 Provider。",
-      );
+      throw new Error(getString("llm-error-multi-pdf-unsupported"));
     }
 
     if (policy === "pdf-base64" && first.base64Content) {
@@ -1252,7 +1299,7 @@ export class LLMService {
     }
 
     if (policy === "pdf-base64") {
-      throw new Error("当前输入缺少可上传的 PDF/Base64 内容。");
+      throw new Error(getString("llm-error-missing-uploadable-pdf"));
     }
 
     const textParts = input.files
@@ -1263,7 +1310,7 @@ export class LLMService {
       )
       .filter((part) => part.trim().length > 0);
     if (textParts.length === 0) {
-      throw new Error("当前输入缺少可用文本或可上传的 PDF/Base64 内容");
+      throw new Error(getString("llm-error-missing-text-or-pdf"));
     }
 
     return {

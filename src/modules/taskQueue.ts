@@ -25,14 +25,12 @@
  * @author AI-Butler Team
  */
 
+import { getString } from "../utils/locale";
 import { getPref } from "../utils/prefs";
 import { NoteGenerator } from "./noteGenerator";
 import { PDFExtractor } from "./pdfExtractor";
 import type { LLMAbortSignal } from "./llmproviders/types";
-import {
-  LLM_REQUEST_ABORT_MESSAGE,
-  isAbortError,
-} from "./llmproviders/shared/requestAbort";
+import { isAbortError } from "./llmproviders/shared/requestAbort";
 import { TaskArtifacts, type FixedTaskArtifactType } from "./taskArtifacts";
 import { isTableFeatureEnabled } from "./uiCustomization";
 
@@ -46,12 +44,62 @@ function logTaskQueue(...args: Parameters<ZToolkit["log"]>): void {
   }
 }
 
-/** 无 PDF 附件错误标识 */
-const NO_PDF_ERROR_MSG =
-  "该条目没有 PDF 附件，无法进行 AI 分析。请先为该文献添加 PDF 文件。";
-const TASK_ABORT_DETAIL = "该总结任务已由用户手动终止。";
-const INVALID_AI_SOURCE_ITEM_MSG =
-  "AI 总结/精读仅支持顶层文献条目，笔记、附件和子条目已跳过。";
+/** 旧版本已持久化的无 PDF 附件错误标识。 */
+function getLegacyNoPdfErrorMessage(): string {
+  return String.fromCodePoint(
+    35813,
+    26465,
+    30446,
+    27809,
+    26377,
+    32,
+    80,
+    68,
+    70,
+    32,
+    38468,
+    20214,
+    65292,
+    26080,
+    27861,
+    36827,
+    34892,
+    32,
+    65,
+    73,
+    32,
+    20998,
+    26512,
+    12290,
+    35831,
+    20808,
+    20026,
+    35813,
+    25991,
+    29486,
+    28155,
+    21152,
+    32,
+    80,
+    68,
+    70,
+    32,
+    25991,
+    20214,
+    12290,
+  );
+}
+function getNoPdfErrorMessage(): string {
+  return getString("task-error-no-pdf-attachment");
+}
+
+function getTaskAbortDetail(): string {
+  return getString("task-error-aborted-detail");
+}
+
+function getInvalidAiSourceItemMessage(): string {
+  return getString("task-error-invalid-ai-source-item");
+}
 
 function isQueueableAiSourceItem(item: Zotero.Item): boolean {
   const rawItem = item as any;
@@ -93,7 +141,9 @@ class SimpleAbortSignal implements LLMAbortSignal {
   throwIfAborted(): void {
     if (!this.aborted) return;
     throw new Error(
-      typeof this.reason === "string" ? this.reason : LLM_REQUEST_ABORT_MESSAGE,
+      typeof this.reason === "string"
+        ? this.reason
+        : getString("provider-error-aborted"),
     );
   }
 }
@@ -402,12 +452,12 @@ export class TaskQueueManager {
         task.completedAt = new Date();
         task.duration = 0;
         task.options = options;
-        task.workflowStage = "已存在，跳过生成";
+        task.workflowStage = getString("task-detail-artifact-exists-skipped");
         await this.saveToStorage();
         this.notifyProgress(
           task.id,
           100,
-          "AI artifact already exists; skipped",
+          getString("task-progress-artifact-exists-skipped"),
         );
         this.notifyComplete(task.id, true);
         return false;
@@ -559,7 +609,7 @@ export class TaskQueueManager {
   ): Promise<string> {
     if (!isQueueableAiSourceItem(item)) {
       logTaskQueue(`[AI-Butler] 跳过非顶层文献 AI 总结任务: ${item.id}`);
-      throw new Error(INVALID_AI_SOURCE_ITEM_MSG);
+      throw new Error(getInvalidAiSourceItemMessage());
     }
 
     if (options?.summaryMode && options.summaryMode !== "single") {
@@ -626,7 +676,7 @@ export class TaskQueueManager {
           retryCount: 0,
           maxRetries: parseInt(getPref("maxRetries") as string) || 3,
           taskType: "summary",
-          workflowStage: "已存在，跳过生成",
+          workflowStage: getString("task-detail-artifact-exists-skipped"),
           options: summaryOptions,
           duration: 0,
         },
@@ -646,7 +696,7 @@ export class TaskQueueManager {
       retryCount: 0,
       maxRetries: parseInt(getPref("maxRetries") as string) || 3,
       taskType: "summary",
-      workflowStage: "等待 AI 总结",
+      workflowStage: getString("task-stage-waiting-summary"),
       options: summaryOptions,
     };
 
@@ -678,7 +728,7 @@ export class TaskQueueManager {
   ): Promise<string> {
     if (!isQueueableAiSourceItem(item)) {
       logTaskQueue(`[AI-Butler] 跳过非顶层文献 AI 精读任务: ${item.id}`);
-      throw new Error(INVALID_AI_SOURCE_ITEM_MSG);
+      throw new Error(getInvalidAiSourceItemMessage());
     }
 
     const taskId = getDeepReadTaskId(item.id);
@@ -695,7 +745,7 @@ export class TaskQueueManager {
         "deepRead",
         priority,
         deepReadOptions,
-        "等待 AI 精读",
+        getString("task-stage-waiting-deep-read"),
       );
       if (!shouldRun) return taskId;
 
@@ -728,7 +778,7 @@ export class TaskQueueManager {
           retryCount: 0,
           maxRetries: parseInt(getPref("maxRetries") as string) || 3,
           taskType: "deepRead",
-          workflowStage: "已存在，跳过生成",
+          workflowStage: getString("task-detail-artifact-exists-skipped"),
           options: deepReadOptions,
           duration: 0,
         },
@@ -747,7 +797,7 @@ export class TaskQueueManager {
       retryCount: 0,
       maxRetries: 1,
       taskType: "deepRead",
-      workflowStage: "等待 AI 精读",
+      workflowStage: getString("task-stage-waiting-deep-read"),
       options: deepReadOptions,
     };
 
@@ -809,7 +859,7 @@ export class TaskQueueManager {
         "imageSummary",
         priority,
         undefined,
-        "等待开始",
+        getString("task-stage-waiting-start"),
       );
       if (shouldRun) {
         if (!this.isRunning) {
@@ -835,7 +885,7 @@ export class TaskQueueManager {
       retryCount: 0,
       maxRetries: 1, // 一图总结只重试1次
       taskType: "imageSummary",
-      workflowStage: "等待开始",
+      workflowStage: getString("task-stage-waiting-start"),
     };
 
     this.tasks.set(taskId, task);
@@ -881,7 +931,7 @@ export class TaskQueueManager {
     task.progress = 0;
     task.error = undefined;
     task.errorDetails = undefined;
-    task.workflowStage = "正在初始化";
+    task.workflowStage = getString("task-stage-initializing");
     this.processingTasks.add(taskId);
     this.abortingTasks.delete(taskId);
     const abortController = createTaskAbortController();
@@ -894,7 +944,7 @@ export class TaskQueueManager {
       // 获取 Zotero Item
       const item = await Zotero.Items.getAsync(task.itemId);
       if (!item) {
-        throw new Error("文献条目不存在");
+        throw new Error(getString("task-error-item-not-found"));
       }
 
       // 动态导入 ImageSummaryService
@@ -918,12 +968,19 @@ export class TaskQueueManager {
 
       // 任务成功完成
       task.status = TaskStatus.COMPLETED;
-      this.updateTaskProgress(task, 100, "任务完成", {
-        stage: "completed",
-        label: "已完成",
-        detail: `任务已完成：${task.title}`,
-      });
-      task.workflowStage = "完成";
+      this.updateTaskProgress(
+        task,
+        100,
+        getString("task-queue-detail-task-completed"),
+        {
+          stage: "completed",
+          label: getString("progress-completed"),
+          detail: getString("task-detail-completed", {
+            args: { title: task.title },
+          }),
+        },
+      );
+      task.workflowStage = getString("progress-completed");
       task.completedAt = new Date();
       task.duration = Math.floor(
         (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
@@ -935,7 +992,7 @@ export class TaskQueueManager {
       // 任务失败
       task.error = this.getTaskErrorMessage(error);
       task.errorDetails = this.buildTaskErrorDetails(task, error);
-      task.workflowStage = "失败";
+      task.workflowStage = getString("progress-failed");
       const suppressTaskRetry = this.shouldSuppressTaskRetry(error, task);
 
       task.retryCount++;
@@ -951,11 +1008,16 @@ export class TaskQueueManager {
         logTaskQueue(`一图总结任务最终失败: ${task.title} - ${task.error}`);
       }
 
-      this.updateTaskProgress(task, task.progress, task.error || "任务失败", {
-        stage: "failed",
-        label: "失败",
-        detail: task.errorDetails || task.error,
-      });
+      this.updateTaskProgress(
+        task,
+        task.progress,
+        task.error || getString("progress-failed"),
+        {
+          stage: "failed",
+          label: getString("progress-failed"),
+          detail: task.errorDetails || task.error,
+        },
+      );
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
@@ -993,7 +1055,7 @@ export class TaskQueueManager {
         "mindmap",
         priority,
         undefined,
-        "等待开始",
+        getString("task-stage-waiting-start"),
       );
       if (shouldRun) {
         if (!this.isRunning) {
@@ -1019,7 +1081,7 @@ export class TaskQueueManager {
       retryCount: 0,
       maxRetries: 2,
       taskType: "mindmap",
-      workflowStage: "等待开始",
+      workflowStage: getString("task-stage-waiting-start"),
     };
 
     this.tasks.set(taskId, task);
@@ -1065,7 +1127,7 @@ export class TaskQueueManager {
     task.progress = 0;
     task.error = undefined;
     task.errorDetails = undefined;
-    task.workflowStage = "正在初始化";
+    task.workflowStage = getString("task-stage-initializing");
     this.processingTasks.add(taskId);
     this.abortingTasks.delete(taskId);
     const abortController = createTaskAbortController();
@@ -1078,7 +1140,7 @@ export class TaskQueueManager {
       // 获取 Zotero Item
       const item = await Zotero.Items.getAsync(task.itemId);
       if (!item) {
-        throw new Error("文献条目不存在");
+        throw new Error(getString("task-error-item-not-found"));
       }
 
       // 动态导入 MindmapService
@@ -1103,7 +1165,7 @@ export class TaskQueueManager {
       // 任务成功完成
       task.status = TaskStatus.COMPLETED;
       task.progress = 100;
-      task.workflowStage = "完成";
+      task.workflowStage = getString("progress-completed");
       task.completedAt = new Date();
       task.duration = Math.floor(
         (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
@@ -1115,7 +1177,7 @@ export class TaskQueueManager {
       // 任务失败
       task.error = this.getTaskErrorMessage(error);
       task.errorDetails = this.buildTaskErrorDetails(task, error);
-      task.workflowStage = "失败";
+      task.workflowStage = getString("progress-failed");
       const suppressTaskRetry = this.shouldSuppressTaskRetry(error, task);
 
       task.retryCount++;
@@ -1155,7 +1217,7 @@ export class TaskQueueManager {
     priority: boolean = true,
   ): Promise<string> {
     if (!isTableFeatureEnabled()) {
-      throw new Error("表格功能已在设置中关闭");
+      throw new Error(getString("task-error-table-feature-disabled"));
     }
 
     const taskId = `table-task-${item.id}`;
@@ -1168,7 +1230,7 @@ export class TaskQueueManager {
         "tableFill",
         priority,
         undefined,
-        "等待开始",
+        getString("task-stage-waiting-start"),
       );
       if (shouldRun) {
         if (!this.isRunning) {
@@ -1193,7 +1255,7 @@ export class TaskQueueManager {
       retryCount: 0,
       maxRetries: 2,
       taskType: "tableFill",
-      workflowStage: "等待开始",
+      workflowStage: getString("task-stage-waiting-start"),
     };
 
     this.tasks.set(taskId, task);
@@ -1223,9 +1285,9 @@ export class TaskQueueManager {
 
     if (!isTableFeatureEnabled()) {
       task.status = TaskStatus.FAILED;
-      task.error = "表格功能已在设置中关闭";
+      task.error = getString("task-error-table-feature-disabled");
       task.errorDetails = task.error;
-      task.workflowStage = "已关闭";
+      task.workflowStage = getString("task-stage-disabled");
       task.completedAt = new Date();
       this.notifyComplete(taskId, false, task.error);
       await this.saveToStorage();
@@ -1243,7 +1305,7 @@ export class TaskQueueManager {
     task.progress = 0;
     task.error = undefined;
     task.errorDetails = undefined;
-    task.workflowStage = "正在初始化";
+    task.workflowStage = getString("task-stage-initializing");
     this.processingTasks.add(taskId);
     this.abortingTasks.delete(taskId);
     const abortController = createTaskAbortController();
@@ -1252,23 +1314,24 @@ export class TaskQueueManager {
 
     try {
       const item = await Zotero.Items.getAsync(task.itemId);
-      if (!item) throw new Error("文献条目不存在");
+      if (!item) throw new Error(getString("task-error-item-not-found"));
 
       const { LiteratureReviewService } =
         await import("./literatureReviewService");
       const { getPref } = await import("../utils/prefs");
-      const { DEFAULT_TABLE_TEMPLATE, DEFAULT_TABLE_FILL_PROMPT } =
+      const { getConfiguredTableTemplate, getConfiguredTableFillPrompt } =
         await import("../utils/prompts");
 
-      const tableTemplate =
-        (getPref("tableTemplate" as any) as string) || DEFAULT_TABLE_TEMPLATE;
-      const fillPrompt =
-        (getPref("tableFillPrompt" as any) as string) ||
-        DEFAULT_TABLE_FILL_PROMPT;
+      const tableTemplate = getConfiguredTableTemplate(
+        getPref("tableTemplate" as any) as string,
+      );
+      const fillPrompt = getConfiguredTableFillPrompt(
+        getPref("tableFillPrompt" as any) as string,
+      );
 
-      task.workflowStage = "正在提取 PDF";
+      task.workflowStage = getString("progress-pdf-extracting");
       task.progress = 20;
-      this.notifyProgress(taskId, 20, "正在提取 PDF");
+      this.notifyProgress(taskId, 20, getString("progress-pdf-extracting"));
 
       // 找到 PDF 附件
       const attachmentIDs = (item as any).getAttachments?.() || [];
@@ -1281,11 +1344,11 @@ export class TaskQueueManager {
         }
       }
 
-      if (!pdfAtt) throw new Error("该条目没有 PDF 附件");
+      if (!pdfAtt) throw new Error(getString("task-error-no-pdf-short"));
 
-      task.workflowStage = "正在 AI 填表";
+      task.workflowStage = getString("task-stage-table-filling");
       task.progress = 40;
-      this.notifyProgress(taskId, 40, "正在 AI 填表");
+      this.notifyProgress(taskId, 40, getString("task-stage-table-filling"));
 
       const tableContent = await LiteratureReviewService.fillTableForSinglePDF(
         item,
@@ -1296,15 +1359,15 @@ export class TaskQueueManager {
         abortController.signal,
       );
 
-      task.workflowStage = "正在保存";
+      task.workflowStage = getString("progress-note-saving");
       task.progress = 80;
-      this.notifyProgress(taskId, 80, "正在保存");
+      this.notifyProgress(taskId, 80, getString("progress-note-saving"));
 
       await LiteratureReviewService.saveTableNote(item, tableContent);
 
       task.status = TaskStatus.COMPLETED;
       task.progress = 100;
-      task.workflowStage = "完成";
+      task.workflowStage = getString("progress-completed");
       task.completedAt = new Date();
       task.duration = Math.floor(
         (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
@@ -1315,7 +1378,7 @@ export class TaskQueueManager {
     } catch (error: any) {
       task.error = this.getTaskErrorMessage(error);
       task.errorDetails = this.buildTaskErrorDetails(task, error);
-      task.workflowStage = "失败";
+      task.workflowStage = getString("progress-failed");
       const suppressTaskRetry = this.shouldSuppressTaskRetry(error, task);
       task.retryCount++;
       if (!suppressTaskRetry && task.retryCount < task.maxRetries) {
@@ -1366,7 +1429,7 @@ export class TaskQueueManager {
       retryCount: 0,
       maxRetries: 1,
       taskType: "review",
-      workflowStage: "等待开始",
+      workflowStage: getString("task-stage-waiting-start"),
       collectionId: collection.id,
       pdfAttachmentIds: pdfAttachments.map((p) => p.id),
       reviewName,
@@ -1407,7 +1470,7 @@ export class TaskQueueManager {
     task.progress = 0;
     task.error = undefined;
     task.errorDetails = undefined;
-    task.workflowStage = "正在初始化";
+    task.workflowStage = getString("task-stage-initializing");
     this.processingTasks.add(taskId);
     this.abortingTasks.delete(taskId);
     const abortController = createTaskAbortController();
@@ -1416,13 +1479,14 @@ export class TaskQueueManager {
 
     try {
       if (!task.collectionId || !task.pdfAttachmentIds?.length) {
-        throw new Error("综述任务参数不完整");
+        throw new Error(getString("task-error-review-params-incomplete"));
       }
 
       const collection = Zotero.Collections.get(
         task.collectionId,
       ) as Zotero.Collection;
-      if (!collection) throw new Error("分类不存在");
+      if (!collection)
+        throw new Error(getString("task-error-collection-not-found"));
 
       // 加载 PDF 附件
       const pdfAttachments: Zotero.Item[] = [];
@@ -1431,13 +1495,17 @@ export class TaskQueueManager {
         if (att) pdfAttachments.push(att);
       }
 
-      if (pdfAttachments.length === 0) throw new Error("没有可用的 PDF 附件");
+      if (pdfAttachments.length === 0)
+        throw new Error(getString("task-error-no-pdf-available"));
 
       const { LiteratureReviewService } =
         await import("./literatureReviewService");
 
       const reviewName =
-        task.reviewName || `综述 ${new Date().toISOString().slice(2, 10)}`;
+        task.reviewName ||
+        getString("task-title-review", {
+          args: { collection: new Date().toISOString().slice(2, 10) },
+        });
 
       await LiteratureReviewService.generateReview(
         collection,
@@ -1458,7 +1526,7 @@ export class TaskQueueManager {
 
       task.status = TaskStatus.COMPLETED;
       task.progress = 100;
-      task.workflowStage = "完成";
+      task.workflowStage = getString("progress-completed");
       task.completedAt = new Date();
       task.duration = Math.floor(
         (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
@@ -1469,7 +1537,7 @@ export class TaskQueueManager {
     } catch (error: any) {
       task.error = this.getTaskErrorMessage(error);
       task.errorDetails = this.buildTaskErrorDetails(task, error);
-      task.workflowStage = "失败";
+      task.workflowStage = getString("progress-failed");
       task.status = TaskStatus.FAILED;
       task.completedAt = new Date();
       this.notifyComplete(taskId, false, task.error);
@@ -1523,7 +1591,7 @@ export class TaskQueueManager {
       retryCount: 0,
       maxRetries: 1,
       taskType: "targetedQuestion",
-      workflowStage: "等待开始",
+      workflowStage: getString("task-stage-waiting-start"),
       collectionId: collection.id,
       pdfAttachmentIds: pdfAttachments.map((p) => p.id),
       tableTemplate,
@@ -1564,7 +1632,7 @@ export class TaskQueueManager {
     task.progress = 0;
     task.error = undefined;
     task.errorDetails = undefined;
-    task.workflowStage = "正在初始化";
+    task.workflowStage = getString("task-stage-initializing");
     this.processingTasks.add(taskId);
     this.abortingTasks.delete(taskId);
     const abortController = createTaskAbortController();
@@ -1577,26 +1645,32 @@ export class TaskQueueManager {
         !task.pdfAttachmentIds?.length ||
         !task.targetedPrompt
       ) {
-        throw new Error("针对性提问任务参数不完整");
+        throw new Error(
+          getString("task-error-targeted-question-params-incomplete"),
+        );
       }
 
       const collection = Zotero.Collections.get(
         task.collectionId,
       ) as Zotero.Collection;
-      if (!collection) throw new Error("分类不存在");
+      if (!collection)
+        throw new Error(getString("task-error-collection-not-found"));
 
       const pdfAttachments: Zotero.Item[] = [];
       for (const attId of task.pdfAttachmentIds) {
         const att = await Zotero.Items.getAsync(attId);
         if (att) pdfAttachments.push(att);
       }
-      if (pdfAttachments.length === 0) throw new Error("没有可用的 PDF 附件");
+      if (pdfAttachments.length === 0)
+        throw new Error(getString("task-error-no-pdf-available"));
 
       const { LiteratureReviewService } =
         await import("./literatureReviewService");
       const noteTitle =
         task.targetedNoteTitle ||
-        `针对性提问 ${new Date().toISOString().slice(2, 10)}`;
+        getString("task-title-targeted-question", {
+          args: { question: new Date().toISOString().slice(2, 10) },
+        });
 
       await LiteratureReviewService.generateTargetedAnswer(
         collection,
@@ -1621,7 +1695,7 @@ export class TaskQueueManager {
 
       task.status = TaskStatus.COMPLETED;
       task.progress = 100;
-      task.workflowStage = "完成";
+      task.workflowStage = getString("progress-completed");
       task.completedAt = new Date();
       task.duration = Math.floor(
         (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
@@ -1634,7 +1708,7 @@ export class TaskQueueManager {
     } catch (error: any) {
       task.error = this.getTaskErrorMessage(error);
       task.errorDetails = this.buildTaskErrorDetails(task, error);
-      task.workflowStage = "失败";
+      task.workflowStage = getString("progress-failed");
       task.status = TaskStatus.FAILED;
       task.completedAt = new Date();
       this.notifyComplete(taskId, false, task.error);
@@ -1681,7 +1755,7 @@ export class TaskQueueManager {
         (taskType === "summary" || taskType === "deepRead")
       ) {
         const controller = this.taskAbortControllers.get(taskId);
-        controller?.abort(LLM_REQUEST_ABORT_MESSAGE);
+        controller?.abort(getString("provider-error-aborted"));
       }
 
       this.tasks.delete(taskId);
@@ -1722,7 +1796,7 @@ export class TaskQueueManager {
     if (task.status === TaskStatus.PROCESSING) {
       this.abortingTasks.add(taskId);
       const controller = this.taskAbortControllers.get(taskId);
-      controller?.abort(LLM_REQUEST_ABORT_MESSAGE);
+      controller?.abort(getString("provider-error-aborted"));
     }
 
     this.tasks.delete(taskId);
@@ -1757,7 +1831,7 @@ export class TaskQueueManager {
     this.stop();
 
     this.taskAbortControllers.forEach((controller) => {
-      controller.abort(LLM_REQUEST_ABORT_MESSAGE);
+      controller.abort(getString("provider-error-aborted"));
     });
     this.taskAbortControllers.clear();
     this.abortingTasks.clear();
@@ -1848,9 +1922,9 @@ export class TaskQueueManager {
       task.startedAt = undefined;
       task.completedAt = new Date();
       task.duration = 0;
-      task.workflowStage = "已完成";
+      task.workflowStage = getString("task-queue-status-completed");
       task.stage = "completed";
-      task.stageLabel = "已完成";
+      task.stageLabel = getString("task-queue-status-completed");
       task.stageDetail = undefined;
       task.stageUpdatedAt = new Date();
       this.processingTasks.delete(task.id);
@@ -1867,7 +1941,7 @@ export class TaskQueueManager {
 
   public async markTaskCompletedIfArtifactReady(
     taskId: string,
-    message = "AI artifact already complete; marked completed",
+    message = getString("task-progress-artifact-ready-completed"),
   ): Promise<boolean> {
     const task = this.tasks.get(taskId);
     if (!task || task.status === TaskStatus.COMPLETED) return false;
@@ -1889,9 +1963,9 @@ export class TaskQueueManager {
     task.startedAt = undefined;
     task.completedAt = new Date();
     task.duration = 0;
-    task.workflowStage = "已完成";
+    task.workflowStage = getString("task-queue-status-completed");
     task.stage = "completed";
-    task.stageLabel = "已完成";
+    task.stageLabel = getString("task-queue-status-completed");
     task.stageDetail = undefined;
     task.stageUpdatedAt = new Date();
     this.processingTasks.delete(taskId);
@@ -1922,15 +1996,15 @@ export class TaskQueueManager {
 
     const taskType = task.taskType || "summary";
     if (taskType !== "summary" && taskType !== "deepRead") {
-      throw new Error("当前只支持终止 AI 总结/AI 精读任务");
+      throw new Error(getString("task-error-abort-unsupported-type"));
     }
 
     this.abortingTasks.add(taskId);
     const completedAt = new Date();
     task.status = TaskStatus.FAILED;
-    task.workflowStage = "已终止";
-    task.error = LLM_REQUEST_ABORT_MESSAGE;
-    task.errorDetails = TASK_ABORT_DETAIL;
+    task.workflowStage = getString("progress-aborted");
+    task.error = getString("provider-error-aborted");
+    task.errorDetails = getTaskAbortDetail();
     task.completedAt = completedAt;
     if (task.startedAt) {
       task.duration = Math.floor(
@@ -1940,11 +2014,11 @@ export class TaskQueueManager {
 
     const controller = this.taskAbortControllers.get(taskId);
     if (controller) {
-      controller.abort(LLM_REQUEST_ABORT_MESSAGE);
+      controller.abort(getString("provider-error-aborted"));
     }
 
     await this.saveToStorage();
-    this.notifyProgress(taskId, task.progress, "已终止");
+    this.notifyProgress(taskId, task.progress, getString("progress-aborted"));
     logTaskQueue(`用户终止任务: ${task.title} (${taskId})`);
   }
 
@@ -2258,11 +2332,17 @@ export class TaskQueueManager {
     this.updateTaskProgress(
       task,
       task.progress,
-      isDeepReadTask ? "AI 精读已开始" : "AI 总结已开始",
+      isDeepReadTask
+        ? getString("task-started-deep-read")
+        : getString("task-started-summary"),
       {
         stage: "preparing",
-        label: isDeepReadTask ? "正在 AI 精读" : "正在 AI 总结",
-        detail: `任务已开始：${task.title}`,
+        label: isDeepReadTask
+          ? getString("task-stage-processing-deep-read")
+          : getString("task-stage-processing-summary"),
+        detail: getString("task-detail-started", {
+          args: { title: task.title },
+        }),
       },
     );
     this.notifyStream(taskId, { type: "start", title: task.title });
@@ -2273,18 +2353,18 @@ export class TaskQueueManager {
       // 获取 Zotero Item
       const item = await Zotero.Items.getAsync(task.itemId);
       if (!item) {
-        throw new Error("文献条目不存在");
+        throw new Error(getString("task-error-item-not-found"));
       }
 
       if (!isQueueableAiSourceItem(item)) {
         task.status = TaskStatus.COMPLETED;
         task.progress = 100;
         task.completedAt = new Date();
-        task.workflowStage = "非论文条目，已跳过";
+        task.workflowStage = getString("task-detail-non-paper-skipped");
         task.error = undefined;
         task.errorDetails = undefined;
-        this.notifyProgress(taskId, 100, INVALID_AI_SOURCE_ITEM_MSG);
-        this.notifyComplete(taskId, false, INVALID_AI_SOURCE_ITEM_MSG);
+        this.notifyProgress(taskId, 100, getInvalidAiSourceItemMessage());
+        this.notifyComplete(taskId, false, getInvalidAiSourceItemMessage());
         logTaskQueue(
           `[AI-Butler] 任务目标不是顶层文献，已跳过执行: ${task.title} (${taskId})`,
         );
@@ -2292,14 +2372,19 @@ export class TaskQueueManager {
       }
 
       // 检查是否有 PDF 附件
-      this.updateTaskProgress(task, 5, "正在检查 PDF 附件", {
-        stage: "pdf-checking",
-        label: "检查 PDF",
-        detail: "正在确认当前条目是否包含可分析的 PDF 附件",
-      });
+      this.updateTaskProgress(
+        task,
+        5,
+        getString("task-detail-checking-pdf-attachment"),
+        {
+          stage: "pdf-checking",
+          label: getString("progress-pdf-checking"),
+          detail: getString("task-detail-checking-pdf-attachment"),
+        },
+      );
       const hasPdf = await PDFExtractor.hasPDFAttachment(item);
       if (!hasPdf) {
-        throw new Error(NO_PDF_ERROR_MSG);
+        throw new Error(getNoPdfErrorMessage());
       }
 
       // 调用 NoteGenerator 生成笔记
@@ -2343,12 +2428,11 @@ export class TaskQueueManager {
                 (task.completedAt.getTime() - task.startedAt.getTime()) / 1000,
               )
             : undefined;
-          task.error =
-            "AI 精读仍有未完成轮次，已停止自动重入队列，避免重复调用大模型。请检查精读笔记中的失败轮次后手动重新运行。";
+          task.error = getString("task-error-deep-read-incomplete-stop");
           task.errorDetails = `Deep-read artifact incomplete after one execution: ${artifact.reason || "incomplete"}.`;
           this.updateTaskProgress(task, task.progress, task.error, {
             stage: "failed",
-            label: "AI 精读未完整",
+            label: getString("progress-deepread-incomplete"),
             detail: task.errorDetails,
           });
           this.notifyComplete(taskId, false, task.error);
@@ -2361,22 +2445,33 @@ export class TaskQueueManager {
 
         throw new Error(
           artifactType === "deepRead"
-            ? `AI 精读尚未完整生成（${artifact.reason || "incomplete"}）`
-            : `AI 总结尚未完整生成（${artifact.reason || "incomplete"}）`,
+            ? getString("task-detail-deep-read-artifact-incomplete", {
+                args: { reason: artifact.reason || "incomplete" },
+              })
+            : getString("task-detail-summary-artifact-incomplete", {
+                args: { reason: artifact.reason || "incomplete" },
+              }),
         );
       }
 
       if (this.abortingTasks.has(taskId) || abortController.signal.aborted) {
-        throw new Error(LLM_REQUEST_ABORT_MESSAGE);
+        throw new Error(getString("provider-error-aborted"));
       }
 
       // 任务成功完成
       task.status = TaskStatus.COMPLETED;
-      this.updateTaskProgress(task, 100, "任务完成", {
-        stage: "completed",
-        label: "已完成",
-        detail: `任务已完成：${task.title}`,
-      });
+      this.updateTaskProgress(
+        task,
+        100,
+        getString("task-queue-detail-task-completed"),
+        {
+          stage: "completed",
+          label: getString("progress-completed"),
+          detail: getString("task-detail-completed", {
+            args: { title: task.title },
+          }),
+        },
+      );
       task.completedAt = new Date();
       task.duration = Math.floor(
         (task.completedAt.getTime() - task.startedAt!.getTime()) / 1000,
@@ -2387,8 +2482,8 @@ export class TaskQueueManager {
         task,
         artifactType,
         artifactType === "deepRead"
-          ? "AI 精读已完整，任务状态已同步修正"
-          : "AI 总结已完整，任务状态已同步修正",
+          ? getString("task-detail-deep-read-artifact-fixed")
+          : getString("task-detail-summary-artifact-fixed"),
       );
       await this.saveToStorage();
       this.notifyComplete(taskId, true);
@@ -2406,15 +2501,17 @@ export class TaskQueueManager {
         abortController.signal.aborted ||
         isAbortError(error, abortController.signal);
       task.error = isTaskAborted
-        ? LLM_REQUEST_ABORT_MESSAGE
+        ? getString("provider-error-aborted")
         : this.getTaskErrorMessage(error);
       task.errorDetails = isTaskAborted
-        ? TASK_ABORT_DETAIL
+        ? getTaskAbortDetail()
         : this.buildTaskErrorDetails(task, error);
       const suppressTaskRetry = this.shouldSuppressTaskRetry(error, task);
 
       // 无 PDF 附件错误直接标记失败，不重试（用户需要手动添加 PDF）
-      const isNoPdfError = task.error === NO_PDF_ERROR_MSG;
+      const isNoPdfError =
+        task.error === getNoPdfErrorMessage() ||
+        task.error === getLegacyNoPdfErrorMessage();
       if (isTaskAborted || isNoPdfError || suppressTaskRetry) {
         task.status = TaskStatus.FAILED;
         task.completedAt = new Date();
@@ -2443,11 +2540,18 @@ export class TaskQueueManager {
         }
       }
 
-      this.updateTaskProgress(task, task.progress, task.error || "任务失败", {
-        stage: isTaskAborted ? "aborted" : "failed",
-        label: isTaskAborted ? "已终止" : "失败",
-        detail: task.errorDetails || task.error,
-      });
+      this.updateTaskProgress(
+        task,
+        task.progress,
+        task.error || getString("progress-failed"),
+        {
+          stage: isTaskAborted ? "aborted" : "failed",
+          label: isTaskAborted
+            ? getString("progress-aborted")
+            : getString("progress-failed"),
+          detail: task.errorDetails || task.error,
+        },
+      );
       this.notifyComplete(taskId, false, task.error);
       this.notifyStream(taskId, { type: "error" });
       return isNoPdfError; // 无 PDF 错误时返回 true，表示快速失败
@@ -2470,7 +2574,7 @@ export class TaskQueueManager {
     return (
       withDetails?.details?.errorMessage ||
       withDetails?.message ||
-      String(error || "未知错误")
+      String(error || getString("common-unknown-error"))
     );
   }
 
@@ -2518,9 +2622,9 @@ export class TaskQueueManager {
       text.includes("xhr") ||
       text.includes("fetch") ||
       text.includes("request failed") ||
-      text.includes("请求失败") ||
-      text.includes("连接失败") ||
-      text.includes("请求超过")
+      text.includes(getString("task-api-failure-keyword-request-failed")) ||
+      text.includes(getString("task-api-failure-keyword-connection-failed")) ||
+      text.includes(getString("task-api-failure-keyword-timeout"))
     ) {
       return true;
     }
@@ -2550,6 +2654,8 @@ export class TaskQueueManager {
         }
       | undefined;
     const runtime = this.getRuntimeDebugInfo();
+    const unknownValue = getString("common-unknown-value");
+    const noneValue = getString("common-none-value");
     const lines = [
       "AI-Butler task error details",
       `generatedAt: ${new Date().toISOString()}`,
@@ -2560,11 +2666,11 @@ export class TaskQueueManager {
       `status: ${task.status}`,
       `retryCount: ${task.retryCount}`,
       `maxRetries: ${task.maxRetries}`,
-      `workflowStage: ${task.workflowStage || "none"}`,
-      `zoteroVersion: ${runtime.zoteroVersion || "unknown"}`,
-      `platform: ${runtime.platform || "unknown"}`,
-      `userAgent: ${runtime.userAgent || "unknown"}`,
-      `errorName: ${errorInfo?.name || "unknown"}`,
+      `workflowStage: ${task.workflowStage || noneValue}`,
+      `zoteroVersion: ${runtime.zoteroVersion || unknownValue}`,
+      `platform: ${runtime.platform || unknownValue}`,
+      `userAgent: ${runtime.userAgent || unknownValue}`,
+      `errorName: ${errorInfo?.name || unknownValue}`,
       `errorMessage: ${this.getTaskErrorMessage(error)}`,
       `suppressTaskRetry: ${this.shouldSuppressTaskRetry(error, task)}`,
       `likelyApiFailure: ${this.isLikelyApiFailure(error, task)}`,
@@ -2574,9 +2680,9 @@ export class TaskQueueManager {
       lines.push(`apiAttempts: ${errorInfo.attempts}`);
     }
     if (errorInfo?.endpointName || errorInfo?.endpointId) {
-      lines.push(`endpointName: ${errorInfo.endpointName || "unknown"}`);
-      lines.push(`endpointId: ${errorInfo.endpointId || "unknown"}`);
-      lines.push(`providerId: ${errorInfo.providerId || "unknown"}`);
+      lines.push(`endpointName: ${errorInfo.endpointName || unknownValue}`);
+      lines.push(`endpointId: ${errorInfo.endpointId || unknownValue}`);
+      lines.push(`providerId: ${errorInfo.providerId || unknownValue}`);
     }
 
     if (errorInfo?.diagnosticText) {

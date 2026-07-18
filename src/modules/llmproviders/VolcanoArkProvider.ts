@@ -10,7 +10,8 @@ import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
 import {
   getConnectionTestInput,
-  getConnectionTestModeLabel,
+  formatConnectionTestSuccess,
+  formatProviderTimeout,
 } from "./shared/connectionTest";
 import {
   deriveVersionedModelsUrl,
@@ -23,6 +24,18 @@ import {
   normalizeAbortError,
   throwIfAborted,
 } from "./shared/requestAbort";
+import {
+  providerHttpRequestFailed,
+  providerMissingApiKey,
+  providerMissingApiUrl,
+  providerNoPdfFiles,
+  providerNoPdfProcessed,
+  providerRequestFailed,
+  providerStreamMissingDone,
+  providerStreamParseFailed,
+  providerStreamTruncated,
+  providerStreamUnexpectedEnd,
+} from "./shared/localizedErrors";
 
 /**
  * 火山引擎 Ark Provider
@@ -55,8 +68,8 @@ export class VolcanoArkProvider implements ILlmProvider {
     const temperature = options.temperature ?? 0.7;
     const maxTokens = options.maxTokens ?? 4096;
 
-    if (!baseUrl) throw new Error("火山引擎 API URL 未配置");
-    if (!apiKey) throw new Error("火山引擎 API Key 未配置");
+    if (!baseUrl) throw new Error(providerMissingApiUrl("Volcano Ark"));
+    if (!apiKey) throw new Error(providerMissingApiKey("Volcano Ark"));
     throwIfAborted(options.abortSignal);
 
     // 如果 baseUrl 已经以 /responses 结尾，直接使用；否则追加
@@ -148,13 +161,13 @@ export class VolcanoArkProvider implements ILlmProvider {
                 const parsed = errorResponse ? JSON.parse(errorResponse) : null;
                 const err = parsed?.error || parsed || {};
                 const code = err?.code || `HTTP ${status}`;
-                const msg = err?.message || "请求失败";
+                const msg = err?.message || providerRequestFailed("API");
                 const errorMessage = `${code}: ${msg}`;
                 xmlhttp.abort();
                 throw new Error(errorMessage);
               } catch {
                 xmlhttp.abort();
-                throw new Error(`HTTP ${status}: 请求失败`);
+                throw new Error(providerHttpRequestFailed(status));
               }
             }
 
@@ -207,7 +220,7 @@ export class VolcanoArkProvider implements ILlmProvider {
       if (abortError || isAbortError(error, options.abortSignal)) {
         throw normalizeAbortError(abortError || error, options.abortSignal);
       }
-      let errorMessage = error?.message || "火山引擎请求失败";
+      let errorMessage = error?.message || providerRequestFailed("Volcano Ark");
       try {
         const responseText =
           error?.xmlhttp?.response || error?.xmlhttp?.responseText;
@@ -249,8 +262,8 @@ export class VolcanoArkProvider implements ILlmProvider {
     const model = (options.model || "doubao-seed-1-6-251015").trim();
     const temperature = options.temperature ?? 0.7;
 
-    if (!baseUrl) throw new Error("火山引擎 API URL 未配置");
-    if (!apiKey) throw new Error("火山引擎 API Key 未配置");
+    if (!baseUrl) throw new Error(providerMissingApiUrl("Volcano Ark"));
+    if (!apiKey) throw new Error(providerMissingApiKey("Volcano Ark"));
     throwIfAborted(options.abortSignal);
 
     // 如果 baseUrl 已经以 /responses 结尾，直接使用；否则追加
@@ -349,7 +362,7 @@ export class VolcanoArkProvider implements ILlmProvider {
                 const parsed = errorResponse ? JSON.parse(errorResponse) : null;
                 const err = parsed?.error || parsed || {};
                 const code = err?.code || `HTTP ${status}`;
-                const msg = err?.message || "请求失败";
+                const msg = err?.message || providerRequestFailed("API");
                 const errorMessage = `${code}: ${msg}`;
                 abortError = new Error(errorMessage);
                 ztoolkit.log("[AI-Butler] VolcanoArk HTTP error:", {
@@ -360,7 +373,7 @@ export class VolcanoArkProvider implements ILlmProvider {
                 });
                 xmlhttp.abort();
               } catch (parseErr) {
-                const errorMessage = `HTTP ${status}: 请求失败`;
+                const errorMessage = providerHttpRequestFailed(status);
                 abortError = new Error(errorMessage);
                 ztoolkit.log("[AI-Butler] VolcanoArk HTTP error:", {
                   status,
@@ -419,7 +432,9 @@ export class VolcanoArkProvider implements ILlmProvider {
           xmlhttp.ontimeout = () => {
             if (!abortError)
               abortError = new Error(
-                `Timeout: 请求超过 ${options.requestTimeoutMs ?? getRequestTimeoutMs()} ms`,
+                formatProviderTimeout(
+                  options.requestTimeoutMs ?? getRequestTimeoutMs(),
+                ),
               );
           };
         },
@@ -437,7 +452,7 @@ export class VolcanoArkProvider implements ILlmProvider {
       if (isAbortError(error, options.abortSignal)) {
         throw normalizeAbortError(error, options.abortSignal);
       }
-      let errorMessage = error?.message || "火山引擎请求失败";
+      let errorMessage = error?.message || providerRequestFailed("Volcano Ark");
       try {
         const responseText =
           error?.xmlhttp?.response || error?.xmlhttp?.responseText;
@@ -474,8 +489,8 @@ export class VolcanoArkProvider implements ILlmProvider {
     ).replace(/\/$/, "");
     const apiKey = (options.apiKey || "").trim();
     const model = (options.model || "doubao-seed-1-6-251015").trim();
-    if (!baseUrl) throw new Error("火山引擎 API URL 未配置");
-    if (!apiKey) throw new Error("火山引擎 API Key 未配置");
+    if (!baseUrl) throw new Error(providerMissingApiUrl("Volcano Ark"));
+    if (!apiKey) throw new Error(providerMissingApiKey("Volcano Ark"));
 
     // 如果 baseUrl 已经以 /responses 结尾，直接使用；否则追加
     const url = baseUrl.endsWith("/responses")
@@ -557,7 +572,7 @@ export class VolcanoArkProvider implements ILlmProvider {
       const status = error?.xmlhttp?.status;
       const responseBody =
         error?.xmlhttp?.response || error?.xmlhttp?.responseText || "";
-      let errorMessage = error?.message || "火山引擎请求失败";
+      let errorMessage = error?.message || providerRequestFailed("Volcano Ark");
       let errorName = "NetworkError";
       try {
         if (responseBody) {
@@ -597,14 +612,19 @@ export class VolcanoArkProvider implements ILlmProvider {
         typeof rawResponse === "string" ? JSON.parse(rawResponse) : rawResponse;
       // 从 Response API 格式提取文本
       const text = this.extractVolcanoTextFromFull(json);
-      return `Mode: ${getConnectionTestModeLabel(testInput.mode)}\n✅ 连接成功!\n模型: ${model}\n响应: ${text}\n\n--- 原始响应 ---\n${typeof rawResponse === "string" ? rawResponse : JSON.stringify(rawResponse, null, 2)}`;
+      return formatConnectionTestSuccess({
+        mode: testInput.mode,
+        model,
+        response: text,
+        rawResponse,
+      });
     }
 
     // 非 200 但未抛出异常的情况
     const { APITestError } = await import("./types");
     throw new APITestError(`HTTP ${status}`, {
       errorName: `HTTP_${status}`,
-      errorMessage: `HTTP ${status}: ${response.statusText || "请求失败"}`,
+      errorMessage: `HTTP ${status}: ${response.statusText || providerRequestFailed("API")}`,
       statusCode: status,
       requestUrl: url,
       requestBody: payloadStr,
@@ -618,8 +638,8 @@ export class VolcanoArkProvider implements ILlmProvider {
       options.apiUrl || "https://ark.cn-beijing.volces.com/api/v3/responses"
     ).replace(/\/+$/, "");
     const apiKey = (options.apiKey || "").trim();
-    if (!baseUrl) throw new Error("火山引擎 API URL 未配置");
-    if (!apiKey) throw new Error("火山引擎 API Key 未配置");
+    if (!baseUrl) throw new Error(providerMissingApiUrl("Volcano Ark"));
+    if (!apiKey) throw new Error(providerMissingApiKey("Volcano Ark"));
 
     const url = deriveVersionedModelsUrl(
       baseUrl,
@@ -751,9 +771,9 @@ export class VolcanoArkProvider implements ILlmProvider {
     const temperature = options.temperature ?? 0.7;
     const maxTokens = options.maxTokens ?? 8192;
 
-    if (!baseUrl) throw new Error("火山引擎 API URL 未配置");
-    if (!apiKey) throw new Error("火山引擎 API Key 未配置");
-    if (pdfFiles.length === 0) throw new Error("没有要处理的 PDF 文件");
+    if (!baseUrl) throw new Error(providerMissingApiUrl("Volcano Ark"));
+    if (!apiKey) throw new Error(providerMissingApiKey("Volcano Ark"));
+    if (pdfFiles.length === 0) throw new Error(providerNoPdfFiles());
     throwIfAborted(options.abortSignal);
 
     // 如果 baseUrl 已经以 /responses 结尾，直接使用；否则追加
@@ -784,7 +804,7 @@ export class VolcanoArkProvider implements ILlmProvider {
     }
 
     if (contentParts.length === 0) {
-      throw new Error("没有成功处理任何 PDF 文件");
+      throw new Error(providerNoPdfProcessed());
     }
 
     // 添加文本提示
@@ -849,12 +869,12 @@ export class VolcanoArkProvider implements ILlmProvider {
                 const parsed = errorResponse ? JSON.parse(errorResponse) : null;
                 const err = parsed?.error || parsed || {};
                 const code = err?.code || `HTTP ${status}`;
-                const msg = err?.message || "请求失败";
+                const msg = err?.message || providerRequestFailed("API");
                 xmlhttp.abort();
                 throw new Error(`${code}: ${msg}`);
               } catch {
                 xmlhttp.abort();
-                throw new Error(`HTTP ${status}: 请求失败`);
+                throw new Error(providerHttpRequestFailed(status));
               }
             }
 
@@ -907,7 +927,7 @@ export class VolcanoArkProvider implements ILlmProvider {
       if (abortError || isAbortError(error, options.abortSignal)) {
         throw normalizeAbortError(abortError || error, options.abortSignal);
       }
-      let errorMessage = error?.message || "火山引擎请求失败";
+      let errorMessage = error?.message || providerRequestFailed("Volcano Ark");
       try {
         const responseText =
           error?.xmlhttp?.response || error?.xmlhttp?.responseText;

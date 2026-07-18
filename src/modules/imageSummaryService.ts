@@ -19,11 +19,12 @@ import { ImageClient, ImageGenerationError } from "./imageClient";
 import { ImageNoteGenerator } from "./imageNoteGenerator";
 import { NoteGenerator } from "./noteGenerator";
 import { getPref } from "../utils/prefs";
+import { getString } from "../utils/locale";
 import type { LLMPdfProcessMode } from "./llmEndpointManager";
 import type { LLMAbortSignal } from "./llmproviders/types";
 import {
-  getDefaultImageSummaryPrompt,
-  getDefaultImageGenerationPrompt,
+  getConfiguredImageSummaryPrompt,
+  getConfiguredImageGenerationPrompt,
 } from "../utils/prompts";
 
 /**
@@ -66,7 +67,11 @@ export class ImageSummaryService {
 
     try {
       // ========== 阶段 1: 获取论文内容 ==========
-      progressCallback?.("extracting", "正在提取论文内容...", 10);
+      progressCallback?.(
+        "extracting",
+        getString("image-summary-progress-extracting"),
+        10,
+      );
 
       // 检查 PDF 文件大小限制
       const enableSizeLimit =
@@ -78,7 +83,9 @@ export class ImageSummaryService {
         const fileSizeMB = await PDFExtractor.getPdfFileSize(item);
         if (fileSizeMB > maxPdfSizeMB) {
           throw new Error(
-            `PDF 文件过大 (${fileSizeMB.toFixed(1)} MB)，超过设置的阈值 ${maxPdfSizeMB} MB`,
+            getString("image-summary-error-pdf-too-large", {
+              args: { size: fileSizeMB.toFixed(1), max: maxPdfSizeMB },
+            }),
           );
         }
       }
@@ -117,7 +124,11 @@ export class ImageSummaryService {
       }
 
       // ========== 阶段 2: 生成视觉摘要 ==========
-      progressCallback?.("summarizing", "正在生成视觉摘要...", 30);
+      progressCallback?.(
+        "summarizing",
+        getString("image-summary-progress-summarizing"),
+        30,
+      );
 
       const visualSummary = await this.generateVisualSummary(
         pdfContent,
@@ -131,7 +142,11 @@ export class ImageSummaryService {
       );
 
       // ========== 阶段 3: 生成学术概念海报 ==========
-      progressCallback?.("generating", "正在生成学术概念海报...", 60);
+      progressCallback?.(
+        "generating",
+        getString("image-summary-progress-generating"),
+        60,
+      );
 
       const imagePrompt = this.buildImagePrompt(visualSummary, itemTitle);
 
@@ -144,7 +159,11 @@ export class ImageSummaryService {
       );
 
       // ========== 阶段 4: 保存笔记 ==========
-      progressCallback?.("saving", "正在保存一图总结笔记...", 90);
+      progressCallback?.(
+        "saving",
+        getString("image-summary-progress-saving"),
+        90,
+      );
 
       const note = await ImageNoteGenerator.createImageNote(
         item,
@@ -152,11 +171,21 @@ export class ImageSummaryService {
         imageResult.mimeType,
       );
 
-      progressCallback?.("completed", "一图总结生成完成！", 100);
+      progressCallback?.(
+        "completed",
+        getString("image-summary-progress-completed"),
+        100,
+      );
 
       return note;
     } catch (error: any) {
-      progressCallback?.("failed", `生成失败: ${error.message}`, 0);
+      progressCallback?.(
+        "failed",
+        getString("image-summary-progress-failed", {
+          args: { message: error.message },
+        }),
+        0,
+      );
 
       // 记录详细错误日志
       if (error instanceof ImageGenerationError) {
@@ -198,9 +227,9 @@ export class ImageSummaryService {
     abortSignal?: LLMAbortSignal,
   ): Promise<string> {
     // 获取视觉提取提示词
-    let prompt =
-      (getPref("imageSummaryPrompt" as any) as string) ||
-      getDefaultImageSummaryPrompt();
+    let prompt = getConfiguredImageSummaryPrompt(
+      getPref("imageSummaryPrompt" as any) as string,
+    );
 
     // 替换变量
     prompt = prompt.replace(
@@ -233,13 +262,14 @@ export class ImageSummaryService {
     itemTitle: string,
   ): string {
     // 获取生图提示词模板
-    let prompt =
-      (getPref("imageSummaryImagePrompt" as any) as string) ||
-      getDefaultImageGenerationPrompt();
+    let prompt = getConfiguredImageGenerationPrompt(
+      getPref("imageSummaryImagePrompt" as any) as string,
+    );
 
     // 获取语言设置
     const language =
-      (getPref("imageSummaryLanguage" as any) as string) || "中文";
+      (getPref("imageSummaryLanguage" as any) as string) ||
+      getString("settings-image-summary-default-language");
 
     // 替换变量
     prompt = prompt.replace(/\$\{summaryForImage\}/g, visualSummary);

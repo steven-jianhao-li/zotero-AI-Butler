@@ -13,6 +13,7 @@ import { isDeepReadNote, isRegularSummaryNote } from "../../aiNoteClassifier";
 import type { AiNoteKind } from "../../aiNoteService";
 import { TaskQueueManager } from "../../taskQueue";
 import { getDefaultSummaryPrompt } from "../../../utils/prompts";
+import { getString } from "../../../utils/locale";
 
 export class DataSettingsPage {
   private container: HTMLElement;
@@ -25,7 +26,7 @@ export class DataSettingsPage {
     this.container.innerHTML = "";
 
     const title = Zotero.getMainWindow().document.createElement("h2");
-    title.textContent = "💾 数据管理";
+    title.textContent = getString("settings-data-title");
     Object.assign(title.style, {
       color: "#59c0bc",
       marginBottom: "20px",
@@ -36,7 +37,7 @@ export class DataSettingsPage {
     this.container.appendChild(title);
 
     this.container.appendChild(
-      createNotice("包含任务队列清理、设置导入/导出与一键重置等工具。"),
+      createNotice(getString("settings-data-description")),
     );
 
     const section = Zotero.getMainWindow().document.createElement("div");
@@ -53,9 +54,21 @@ export class DataSettingsPage {
     });
 
     const statConfigs = [
-      { label: "总任务", val: stats.total.toString(), icon: "📊" },
-      { label: "已完成", val: stats.completed.toString(), icon: "✅" },
-      { label: "失败", val: stats.failed.toString(), icon: "⚠️" },
+      {
+        label: getString("settings-data-stat-total"),
+        val: stats.total.toString(),
+        icon: "📊",
+      },
+      {
+        label: getString("settings-data-stat-completed"),
+        val: stats.completed.toString(),
+        icon: "✅",
+      },
+      {
+        label: getString("settings-data-stat-failed"),
+        val: stats.failed.toString(),
+        icon: "⚠️",
+      },
     ];
 
     statConfigs.forEach((s) => {
@@ -76,37 +89,49 @@ export class DataSettingsPage {
       gap: "12px",
       marginBottom: "12px",
     });
-    const btnClearDone = createStyledButton("🧹 清空已完成任务", "#9e9e9e");
+    const btnClearDone = createStyledButton(
+      getString("settings-data-clear-completed"),
+      "#9e9e9e",
+    );
     btnClearDone.addEventListener("click", async () => {
       await TaskQueueManager.getInstance().clearCompleted();
       this.render();
-      new ztoolkit.ProgressWindow("数据管理")
-        .createLine({ text: "已清空已完成任务", type: "success" })
+      new ztoolkit.ProgressWindow(getString("settings-data-progress-title"))
+        .createLine({
+          text: getString("settings-data-clear-completed-done"),
+          type: "success",
+        })
         .show();
     });
-    const btnClearAll = createStyledButton("🗑️ 清空所有任务", "#f44336");
+    const btnClearAll = createStyledButton(
+      getString("settings-data-clear-all"),
+      "#f44336",
+    );
     btnClearAll.addEventListener("click", async () => {
       const ok = Services.prompt.confirm(
         Zotero.getMainWindow() as any,
-        "清空任务",
-        "确定清空所有任务吗?",
+        getString("settings-data-clear-all-title"),
+        getString("settings-data-clear-all-confirm"),
       );
       if (!ok) return;
       await TaskQueueManager.getInstance().clearAll();
       this.render();
-      new ztoolkit.ProgressWindow("数据管理")
-        .createLine({ text: "所有任务已清空", type: "success" })
+      new ztoolkit.ProgressWindow(getString("settings-data-progress-title"))
+        .createLine({
+          text: getString("settings-data-clear-all-done"),
+          type: "success",
+        })
         .show();
     });
     const btnClearEmptySummaryNotes = createStyledButton(
-      "🧹 清空空 AI 总结",
+      getString("settings-data-clear-empty-summary"),
       "#ff9800",
     );
     btnClearEmptySummaryNotes.addEventListener("click", () =>
       this.clearEmptyNotes("summary"),
     );
     const btnClearEmptyDeepReadNotes = createStyledButton(
-      "🧹 清空空 AI 精读",
+      getString("settings-data-clear-empty-deep-read"),
       "#ff9800",
     );
     btnClearEmptyDeepReadNotes.addEventListener("click", () =>
@@ -125,9 +150,15 @@ export class DataSettingsPage {
       gap: "12px",
       marginBottom: "12px",
     });
-    const btnExport = createStyledButton("📤 导出设置(JSON)", "#2196f3");
+    const btnExport = createStyledButton(
+      getString("settings-data-export-json"),
+      "#2196f3",
+    );
     btnExport.addEventListener("click", () => this.exportSettings());
-    const btnImport = createStyledButton("📥 导入设置(JSON)", "#673ab7");
+    const btnImport = createStyledButton(
+      getString("settings-data-import-json"),
+      "#673ab7",
+    );
     btnImport.addEventListener("click", () => this.importSettings());
     row2.appendChild(btnExport);
     row2.appendChild(btnImport);
@@ -140,7 +171,10 @@ export class DataSettingsPage {
       gap: "12px",
       marginBottom: "12px",
     });
-    const btnResetAll = createStyledButton("♻️ 恢复所有默认设置", "#9e9e9e");
+    const btnResetAll = createStyledButton(
+      getString("settings-data-reset-all"),
+      "#9e9e9e",
+    );
     btnResetAll.addEventListener("click", () => this.resetAll());
     section.appendChild(row3);
     row3.appendChild(btnResetAll);
@@ -241,7 +275,10 @@ export class DataSettingsPage {
       fontSize: "12px",
     });
     ta.value = json;
-    const close = createStyledButton("关闭", "#9e9e9e");
+    const close = createStyledButton(
+      getString("settings-data-close"),
+      "#9e9e9e",
+    );
     close.addEventListener("click", () => overlay.remove());
     modal.appendChild(ta);
     modal.appendChild(close);
@@ -254,8 +291,8 @@ export class DataSettingsPage {
     const text = { value: "" } as any;
     const ok = Services.prompt.prompt(
       win,
-      "导入设置",
-      "粘贴 JSON: ",
+      getString("settings-data-import-title"),
+      getString("settings-data-import-prompt"),
       text,
       "",
       { value: false },
@@ -271,13 +308,21 @@ export class DataSettingsPage {
           return;
         }
       });
-      new ztoolkit.ProgressWindow("导入设置")
-        .createLine({ text: "✅ 导入成功", type: "success" })
+      new ztoolkit.ProgressWindow(getString("settings-data-import-title"))
+        .createLine({
+          text: getString("settings-data-import-success"),
+          type: "success",
+        })
         .show();
       this.render();
     } catch (e: any) {
-      new ztoolkit.ProgressWindow("导入设置")
-        .createLine({ text: `❌ 解析失败: ${e.message}`, type: "fail" })
+      new ztoolkit.ProgressWindow(getString("settings-data-import-title"))
+        .createLine({
+          text: getString("settings-data-import-parse-failed", {
+            args: { message: e.message },
+          }),
+          type: "fail",
+        })
         .show();
     }
   }
@@ -285,8 +330,8 @@ export class DataSettingsPage {
   private resetAll(): void {
     const ok = Services.prompt.confirm(
       Zotero.getMainWindow() as any,
-      "恢复默认",
-      "将重置大多数插件设置,继续吗?",
+      getString("settings-data-reset-title"),
+      getString("settings-data-reset-confirm"),
     );
     if (!ok) return;
 
@@ -320,8 +365,11 @@ export class DataSettingsPage {
     // 任务队列本地存储
     Zotero.Prefs.clear("extensions.zotero.aibutler.taskQueue", true);
 
-    new ztoolkit.ProgressWindow("数据管理")
-      .createLine({ text: "✅ 已恢复默认设置", type: "success" })
+    new ztoolkit.ProgressWindow(getString("settings-data-progress-title"))
+      .createLine({
+        text: getString("settings-data-reset-done"),
+        type: "success",
+      })
       .show();
     this.render();
   }
@@ -332,11 +380,14 @@ export class DataSettingsPage {
    * 扫描库中所有论文，删除只有标题没有实际内容的 AI 笔记
    */
   private async clearEmptyNotes(kind: AiNoteKind): Promise<void> {
-    const label = kind === "summary" ? "AI 总结" : "AI 精读";
+    const label =
+      kind === "summary"
+        ? getString("settings-data-note-kind-summary")
+        : getString("settings-data-note-kind-deep-read");
     const ok = Services.prompt.confirm(
       Zotero.getMainWindow() as any,
-      `清空空 ${label}`,
-      `此操作将扫描库中所有论文，删除只有标题没有实际内容的空 ${label} 笔记。\n\n确定继续吗？`,
+      getString("settings-data-clear-empty-title", { args: { label } }),
+      getString("settings-data-clear-empty-confirm", { args: { label } }),
     );
     if (!ok) return;
 
@@ -385,17 +436,21 @@ export class DataSettingsPage {
         }
       }
 
-      new ztoolkit.ProgressWindow("数据管理")
+      new ztoolkit.ProgressWindow(getString("settings-data-progress-title"))
         .createLine({
-          text: `✅ 已扫描 ${scannedCount} 篇论文，删除 ${deletedCount} 个空 ${label}`,
+          text: getString("settings-data-clear-empty-done", {
+            args: { scanned: scannedCount, deleted: deletedCount, label },
+          }),
           type: "success",
         })
         .show();
     } catch (error: any) {
       ztoolkit.log(`[AI Butler] 清空空 ${label} 失败:`, error);
-      new ztoolkit.ProgressWindow("数据管理")
+      new ztoolkit.ProgressWindow(getString("settings-data-progress-title"))
         .createLine({
-          text: `❌ 操作失败: ${error.message}`,
+          text: getString("settings-data-operation-failed", {
+            args: { message: error.message },
+          }),
           type: "fail",
         })
         .show();

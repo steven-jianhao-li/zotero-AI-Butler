@@ -12,11 +12,16 @@
 
 import { config } from "../../package.json";
 import { getPref, setPref } from "../utils/prefs";
+import { getString } from "../utils/locale";
 
 // 内置主题列表
 const BUILTIN_THEMES = [
   { id: "github", name: "GitHub", file: "github.css" },
-  { id: "redstriking", name: "红印 (Redstriking)", file: "redstriking.css" },
+  {
+    id: "redstriking",
+    nameKey: "theme-redstriking-name",
+    file: "redstriking.css",
+  },
   // 可以在这里添加更多内置主题
 ];
 
@@ -50,7 +55,13 @@ export class ThemeManager {
    * 获取所有可用主题列表
    */
   public getAvailableThemes(): Array<{ id: string; name: string }> {
-    return BUILTIN_THEMES.map((t) => ({ id: t.id, name: t.name }));
+    return BUILTIN_THEMES.map((t) => {
+      const name =
+        "nameKey" in t && typeof t.nameKey === "string"
+          ? getString(t.nameKey)
+          : t.name;
+      return { id: t.id, name };
+    });
   }
 
   /**

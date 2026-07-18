@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ================================================================
  * 条目面板侧边栏区块模块
  * ================================================================
@@ -62,6 +62,12 @@ interface ChatState {
 
 // 递增的对话对 ID 计数器
 let quickChatPairIdCounter = 0;
+
+function getSidebarNoteKindLabel(noteKind: AiNoteKind): string {
+  return noteKind === "summary"
+    ? getString("itempane-note-kind-summary")
+    : getString("itempane-note-kind-deep-read");
+}
 
 const SIDEBAR_HEADING_TO_BLOCKQUOTE_TEXT_THRESHOLD = 36;
 const SIDEBAR_NOTE_OVERFLOW_GUARD_CSS = `
@@ -590,12 +596,12 @@ async function runSidebarRefresh(): Promise<void> {
       if (isSidebarNoteEditing(itemId)) {
         setSidebarNoteEditStatus(
           doc,
-          "编辑中，已跳过自动刷新。",
+          getString("itempane-note-editing-skip-auto-refresh"),
           undefined,
           "summary",
         );
       } else {
-        noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+        noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-status-refreshing")}</div>`;
         await loadNoteContent(doc, item, noteContent, "summary");
       }
     }
@@ -609,12 +615,12 @@ async function runSidebarRefresh(): Promise<void> {
       if (isSidebarNoteEditing(itemId)) {
         setSidebarNoteEditStatus(
           doc,
-          "编辑中，已跳过自动刷新。",
+          getString("itempane-note-editing-skip-auto-refresh"),
           undefined,
           "deepRead",
         );
       } else {
-        noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+        noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-status-refreshing")}</div>`;
         await loadNoteContent(doc, item, noteContent, "deepRead");
       }
     }
@@ -628,7 +634,7 @@ async function runSidebarRefresh(): Promise<void> {
       "ai-butler-image-btn-container",
     ) as HTMLElement | null;
     if (imageContainer && imageBtnContainer) {
-      imageContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+      imageContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-status-refreshing")}</div>`;
       await loadImageSummary(doc, item, imageContainer, imageBtnContainer);
     }
   }
@@ -638,7 +644,7 @@ async function runSidebarRefresh(): Promise<void> {
       "ai-butler-mindmap-container",
     ) as HTMLElement | null;
     if (mindmapContainer) {
-      mindmapContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+      mindmapContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-status-refreshing")}</div>`;
       await loadMindmapContent(doc, item, mindmapContainer);
     }
   }
@@ -648,7 +654,7 @@ async function runSidebarRefresh(): Promise<void> {
       "ai-butler-table-content",
     ) as HTMLElement | null;
     if (tableContent) {
-      tableContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+      tableContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-status-refreshing")}</div>`;
       await loadTableContent(item, tableContent);
     }
   }
@@ -690,13 +696,13 @@ export function registerItemPaneSection(
       paneID: "ai-butler-chat-section",
       pluginID: pluginID,
       header: {
-        l10nID: getLocaleID("itempane-ai-section-header" as any),
-        label: "AI 管家",
+        l10nID: getLocaleID("itempane-ai-section-header"),
+        label: getString("aibutler-itempane-ai-section-header"),
         icon: rootURI + "icons/icon24.png",
       },
       sidenav: {
-        l10nID: getLocaleID("itempane-ai-section-sidenav" as any),
-        tooltiptext: "AI 管家",
+        l10nID: getLocaleID("itempane-ai-section-sidenav"),
+        tooltiptext: getString("aibutler-itempane-ai-section-sidenav"),
         icon: rootURI + "icons/icon24.png",
       },
       onRender: ({ body, item, editable, tabType }: any) => {
@@ -722,7 +728,7 @@ export async function refreshCurrentItemPaneSection(): Promise<void> {
     if (doc) {
       setSidebarNoteEditStatus(
         doc,
-        "编辑中，请先保存或取消。",
+        getString("itempane-note-editing-save-or-cancel"),
         undefined,
         sidebarNoteEditState.noteKind,
       );
@@ -806,7 +812,9 @@ function renderItemPaneSection(
 
   // 重置聊天状态（如果切换了条目）
   if (currentChatState.itemId !== item.id) {
-    currentChatState.abortController?.abort("快速追问条目已切换");
+    currentChatState.abortController?.abort(
+      getString("itempane-quick-chat-abort-item-switched"),
+    );
     currentChatState = {
       itemId: item.id,
       pdfContent: "",
@@ -992,7 +1000,7 @@ function renderActionButtons(
   // 刷新按钮
   const refreshBtn = doc.createElement("button");
   refreshBtn.id = "ai-butler-refresh-btn";
-  refreshBtn.title = "重新渲染 AI 管家侧边栏";
+  refreshBtn.title = getString("itempane-refresh-tooltip");
   refreshBtn.textContent = "🔄";
   refreshBtn.style.cssText = `
     padding: 8px 12px;
@@ -1088,7 +1096,7 @@ function renderNoteSection(
     min-width: 0;
     overflow-wrap: anywhere;
   `;
-  const noteLabel = noteKind === "summary" ? "AI 总结" : "AI 精读";
+  const noteLabel = getSidebarNoteKindLabel(noteKind);
   noteTitle.innerHTML = `📄 <span>${noteLabel}</span>`;
 
   const headerTopRow = doc.createElement("div");
@@ -1308,7 +1316,7 @@ function renderNoteSection(
     return btn;
   };
 
-  personalizationRow.appendChild(createFontBtn("−", -1));
+  personalizationRow.appendChild(createFontBtn("?", -1));
   personalizationRow.appendChild(fontSizeLabel);
   personalizationRow.appendChild(createFontBtn("+", 1));
 
@@ -1330,7 +1338,7 @@ function renderNoteSection(
   // 添加内置主题选项
   const themes = [
     { id: "github", name: "GitHub" },
-    { id: "redstriking", name: "红印" },
+    { id: "redstriking", name: getString("theme-redstriking-name") },
   ];
   const currentTheme = (
     (getPref("markdownTheme" as any) as string) || "github"
@@ -1364,8 +1372,8 @@ function renderNoteSection(
 
   // 恢复默认高度按钮
   const resetHeightBtn = doc.createElement("button");
-  resetHeightBtn.textContent = "↕";
-  resetHeightBtn.title = "恢复默认高度";
+  resetHeightBtn.textContent = "?";
+  resetHeightBtn.title = getString("itempane-note-reset-height");
   resetHeightBtn.style.cssText = `
     width: 20px;
     height: 20px;
@@ -1429,8 +1437,10 @@ function renderNoteSection(
   };
 
   const editBtn = createNoteActionBtn(
-    "✎",
-    noteKind === "summary" ? "编辑 AI 总结" : "编辑 AI 精读",
+    "✏️",
+    noteKind === "summary"
+      ? getString("itempane-note-edit-summary")
+      : getString("itempane-note-edit-deep-read"),
   );
   editBtn.id = getSidebarNoteElementId("ai-butler-edit-note-btn", noteKind);
   editBtn.addEventListener("click", async (e: Event) => {
@@ -1439,7 +1449,10 @@ function renderNoteSection(
   });
   mainControls.appendChild(editBtn);
 
-  const deleteBlockBtn = createNoteActionBtn("✕", "删除当前模型总结");
+  const deleteBlockBtn = createNoteActionBtn(
+    "🗑️",
+    getString("itempane-note-delete-current-model-summary"),
+  );
   deleteBlockBtn.id = getSidebarNoteElementId(
     "ai-butler-delete-note-block-btn",
     noteKind,
@@ -1451,10 +1464,10 @@ function renderNoteSection(
   metadataPicker.appendChild(deleteBlockBtn);
 
   const saveBtn = createNoteActionBtn(
-    "保存",
+    getString("itempane-note-save-button"),
     noteKind === "summary"
-      ? "保存侧边栏内的 AI 总结修改"
-      : "保存侧边栏内的 AI 精读修改",
+      ? getString("itempane-note-save-summary-tooltip")
+      : getString("itempane-note-save-deep-read-tooltip"),
     42,
   );
   saveBtn.id = getSidebarNoteElementId("ai-butler-save-note-btn", noteKind);
@@ -1465,7 +1478,11 @@ function renderNoteSection(
   });
   mainControls.appendChild(saveBtn);
 
-  const cancelBtn = createNoteActionBtn("取消", "取消编辑并恢复预览", 42);
+  const cancelBtn = createNoteActionBtn(
+    getString("itempane-note-cancel-button"),
+    getString("itempane-note-cancel-tooltip"),
+    42,
+  );
   cancelBtn.id = getSidebarNoteElementId("ai-butler-cancel-note-btn", noteKind);
   cancelBtn.style.display = "none";
   cancelBtn.addEventListener("click", (e: Event) => {
@@ -1493,9 +1510,12 @@ function renderNoteSection(
 
   const personalizeBtn = doc.createElement("button");
   personalizeBtn.textContent = "🎛️";
-  personalizeBtn.title = "个性化";
+  personalizeBtn.title = getString("itempane-note-personalize");
   personalizeBtn.type = "button";
-  personalizeBtn.setAttribute("aria-label", "个性化");
+  personalizeBtn.setAttribute(
+    "aria-label",
+    getString("itempane-note-personalize"),
+  );
   personalizeBtn.style.cssText = `
     width: 20px;
     height: 20px;
@@ -1536,7 +1556,7 @@ function renderNoteSection(
   // 复制 Markdown 按钮
   const copyBtn = doc.createElement("button");
   copyBtn.textContent = "📋";
-  copyBtn.title = "复制为 Markdown";
+  copyBtn.title = getString("itempane-copy-markdown");
   copyBtn.id = getSidebarNoteElementId("ai-butler-copy-note-btn", noteKind);
   copyBtn.style.cssText = `
     width: 20px;
@@ -1567,7 +1587,7 @@ function renderNoteSection(
       // 复制到剪贴板
       await copyToClipboard(doc, markdownContent);
       // 显示成功反馈
-      copyBtn.textContent = "✓";
+      copyBtn.textContent = "✅";
       copyBtn.style.color = "#4caf50";
       setTimeout(() => {
         copyBtn.textContent = "📋";
@@ -1630,7 +1650,7 @@ function renderNoteSection(
     if (isSidebarNoteEditing(item.id)) {
       setSidebarNoteEditStatus(
         doc,
-        "编辑中，请先保存或取消。",
+        getString("itempane-note-editing-save-or-cancel"),
         undefined,
         noteKind,
       );
@@ -1709,11 +1729,11 @@ async function loadTableContent(
         });
       });
     } else {
-      container.innerHTML = `<div style="color: #9e9e9e; font-size: 12px; text-align: center; padding: 12px;">暂无填表数据</div>`;
+      container.innerHTML = `<div style="color: #9e9e9e; font-size: 12px; text-align: center; padding: 12px;">${getString("itempane-table-empty")}</div>`;
     }
   } catch (error) {
     ztoolkit.log("[AI-Butler] 加载表格内容失败:", error);
-    container.innerHTML = `<div style="color: #9e9e9e; font-size: 12px; text-align: center; padding: 12px;">加载失败</div>`;
+    container.innerHTML = `<div style="color: #9e9e9e; font-size: 12px; text-align: center; padding: 12px;">${getString("itempane-load-failed", { args: { error: escapeHtmlForChat(error instanceof Error ? error.message : String(error)) } })}</div>`;
   }
 }
 
@@ -1762,7 +1782,7 @@ function renderTableSection(
     align-items: center;
     gap: 6px;
   `;
-  tableTitle.innerHTML = `📊 <span>表格归纳</span>`;
+  tableTitle.innerHTML = `📊 <span>${getString("itempane-table-title")}</span>`;
 
   // 异步加载综述状态徽章
   void (async () => {
@@ -1789,15 +1809,15 @@ function renderTableSection(
 
     let badges = "";
     if (hasTable) {
-      badges += `<span style="margin-left:6px;padding:1px 5px;border-radius:3px;font-size:9px;background:rgba(76,175,80,0.15);color:#4caf50;">📊 已填表</span>`;
+      badges += `<span style="margin-left:6px;padding:1px 5px;border-radius:3px;font-size:9px;background:rgba(76,175,80,0.15);color:#4caf50;">${getString("itempane-table-badge-filled")}</span>`;
     }
     if (isReviewed) {
-      badges += `<span style="margin-left:4px;padding:1px 5px;border-radius:3px;font-size:9px;background:rgba(99,102,241,0.15);color:#6366f1;">✅ 已综述</span>`;
+      badges += `<span style="margin-left:4px;padding:1px 5px;border-radius:3px;font-size:9px;background:rgba(99,102,241,0.15);color:#6366f1;">${getString("itempane-table-badge-reviewed")}</span>`;
     }
     if (badges) {
       const titleSpan = tableTitle.querySelector("span");
       if (titleSpan) {
-        titleSpan.innerHTML = `表格归纳${badges}`;
+        titleSpan.innerHTML = `${getString("itempane-table-title")}${badges}`;
       }
     }
   })();
@@ -1815,8 +1835,8 @@ function renderTableSection(
 
   // 重新填表按钮
   const refillBtn = doc.createElement("button");
-  refillBtn.textContent = "🔄 重新生成";
-  refillBtn.title = "重新填表";
+  refillBtn.textContent = getString("itempane-regenerate");
+  refillBtn.title = getString("itempane-regenerate-table");
   refillBtn.style.cssText = `
     padding: 2px 8px;
     border: 1px solid currentColor;
@@ -1840,19 +1860,20 @@ function renderTableSection(
     refillBtn.style.background = "transparent";
   });
   refillBtn.addEventListener("click", async () => {
-    refillBtn.textContent = "⏳ 生成中...";
+    refillBtn.textContent = getString("itempane-generating");
     refillBtn.style.pointerEvents = "none";
     try {
       const { LiteratureReviewService } =
         await import("./literatureReviewService");
-      const { DEFAULT_TABLE_TEMPLATE, DEFAULT_TABLE_FILL_PROMPT } =
+      const { getConfiguredTableTemplate, getConfiguredTableFillPrompt } =
         await import("../utils/prompts");
 
-      const tableTemplate =
-        (getPref("tableTemplate" as any) as string) || DEFAULT_TABLE_TEMPLATE;
-      const fillPrompt =
-        (getPref("tableFillPrompt" as any) as string) ||
-        DEFAULT_TABLE_FILL_PROMPT;
+      const tableTemplate = getConfiguredTableTemplate(
+        getPref("tableTemplate" as any) as string,
+      );
+      const fillPrompt = getConfiguredTableFillPrompt(
+        getPref("tableFillPrompt" as any) as string,
+      );
 
       // 先删除已有 AI-Table 笔记
       const noteIDs = (item as any).getNotes?.() || [];
@@ -1892,7 +1913,7 @@ function renderTableSection(
     } catch (err) {
       ztoolkit.log("[AI-Butler] 重新填表失败:", err);
     } finally {
-      refillBtn.textContent = "🔄 重新生成";
+      refillBtn.textContent = getString("itempane-regenerate");
       refillBtn.style.pointerEvents = "auto";
     }
   });
@@ -2041,7 +2062,7 @@ function renderImageSummarySection(
     align-items: center;
     gap: 6px;
   `;
-  imageSummaryTitle.innerHTML = `🖼️ <span>一图总结</span>`;
+  imageSummaryTitle.innerHTML = `🖼️ <span>${getString("itempane-image-title")}</span>`;
 
   // 按钮容器
   const imageBtnContainer = doc.createElement("div");
@@ -2159,7 +2180,7 @@ function renderMindmapSection(
     align-items: center;
     gap: 6px;
   `;
-  mindmapTitle.innerHTML = `🧠 <span>思维导图</span>`;
+  mindmapTitle.innerHTML = `🧠 <span>${getString("itempane-mindmap-title")}</span>`;
 
   const mindmapToggleIcon = doc.createElement("span");
   mindmapToggleIcon.textContent = "▼";
@@ -2286,7 +2307,7 @@ async function loadMindmapContent(
 
     if (!mindmapNote) {
       const generateMindmapBtn = doc.createElement("button");
-      generateMindmapBtn.textContent = "🧠 生成思维导图";
+      generateMindmapBtn.textContent = getString("itempane-generate-mindmap");
       generateMindmapBtn.style.cssText = `
         padding: 8px 16px;
         border: 1px solid #4caf50;
@@ -2307,15 +2328,19 @@ async function loadMindmapContent(
       generateMindmapBtn.addEventListener("click", async () => {
         try {
           generateMindmapBtn.disabled = true;
-          generateMindmapBtn.textContent = "正在加入队列...";
+          generateMindmapBtn.textContent = getString(
+            "itempane-adding-to-queue",
+          );
           const { TaskQueueManager } = await import("./taskQueue");
           const queueManager = TaskQueueManager.getInstance();
           await queueManager.addMindmapTask(targetItem);
-          generateMindmapBtn.textContent = "✅ 已加入队列";
+          generateMindmapBtn.textContent = getString("itempane-added-to-queue");
         } catch (err: any) {
-          generateMindmapBtn.textContent = "❌ 失败";
+          generateMindmapBtn.textContent = getString("itempane-failed");
           setTimeout(() => {
-            generateMindmapBtn.textContent = "🧠 生成思维导图";
+            generateMindmapBtn.textContent = getString(
+              "itempane-generate-mindmap",
+            );
             generateMindmapBtn.disabled = false;
           }, 2000);
         }
@@ -2324,7 +2349,7 @@ async function loadMindmapContent(
       container.innerHTML = `
         <div style="text-align: center; color: #9e9e9e; padding: 16px;">
           <div style="font-size: 24px; margin-bottom: 8px;">🧠</div>
-          <div style="font-size: 12px; margin-bottom: 8px;">暂无思维导图</div>
+          <div style="font-size: 12px; margin-bottom: 8px;">${getString("itempane-no-mindmap")}</div>
         </div>
       `;
       container.appendChild(generateMindmapBtn);
@@ -2367,7 +2392,7 @@ async function loadMindmapContent(
       container.innerHTML = `
         <div style="text-align: center; color: #9e9e9e; padding: 16px;">
           <div style="font-size: 24px; margin-bottom: 8px;">⚠️</div>
-          <div>思维导图格式错误</div>
+          <div>${getString("itempane-mindmap-format-error")}</div>
         </div>
       `;
       return;
@@ -2383,7 +2408,7 @@ async function loadMindmapContent(
       container.innerHTML = `
         <div style="text-align: center; color: #9e9e9e; padding: 16px;">
           <div style="font-size: 24px; margin-bottom: 8px;">📄</div>
-          <div>思维导图内容为空</div>
+          <div>${getString("itempane-mindmap-empty")}</div>
         </div>
       `;
       return;
@@ -2467,7 +2492,7 @@ async function loadMindmapContent(
               closeTime: 3000,
             })
               .createLine({
-                text: "打开思维导图预览窗口失败",
+                text: getString("itempane-mindmap-open-viewer-failed"),
                 type: "error",
               })
               .show();
@@ -2549,9 +2574,13 @@ async function loadMindmapContent(
             ztoolkit.log("[AI-Butler] 思维导图已保存到:", filePath);
 
             // 显示通知
-            new ztoolkit.ProgressWindow("思维导图已导出")
+            new ztoolkit.ProgressWindow(
+              getString("itempane-mindmap-exported-title"),
+            )
               .createLine({
-                text: `已保存到桌面: ${filename}`,
+                text: getString("itempane-mindmap-exported-to-desktop", {
+                  args: { filename },
+                }),
                 type: "success",
               })
               .show();
@@ -2564,9 +2593,13 @@ async function loadMindmapContent(
             }
           } catch (e) {
             ztoolkit.log("[AI-Butler] 保存思维导图失败:", e);
-            new ztoolkit.ProgressWindow("导出失败")
+            new ztoolkit.ProgressWindow(
+              getString("itempane-mindmap-export-failed"),
+            )
               .createLine({
-                text: `错误: ${e}`,
+                text: getString("itempane-mindmap-export-error", {
+                  args: { message: String(e) },
+                }),
                 type: "error",
               })
               .show();
@@ -2622,7 +2655,7 @@ async function loadMindmapContent(
     }
   } catch (err: any) {
     ztoolkit.log("[AI-Butler] 加载思维导图失败:", err);
-    container.innerHTML = `<div style="color: #d32f2f; padding: 10px;">加载思维导图失败: ${err.message}</div>`;
+    container.innerHTML = `<div style="color: #d32f2f; padding: 10px;">${getString("itempane-mindmap-load-failed", { args: { message: escapeHtmlForChat(err.message) } })}</div>`;
   }
 }
 
@@ -2770,7 +2803,9 @@ function renderChatArea(
   item: Zotero.Item,
   initiallyVisible = false,
 ): void {
-  currentChatState.abortController?.abort("快速追问界面已刷新");
+  currentChatState.abortController?.abort(
+    getString("itempane-quick-chat-abort-refreshed"),
+  );
   currentChatState.conversationHistory = [];
   currentChatState.isChatting = false;
   currentChatState.abortController = null;
@@ -2801,7 +2836,7 @@ function renderChatArea(
     font-weight: 500;
   `;
   const chatTitle = doc.createElement("span");
-  chatTitle.textContent = "💬 快速追问";
+  chatTitle.textContent = getString("itempane-quick-chat-title");
   chatHeader.appendChild(chatTitle);
   chatHeader.appendChild(
     createContextInfoIcon(doc, getString("itempane-ai-temp-chat-tooltip")),
@@ -2881,11 +2916,26 @@ function renderChatArea(
     return button;
   };
 
-  const decreaseFontBtn = createQuickControlButton("−", "减小快速追问字号");
-  const increaseFontBtn = createQuickControlButton("+", "增大快速追问字号");
-  const decreaseHeightBtn = createQuickControlButton("⇡", "降低快速追问高度");
-  const increaseHeightBtn = createQuickControlButton("⇣", "增加快速追问高度");
-  const resetHeightBtn = createQuickControlButton("↕", "恢复快速追问默认高度");
+  const decreaseFontBtn = createQuickControlButton(
+    "?",
+    getString("itempane-quick-chat-decrease-font"),
+  );
+  const increaseFontBtn = createQuickControlButton(
+    "+",
+    getString("itempane-quick-chat-increase-font"),
+  );
+  const decreaseHeightBtn = createQuickControlButton(
+    "?",
+    getString("itempane-quick-chat-decrease-height"),
+  );
+  const increaseHeightBtn = createQuickControlButton(
+    "?",
+    getString("itempane-quick-chat-increase-height"),
+  );
+  const resetHeightBtn = createQuickControlButton(
+    "?",
+    getString("itempane-quick-chat-reset-height"),
+  );
 
   chatControls.appendChild(decreaseFontBtn);
   chatControls.appendChild(quickFontLabel);
@@ -2974,7 +3024,7 @@ function renderChatArea(
   `;
 
   const inputBox = doc.createElement("textarea");
-  inputBox.placeholder = "输入问题...";
+  inputBox.placeholder = getString("itempane-question-placeholder");
   inputBox.style.cssText = `
     flex: 1;
     min-height: 36px;
@@ -2990,7 +3040,7 @@ function renderChatArea(
   `;
 
   const sendBtn = doc.createElement("button");
-  sendBtn.textContent = "发送";
+  sendBtn.textContent = getString("itempane-send");
   sendBtn.style.cssText = `
     padding: 6px 12px;
     background: #59c0bc;
@@ -3003,8 +3053,8 @@ function renderChatArea(
   `;
 
   const stopBtn = doc.createElement("button");
-  stopBtn.textContent = "\u7ec8\u6b62";
-  stopBtn.title = "\u7ec8\u6b62\u5f53\u524d\u5feb\u901f\u8ffd\u95ee";
+  stopBtn.textContent = getString("itempane-stop");
+  stopBtn.title = getString("itempane-stop-current");
   stopBtn.style.cssText = `
     display: none;
     padding: 6px 12px;
@@ -3018,12 +3068,10 @@ function renderChatArea(
   `;
   stopBtn.addEventListener("click", () => {
     if (!currentChatState.isChatting) return;
-    stopBtn.textContent = "\u7ec8\u6b62\u4e2d...";
+    stopBtn.textContent = getString("itempane-stopping");
     stopBtn.style.background = "#9e9e9e";
     (stopBtn as HTMLButtonElement).disabled = true;
-    currentChatState.abortController?.abort(
-      "\u7528\u6237\u5df2\u7ec8\u6b62\u5feb\u901f\u8ffd\u95ee",
-    );
+    currentChatState.abortController?.abort(getString("itempane-stop-current"));
   });
 
   inputArea.appendChild(inputBox);
@@ -3048,7 +3096,7 @@ function renderChatArea(
   const loadPdfContentIfNeeded = async (): Promise<void> => {
     if (currentChatState.pdfContent) {
       if (!messagesArea.textContent?.trim()) {
-        messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">✅ 论文内容已加载，可以开始提问！</div>`;
+        messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-loaded")}</div>`;
       }
       return;
     }
@@ -3061,7 +3109,7 @@ function renderChatArea(
         const pdfMode = LLMService.getEffectivePdfProcessMode();
         const isBase64 = pdfMode === "base64";
 
-        messagesArea.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">📄 正在加载论文内容...</div>`;
+        messagesArea.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-chat-loading-pdf")}</div>`;
 
         let pdfContent = "";
         if (isBase64) {
@@ -3073,13 +3121,13 @@ function renderChatArea(
         if (pdfContent) {
           currentChatState.pdfContent = pdfContent;
           currentChatState.isBase64 = isBase64;
-          messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">✅ 论文内容已加载，可以开始提问！</div>`;
+          messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-loaded")}</div>`;
         } else {
-          messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 无法加载论文内容，请确保该文献有 PDF 附件</div>`;
+          messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-load-unavailable")}</div>`;
         }
       } catch (err: any) {
         ztoolkit.log("[AI-Butler] 快速追问加载 PDF 失败:", err);
-        messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 加载失败: ${err?.message || "未知错误"}</div>`;
+        messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-load-failed", { args: { message: escapeHtmlForChat(err?.message || getString("common-unknown-error")) } })}</div>`;
       }
     }
   };
@@ -3133,17 +3181,17 @@ function renderChatArea(
 
     // 检查是否有 PDF 内容
     if (!currentChatState.pdfContent) {
-      messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">❌ 请先等待论文内容加载完成</div>`;
+      messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-wait-pdf-loaded")}</div>`;
       return;
     }
 
     // 设置为正在聊天状态
     currentChatState.isChatting = true;
     currentChatState.abortController = createChatAbortController();
-    sendBtn.textContent = "\u751f\u6210\u4e2d";
+    sendBtn.textContent = getString("itempane-generating-status");
     sendBtn.style.background = "#9e9e9e";
     (sendBtn as HTMLButtonElement).disabled = true;
-    stopBtn.textContent = "\u7ec8\u6b62";
+    stopBtn.textContent = getString("itempane-stop");
     stopBtn.style.background = "#f44336";
     (stopBtn as HTMLButtonElement).disabled = false;
     stopBtn.style.display = "block";
@@ -3177,7 +3225,7 @@ function renderChatArea(
       user-select: text;
       cursor: text;
     `;
-    userMsgDiv.innerHTML = `<strong>👤 您:</strong> ${escapeHtmlForChat(question)}`;
+    userMsgDiv.innerHTML = `<strong>${getString("itempane-user-label")}</strong> ${escapeHtmlForChat(question)}`;
     pairWrapper.appendChild(userMsgDiv);
 
     // 创建 AI 回复区域
@@ -3199,7 +3247,7 @@ function renderChatArea(
       user-select: text;
       cursor: text;
     `;
-    aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong> <em style="color: #999;">思考中...</em>`;
+    aiMsgDiv.innerHTML = `<strong>${getString("itempane-assistant-label")}</strong> <em style="color: #999;">${getString("itempane-thinking")}</em>`;
     pairWrapper.appendChild(aiMsgDiv);
 
     // 创建保存按钮区域（初始隐藏）
@@ -3210,7 +3258,7 @@ function renderChatArea(
       margin-top: 4px;
     `;
     const saveBtn = doc.createElement("button");
-    saveBtn.textContent = "💾 保存为笔记";
+    saveBtn.textContent = getString("itempane-save-note");
     saveBtn.style.cssText = `
       padding: 4px 10px;
       background: #667eea;
@@ -3221,7 +3269,7 @@ function renderChatArea(
       font-size: 11px;
     `;
     const copyBtn = doc.createElement("button");
-    copyBtn.textContent = "📋 复制回答";
+    copyBtn.textContent = getString("itempane-copy-answer");
     copyBtn.style.cssText = `
       padding: 4px 10px;
       background: #59c0bc;
@@ -3234,8 +3282,11 @@ function renderChatArea(
     `;
     copyBtn.addEventListener("click", async () => {
       const copied = await copyQuickChatText(doc, fullResponse || "");
-      const originalText = copyBtn.textContent || "📋 复制回答";
-      copyBtn.textContent = copied ? "✅ 已复制" : "❌ 复制失败";
+      const originalText =
+        copyBtn.textContent || getString("itempane-copy-answer");
+      copyBtn.textContent = copied
+        ? getString("itempane-copied")
+        : getString("itempane-copy-failed");
       copyBtn.style.background = copied ? "#4caf50" : "#f44336";
       setTimeout(() => {
         copyBtn.textContent = originalText;
@@ -3301,12 +3352,12 @@ function renderChatArea(
       saveBtn.addEventListener("click", async () => {
         // 检查是否已保存过
         if (currentChatState.savedPairIds.has(pairId)) {
-          saveBtn.textContent = "✅ 已保存";
+          saveBtn.textContent = getString("itempane-saved");
           return;
         }
 
         // 标记正在保存
-        saveBtn.textContent = "💾 保存中...";
+        saveBtn.textContent = getString("itempane-saving");
         saveBtn.style.background = "#9e9e9e";
         (saveBtn as HTMLButtonElement).disabled = true;
 
@@ -3319,11 +3370,11 @@ function renderChatArea(
             responseMetadata,
           );
           currentChatState.savedPairIds.add(pairId);
-          saveBtn.textContent = "✅ 已保存";
+          saveBtn.textContent = getString("itempane-saved");
           saveBtn.style.background = "#4caf50";
         } catch (err: any) {
           ztoolkit.log("[AI-Butler] 保存快速追问对话失败:", err);
-          saveBtn.textContent = "❌ 保存失败";
+          saveBtn.textContent = getString("itempane-save-failed");
           saveBtn.style.background = "#f44336";
           (saveBtn as HTMLButtonElement).disabled = false;
         }
@@ -3334,20 +3385,20 @@ function renderChatArea(
           updateQuickChatAssistantMessage(
             aiMsgDiv,
             fullResponse,
-            `<div style="color: #777; font-size: 11px; margin-top: 6px;">已终止，本轮不会保存或加入上下文。</div>`,
+            `<div style="color: #777; font-size: 11px; margin-top: 6px;">${getString("itempane-stopped-note")}</div>`,
           );
         } else {
-          aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong> <span style="color: #777;">已终止，未生成内容。</span>`;
+          aiMsgDiv.innerHTML = `<strong>${getString("itempane-assistant-label")}</strong> <span style="color: #777;">${getString("itempane-stopped-empty")}</span>`;
         }
         return;
       }
       ztoolkit.log("[AI-Butler] 快速追问发送失败:", err);
-      aiMsgDiv.innerHTML = `<strong>🤖 AI管家:</strong> <span style="color: #f44336;">❌ 错误: ${err?.message || "发送失败"}</span>`;
+      aiMsgDiv.innerHTML = `<strong>${getString("itempane-assistant-label")}</strong> <span style="color: #f44336;">${getString("itempane-error", { args: { error: err?.message || getString("itempane-send-failed") } })}</span>`;
     } finally {
       // 恢复状态
       currentChatState.isChatting = false;
       currentChatState.abortController = null;
-      sendBtn.textContent = "\u53d1\u9001";
+      sendBtn.textContent = getString("itempane-send");
       sendBtn.style.background = "#59c0bc";
       (sendBtn as HTMLButtonElement).disabled = false;
       stopBtn.style.display = "none";
@@ -3466,7 +3517,7 @@ function buildQuickChatAssistantHtml(
   markdown: string,
   suffixHtml = "",
 ): string {
-  return `<strong>🤖 AI管家:</strong><br/>${renderQuickChatMarkdown(markdown)}${suffixHtml}`;
+  return `<strong>${getString("itempane-assistant-label")}</strong><br/>${renderQuickChatMarkdown(markdown)}${suffixHtml}`;
 }
 
 function updateQuickChatAssistantMessage(
@@ -3491,7 +3542,7 @@ function updateQuickChatAssistantMessage(
         "[AI-Butler] 快速追问清洗后仍写入失败，已降级为纯文本:",
         retryError,
       );
-      container.textContent = `🤖 AI管家:\n${sanitizeQuickChatDomString(markdown)}`;
+      container.textContent = `${getString("itempane-assistant-label")}\n${sanitizeQuickChatDomString(markdown)}`;
     }
   }
 }
@@ -3540,7 +3591,8 @@ async function copyQuickChatText(
  * 获取或创建"AI管家-后续追问"独立笔记
  */
 async function getOrCreateChatNote(item: Zotero.Item): Promise<Zotero.Item> {
-  const title = (item.getField("title") as string) || "文献";
+  const title =
+    (item.getField("title") as string) || getString("common-paper-title");
 
   // 查找已有的聊天笔记
   const noteIDs = (item as any).getNotes?.() || [];
@@ -3564,7 +3616,7 @@ async function getOrCreateChatNote(item: Zotero.Item): Promise<Zotero.Item> {
   const note = new Zotero.Item("note");
   note.libraryID = item.libraryID;
   note.parentID = item.id;
-  const header = `<h2>AI 管家 - 后续追问 - ${escapeHtmlForNote(title)}</h2>`;
+  const header = `<h2>${getString("itempane-chat-note-title", { args: { title: escapeHtmlForNote(title) } })}</h2>`;
   note.setNote(header);
   note.addTag("AI-Butler-Chat");
   await note.saveTx();
@@ -3612,7 +3664,7 @@ async function saveChatPairToNote(
     pairId,
     userMessage,
     assistantMessage,
-    sourceLabel: "来自快速追问",
+    sourceLabel: getString("itempane-quick-chat-source-label"),
   });
   const block = metadata
     ? LLMNoteMetadataService.wrapHtml(blockContent, metadata)
@@ -3802,9 +3854,11 @@ function hideSidebarMetadataPicker(
 function getSummaryBlockShortLabel(
   block: ReturnType<typeof LLMNoteMetadataService.parseSummaryBlocks>[number],
 ): string {
-  if (!block.metadata) return "\u672a\u8bb0\u5f55\u6a21\u578b";
-  const provider = block.metadata.providerName || "Unknown";
-  const model = block.metadata.modelId || "unknown";
+  if (!block.metadata) return getString("itempane-note-model-not-recorded");
+  const provider =
+    block.metadata.providerName || getString("llm-metadata-unknown-provider");
+  const model =
+    block.metadata.modelId || getString("llm-metadata-unknown-model");
   return `${provider} / ${model}`;
 }
 
@@ -3820,7 +3874,9 @@ function updateSidebarMetadataButtonLabel(
   ) as HTMLButtonElement | null;
   if (!button) return;
 
-  button.textContent = `\u7b14\u8bb0 ${selectedIndex + 1}/${total} \u25be`;
+  button.textContent = getString("itempane-note-selector-label", {
+    args: { current: selectedIndex + 1, total },
+  });
   button.title = getSummaryBlockShortLabel(block);
 }
 
@@ -4002,7 +4058,7 @@ async function startSidebarNoteEdit(
       updateSidebarNoteEditControls(
         doc,
         "missing",
-        "暂无可编辑笔记。",
+        getString("itempane-note-no-editable-note"),
         undefined,
         noteKind,
       );
@@ -4048,7 +4104,7 @@ async function startSidebarNoteEdit(
     updateSidebarNoteEditControls(
       doc,
       "editing",
-      "编辑中",
+      getString("itempane-note-editing"),
       undefined,
       noteKind,
     );
@@ -4063,7 +4119,9 @@ async function startSidebarNoteEdit(
     updateSidebarNoteEditControls(
       doc,
       "preview",
-      `编辑失败: ${err?.message || err}`,
+      getString("itempane-note-edit-failed", {
+        args: { message: String(err?.message || err) },
+      }),
       "#d32f2f",
       getNoteKindFromElement(noteContent),
     );
@@ -4083,7 +4141,7 @@ async function saveSidebarNoteEdit(
   updateSidebarNoteEditControls(
     doc,
     "saving",
-    "保存中...",
+    getString("itempane-note-saving"),
     undefined,
     noteKind,
   );
@@ -4091,15 +4149,13 @@ async function saveSidebarNoteEdit(
   try {
     const latestNote = await Zotero.Items.getAsync(editState.noteId);
     if (!latestNote) {
-      throw new Error("当前 AI 总结 / AI 精读不存在或已被删除");
+      throw new Error(getString("itempane-note-edit-missing"));
     }
 
     const latestHtml: string = (latestNote as any).getNote?.() || "";
     const latestDateModified = String((latestNote as any).dateModified || "");
     if (latestHtml !== editState.originalRawHtml) {
-      throw new Error(
-        "当前 AI 总结 / AI 精读已在其他地方更新，请复制草稿后刷新再编辑。",
-      );
+      throw new Error(getString("itempane-note-stale-error"));
     }
     if (
       latestDateModified &&
@@ -4120,7 +4176,7 @@ async function saveSidebarNoteEdit(
         (block) => block.blockId === editState.blockId,
       );
       if (!expectedBlock) {
-        throw new Error("当前 AI 总结 / AI 精读结构已变化，请刷新后再编辑。");
+        throw new Error(getString("itempane-note-edit-structure-changed"));
       }
     }
 
@@ -4140,13 +4196,18 @@ async function saveSidebarNoteEdit(
     updateSidebarNoteEditControls(
       doc,
       "preview",
-      "已保存",
+      getString("itempane-note-saved"),
       "#4caf50",
       noteKind,
     );
-    noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+    noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-status-refreshing")}</div>`;
     await loadNoteContent(doc, item, noteContent, noteKind);
-    setSidebarNoteEditStatus(doc, "已保存", "#4caf50", noteKind);
+    setSidebarNoteEditStatus(
+      doc,
+      getString("itempane-note-saved"),
+      "#4caf50",
+      noteKind,
+    );
     setTimeout(() => {
       if (!isSidebarNoteEditing(item.id)) {
         setSidebarNoteEditStatus(doc, "", undefined, noteKind);
@@ -4158,7 +4219,7 @@ async function saveSidebarNoteEdit(
     updateSidebarNoteEditControls(
       doc,
       "editing",
-      err?.message || "保存失败",
+      err?.message || getString("itempane-note-save-failed"),
       "#d32f2f",
       noteKind,
     );
@@ -4176,8 +4237,14 @@ function cancelSidebarNoteEdit(
 
   sidebarNoteEditState = null;
   resetSidebarNoteContentEditMode(noteContent);
-  updateSidebarNoteEditControls(doc, "preview", "已取消", undefined, noteKind);
-  noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在恢复...</div>`;
+  updateSidebarNoteEditControls(
+    doc,
+    "preview",
+    getString("itempane-note-cancelled"),
+    undefined,
+    noteKind,
+  );
+  noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-status-restoring")}</div>`;
   void loadNoteContent(doc, item, noteContent, noteKind);
 }
 
@@ -4189,7 +4256,7 @@ async function deleteSidebarSummaryBlock(
   if (isSidebarNoteEditing(item.id)) {
     setSidebarNoteEditStatus(
       doc,
-      "编辑中，不能删除模型总结。",
+      getString("itempane-note-editing-cannot-delete"),
       "#d32f2f",
       getNoteKindFromElement(noteContent),
     );
@@ -4203,7 +4270,7 @@ async function deleteSidebarSummaryBlock(
       updateSidebarNoteEditControls(
         doc,
         "missing",
-        "暂无可删除笔记。",
+        getString("itempane-note-no-deletable-note"),
         undefined,
         noteKind,
       );
@@ -4217,7 +4284,7 @@ async function deleteSidebarSummaryBlock(
       updateSidebarNoteEditControls(
         doc,
         "missing",
-        "暂无可删除总结。",
+        getString("itempane-note-no-deletable-summary"),
         undefined,
         noteKind,
       );
@@ -4234,14 +4301,14 @@ async function deleteSidebarSummaryBlock(
       LLMNoteMetadataService.formatSummaryBlockSelectorLabel(selectedBlock);
     const ok = Services.prompt.confirm(
       Zotero.getMainWindow() as any,
-      "删除模型总结",
-      `确定删除当前 AI 总结版本吗？\n\n${label}`,
+      getString("itempane-delete-summary-title"),
+      getString("itempane-delete-summary-confirm", { args: { label } }),
     );
     if (!ok) return;
 
     const latestNote = await Zotero.Items.getAsync(resolvedNote.note.id);
     if (!latestNote) {
-      throw new Error("当前 AI 总结 / AI 精读不存在或已被删除");
+      throw new Error(getString("itempane-note-edit-missing"));
     }
 
     const latestHtml: string = (latestNote as any).getNote?.() || "";
@@ -4252,7 +4319,7 @@ async function deleteSidebarSummaryBlock(
       (block) => block.blockId === selectedBlock.blockId,
     );
     if (!latestBlock) {
-      throw new Error("当前 AI 总结 / AI 精读结构已变化，请刷新后再删除。");
+      throw new Error(getString("itempane-note-delete-structure-changed"));
     }
 
     const nextHtml = LLMNoteMetadataService.removeSummaryBlock(
@@ -4262,11 +4329,13 @@ async function deleteSidebarSummaryBlock(
     if (!LLMNoteMetadataService.hasSummaryBlocks(nextHtml)) {
       await (latestNote as any).eraseTx?.();
       hideSidebarMetadataPicker(doc, noteKind);
-      noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+      noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-status-refreshing")}</div>`;
       await loadNoteContent(doc, item, noteContent, noteKind);
       setSidebarNoteEditStatus(
         doc,
-        `已删除 ${noteKind === "summary" ? "AI 总结" : "AI 精读"}`,
+        getString("itempane-note-deleted-kind", {
+          args: { kind: getSidebarNoteKindLabel(noteKind) },
+        }),
         "#4caf50",
         noteKind,
       );
@@ -4288,15 +4357,20 @@ async function deleteSidebarSummaryBlock(
       );
     }
 
-    noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">正在刷新...</div>`;
+    noteContent.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-status-refreshing")}</div>`;
     await loadNoteContent(doc, item, noteContent, noteKind);
-    setSidebarNoteEditStatus(doc, "已删除当前总结", "#4caf50", noteKind);
+    setSidebarNoteEditStatus(
+      doc,
+      getString("itempane-note-deleted-current-summary"),
+      "#4caf50",
+      noteKind,
+    );
   } catch (err: any) {
     ztoolkit.log("[AI-Butler] 删除侧边栏总结失败:", err);
     updateSidebarNoteEditControls(
       doc,
       "preview",
-      err?.message || "删除失败",
+      err?.message || getString("itempane-note-delete-failed"),
       "#d32f2f",
       getNoteKindFromElement(noteContent),
     );
@@ -4316,7 +4390,7 @@ async function loadNoteContent(
     if (isSidebarNoteEditing(item.id)) {
       setSidebarNoteEditStatus(
         doc,
-        "编辑中，已跳过刷新。",
+        getString("itempane-note-editing-skip-refresh"),
         undefined,
         noteKind,
       );
@@ -4331,8 +4405,8 @@ async function loadNoteContent(
       hideSidebarMetadataPicker(doc, noteKind);
       noteContent.innerHTML = `
         <div style="text-align: center; color: #9e9e9e; padding: 16px;">
-          <div style="font-size: 24px; margin-bottom: 8px;">📝</div>
-          <div>暂无 ${noteKind === "summary" ? "AI 总结" : "AI 精读"}</div>
+          <div style="font-size: 24px; margin-bottom: 8px;">📄</div>
+          <div>${getString("itempane-note-empty-kind", { args: { kind: getSidebarNoteKindLabel(noteKind) } })}</div>
         </div>
       `;
       updateSidebarNoteEditControls(doc, "missing", "", undefined, noteKind);
@@ -4389,7 +4463,7 @@ async function loadNoteContent(
             metadataSelector.dataset.selectedIndex || metadataSelector.value;
           setSidebarNoteEditStatus(
             doc,
-            "\u7f16\u8f91\u4e2d\uff0c\u4e0d\u80fd\u5207\u6362\u6a21\u578b\u3002",
+            getString("itempane-note-editing-cannot-switch-model"),
             undefined,
             noteKind,
           );
@@ -4417,7 +4491,7 @@ async function loadNoteContent(
           getSidebarNoteElementId("ai-butler-note-content", noteKind),
         ) as HTMLElement | null;
         if (contentEl) {
-          contentEl.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">\u6b63\u5728\u5207\u6362\u6a21\u578b...</div>`;
+          contentEl.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-note-switching-model")}</div>`;
           void loadNoteContent(
             doc,
             item,
@@ -4760,7 +4834,8 @@ async function loadNoteContent(
 
     if (parserError) {
       // Extract error details
-      const errorText = parserError.textContent || "Unknown XML parsing error";
+      const errorText =
+        parserError.textContent || getString("itempane-note-xml-parse-unknown");
       const serializer = new XMLSerializer();
       const errorHtml = serializer.serializeToString(parserError);
 
@@ -4772,7 +4847,9 @@ async function loadNoteContent(
       if (locationMatch) {
         const line = parseInt(locationMatch[1], 10);
         const col = parseInt(locationMatch[2], 10);
-        errorLocation = `Line ${line}, Column ${col}`;
+        errorLocation = getString("itempane-note-xml-location", {
+          args: { line, column: col },
+        });
 
         const lines = sanitizedContent.split(/\r?\n/);
         const errorLineIndex = Math.max(0, line - 1);
@@ -4831,13 +4908,25 @@ async function loadNoteContent(
 
       const headerText = doc.createElement("div");
       headerText.style.fontWeight = "bold";
-      headerText.textContent = "⚠ 笔记渲染失败 (XML解析错误)";
+      headerText.textContent = getString("itempane-note-render-failed");
 
       // Prepare full error text for copying
-      const fullErrorText = `XML Parsing Error\n${errorText}\n\nLocation: ${errorLocation}\n\nContext:\n${errorContext}`;
+      const fullErrorText = [
+        getString("itempane-note-xml-copy-title"),
+        errorText,
+        "",
+        errorLocation
+          ? getString("itempane-note-xml-copy-location", {
+              args: { location: errorLocation },
+            })
+          : "",
+        "",
+        getString("itempane-note-xml-copy-context"),
+        errorContext,
+      ].join("\n");
 
       const copyBtn = doc.createElement("button");
-      copyBtn.textContent = "📋 复制";
+      copyBtn.textContent = getString("itempane-copy");
       copyBtn.style.cssText = `
         padding: 2px 6px;
         font-size: 12px;
@@ -4861,15 +4950,15 @@ async function loadNoteContent(
             doc.execCommand("copy");
             insertTarget.removeChild(textarea);
           }
-          copyBtn.textContent = "✅ 已复制";
+          copyBtn.textContent = getString("itempane-copied");
           setTimeout(() => {
-            copyBtn.textContent = "📋 复制";
+            copyBtn.textContent = getString("itempane-copy");
           }, 2000);
         } catch (e) {
           ztoolkit.log("[AI-Butler] Copy failed:", e);
-          copyBtn.textContent = "❌ 失败";
+          copyBtn.textContent = getString("itempane-failed");
           setTimeout(() => {
-            copyBtn.textContent = "📋 复制";
+            copyBtn.textContent = getString("itempane-copy");
           }, 2000);
         }
       });
@@ -4911,7 +5000,7 @@ async function loadNoteContent(
     }
   } catch (err: any) {
     ztoolkit.log("[AI-Butler] 加载笔记失败:", err);
-    noteContent.innerHTML = `<div style="color: #d32f2f; padding: 10px;">加载笔记失败: ${err.message}</div>`;
+    noteContent.innerHTML = `<div style="color: #d32f2f; padding: 10px;">${getString("itempane-note-load-failed", { args: { message: escapeHtmlForChat(err.message) } })}</div>`;
   }
 }
 
@@ -4944,7 +5033,9 @@ async function loadImageSummary(
     if (!imageNote) {
       // 显示生成按钮
       const generateImageBtn = doc.createElement("button");
-      generateImageBtn.textContent = "🖼️ 生成一图总结";
+      generateImageBtn.textContent = getString(
+        "itempane-generate-image-summary",
+      );
       generateImageBtn.style.cssText = `
         padding: 8px 16px;
         border: 1px solid #9c27b0;
@@ -4965,15 +5056,17 @@ async function loadImageSummary(
       generateImageBtn.addEventListener("click", async () => {
         try {
           generateImageBtn.disabled = true;
-          generateImageBtn.textContent = "正在加入队列...";
+          generateImageBtn.textContent = getString("itempane-adding-to-queue");
           const { TaskQueueManager } = await import("./taskQueue");
           const queueManager = TaskQueueManager.getInstance();
           await queueManager.addImageSummaryTask(targetItem);
-          generateImageBtn.textContent = "✅ 已加入队列";
+          generateImageBtn.textContent = getString("itempane-added-to-queue");
         } catch (err: any) {
-          generateImageBtn.textContent = "❌ 失败";
+          generateImageBtn.textContent = getString("itempane-failed");
           setTimeout(() => {
-            generateImageBtn.textContent = "🖼️ 生成一图总结";
+            generateImageBtn.textContent = getString(
+              "itempane-generate-image-summary",
+            );
             generateImageBtn.disabled = false;
           }, 2000);
         }
@@ -4982,7 +5075,7 @@ async function loadImageSummary(
       imageContainer.innerHTML = `
         <div style="color: #9e9e9e; margin-bottom: 8px;">
           <div style="font-size: 24px; margin-bottom: 4px;">🖼️</div>
-          <div style="font-size: 12px;">暂无一图总结</div>
+          <div style="font-size: 12px;">${getString("itempane-no-image-summary")}</div>
         </div>
       `;
       imageContainer.appendChild(generateImageBtn);
@@ -4993,14 +5086,14 @@ async function loadImageSummary(
     const imgSrc = await ImageNoteGenerator.getImageFromNote(imageNote);
 
     if (!imgSrc) {
-      imageContainer.innerHTML = `<div style="color: #9e9e9e; font-size: 12px;">笔记中未找到图片</div>`;
+      imageContainer.innerHTML = `<div style="color: #9e9e9e; font-size: 12px;">${getString("itempane-image-not-found")}</div>`;
       return;
     }
 
     // 创建图片元素
     const imgElement = doc.createElement("img");
     imgElement.src = imgSrc;
-    imgElement.alt = "一图总结";
+    imgElement.alt = getString("itempane-image-title");
     imgElement.style.cssText = `
       width: 100%;
       max-width: 100%;
@@ -5031,7 +5124,7 @@ async function loadImageSummary(
     // 放大按钮
     const zoomBtn = doc.createElement("button");
     zoomBtn.textContent = "🔍";
-    zoomBtn.title = "放大查看";
+    zoomBtn.title = getString("itempane-zoom-image");
     zoomBtn.style.cssText = `
       padding: 4px 8px;
       border: 1px solid #9c27b0;
@@ -5047,7 +5140,7 @@ async function loadImageSummary(
     // 下载按钮
     const downloadBtn = doc.createElement("button");
     downloadBtn.textContent = "⬇️";
-    downloadBtn.title = "下载图片";
+    downloadBtn.title = getString("itempane-download-image");
     downloadBtn.style.cssText = `
       padding: 4px 8px;
       border: 1px solid #9c27b0;
@@ -5068,7 +5161,7 @@ async function loadImageSummary(
           const ext = mimeExt === "jpeg" ? "jpg" : mimeExt;
 
           const desktopDir = Services.dirsvc.get("Desk", Ci.nsIFile);
-          const filename = `AI管家_一图总结_${targetItem
+          const filename = `${getString("itempane-image-summary-filename-prefix")}_${targetItem
             .getField("title")
             .substring(0, 30)
             .replace(/[\\/:*?"<>|]/g, "_")}.${ext}`;
@@ -5087,7 +5180,9 @@ async function loadImageSummary(
             closeTime: 3000,
           })
             .createLine({
-              text: `图片已保存到桌面: ${filename}`,
+              text: getString("itempane-image-saved-desktop", {
+                args: { filename },
+              }),
               type: "success",
             })
             .show();
@@ -5096,7 +5191,10 @@ async function loadImageSummary(
             closeOnClick: true,
             closeTime: 3000,
           })
-            .createLine({ text: "仅支持 data URI 格式的图片", type: "error" })
+            .createLine({
+              text: getString("itempane-data-uri-only"),
+              type: "error",
+            })
             .show();
         }
       } catch (err: any) {
@@ -5105,7 +5203,12 @@ async function loadImageSummary(
           closeOnClick: true,
           closeTime: 3000,
         })
-          .createLine({ text: `下载失败: ${err.message}`, type: "error" })
+          .createLine({
+            text: getString("itempane-download-failed", {
+              args: { error: err.message },
+            }),
+            type: "error",
+          })
           .show();
       }
     });
@@ -5114,7 +5217,7 @@ async function loadImageSummary(
     // 打开文件夹按钮
     const openFolderBtn = doc.createElement("button");
     openFolderBtn.textContent = "📂";
-    openFolderBtn.title = "打开图片所在文件夹";
+    openFolderBtn.title = getString("itempane-open-image-folder");
     openFolderBtn.style.cssText = `
       padding: 4px 8px;
       border: 1px solid #9c27b0;
@@ -5139,14 +5242,20 @@ async function loadImageSummary(
               closeOnClick: true,
               closeTime: 2000,
             })
-              .createLine({ text: "已打开图片所在文件夹", type: "success" })
+              .createLine({
+                text: getString("itempane-folder-opened"),
+                type: "success",
+              })
               .show();
           } else {
             new ztoolkit.ProgressWindow("AI Butler", {
               closeOnClick: true,
               closeTime: 3000,
             })
-              .createLine({ text: "图片文件不存在", type: "error" })
+              .createLine({
+                text: getString("itempane-image-file-missing"),
+                type: "error",
+              })
               .show();
           }
         } else {
@@ -5155,7 +5264,7 @@ async function loadImageSummary(
             closeTime: 3000,
           })
             .createLine({
-              text: "未找到图片附件（可能是旧版内嵌图片）",
+              text: getString("itempane-image-attachment-missing"),
               type: "error",
             })
             .show();
@@ -5166,7 +5275,12 @@ async function loadImageSummary(
           closeOnClick: true,
           closeTime: 3000,
         })
-          .createLine({ text: `打开失败: ${err.message}`, type: "error" })
+          .createLine({
+            text: getString("itempane-open-failed", {
+              args: { error: err.message },
+            }),
+            type: "error",
+          })
           .show();
       }
     });
@@ -5176,7 +5290,7 @@ async function loadImageSummary(
     imageContainer.appendChild(imgElement);
   } catch (err: any) {
     ztoolkit.log("[AI-Butler] 加载一图总结失败:", err);
-    imageContainer.innerHTML = `<div style="color: #d32f2f; font-size: 12px;">加载失败: ${err.message}</div>`;
+    imageContainer.innerHTML = `<div style="color: #d32f2f; font-size: 12px;">${getString("itempane-load-failed", { args: { error: err.message } })}</div>`;
   }
 }
 
@@ -5190,7 +5304,7 @@ async function openImageSummaryViewerWindow(
       : (globalThis as any);
 
   if (typeof mainWin?.openDialog !== "function") {
-    throw new Error("openDialog not available");
+    throw new Error(getString("itempane-error-open-dialog-unavailable"));
   }
 
   let itemTitle = "";
@@ -5209,7 +5323,11 @@ async function openImageSummaryViewerWindow(
     ? Math.max(600, Math.floor(screenObj.availHeight * 0.95))
     : 800;
 
-  const title = itemTitle ? `一图总结 - ${itemTitle}` : "一图总结";
+  const title = itemTitle
+    ? getString("itempane-image-summary-title-with-item", {
+        args: { title: itemTitle },
+      })
+    : getString("itempane-image-summary-title");
   const viewerURL = `chrome://${config.addonRef}/content/imageSummaryViewer.html`;
 
   const dialogWin: any = mainWin.openDialog(
@@ -5220,7 +5338,7 @@ async function openImageSummaryViewerWindow(
   );
 
   if (!dialogWin) {
-    throw new Error("Failed to open viewer window");
+    throw new Error(getString("itempane-error-viewer-window-failed"));
   }
 
   // Extra fallback channel in case window.arguments isn't available for some reason
@@ -5248,7 +5366,7 @@ async function openMindmapViewerWindow(
       : (globalThis as any);
 
   if (typeof mainWin?.openDialog !== "function") {
-    throw new Error("openDialog not available");
+    throw new Error(getString("itempane-error-open-dialog-unavailable"));
   }
 
   let itemTitle = "";
@@ -5268,7 +5386,11 @@ async function openMindmapViewerWindow(
     width = Math.min(width, Math.floor(screenObj.availWidth * 0.9));
   }
 
-  const title = itemTitle ? `思维导图 - ${itemTitle}` : "思维导图";
+  const title = itemTitle
+    ? getString("itempane-mindmap-title-with-item", {
+        args: { title: itemTitle },
+      })
+    : getString("itempane-mindmap-title");
   const viewerURL = `chrome://${config.addonRef}/content/mindmapViewer.html`;
 
   const dialogWin: any = mainWin.openDialog(
@@ -5283,7 +5405,7 @@ async function openMindmapViewerWindow(
   );
 
   if (!dialogWin) {
-    throw new Error("Failed to open viewer window");
+    throw new Error(getString("itempane-error-viewer-window-failed"));
   }
 
   // Extra fallback channel in case window.arguments isn't available for some reason
@@ -5320,7 +5442,7 @@ function openImageOverlayFallback(doc: Document, imageDataUri: string): void {
 
   const fullImg = doc.createElement("img");
   fullImg.src = imageDataUri;
-  fullImg.alt = "一图总结";
+  fullImg.alt = getString("image-note-poster-alt");
   fullImg.style.cssText = `
     max-width: 95%;
     max-height: 95%;
@@ -5598,7 +5720,7 @@ async function copyToClipboard(doc: Document, text: string): Promise<void> {
 
     // 回退方案：使用 execCommand
     if (!doc.body) {
-      throw new Error("Document body not available");
+      throw new Error(getString("itempane-error-document-body-unavailable"));
     }
     const textArea = doc.createElement("textarea");
     textArea.value = text;

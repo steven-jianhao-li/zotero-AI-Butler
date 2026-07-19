@@ -18,6 +18,7 @@
 
 import { getPref } from "../utils/prefs";
 import { AiNoteService, type AiNoteKind } from "./aiNoteService";
+import { ContentExtractor } from "./contentExtractor";
 import { TaskQueueManager } from "./taskQueue";
 
 /**
@@ -183,29 +184,16 @@ export class AutoScanManager {
     return true;
   }
 
-  /** 判断是否存在可用的 PDF 附件 */
-  private async hasUsablePDFAttachment(item: Zotero.Item): Promise<boolean> {
+  /** 判断是否存在可用的可分析附件 */
+  private async hasUsableAnalyzableAttachment(
+    item: Zotero.Item,
+  ): Promise<boolean> {
     try {
-      const attIDs: number[] = ((item as any).getAttachments?.() ||
-        []) as number[];
-      for (const aid of attIDs) {
-        const att = await Zotero.Items.getAsync(aid);
-        if (!att || !att.isAttachment()) continue;
-        const mime = (att as any).attachmentMIMEType || "";
-        const file = await (att as any).getFile?.();
-        if (mime === "application/pdf" && file) {
-          return true;
-        }
-        // 若 MIME 未填，退化到扩展名判断
-        const path = (att as any).getFilePath?.() || "";
-        if (path && /\.pdf$/i.test(path)) {
-          return true;
-        }
-      }
+      return await ContentExtractor.hasUsableAnalyzableAttachment(item);
     } catch (e) {
-      // 忽略单条异常
+      ztoolkit.log("[AutoScan] 检查可分析附件时出错:", e);
+      return false;
     }
-    return false;
   }
 
   /** 如果条目附件已就绪且需要 AI，则入队；否则进入待观察并轮询重试 */
@@ -216,8 +204,8 @@ export class AutoScanManager {
     const needsDeepRead = await this.shouldAutoCreate(item, "deepRead");
     if (!needsSummary && !needsDeepRead) return;
 
-    // 检查 PDF 附件
-    if (await this.hasUsablePDFAttachment(item)) {
+    // 检查可分析附件
+    if (await this.hasUsableAnalyzableAttachment(item)) {
       // 具备条件，按缺失类型分别入队
       this.pendingParents.delete(item.id);
       const tqm = TaskQueueManager.getInstance();

@@ -1120,3 +1120,12 @@ summary-queue-button-completed = 查看任务队列（已完成）
 summary-queue-button-error = 查看任务队列（有错误）
 summary-queue-button-ready = 查看任务队列
 summary-title = AI 总结输出
+
+content-error-no-analyzable-attachment = 该条目没有可分析附件，无法进行 AI 分析。请先添加 PDF 文件或网页快照。
+content-error-unsupported-attachment = 附件不是当前支持的可分析内容源
+snapshot-error-not-web-snapshot = 附件不是网页快照
+snapshot-error-no-file-path = 无法获取网页快照文件路径
+snapshot-error-empty-file = 网页快照文件为空或无法读取
+snapshot-error-no-readable-text = 无法从网页快照中提取可读文本
+llm-warning-web-snapshot-used = 已使用网页快照文本作为本次分析内容。
+llm-warning-attachment-as-text = 当前附件将按文本内容进行分析。

@@ -16,6 +16,7 @@ import {
   type LLMEndpoint,
   type LLMPdfProcessMode,
 } from "./llmEndpointManager";
+import { ContentExtractor } from "./contentExtractor";
 import { PDFExtractor } from "./pdfExtractor";
 import type { TaskProgressMeta } from "./taskQueue";
 import { ProviderRegistry } from "./llmproviders/ProviderRegistry";
@@ -75,6 +76,13 @@ export type LLMPdfAttachmentContent = {
   policy?: LLMContentPolicy;
 };
 
+export type LLMAnalyzableAttachmentContent = {
+  kind: "analyzable-attachment";
+  item?: Zotero.Item;
+  attachment: Zotero.Item;
+  policy?: LLMContentPolicy;
+};
+
 export type LLMPdfFileInput = PdfFileInfo & {
   textContent?: string;
 };
@@ -97,6 +105,7 @@ export type LLMContentInput =
   | LLMTextContent
   | LLMZoteroItemContent
   | LLMPdfAttachmentContent
+  | LLMAnalyzableAttachmentContent
   | LLMPdfFilesContent
   | LLMLegacyContent;
 
@@ -1093,6 +1102,15 @@ export class LLMService {
       );
     }
 
+    if (input.kind === "analyzable-attachment") {
+      return this.resolveAnalyzableAttachmentContent(
+        input,
+        policy,
+        warnings,
+        statusCallback,
+      );
+    }
+
     return this.resolvePdfFilesContent(
       provider,
       input,
@@ -1142,10 +1160,30 @@ export class LLMService {
       (getPref("pdfAttachmentMode") as string) ||
       "default";
     const maxAttachments = Math.max(input.maxAttachments || Infinity, 1);
+    const pdfAttachments = await PDFExtractor.getAllPdfAttachments(input.item);
+    const hasPdf = pdfAttachments.length > 0;
+
+    if (!hasPdf) {
+      const snapshotContent =
+        await ContentExtractor.extractAnalyzableContentFromItem(
+          input.item,
+          false,
+          policy === "mineru" ? "mineru" : "text",
+          statusCallback,
+        );
+      if (snapshotContent.kind === "web-snapshot") {
+        warnings.push(getString("llm-warning-web-snapshot-used"));
+      }
+      return {
+        mode: "single",
+        content: this.normalizeText(snapshotContent.content),
+        isBase64: false,
+        warnings,
+      };
+    }
 
     if (allowMultiFile && policy === "pdf-base64" && attachmentMode === "all") {
-      const allPdfs = await PDFExtractor.getAllPdfAttachments(input.item);
-      if (allPdfs.length > 1) {
+      if (pdfAttachments.length > 1) {
         if (
           capabilities.maxPdfFiles <= 1 ||
           typeof provider.generateMultiFileSummary !== "function"
@@ -1154,8 +1192,8 @@ export class LLMService {
         }
 
         const limit = Math.min(maxAttachments, capabilities.maxPdfFiles);
-        const selected = allPdfs.slice(0, limit);
-        if (allPdfs.length > selected.length) {
+        const selected = pdfAttachments.slice(0, limit);
+        if (pdfAttachments.length > selected.length) {
           warnings.push(
             getString("llm-warning-pdf-provider-limit", {
               args: { count: selected.length },
@@ -1166,7 +1204,8 @@ export class LLMService {
           selected.map(async (pdf, index) => ({
             filePath: (await pdf.getFilePathAsync()) || "",
             displayName:
-              String(pdf.getField("title") || "").trim() || `PDF-${index + 1}`,
+              String(pdf.getField("title") || "").trim() ||
+              "PDF-" + (index + 1),
             base64Content: await PDFExtractor.extractBase64FromAttachment(pdf),
           })),
         );
@@ -1183,14 +1222,13 @@ export class LLMService {
     }
 
     if (attachmentMode === "all") {
-      const allPdfs = await PDFExtractor.getAllPdfAttachments(input.item);
-      const selected = allPdfs.slice(0, maxAttachments);
+      const selected = pdfAttachments.slice(0, maxAttachments);
       const parts = await Promise.all(
         selected.map(async (pdf, index) => {
           const title =
-            String(pdf.getField("title") || "").trim() || `PDF-${index + 1}`;
+            String(pdf.getField("title") || "").trim() || "PDF-" + (index + 1);
           const text = await PDFExtractor.extractTextFromAttachment(pdf);
-          return `\n\n=== ${title} ===\n${this.normalizeText(text)}`;
+          return "\n\n=== " + title + " ===\n" + this.normalizeText(text);
         }),
       );
       return {
@@ -1239,6 +1277,45 @@ export class LLMService {
             statusCallback,
           )
         : await PDFExtractor.extractTextFromAttachment(input.attachment);
+    return {
+      mode: "single",
+      content: this.normalizeText(text),
+      isBase64: false,
+      warnings,
+    };
+  }
+
+  private static async resolveAnalyzableAttachmentContent(
+    input: LLMAnalyzableAttachmentContent,
+    policy: LLMContentPolicy,
+    warnings: string[],
+    statusCallback?: (
+      message: string,
+      progress: number,
+      meta?: TaskProgressMeta,
+    ) => void,
+  ): Promise<ResolvedContent> {
+    if (PDFExtractor.isPdfAttachment(input.attachment)) {
+      return this.resolvePdfAttachmentContent(
+        {
+          kind: "pdf-attachment",
+          item: input.item,
+          attachment: input.attachment,
+          policy: input.policy,
+        },
+        policy,
+        warnings,
+        statusCallback,
+      );
+    }
+
+    if (policy === "pdf-base64") {
+      warnings.push(getString("llm-warning-attachment-as-text"));
+    }
+
+    const text = await ContentExtractor.extractTextFromAnalyzableAttachment(
+      input.attachment,
+    );
     return {
       mode: "single",
       content: this.normalizeText(text),

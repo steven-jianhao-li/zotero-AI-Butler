@@ -77,6 +77,18 @@ export type PdfExtractionProgressCallback = (
 ) => void;
 
 export class PDFExtractor {
+  public static isPdfAttachment(attachment: Zotero.Item): boolean {
+    const contentType = String(
+      (attachment as any).attachmentContentType ||
+        (attachment as any).attachmentMIMEType ||
+        "",
+    ).toLowerCase();
+    if (contentType === "application/pdf") return true;
+
+    const filePath = String((attachment as any).getFilePath?.() || "");
+    return filePath.toLowerCase().endsWith(".pdf");
+  }
+
   private static readonly TEXT_EXTRACTION_TIMEOUT_MS = 30000;
   private static readonly TEXT_EXTRACTION_POLL_INTERVAL_MS = 1000;
 

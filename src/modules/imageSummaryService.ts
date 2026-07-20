@@ -13,6 +13,7 @@
  * @author AI-Butler Team
  */
 
+import { ContentExtractor } from "./contentExtractor";
 import { PDFExtractor } from "./pdfExtractor";
 import LLMService from "./llmService";
 import { ImageClient, ImageGenerationError } from "./imageClient";
@@ -76,7 +77,7 @@ export class ImageSummaryService {
       // 检查 PDF 文件大小限制
       const enableSizeLimit =
         (getPref("enablePdfSizeLimit" as any) as boolean) ?? false;
-      if (enableSizeLimit) {
+      if (enableSizeLimit && (await PDFExtractor.hasPDFAttachment(item))) {
         const maxPdfSizeMB = parseFloat(
           (getPref("maxPdfSizeMB" as any) as string) || "50",
         );
@@ -208,13 +209,15 @@ export class ImageSummaryService {
     item: Zotero.Item,
     mode: LLMPdfProcessMode,
   ): Promise<string> {
-    if (mode === "base64") {
-      return await PDFExtractor.extractBase64FromItem(item);
-    } else {
-      const fullText = await PDFExtractor.extractTextFromItem(item, mode);
-      const cleanedText = PDFExtractor.cleanText(fullText);
-      return PDFExtractor.truncateText(cleanedText);
-    }
+    const extracted = await ContentExtractor.extractAnalyzableContentFromItem(
+      item,
+      mode === "base64",
+      mode,
+    );
+    if (extracted.isBase64) return extracted.content;
+
+    const cleanedText = PDFExtractor.cleanText(extracted.content);
+    return PDFExtractor.truncateText(cleanedText);
   }
 
   /**

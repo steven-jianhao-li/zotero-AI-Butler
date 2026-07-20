@@ -1275,17 +1275,16 @@ export class SummaryView extends BaseView {
       }
       // 获取 PDF 内容以支持追问
       try {
-        const { PDFExtractor } = await import("../pdfExtractor");
+        const { ContentExtractor } = await import("../contentExtractor");
         const { default: LLMService } = await import("../llmService");
         const pdfMode = LLMService.getEffectivePdfProcessMode();
-        const isBase64 = pdfMode === "base64";
 
-        let pdfContent = "";
-        if (isBase64) {
-          pdfContent = await PDFExtractor.extractBase64FromItem(item);
-        } else {
-          pdfContent = await PDFExtractor.extractTextFromItem(item, pdfMode);
-        }
+        const { content: pdfContent, isBase64 } =
+          await ContentExtractor.extractAnalyzableContentFromItem(
+            item,
+            pdfMode === "base64",
+            pdfMode,
+          );
 
         this.hideLoading();
 
@@ -1447,17 +1446,16 @@ export class SummaryView extends BaseView {
       const aiSummaryText = SummaryView.noteHtmlToPlainText(html);
       // 获取PDF内容以支持后续追问
       try {
-        const { PDFExtractor } = await import("../pdfExtractor");
+        const { ContentExtractor } = await import("../contentExtractor");
         const { default: LLMService } = await import("../llmService");
         const pdfMode = LLMService.getEffectivePdfProcessMode();
-        const isBase64 = pdfMode === "base64";
 
-        let pdfContent = "";
-        if (isBase64) {
-          pdfContent = await PDFExtractor.extractBase64FromItem(item);
-        } else {
-          pdfContent = await PDFExtractor.extractTextFromItem(item, pdfMode);
-        }
+        const { content: pdfContent, isBase64 } =
+          await ContentExtractor.extractAnalyzableContentFromItem(
+            item,
+            pdfMode === "base64",
+            pdfMode,
+          );
 
         if (pdfContent) {
           // 设置论文上下文，传入AI总结内容

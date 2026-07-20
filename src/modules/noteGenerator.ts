@@ -25,6 +25,7 @@
  * @author AI-Butler Team
  */
 
+import { ContentExtractor } from "./contentExtractor";
 import { PDFExtractor } from "./pdfExtractor";
 import LLMService, {
   type LLMChatRequest,
@@ -239,7 +240,7 @@ export class NoteGenerator {
       // 检查 PDF 文件大小限制
       const enableSizeLimit =
         (getPref("enablePdfSizeLimit" as any) as boolean) ?? false;
-      if (enableSizeLimit) {
+      if (enableSizeLimit && (await PDFExtractor.hasPDFAttachment(item))) {
         const maxPdfSizeMB = parseFloat(
           (getPref("maxPdfSizeMB" as any) as string) || "50",
         );
@@ -615,22 +616,17 @@ export class NoteGenerator {
       meta?: TaskProgressMeta,
     ) => void,
   ): Promise<{ content: string; isBase64: boolean }> {
-    if (mode === "base64") {
-      return {
-        content: await PDFExtractor.extractBase64FromItem(
-          item,
-          progressCallback,
-        ),
-        isBase64: true,
-      };
-    }
-
-    const fullText = await PDFExtractor.extractTextFromItem(
+    const extracted = await ContentExtractor.extractAnalyzableContentFromItem(
       item,
+      mode === "base64",
       mode,
       progressCallback,
     );
-    const cleanedText = PDFExtractor.cleanText(fullText);
+    if (extracted.isBase64) {
+      return { content: extracted.content, isBase64: true };
+    }
+
+    const cleanedText = PDFExtractor.cleanText(extracted.content);
     return {
       content: PDFExtractor.truncateText(cleanedText),
       isBase64: false,

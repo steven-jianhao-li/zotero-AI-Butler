@@ -28,6 +28,7 @@
 import { getString } from "../utils/locale";
 import { getPref } from "../utils/prefs";
 import { NoteGenerator } from "./noteGenerator";
+import { ContentExtractor } from "./contentExtractor";
 import { PDFExtractor } from "./pdfExtractor";
 import type { LLMAbortSignal } from "./llmproviders/types";
 import { isAbortError } from "./llmproviders/shared/requestAbort";
@@ -90,7 +91,7 @@ function getLegacyNoPdfErrorMessage(): string {
   );
 }
 function getNoPdfErrorMessage(): string {
-  return getString("task-error-no-pdf-attachment");
+  return getString("content-error-no-analyzable-attachment");
 }
 
 function getTaskAbortDetail(): string {
@@ -2371,7 +2372,7 @@ export class TaskQueueManager {
         return false;
       }
 
-      // 检查是否有 PDF 附件
+      // 检查是否有可分析附件
       this.updateTaskProgress(
         task,
         5,
@@ -2382,8 +2383,9 @@ export class TaskQueueManager {
           detail: getString("task-detail-checking-pdf-attachment"),
         },
       );
-      const hasPdf = await PDFExtractor.hasPDFAttachment(item);
-      if (!hasPdf) {
+      const hasAnalyzable =
+        await ContentExtractor.hasAnalyzableAttachment(item);
+      if (!hasAnalyzable) {
         throw new Error(getNoPdfErrorMessage());
       }
 

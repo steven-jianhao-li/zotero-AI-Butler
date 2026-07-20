@@ -1120,3 +1120,12 @@ summary-queue-button-completed = View Task Queue (completed)
 summary-queue-button-error = View Task Queue (error)
 summary-queue-button-ready = View Task Queue
 summary-title = AI Summary Output
+
+content-error-no-analyzable-attachment = This item has no analyzable attachment. Please add a PDF file or web snapshot first.
+content-error-unsupported-attachment = This attachment is not a supported analyzable content source.
+snapshot-error-not-web-snapshot = This attachment is not a web snapshot.
+snapshot-error-no-file-path = Could not get the web snapshot file path.
+snapshot-error-empty-file = The web snapshot file is empty or cannot be read.
+snapshot-error-no-readable-text = Could not extract readable text from the web snapshot.
+llm-warning-web-snapshot-used = Used web snapshot text as the analysis content.
+llm-warning-attachment-as-text = This attachment will be analyzed as text content.

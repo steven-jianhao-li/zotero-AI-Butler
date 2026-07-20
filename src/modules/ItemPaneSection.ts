@@ -3104,19 +3104,18 @@ function renderChatArea(
     // 如果尚未加载 PDF 内容，则加载
     if (item) {
       try {
-        const { PDFExtractor } = await import("./pdfExtractor");
+        const { ContentExtractor } = await import("./contentExtractor");
         const { default: LLMService } = await import("./llmService");
         const pdfMode = LLMService.getEffectivePdfProcessMode();
-        const isBase64 = pdfMode === "base64";
 
         messagesArea.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-chat-loading-pdf")}</div>`;
 
-        let pdfContent = "";
-        if (isBase64) {
-          pdfContent = await PDFExtractor.extractBase64FromItem(item);
-        } else {
-          pdfContent = await PDFExtractor.extractTextFromItem(item, pdfMode);
-        }
+        const { content: pdfContent, isBase64 } =
+          await ContentExtractor.extractAnalyzableContentFromItem(
+            item,
+            pdfMode === "base64",
+            pdfMode,
+          );
 
         if (pdfContent) {
           currentChatState.pdfContent = pdfContent;

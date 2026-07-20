@@ -18,6 +18,7 @@
 import { BaseView } from "./BaseView";
 import { MainWindow } from "./MainWindow";
 import { LiteratureReviewService } from "../literatureReviewService";
+import { ContentExtractor } from "../contentExtractor";
 import {
   createInput,
   createTextarea,
@@ -828,32 +829,7 @@ export class LiteratureReviewView extends BaseView {
    * 获取条目的所有 PDF 附件
    */
   private async getPdfAttachments(item: Zotero.Item): Promise<Zotero.Item[]> {
-    const attachmentIDs = item.getAttachments();
-    const pdfAttachments: Zotero.Item[] = [];
-
-    for (const attID of attachmentIDs) {
-      const att = await Zotero.Items.getAsync(attID);
-      if (att && att.isPDFAttachment?.()) {
-        pdfAttachments.push(att);
-      }
-    }
-
-    return pdfAttachments.sort((a, b) => {
-      const dateA = new Date(a.dateAdded).getTime();
-      const dateB = new Date(b.dateAdded).getTime();
-      const normalizedDateA = Number.isNaN(dateA)
-        ? Number.MAX_SAFE_INTEGER
-        : dateA;
-      const normalizedDateB = Number.isNaN(dateB)
-        ? Number.MAX_SAFE_INTEGER
-        : dateB;
-
-      if (normalizedDateA !== normalizedDateB) {
-        return normalizedDateA - normalizedDateB;
-      }
-
-      return a.id - b.id;
-    });
+    return ContentExtractor.getPreferredAnalyzableAttachments(item);
   }
 
   /**

@@ -16,6 +16,7 @@
  * @author AI-Butler Team
  */
 
+import { ContentExtractor } from "./contentExtractor";
 import { PDFExtractor } from "./pdfExtractor";
 import { NoteGenerator } from "./noteGenerator";
 import { zoteroNoteMathHtml } from "./noteMarkdown";
@@ -664,7 +665,7 @@ ${entryList}
       task: "table",
       prompt: actualPrompt,
       content: {
-        kind: "pdf-attachment",
+        kind: "analyzable-attachment",
         item,
         attachment: pdfAttachment,
       },
@@ -687,6 +688,24 @@ ${entryList}
     );
 
     return result;
+  }
+
+  static async fillTableForSingleAttachment(
+    item: Zotero.Item,
+    attachment: Zotero.Item,
+    tableTemplate: string,
+    fillPrompt: string,
+    progressCallback?: (message: string, progress: number) => void,
+    abortSignal?: LLMAbortSignal,
+  ): Promise<string> {
+    return this.fillTableForSinglePDF(
+      item,
+      attachment,
+      tableTemplate,
+      fillPrompt,
+      progressCallback,
+      abortSignal,
+    );
   }
 
   /**
@@ -1227,21 +1246,16 @@ ${entryList}
           displayTitle = `${paperTitle} - ${attachmentTitle}`;
         }
 
-        // 尝试读取 Base64 内容
-        let base64Content = "";
-        try {
-          const fileData = await IOUtils.read(filePath);
-          // 使用分块方式转换为 base64，避免大文件导致 "too many function arguments" 错误
-          base64Content = this.arrayBufferToBase64(fileData);
-        } catch (e) {
-          ztoolkit.log(`[AI-Butler] 读取 PDF 文件失败: ${filePath}`, e);
-        }
+        const isPdf = PDFExtractor.isPdfAttachment(pdfAtt);
+        const content = isPdf
+          ? this.arrayBufferToBase64(await IOUtils.read(filePath))
+          : await ContentExtractor.extractTextFromAnalyzableAttachment(pdfAtt);
 
         contents.push({
           title: displayTitle,
           filePath,
-          content: base64Content,
-          isBase64: true,
+          content,
+          isBase64: isPdf,
         });
       } catch (error) {
         ztoolkit.log(
@@ -1272,19 +1286,42 @@ ${entryList}
       60,
     );
 
-    const files = pdfContents.map((pdf, index) => ({
+    const pdfSources = pdfContents.filter((source) => source.isBase64);
+    const textSources = pdfContents.filter((source) => !source.isBase64);
+    const textSourceContent = textSources
+      .map((source) => "\n\n=== " + source.title + " ===\n" + source.content)
+      .join("\n");
+
+    if (pdfSources.length === 0) {
+      return LLMService.generateText({
+        task: "literature-review",
+        prompt,
+        content: {
+          kind: "text",
+          text: textSourceContent,
+          policy: "text",
+        },
+      });
+    }
+
+    const files = pdfSources.map((pdf, index) => ({
       filePath: pdf.filePath,
-      displayName: `${index + 1}_${pdf.title.slice(0, 50)}`,
-      base64Content: pdf.isBase64 ? pdf.content : undefined,
-      textContent: pdf.isBase64 ? undefined : pdf.content,
+      displayName: index + 1 + "_" + pdf.title.slice(0, 50),
+      base64Content: pdf.content,
     }));
+
+    const fullPrompt =
+      textSources.length > 0
+        ? prompt + "\n\n以下是额外的文本内容源：" + textSourceContent
+        : prompt;
 
     return LLMService.generateText({
       task: "literature-review",
-      prompt,
+      prompt: fullPrompt,
       content: {
         kind: "pdf-files",
         files,
+        policy: "pdf-base64",
       },
     });
   }

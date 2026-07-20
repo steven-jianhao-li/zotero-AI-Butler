@@ -40,9 +40,7 @@ import {
   type ChatAbortControllerLike,
 } from "../chatContext";
 import {
-  buildFollowUpChatPairNoteHtml,
   markdownToDisplayHtml,
-  normalizeFollowUpChatNoteHtml,
   parseFollowUpChatPairsFromNoteHtml,
   stripInvalidXmlChars,
 } from "../noteMarkdown";
@@ -945,21 +943,7 @@ export class SummaryView extends BaseView {
     try {
       const item = await Zotero.Items.getAsync(this.currentItemId);
       if (!item) return;
-      const note = await this.findChatNote(item);
-      if (!note) return;
-      let noteHtml = (note as any).getNote?.() || "";
-
-      // 使用标记区间删除
-      const startMarker = `<!-- AI_BUTLER_CHAT_PAIR_START id=${pairId} -->`;
-      const endMarker = `<!-- AI_BUTLER_CHAT_PAIR_END id=${pairId} -->`;
-      const startIdx = noteHtml.indexOf(startMarker);
-      const endIdx = noteHtml.indexOf(endMarker);
-      if (startIdx !== -1 && endIdx !== -1) {
-        const removeUntil = endIdx + endMarker.length;
-        noteHtml = noteHtml.slice(0, startIdx) + noteHtml.slice(removeUntil);
-        (note as any).setNote(noteHtml);
-        await (note as any).saveTx();
-      }
+      await AiNoteService.removeFollowUpPair(item, pairId);
     } catch (e) {
       ztoolkit.log("[AI-Butler] 从独立笔记删除追问对失败:", e);
     }

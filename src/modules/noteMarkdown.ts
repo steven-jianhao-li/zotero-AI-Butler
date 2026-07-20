@@ -47,6 +47,18 @@ export function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
+function unescapeHtml(text: string): string {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#039;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ");
+}
+
 function isInvalidXmlCharCode(code: number): boolean {
   return (
     (code >= 0x00 && code <= 0x08) ||
@@ -309,6 +321,58 @@ function escapeJsonForHtmlComment(json: string): string {
     .replace(/--/g, "-\\u002D");
 }
 
+function utf8ToBase64Url(input: string): string {
+  const bytes = new TextEncoder().encode(input);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...Array.from(chunk));
+  }
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function base64UrlToUtf8(input: string): string {
+  const padded = input.replace(/-/g, "+").replace(/_/g, "/");
+  const padLength = (4 - (padded.length % 4)) % 4;
+  const binary = atob(padded + "=".repeat(padLength));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function readHtmlAttribute(html: string, name: string): string {
+  const escapedName = escapeRegExp(name);
+  const match = html.match(
+    new RegExp(`\\b${escapedName}\\s*=\\s*(["'])([\\s\\S]*?)\\1`, "i"),
+  );
+  return match ? unescapeHtml(match[2]) : "";
+}
+
+function htmlToPlainText(html: string): string {
+  return unescapeHtml(
+    html
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(?:p|div|li|h[1-6])>/gi, "\n")
+      .replace(/<[^>]+>/g, " "),
+  )
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 function normalizeFollowUpChatPair(raw: unknown): FollowUpChatPair | null {
   if (!raw || typeof raw !== "object") return null;
   const pair = raw as Partial<FollowUpChatPair>;
@@ -327,23 +391,195 @@ function normalizeFollowUpChatPair(raw: unknown): FollowUpChatPair | null {
   };
 }
 
+type HtmlElementMatch = {
+  tagName: string;
+  openingTag: string;
+  startIndex: number;
+  endIndex: number;
+  innerHtml: string;
+};
+
+type IndexedFollowUpChatPair = {
+  pair: FollowUpChatPair;
+  index: number;
+};
+
+function findMatchingElementEnd(
+  html: string,
+  tagName: string,
+  openingEndIndex: number,
+): number {
+  const tagPattern = new RegExp(`<\\/?${escapeRegExp(tagName)}\\b[^>]*>`, "gi");
+  tagPattern.lastIndex = openingEndIndex;
+  let depth = 1;
+  let match: RegExpExecArray | null;
+
+  while ((match = tagPattern.exec(html)) !== null) {
+    const token = match[0];
+    const isClosingTag = /^<\s*\//.test(token);
+    const isSelfClosing = /\/\s*>$/.test(token);
+
+    if (isClosingTag) {
+      depth -= 1;
+      if (depth === 0) {
+        return tagPattern.lastIndex;
+      }
+    } else if (!isSelfClosing) {
+      depth += 1;
+    }
+  }
+
+  return -1;
+}
+
+function findElementsByOpeningTag(
+  html: string,
+  predicate: (openingTag: string, tagName: string) => boolean,
+): HtmlElementMatch[] {
+  const results: HtmlElementMatch[] = [];
+  const openingTagPattern = /<([a-z][\w:-]*)\b[^>]*>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = openingTagPattern.exec(html)) !== null) {
+    const tagName = match[1].toLowerCase();
+    const openingTag = match[0];
+    const openingEndIndex = openingTagPattern.lastIndex;
+
+    if (!predicate(openingTag, tagName)) continue;
+
+    const endIndex = findMatchingElementEnd(html, tagName, openingEndIndex);
+    if (endIndex === -1) continue;
+
+    results.push({
+      tagName,
+      openingTag,
+      startIndex: match.index,
+      endIndex,
+      innerHtml: html.slice(openingEndIndex, endIndex - `</${tagName}>`.length),
+    });
+  }
+
+  return results;
+}
+
+function decodePairFromDataAttribute(
+  openingTag: string,
+): FollowUpChatPair | null {
+  const encodedJson = readHtmlAttribute(openingTag, "data-ai-butler-chat-json");
+  if (!encodedJson) return null;
+
+  try {
+    return normalizeFollowUpChatPair(JSON.parse(base64UrlToUtf8(encodedJson)));
+  } catch {
+    return null;
+  }
+}
+
+function isFollowUpPairOpeningTag(openingTag: string): boolean {
+  return (
+    readHtmlAttribute(openingTag, "data-ai-butler-chat-pair") === "v1" ||
+    !!readHtmlAttribute(openingTag, "data-ai-butler-chat-json") ||
+    /^ai-butler-pair-/.test(readHtmlAttribute(openingTag, "id"))
+  );
+}
+
+function inferFollowUpChatRole(
+  openingTag: string,
+): "user" | "assistant" | null {
+  const explicitRole = readHtmlAttribute(
+    openingTag,
+    "data-ai-butler-chat-role",
+  );
+  if (explicitRole === "user" || explicitRole === "assistant") {
+    return explicitRole;
+  }
+
+  const style = readHtmlAttribute(openingTag, "style").toLowerCase();
+  if (style.includes("#4f8fd9") || style.includes("#e3f2fd")) {
+    return "user";
+  }
+  if (style.includes("#59c0bc") || style.includes("#f5f5f5")) {
+    return "assistant";
+  }
+  return null;
+}
+
+function parsePairFromVisibleElement(
+  element: HtmlElementMatch,
+): FollowUpChatPair | null {
+  const encodedPair = decodePairFromDataAttribute(element.openingTag);
+  if (encodedPair) return encodedPair;
+
+  const pairId =
+    readHtmlAttribute(element.openingTag, "data-ai-butler-chat-pair-id") ||
+    readHtmlAttribute(element.openingTag, "id").replace(/^ai-butler-pair-/, "");
+  if (!pairId) return null;
+
+  let user = "";
+  let assistant = "";
+  for (const roleElement of findElementsByOpeningTag(
+    element.innerHtml,
+    (openingTag, tagName) =>
+      tagName === "div" && !!inferFollowUpChatRole(openingTag),
+  )) {
+    const role = inferFollowUpChatRole(roleElement.openingTag);
+    const text = htmlToPlainText(
+      roleElement.innerHtml.replace(/<strong\b[^>]*>[\s\S]*?<\/strong>/i, ""),
+    );
+    if (role === "user") {
+      user = text;
+    } else if (role === "assistant") {
+      assistant = text;
+    }
+  }
+
+  if (!user && !assistant) return null;
+  return { id: pairId, user, assistant };
+}
+
+function findVisibleFollowUpChatPairs(html: string): IndexedFollowUpChatPair[] {
+  return findElementsByOpeningTag(html, (openingTag) =>
+    isFollowUpPairOpeningTag(openingTag),
+  )
+    .map((element) => ({
+      pair: parsePairFromVisibleElement(element),
+      index: element.startIndex,
+    }))
+    .filter(
+      (item): item is IndexedFollowUpChatPair =>
+        !!item.pair && Number.isFinite(item.index),
+    );
+}
+
 export function parseFollowUpChatPairsFromNoteHtml(
   html: string,
 ): FollowUpChatPair[] {
   const pairs: FollowUpChatPair[] = [];
   const seenIds = new Set<string>();
+  const candidates: IndexedFollowUpChatPair[] = [];
+  const pushCandidate = (raw: unknown, index: number) => {
+    const parsed = normalizeFollowUpChatPair(raw);
+    if (!parsed) return;
+    candidates.push({ pair: parsed, index });
+  };
   const markerPattern = /<!--\s*AI_BUTLER_CHAT_JSON:\s*([\s\S]*?)\s*-->/g;
   let match: RegExpExecArray | null;
 
   while ((match = markerPattern.exec(html)) !== null) {
     try {
-      const parsed = normalizeFollowUpChatPair(JSON.parse(match[1].trim()));
-      if (!parsed || seenIds.has(parsed.id)) continue;
-      seenIds.add(parsed.id);
-      pairs.push(parsed);
+      pushCandidate(JSON.parse(match[1].trim()), match.index);
     } catch {
       // Ignore malformed legacy markers and keep scanning later pairs.
     }
+  }
+
+  candidates.push(...findVisibleFollowUpChatPairs(html));
+  candidates.sort((a, b) => a.index - b.index);
+
+  for (const { pair } of candidates) {
+    if (seenIds.has(pair.id)) continue;
+    seenIds.add(pair.id);
+    pairs.push(pair);
   }
 
   return pairs;
@@ -364,24 +600,127 @@ export function buildFollowUpChatPairNoteHtml(
   const sourceSuffix = options.sourceLabel
     ? ` (${escapeHtml(options.sourceLabel)})`
     : "";
+  const pairJson = JSON.stringify({
+    id: options.pairId,
+    user: options.userMessage,
+    assistant: options.assistantMessage,
+  });
+  const encodedPairJson = escapeHtml(utf8ToBase64Url(pairJson));
   const jsonMarker = `<!-- AI_BUTLER_CHAT_JSON: ${escapeJsonForHtmlComment(
-    JSON.stringify({
-      id: options.pairId,
-      user: options.userMessage,
-      assistant: options.assistantMessage,
-    }),
+    pairJson,
   )} -->`;
 
   return `
 <!-- AI_BUTLER_CHAT_PAIR_START id=${pairId} -->
 ${jsonMarker}
-<div id="ai-butler-pair-${pairId}" style="${FOLLOW_UP_CHAT_PAIR_STYLE}">
-  <div style="${FOLLOW_UP_CHAT_USER_STYLE}"><strong>${getString("follow-up-note-user-label")}</strong><div>${renderedUserMessage}</div></div>
-  <div style="${FOLLOW_UP_CHAT_ASSISTANT_STYLE}"><strong>${getString("follow-up-note-assistant-label")}</strong><div>${renderedAssistantMessage}</div></div>
+<div id="ai-butler-pair-${pairId}" data-ai-butler-chat-pair="v1" data-ai-butler-chat-pair-id="${pairId}" data-ai-butler-chat-json="${encodedPairJson}" style="${FOLLOW_UP_CHAT_PAIR_STYLE}">
+  <div data-ai-butler-chat-role="user" style="${FOLLOW_UP_CHAT_USER_STYLE}"><strong>${getString("follow-up-note-user-label")}</strong><div>${renderedUserMessage}</div></div>
+  <div data-ai-butler-chat-role="assistant" style="${FOLLOW_UP_CHAT_ASSISTANT_STYLE}"><strong>${getString("follow-up-note-assistant-label")}</strong><div>${renderedAssistantMessage}</div></div>
   <div style="${FOLLOW_UP_CHAT_TIME_STYLE}">${getString("follow-up-note-saved-at-label")} ${escapeHtml(savedAt)}${sourceSuffix}</div>
 </div>
 <!-- AI_BUTLER_CHAT_PAIR_END id=${pairId} -->
 `;
+}
+
+function findLastMatchBefore(pattern: RegExp, html: string, end: number) {
+  pattern.lastIndex = 0;
+  let last: RegExpExecArray | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(html)) !== null && match.index < end) {
+    last = match;
+  }
+  return last;
+}
+
+function expandToWrappingLlmBlock(
+  html: string,
+  startIndex: number,
+  endIndex: number,
+): { startIndex: number; endIndex: number } | null {
+  const beginPattern = /<!--\s*AI_BUTLER_LLM_BLOCK_BEGIN::v1::[\s\S]*?-->/g;
+  const endPattern = /<!--\s*AI_BUTLER_LLM_BLOCK_END::v1::[\s\S]*?-->/g;
+  const beginMatch = findLastMatchBefore(beginPattern, html, startIndex);
+  if (!beginMatch) return null;
+
+  const endBeforeStart = findLastMatchBefore(endPattern, html, startIndex);
+  if (endBeforeStart && endBeforeStart.index > beginMatch.index) {
+    return null;
+  }
+
+  endPattern.lastIndex = endIndex;
+  const endMatch = endPattern.exec(html);
+  if (!endMatch) return null;
+
+  return {
+    startIndex: beginMatch.index,
+    endIndex: endPattern.lastIndex,
+  };
+}
+
+function removeCommentMarkedFollowUpPair(html: string, pairId: string): string {
+  const markerIds = Array.from(new Set([pairId, escapeHtml(pairId)]));
+  let output = html;
+
+  for (const markerId of markerIds) {
+    const startMarker = `<!-- AI_BUTLER_CHAT_PAIR_START id=${markerId} -->`;
+    const endMarker = `<!-- AI_BUTLER_CHAT_PAIR_END id=${markerId} -->`;
+
+    while (true) {
+      const startIndex = output.indexOf(startMarker);
+      if (startIndex === -1) break;
+      const markerEndIndex = output.indexOf(endMarker, startIndex);
+      if (markerEndIndex === -1) break;
+      const endIndex = markerEndIndex + endMarker.length;
+      const expanded = expandToWrappingLlmBlock(
+        output,
+        startIndex,
+        endIndex,
+      ) || {
+        startIndex,
+        endIndex,
+      };
+      output =
+        output.slice(0, expanded.startIndex) + output.slice(expanded.endIndex);
+    }
+  }
+
+  return output;
+}
+
+function visibleMetadataStartBefore(html: string, startIndex: number): number {
+  const before = html.slice(0, startIndex);
+  const match = before.match(
+    /(?:\s*<p\b(?=[^>]*\bdata-ai-butler-llm-source=(["'])v1\1)[^>]*>[\s\S]*?<\/p>\s*)$/i,
+  );
+  return match ? startIndex - match[0].length : startIndex;
+}
+
+function removeVisibleFollowUpPair(html: string, pairId: string): string {
+  const elements = findElementsByOpeningTag(html, (openingTag) =>
+    isFollowUpPairOpeningTag(openingTag),
+  );
+  let output = html;
+
+  for (const element of elements.reverse()) {
+    const pair = parsePairFromVisibleElement(element);
+    if (!pair || pair.id !== pairId) continue;
+
+    const startIndex = visibleMetadataStartBefore(output, element.startIndex);
+    output =
+      output.slice(0, startIndex) + output.slice(element.endIndex).trimStart();
+  }
+
+  return output;
+}
+
+export function removeFollowUpChatPairFromNoteHtml(
+  html: string,
+  pairId: string,
+): string {
+  return removeVisibleFollowUpPair(
+    removeCommentMarkedFollowUpPair(html, pairId),
+    pairId,
+  );
 }
 
 export function normalizeFollowUpChatNoteHtml(html: string): string {

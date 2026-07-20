@@ -10,6 +10,7 @@
 import {
   buildFollowUpChatPairNoteHtml,
   normalizeFollowUpChatNoteHtml,
+  removeFollowUpChatPairFromNoteHtml,
 } from "./noteMarkdown";
 import {
   LLMNoteMetadataService,
@@ -224,16 +225,11 @@ export class AiNoteService {
       await this.findLegacyChatNote(item),
     ].filter((note): note is Zotero.Item => !!note);
 
-    const startMarker = `<!-- AI_BUTLER_CHAT_PAIR_START id=${pairId} -->`;
-    const endMarker = `<!-- AI_BUTLER_CHAT_PAIR_END id=${pairId} -->`;
-
     for (const note of notes) {
-      let html = (note as any).getNote?.() || "";
-      const startIdx = html.indexOf(startMarker);
-      const endIdx = html.indexOf(endMarker);
-      if (startIdx === -1 || endIdx === -1) continue;
-      html = html.slice(0, startIdx) + html.slice(endIdx + endMarker.length);
-      (note as any).setNote(html);
+      const html = (note as any).getNote?.() || "";
+      const updatedHtml = removeFollowUpChatPairFromNoteHtml(html, pairId);
+      if (updatedHtml === html) continue;
+      (note as any).setNote(updatedHtml);
       await (note as any).saveTx();
     }
   }

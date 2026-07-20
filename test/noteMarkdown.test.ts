@@ -9,10 +9,26 @@ import {
   stripMathDelimiters,
   normalizeFollowUpChatNoteHtml,
   parseFollowUpChatPairsFromNoteHtml,
+  removeFollowUpChatPairFromNoteHtml,
 } from "../src/modules/noteMarkdown";
 import { buildQuickChatConversation } from "../src/modules/chatContext";
+import {
+  LLMNoteMetadataService,
+  type LLMNoteMetadata,
+} from "../src/modules/llmNoteMetadata";
 
 describe("note Markdown rendering", function () {
+  const chatMetadata = (blockId: string): LLMNoteMetadata => ({
+    schema: "AI_BUTLER_LLM_NOTE_BLOCK",
+    version: 1,
+    blockId,
+    task: "chat",
+    providerId: "openai-compat",
+    providerName: "OpenAI-compatible",
+    modelId: "test-model",
+    generatedAt: "2026-07-20T00:00:00.000Z",
+  });
+
   it("renders saved follow-up headings and formulas (#307, #264)", function () {
     const html = markdownToZoteroNoteHtml(
       "## Follow-up answer\n\nMass energy: $E=mc^2$.\n\n$$\na_b = c^2\n$$",
@@ -198,6 +214,69 @@ describe("note Markdown rendering", function () {
     ]);
   });
 
+  it("restores saved follow-up chats when Zotero strips HTML comments (#379)", function () {
+    const html = buildFollowUpChatPairNoteHtml({
+      pairId: "pair_379",
+      userMessage: "为什么后续追问没有保留下来？",
+      assistantMessage: '需要保留 {"role":"assistant"} 和箭头 --> 内容。',
+      savedAt: "2026/7/20 12:10:56",
+    });
+    const strippedByZotero = html.replace(/<!--[\s\S]*?-->/g, "");
+
+    expect(strippedByZotero).to.contain("data-ai-butler-chat-json");
+    expect(parseFollowUpChatPairsFromNoteHtml(strippedByZotero)).to.deep.equal([
+      {
+        id: "pair_379",
+        user: "为什么后续追问没有保留下来？",
+        assistant: '需要保留 {"role":"assistant"} 和箭头 --> 内容。',
+      },
+    ]);
+  });
+
+  it("restores metadata-wrapped follow-up chats when comments are stripped (#379)", function () {
+    const html = buildFollowUpChatPairNoteHtml({
+      pairId: "pair_379_meta",
+      userMessage: "metadata question",
+      assistantMessage: "metadata answer",
+    });
+    const wrapped = LLMNoteMetadataService.wrapHtml(
+      html,
+      chatMetadata("chat-block-379"),
+    );
+    const strippedByZotero = wrapped.replace(/<!--[\s\S]*?-->/g, "");
+
+    expect(parseFollowUpChatPairsFromNoteHtml(strippedByZotero)).to.deep.equal([
+      {
+        id: "pair_379_meta",
+        user: "metadata question",
+        assistant: "metadata answer",
+      },
+    ]);
+
+    const updated = removeFollowUpChatPairFromNoteHtml(
+      strippedByZotero,
+      "pair_379_meta",
+    );
+    expect(parseFollowUpChatPairsFromNoteHtml(updated)).to.deep.equal([]);
+    expect(updated).not.to.contain("data-ai-butler-llm-source");
+  });
+
+  it("does not duplicate follow-up chats when both comments and visible data exist", function () {
+    const html = buildFollowUpChatPairNoteHtml({
+      pairId: "pair_no_dup",
+      userMessage: "question",
+      assistantMessage: "answer",
+    });
+
+    expect(parseFollowUpChatPairsFromNoteHtml(html)).to.deep.equal([
+      {
+        id: "pair_no_dup",
+        user: "question",
+        assistant: "answer",
+      },
+    ]);
+  });
+
   it("parses legacy follow-up JSON comments that contain braces", function () {
     const html = `<!-- AI_BUTLER_CHAT_JSON: {"id":"legacy_178","user":"Why {this}?","assistant":"Because {that}."} -->`;
 
@@ -210,6 +289,31 @@ describe("note Markdown rendering", function () {
         assistant: "Because {that}.",
       },
     ]);
+  });
+
+  it("recovers legacy visible follow-up blocks when comments were stripped", function () {
+    const legacyVisibleOnly = `
+<div id="ai-butler-pair-legacy_visible" style="margin-top:14px; padding-top:8px; border-top:1px dashed #ccc;">
+  <div style="background-color:#e3f2fd; padding:10px; border-radius:6px; margin-bottom:8px;"><strong>👤 用户:</strong> Legacy question?</div>
+  <div style="background-color:#f5f5f5; padding:10px; border-radius:6px;"><strong>🤖 AI管家:</strong><br/><p>Legacy answer.</p></div>
+  <div style="font-size:11px; color:#999; margin-top:6px;">保存时间: 2026/7/20</div>
+</div>`;
+
+    expect(parseFollowUpChatPairsFromNoteHtml(legacyVisibleOnly)).to.deep.equal(
+      [
+        {
+          id: "legacy_visible",
+          user: "Legacy question?",
+          assistant: "Legacy answer.",
+        },
+      ],
+    );
+
+    const updated = removeFollowUpChatPairFromNoteHtml(
+      legacyVisibleOnly,
+      "legacy_visible",
+    );
+    expect(parseFollowUpChatPairsFromNoteHtml(updated)).to.deep.equal([]);
   });
 
   it("normalizes legacy follow-up chat blocks for dark notes (#193)", function () {
@@ -229,5 +333,36 @@ describe("note Markdown rendering", function () {
     expect(normalized).not.to.contain("background-color:#e3f2fd");
     expect(normalized).not.to.contain("background-color:#f5f5f5");
     expect(normalized).not.to.contain("color:#999");
+  });
+
+  it("removes saved follow-up pairs even after comment metadata is stripped", function () {
+    const first = buildFollowUpChatPairNoteHtml({
+      pairId: "pair_keep",
+      userMessage: "keep question",
+      assistantMessage: "keep answer",
+    });
+    const second = buildFollowUpChatPairNoteHtml({
+      pairId: "pair_remove",
+      userMessage: "remove question",
+      assistantMessage: "remove answer",
+    });
+    const strippedByZotero = `${first}${second}`.replace(
+      /<!--[\s\S]*?-->/g,
+      "",
+    );
+
+    const updated = removeFollowUpChatPairFromNoteHtml(
+      strippedByZotero,
+      "pair_remove",
+    );
+
+    expect(parseFollowUpChatPairsFromNoteHtml(updated)).to.deep.equal([
+      {
+        id: "pair_keep",
+        user: "keep question",
+        assistant: "keep answer",
+      },
+    ]);
+    expect(updated).not.to.contain("remove question");
   });
 });

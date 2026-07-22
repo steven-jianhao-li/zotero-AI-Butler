@@ -191,9 +191,7 @@ export class NoteGenerator {
       const useMultiModelSummary =
         summaryMode === "single" && multiModelEndpoints.length > 0;
       const noteKind: AiNoteKind =
-        summaryMode === "single" && !useMultiModelSummary
-          ? "summary"
-          : "deepRead";
+        summaryMode === "single" ? "summary" : "deepRead";
       const existingRecord = await AiNoteService.findNoteRecord(item, noteKind);
       const existing = existingRecord?.note || null;
       const canResumeDeepRead =
@@ -863,7 +861,7 @@ export class NoteGenerator {
     const noteHtml = this.formatNoteContent(
       itemTitle,
       content,
-      getString("app-name"),
+      AiNoteService.getTitle("summary"),
       metadata,
     );
 
@@ -922,7 +920,7 @@ export class NoteGenerator {
    *   "深度学习综述",
    *   "## 摘要\n这是一篇综述文章..."
    * );
-   * // 返回: <h2>AI 管家 - 深度学习综述</h2><div>...</div>
+   * // 返回: <h2>AI 总结 - 深度学习综述</h2><div>...</div>
    * ```
    */
   public static formatNoteContent(

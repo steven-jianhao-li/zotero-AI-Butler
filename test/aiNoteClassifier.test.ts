@@ -22,6 +22,9 @@ describe("AI note classifier", function () {
     expect(
       isRegularSummaryNote([], "<h2>AI 管家 - Paper</h2><p>Summary</p>"),
     ).to.equal(true);
+    expect(
+      isRegularSummaryNote([], "<h2>AI 总结 - Paper</h2><p>Summary</p>"),
+    ).to.equal(true);
   });
 
   it("does not reject a tagged summary only because the title starts with follow-up text", function () {
@@ -54,5 +57,30 @@ describe("AI note classifier", function () {
     expect(isRegularSummaryNote([], deepReadHtml)).to.equal(false);
     expect(isRegularSummaryNote([], legacyDeepReadHtml)).to.equal(false);
     expect(classifyAiButlerNote([], deepReadHtml)).to.equal("deepRead");
+  });
+
+  it("treats old multi-model summaries mistagged as deep-read as summaries", function () {
+    const wrongMultiModelSummary =
+      "<h2>AI 管家 - Paper</h2><p>Provider A summary</p>";
+    const tags = [{ tag: "AI-DeepRead" }];
+
+    expect(isRegularSummaryNote(tags, wrongMultiModelSummary)).to.equal(true);
+    expect(isDeepReadNote(tags, wrongMultiModelSummary)).to.equal(false);
+    expect(classifyAiButlerNote(tags, wrongMultiModelSummary)).to.equal(
+      "summary",
+    );
+  });
+
+  it("keeps real deep-read slot notes as deep-read even if tags are present", function () {
+    const deepReadHtml = [
+      "<h1>AI 精读 - Paper</h1>",
+      "<!-- zab:slot:overview:done -->",
+      "<p>Detailed reading</p>",
+      "<!-- zab:slot:overview:end -->",
+    ].join("\n");
+    const tags = [{ tag: "AI-DeepRead" }];
+
+    expect(isRegularSummaryNote(tags, deepReadHtml)).to.equal(false);
+    expect(isDeepReadNote(tags, deepReadHtml)).to.equal(true);
   });
 });

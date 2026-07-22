@@ -2721,6 +2721,14 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
   word-break: break-word;
   white-space: normal;
 }
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex * {
+  min-width: auto;
+  max-width: none;
+  overflow-wrap: normal;
+  word-break: normal;
+  white-space: nowrap;
+}
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant p {
   margin: 0.35em 0;
   max-width: 100%;
@@ -2817,6 +2825,17 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
   overflow-x: auto;
   overflow-y: hidden;
 }
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-display {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding-bottom: 0.2em;
+  white-space: nowrap;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-display > .katex {
+  display: inline-block;
+}
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-inline {
   max-width: 100%;
   white-space: normal;
@@ -2826,7 +2845,7 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
 #ai-butler-inline-chat .katex-display {
   max-width: 100%;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
 }
 #ai-butler-inline-chat .katex-inline {
   overflow-wrap: normal;

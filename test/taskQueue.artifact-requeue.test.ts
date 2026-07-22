@@ -16,19 +16,34 @@ import { AiNoteService } from "../src/modules/aiNoteService";
 
 type QueueInternals = {
   tasks: Map<string, TaskItem>;
+  deletedFixedTasks: Map<string, any>;
+  clearedDeletedFixedTaskKeys: Set<string>;
   progressCallbacks: Set<(...args: any[]) => void>;
   completeCallbacks: Set<(...args: any[]) => void>;
   isRunning: boolean;
   addTask(
     item: Zotero.Item,
     priority?: boolean,
-    options?: { summaryMode?: string; forceOverwrite?: boolean },
+    options?: {
+      summaryMode?: string;
+      forceOverwrite?: boolean;
+      source?: "auto";
+    },
   ): Promise<string>;
   addDeepReadTask(
     item: Zotero.Item,
     priority?: boolean,
-    options?: { summaryMode?: string; forceOverwrite?: boolean },
+    options?: {
+      summaryMode?: string;
+      forceOverwrite?: boolean;
+      source?: "auto";
+    },
   ): Promise<string>;
+  removeTask(taskId: string): Promise<void>;
+  isAutoCreationSuppressed(
+    itemId: number,
+    taskType: "summary" | "deepRead",
+  ): boolean;
   requeueExistingFixedTask(
     task: TaskItem,
     item: Zotero.Item,
@@ -51,6 +66,8 @@ const tableStrategyPref = `${config.prefsPrefix}.tableStrategy`;
 function createQueueInternals(): QueueInternals {
   const manager = Object.create(TaskQueueManager.prototype) as QueueInternals;
   manager.tasks = new Map();
+  manager.deletedFixedTasks = new Map();
+  manager.clearedDeletedFixedTaskKeys = new Set();
   manager.progressCallbacks = new Set();
   manager.completeCallbacks = new Set();
   manager.isRunning = true;
@@ -208,6 +225,45 @@ describe("TaskQueue artifact-aware requeue", function () {
     expect(task?.status).to.equal(TaskStatus.COMPLETED);
     expect(task?.progress).to.equal(100);
     expect(task?.taskType).to.equal("deepRead");
+  });
+
+  it("suppresses auto-created deep-read tasks after the user deletes them", async function () {
+    const manager = createQueueInternals();
+    stubProbe({ exists: false, reason: "deep-read-note-missing" });
+    const taskId = await manager.addDeepReadTask(item, false, {
+      summaryMode: "deepRead",
+    });
+
+    await manager.removeTask(taskId);
+    const autoTaskId = await manager.addDeepReadTask(item, false, {
+      summaryMode: "deepRead",
+      source: "auto",
+    });
+
+    expect(autoTaskId).to.equal(taskId);
+    expect(manager.tasks.has(taskId)).to.equal(false);
+    expect(manager.isAutoCreationSuppressed(item.id, "deepRead")).to.equal(
+      true,
+    );
+  });
+
+  it("allows manual deep-read enqueue to clear an auto-scan deletion marker", async function () {
+    const manager = createQueueInternals();
+    stubProbe({ exists: false, reason: "deep-read-note-missing" });
+    const taskId = getDeepReadTaskId(item.id);
+    manager.deletedFixedTasks.set(`${item.id}:deepRead`, {
+      key: `${item.id}:deepRead`,
+      itemId: item.id,
+      taskType: "deepRead",
+      deletedAt: "2026-01-01T00:00:00Z",
+    });
+
+    await manager.addDeepReadTask(item, false, { summaryMode: "deepRead" });
+
+    expect(manager.tasks.has(taskId)).to.equal(true);
+    expect(manager.isAutoCreationSuppressed(item.id, "deepRead")).to.equal(
+      false,
+    );
   });
 
   it("does not skip creating a new deep-read task when the artifact is incomplete", async function () {

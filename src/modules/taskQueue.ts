@@ -191,6 +191,15 @@ export type TaskType =
   | "review"
   | "targetedQuestion";
 
+export type TaskCreationSource = "auto" | "manual";
+
+export interface TaskOptions {
+  summaryMode?: string;
+  forceOverwrite?: boolean;
+  /** auto 表示自动扫描创建；用户手动/批量扫描不设置或设为 manual。 */
+  source?: TaskCreationSource;
+}
+
 /**
  * 任务项接口
  */
@@ -254,10 +263,7 @@ export interface TaskItem {
   stageDetail?: string;
   /** 当前阶段更新时间 */
   stageUpdatedAt?: Date;
-  options?: {
-    summaryMode?: string;
-    forceOverwrite?: boolean;
-  };
+  options?: TaskOptions;
   /** 综述任务参数 */
   collectionId?: number;
   pdfAttachmentIds?: number[];
@@ -286,6 +292,28 @@ export function getEffectiveTaskType(
   task: Pick<TaskItem, "taskType">,
 ): TaskType {
   return task.taskType || "summary";
+}
+
+type AutoSuppressibleTaskType = "summary" | "deepRead";
+
+type DeletedFixedTaskRecord = {
+  key: string;
+  itemId: number;
+  taskType: AutoSuppressibleTaskType;
+  deletedAt: string;
+};
+
+function isAutoSuppressibleTaskType(
+  taskType: TaskType,
+): taskType is AutoSuppressibleTaskType {
+  return taskType === "summary" || taskType === "deepRead";
+}
+
+function getDeletedFixedTaskKey(
+  itemId: number,
+  taskType: AutoSuppressibleTaskType,
+): string {
+  return `${itemId}:${taskType}`;
 }
 
 /**
@@ -365,6 +393,12 @@ export class TaskQueueManager {
 
   /** 最近一次加载到的持久化快照时间 */
   private lastLoadedSnapshotAt: string | null = null;
+
+  /** 用户主动删除的自动总结/精读任务，避免自动扫描跨窗口重新入队。 */
+  private deletedFixedTasks: Map<string, DeletedFixedTaskRecord> = new Map();
+
+  /** 本上下文已由用户显式重新入队而清除的删除标记。 */
+  private clearedDeletedFixedTaskKeys: Set<string> = new Set();
 
   /** 最大并发数 */
   private maxConcurrency: number = 1;
@@ -606,7 +640,7 @@ export class TaskQueueManager {
   public async addTask(
     item: Zotero.Item,
     priority: boolean = false,
-    options?: { summaryMode?: string; forceOverwrite?: boolean },
+    options?: TaskOptions,
   ): Promise<string> {
     if (!isQueueableAiSourceItem(item)) {
       logTaskQueue(`[AI-Butler] 跳过非顶层文献 AI 总结任务: ${item.id}`);
@@ -623,6 +657,17 @@ export class TaskQueueManager {
     };
 
     const taskId = getSummaryTaskId(item.id);
+    if (
+      summaryOptions.source === "auto" &&
+      this.isAutoCreationSuppressed(item.id, "summary")
+    ) {
+      logTaskQueue(`自动扫描 AI 总结已被用户删除过，跳过入队: ${taskId}`);
+      return taskId;
+    }
+    if (summaryOptions.source !== "auto") {
+      this.clearDeletedFixedTask(item.id, "summary");
+    }
+
     const legacyTaskId = getLegacySummaryTaskId(item.id);
     if (!this.tasks.has(taskId) && this.tasks.has(legacyTaskId)) {
       const legacyTask = this.tasks.get(legacyTaskId)!;
@@ -725,7 +770,7 @@ export class TaskQueueManager {
   public async addDeepReadTask(
     item: Zotero.Item,
     priority: boolean = false,
-    options?: { summaryMode?: string; forceOverwrite?: boolean },
+    options?: TaskOptions,
   ): Promise<string> {
     if (!isQueueableAiSourceItem(item)) {
       logTaskQueue(`[AI-Butler] 跳过非顶层文献 AI 精读任务: ${item.id}`);
@@ -737,6 +782,16 @@ export class TaskQueueManager {
       ...(options || {}),
       summaryMode: "deepRead",
     };
+    if (
+      deepReadOptions.source === "auto" &&
+      this.isAutoCreationSuppressed(item.id, "deepRead")
+    ) {
+      logTaskQueue(`自动扫描 AI 精读已被用户删除过，跳过入队: ${taskId}`);
+      return taskId;
+    }
+    if (deepReadOptions.source !== "auto") {
+      this.clearDeletedFixedTask(item.id, "deepRead");
+    }
 
     if (this.tasks.has(taskId)) {
       const existingTask = this.tasks.get(taskId)!;
@@ -1794,6 +1849,8 @@ export class TaskQueueManager {
       return;
     }
 
+    this.markDeletedFixedTask(task);
+
     if (task.status === TaskStatus.PROCESSING) {
       this.abortingTasks.add(taskId);
       const controller = this.taskAbortControllers.get(taskId);
@@ -2117,6 +2174,38 @@ export class TaskQueueManager {
     return this.tasks.get(taskId);
   }
 
+  public isAutoCreationSuppressed(
+    itemId: number,
+    taskType: AutoSuppressibleTaskType,
+  ): boolean {
+    this.mergeStoredDeletedFixedTasks();
+    return this.deletedFixedTasks.has(getDeletedFixedTaskKey(itemId, taskType));
+  }
+
+  private markDeletedFixedTask(task: TaskItem): void {
+    const taskType = getEffectiveTaskType(task);
+    if (!isAutoSuppressibleTaskType(taskType)) return;
+
+    const key = getDeletedFixedTaskKey(task.itemId, taskType);
+    this.clearedDeletedFixedTaskKeys.delete(key);
+    this.deletedFixedTasks.set(key, {
+      key,
+      itemId: task.itemId,
+      taskType,
+      deletedAt: new Date().toISOString(),
+    });
+  }
+
+  private clearDeletedFixedTask(
+    itemId: number,
+    taskType: AutoSuppressibleTaskType,
+  ): void {
+    const key = getDeletedFixedTaskKey(itemId, taskType);
+    this.mergeStoredDeletedFixedTasks();
+    this.deletedFixedTasks.delete(key);
+    this.clearedDeletedFixedTaskKeys.add(key);
+  }
+
   // ==================== 执行器控制 ====================
 
   /**
@@ -2200,8 +2289,9 @@ export class TaskQueueManager {
       const pendingTasks = this.getAllTasks()
         .filter(
           (task) =>
-            task.status === TaskStatus.PRIORITY ||
-            task.status === TaskStatus.PENDING,
+            (task.status === TaskStatus.PRIORITY ||
+              task.status === TaskStatus.PENDING) &&
+            !this.isTaskDeletedByUser(task),
         )
         .sort((a, b) => {
           if (
@@ -2272,6 +2362,14 @@ export class TaskQueueManager {
   private async executeTask(taskId: string): Promise<boolean> {
     const task = this.tasks.get(taskId);
     if (!task) {
+      return false;
+    }
+    if (this.isTaskDeletedByUser(task)) {
+      this.tasks.delete(taskId);
+      this.processingTasks.delete(taskId);
+      this.taskAbortControllers.delete(taskId);
+      this.abortingTasks.delete(taskId);
+      await this.saveToStorage();
       return false;
     }
 
@@ -2874,6 +2972,76 @@ export class TaskQueueManager {
 
   // ==================== 持久化 ====================
 
+  private isTaskDeletedByUser(task: TaskItem): boolean {
+    const taskType = getEffectiveTaskType(task);
+    if (!isAutoSuppressibleTaskType(taskType)) return false;
+    this.mergeStoredDeletedFixedTasks();
+    return this.deletedFixedTasks.has(
+      getDeletedFixedTaskKey(task.itemId, taskType),
+    );
+  }
+
+  private dropDeletedFixedTasksFromMemory(): void {
+    for (const task of Array.from(this.tasks.values())) {
+      if (!this.isTaskDeletedByUser(task)) continue;
+      this.tasks.delete(task.id);
+      this.processingTasks.delete(task.id);
+      this.taskAbortControllers.delete(task.id);
+      this.abortingTasks.delete(task.id);
+    }
+  }
+
+  private loadDeletedFixedTasksFromData(data: any): void {
+    this.deletedFixedTasks.clear();
+    for (const raw of data?.deletedFixedTasks || []) {
+      const itemId = Number(raw?.itemId);
+      const taskType = String(raw?.taskType || "") as TaskType;
+      if (!Number.isFinite(itemId)) continue;
+      if (!isAutoSuppressibleTaskType(taskType)) continue;
+      const key = getDeletedFixedTaskKey(itemId, taskType);
+      this.deletedFixedTasks.set(key, {
+        key,
+        itemId,
+        taskType,
+        deletedAt:
+          typeof raw?.deletedAt === "string"
+            ? raw.deletedAt
+            : new Date().toISOString(),
+      });
+    }
+  }
+
+  private mergeStoredDeletedFixedTasks(): void {
+    try {
+      const stored = Zotero.Prefs.get(
+        "extensions.zotero.aibutler.taskQueue",
+        true,
+      ) as string;
+      if (!stored) return;
+      const data = JSON.parse(stored);
+      for (const raw of data?.deletedFixedTasks || []) {
+        const itemId = Number(raw?.itemId);
+        const taskType = String(raw?.taskType || "") as TaskType;
+        if (!Number.isFinite(itemId)) continue;
+        if (!isAutoSuppressibleTaskType(taskType)) continue;
+        const key = getDeletedFixedTaskKey(itemId, taskType);
+        if (this.clearedDeletedFixedTaskKeys.has(key)) continue;
+        if (this.deletedFixedTasks.has(key)) continue;
+        this.deletedFixedTasks.set(key, {
+          key,
+          itemId,
+          taskType,
+          deletedAt:
+            typeof raw?.deletedAt === "string"
+              ? raw.deletedAt
+              : new Date().toISOString(),
+        });
+      }
+    } catch {
+      // Ignore malformed snapshots; normal task loading will report them.
+    }
+  }
+
   /**
    * 从持久化存储加载任务队列
    *
@@ -2901,6 +3069,8 @@ export class TaskQueueManager {
       ) {
         return;
       }
+
+      this.loadDeletedFixedTasksFromData(data);
 
       // 恢复任务数据
       this.tasks.clear();
@@ -2954,8 +3124,11 @@ export class TaskQueueManager {
   private async saveToStorage(): Promise<void> {
     try {
       const savedAt = new Date().toISOString();
+      this.mergeStoredDeletedFixedTasks();
+      this.dropDeletedFixedTasksFromMemory();
       const data = {
         tasks: Array.from(this.tasks.values()),
+        deletedFixedTasks: Array.from(this.deletedFixedTasks.values()),
         savedAt,
       };
 
@@ -2965,6 +3138,7 @@ export class TaskQueueManager {
         true,
       );
       this.lastLoadedSnapshotAt = savedAt;
+      this.clearedDeletedFixedTaskKeys.clear();
     } catch (error) {
       logTaskQueue(`保存任务队列失败: ${error}`);
     }

@@ -210,11 +210,15 @@ export class AutoScanManager {
       this.pendingParents.delete(item.id);
       const tqm = TaskQueueManager.getInstance();
       if (needsSummary) {
-        await tqm.addTask(item, false, { summaryMode: "single" });
+        await tqm.addTask(item, false, {
+          summaryMode: "single",
+          source: "auto",
+        });
       }
       if (needsDeepRead) {
         await tqm.addDeepReadTask(item, false, {
           summaryMode: "deepRead",
+          source: "auto",
         });
       }
       ztoolkit.log(
@@ -307,7 +311,13 @@ export class AutoScanManager {
     const prefKey =
       kind === "summary" ? "autoScanSummaryEnabled" : "autoScanDeepReadEnabled";
     const enabled = (getPref(prefKey as any) as boolean) ?? true;
-    return enabled && (await this.needsAiNoteKind(item, kind));
+    if (!enabled) return false;
+    if (
+      TaskQueueManager.getInstance().isAutoCreationSuppressed(item.id, kind)
+    ) {
+      return false;
+    }
+    return await this.needsAiNoteKind(item, kind);
   }
 
   /**

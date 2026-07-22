@@ -2722,12 +2722,12 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
   white-space: normal;
 }
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-display,
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex * {
-  min-width: auto;
-  max-width: none;
-  overflow-wrap: normal;
-  word-break: normal;
-  white-space: nowrap;
+  max-width: none !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  white-space: nowrap !important;
 }
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant p {
   margin: 0.35em 0;
@@ -2819,32 +2819,51 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
   word-break: break-word;
   white-space: normal;
 }
-#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-display,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-scroll-container,
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant pre,
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant table {
   overflow-x: auto;
   overflow-y: hidden;
 }
-#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-display {
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-scroll-container {
+  display: block;
   width: 100%;
   max-width: 100%;
+  min-width: 0;
+  margin: 0.5em 0;
   overflow-x: auto;
   overflow-y: visible;
   padding-bottom: 0.2em;
-  white-space: nowrap;
+  white-space: nowrap !important;
 }
-#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-display > .katex {
-  display: inline-block;
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-scroll-container .katex-display {
+  width: max-content;
+  min-width: max-content;
+  max-width: none !important;
+  margin: 0;
+  overflow: visible !important;
+  text-align: left;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-scroll-container .katex {
+  display: inline-block !important;
 }
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-inline {
-  max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-#ai-butler-inline-chat .katex-display {
+  display: inline-block;
   max-width: 100%;
   overflow-x: auto;
+  overflow-y: visible;
+  vertical-align: middle;
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-inline > .katex {
+  display: inline-block !important;
+  max-width: none !important;
+}
+#ai-butler-inline-chat .katex-display {
+  max-width: none !important;
+  overflow-x: visible;
   overflow-y: visible;
 }
 #ai-butler-inline-chat .katex-inline {

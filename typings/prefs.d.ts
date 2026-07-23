@@ -90,6 +90,7 @@ declare namespace _ZoteroTypes {
       "sidebarModuleOrder": string;
       "sidebarNoteCollapsed": boolean;
       "sidebarImageCollapsed": boolean;
+      "quickChatSuppressNewConversationWarning": boolean;
       "notePrefix": string;
       "noteStrategy": string;
       "noteExportEnabled": boolean;

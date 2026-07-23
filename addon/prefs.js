@@ -128,6 +128,7 @@ pref(
 );
 pref("__prefsPrefix__.sidebarNoteCollapsed", false);
 pref("__prefsPrefix__.sidebarImageCollapsed", false);
+pref("__prefsPrefix__.quickChatSuppressNewConversationWarning", false);
 
 // ==================== 数据管理 ====================
 pref("__prefsPrefix__.notePrefix", "[AI-Butler]");

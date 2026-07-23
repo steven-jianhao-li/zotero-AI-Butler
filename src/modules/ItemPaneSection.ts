@@ -3022,6 +3022,10 @@ function renderChatArea(
     return button;
   };
 
+  const newConversationBtn = createQuickControlButton(
+    "🧹",
+    getString("itempane-quick-chat-new-conversation"),
+  );
   const decreaseFontBtn = createQuickControlButton(
     "A−",
     getString("itempane-quick-chat-decrease-font"),
@@ -3043,6 +3047,7 @@ function renderChatArea(
     getString("itempane-quick-chat-reset-height"),
   );
 
+  chatControls.appendChild(newConversationBtn);
   chatControls.appendChild(decreaseFontBtn);
   chatControls.appendChild(quickFontLabel);
   chatControls.appendChild(increaseFontBtn);
@@ -3539,6 +3544,56 @@ function renderChatArea(
     composer.style.boxShadow = "inset 0 1px 0 rgba(255, 255, 255, 0.06)";
   });
 
+  const startNewQuickChatConversation = (): void => {
+    currentChatState.abortController?.abort(
+      getString("itempane-quick-chat-new-conversation-abort"),
+    );
+    currentChatState.conversationHistory = [];
+    currentChatState.relatedContextSignature = "";
+    currentChatState.relatedContextIncludedCount = 0;
+    currentChatState.isChatting = false;
+    currentChatState.abortController = null;
+    currentChatState.savedPairIds = new Set();
+
+    messagesArea.innerHTML = `<div style="color: #777; text-align: center; padding: 10px;">${escapeHtmlForChat(getString("itempane-quick-chat-new-conversation-created"))}</div>`;
+    inputBox.value = "";
+    resizeQuickChatInput();
+    sendBtn.textContent = "↑";
+    sendBtn.title = getString("itempane-send");
+    sendBtn.style.background = "#59c0bc";
+    (sendBtn as HTMLButtonElement).disabled = false;
+    stopBtn.style.display = "none";
+    (stopBtn as HTMLButtonElement).disabled = false;
+    (inputBox as HTMLTextAreaElement).disabled = false;
+    quickChatPinnedToBottom = true;
+    inputBox.focus();
+  };
+
+  newConversationBtn.addEventListener("click", async () => {
+    const hasConversationContent =
+      currentChatState.conversationHistory.length > 0 ||
+      currentChatState.isChatting ||
+      currentChatState.savedPairIds.size > 0 ||
+      messagesArea.querySelector("[data-pair-id]") !== null;
+    if (!hasConversationContent) {
+      startNewQuickChatConversation();
+      return;
+    }
+
+    const suppressWarning = Boolean(
+      getPref("quickChatSuppressNewConversationWarning"),
+    );
+    if (!suppressWarning) {
+      const confirmed = await confirmQuickChatNewConversation(doc);
+      if (!confirmed.ok) return;
+      if (confirmed.suppressFutureWarning) {
+        setPref("quickChatSuppressNewConversationWarning", true);
+      }
+    }
+
+    startNewQuickChatConversation();
+  });
+
   composerTools.appendChild(openPickerBtn);
   composerTools.appendChild(relatedStatus);
   composerTools.appendChild(clearRelatedBtn);
@@ -3976,6 +4031,148 @@ function renderChatArea(
       e.preventDefault();
       sendBtn.click();
     }
+  });
+}
+
+async function confirmQuickChatNewConversation(
+  doc: Document,
+): Promise<{ ok: boolean; suppressFutureWarning: boolean }> {
+  const host = doc.body || doc.documentElement;
+  if (!host) return { ok: false, suppressFutureWarning: false };
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    const overlay = doc.createElement("div");
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      z-index: 100000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(15, 23, 42, 0.28);
+      box-sizing: border-box;
+    `;
+
+    const dialog = doc.createElement("div");
+    dialog.style.cssText = `
+      width: min(420px, calc(100vw - 32px));
+      max-width: 100%;
+      padding: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.32);
+      border-radius: 14px;
+      background: Canvas;
+      color: CanvasText;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.26);
+      font-family: system-ui, -apple-system, sans-serif;
+      box-sizing: border-box;
+    `;
+    overlay.appendChild(dialog);
+
+    const finish = (ok: boolean, suppressFutureWarning = false): void => {
+      if (resolved) return;
+      resolved = true;
+      doc.defaultView?.removeEventListener("keydown", onKeyDown, true);
+      overlay.remove();
+      resolve({ ok, suppressFutureWarning });
+    };
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finish(false);
+      }
+    };
+    doc.defaultView?.addEventListener("keydown", onKeyDown, true);
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) finish(false);
+    });
+
+    const title = doc.createElement("div");
+    title.textContent = getString("itempane-quick-chat-new-conversation-title");
+    title.style.cssText = `
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    `;
+    dialog.appendChild(title);
+
+    const message = doc.createElement("div");
+    message.textContent = getString(
+      "itempane-quick-chat-new-conversation-message",
+    );
+    message.style.cssText = `
+      font-size: 12px;
+      line-height: 1.55;
+      color: rgba(128, 128, 128, 0.98);
+      margin-bottom: 12px;
+    `;
+    dialog.appendChild(message);
+
+    const optionLabel = doc.createElement("label");
+    optionLabel.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      margin-bottom: 14px;
+      cursor: pointer;
+      user-select: none;
+    `;
+    const dontRemindCheckbox = doc.createElement("input");
+    dontRemindCheckbox.type = "checkbox";
+    optionLabel.appendChild(dontRemindCheckbox);
+    const optionText = doc.createElement("span");
+    optionText.textContent = getString(
+      "itempane-quick-chat-new-conversation-dont-remind",
+    );
+    optionLabel.appendChild(optionText);
+    dialog.appendChild(optionLabel);
+
+    const actions = doc.createElement("div");
+    actions.style.cssText = `
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    `;
+
+    const cancelBtn = doc.createElement("button");
+    cancelBtn.textContent = getString("dialog-button-cancel");
+    cancelBtn.style.cssText = `
+      padding: 6px 12px;
+      border: 1px solid rgba(148, 163, 184, 0.42);
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 12px;
+    `;
+    cancelBtn.addEventListener("click", () => finish(false));
+
+    const confirmBtn = doc.createElement("button");
+    confirmBtn.textContent = getString(
+      "itempane-quick-chat-new-conversation-confirm",
+    );
+    confirmBtn.style.cssText = `
+      padding: 6px 12px;
+      border: none;
+      border-radius: 8px;
+      background: #59c0bc;
+      color: white;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 650;
+    `;
+    confirmBtn.addEventListener("click", () =>
+      finish(true, dontRemindCheckbox.checked),
+    );
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+    dialog.appendChild(actions);
+    host.appendChild(overlay);
+    confirmBtn.focus();
   });
 }
 

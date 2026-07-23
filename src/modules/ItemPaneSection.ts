@@ -3034,16 +3034,10 @@ function renderChatArea(
     "A+",
     getString("itempane-quick-chat-increase-font"),
   );
-  const resetHeightBtn = createQuickControlButton(
-    "🔄",
-    getString("itempane-quick-chat-reset-height"),
-  );
-
   chatControls.appendChild(newConversationBtn);
   chatControls.appendChild(decreaseFontBtn);
   chatControls.appendChild(quickFontLabel);
   chatControls.appendChild(increaseFontBtn);
-  chatControls.appendChild(resetHeightBtn);
   chatHeader.appendChild(chatControls);
 
   // 消息显示区
@@ -3366,23 +3360,11 @@ function renderChatArea(
     );
   };
 
-  const applyQuickChatHeight = (nextHeight: number): void => {
-    currentQuickChatHeight = Math.max(100, Math.min(520, nextHeight));
-    messagesArea.style.height = `${currentQuickChatHeight}px`;
-    setPref(
-      "sidebarQuickChatHeight" as any,
-      String(currentQuickChatHeight) as any,
-    );
-  };
-
   decreaseFontBtn.addEventListener("click", () => {
     applyQuickChatFontSize(currentQuickChatFontSize - 1);
   });
   increaseFontBtn.addEventListener("click", () => {
     applyQuickChatFontSize(currentQuickChatFontSize + 1);
-  });
-  resetHeightBtn.addEventListener("click", () => {
-    applyQuickChatHeight(DEFAULT_QUICK_CHAT_HEIGHT);
   });
 
   const quickChatResizeHandle = createResizeHandle(

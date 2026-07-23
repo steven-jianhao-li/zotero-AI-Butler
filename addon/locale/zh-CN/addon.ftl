@@ -41,7 +41,6 @@ itempane-quick-chat-smaller-font = 减小快速追问字号
 itempane-quick-chat-larger-font = 增大快速追问字号
 itempane-quick-chat-lower-height = 降低快速追问高度
 itempane-quick-chat-higher-height = 增加快速追问高度
-itempane-quick-chat-reset-height = 恢复快速追问默认高度
 itempane-quick-chat-new-conversation = 新建快速追问对话
 itempane-quick-chat-new-conversation-title = 新建对话？
 itempane-quick-chat-new-conversation-message = 当前快速追问内容会消失，且不会保存到笔记。是否继续？

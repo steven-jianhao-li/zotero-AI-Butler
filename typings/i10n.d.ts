@@ -427,7 +427,6 @@ export type FluentMessageId =
   | 'itempane-quick-chat-new-conversation-dont-remind'
   | 'itempane-quick-chat-new-conversation-message'
   | 'itempane-quick-chat-new-conversation-title'
-  | 'itempane-quick-chat-reset-height'
   | 'itempane-quick-chat-smaller-font'
   | 'itempane-quick-chat-source-label'
   | 'itempane-quick-chat-title'

@@ -41,7 +41,6 @@ itempane-quick-chat-smaller-font = Decrease quick-chat font size
 itempane-quick-chat-larger-font = Increase quick-chat font size
 itempane-quick-chat-lower-height = Decrease quick-chat height
 itempane-quick-chat-higher-height = Increase quick-chat height
-itempane-quick-chat-reset-height = Restore default quick-chat height
 itempane-quick-chat-new-conversation = New quick-chat conversation
 itempane-quick-chat-new-conversation-title = Start a new conversation?
 itempane-quick-chat-new-conversation-message = The current quick-chat content will disappear and will not be saved to a note. Continue?

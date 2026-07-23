@@ -27,6 +27,7 @@ import {
   normalizeReasoningEffortSetting,
   resolveReasoningEffort,
 } from "./llmproviders/shared/reasoning";
+import { sanitizeLLMOutputText } from "./llmproviders/shared/outputSanitizer";
 import {
   isAbortError,
   normalizeAbortError,
@@ -1039,8 +1040,14 @@ export class LLMService {
     const warnings = endpoint
       ? maybeWarnings || []
       : (optionsOrWarnings as string[]);
+    const sanitizedText = sanitizeLLMOutputText(text);
+    if (sanitizedText !== text) {
+      ztoolkit.log(
+        "[AI-Butler] Removed hidden reasoning block(s) from LLM output.",
+      );
+    }
     return {
-      text,
+      text: sanitizedText,
       providerId,
       endpointId: endpoint?.id,
       providerName:

@@ -239,6 +239,10 @@ export function markdownToDisplayHtml(markdown: string): string {
   const formulas: ProtectedFormula[] = [];
   let html = stripInvalidXmlChars(markdown);
 
+  html = html.replace(/\$\$\$([\s\S]*?)\$\$\$/g, (_match, formula: string) => {
+    return `$$${formula.trim()}$$`;
+  });
+
   html = html.replace(/\\\[([\s\S]*?)\\\]/g, (_match, formula) => {
     const placeholder = `AI_BUTLER_FORMULA_BLOCK_${formulas.length}_END`;
     formulas.push({ content: formula.trim(), isBlock: true });
@@ -291,7 +295,7 @@ export function markdownToDisplayHtml(markdown: string): string {
       });
 
       if (isBlock) {
-        return `<div class="katex-display">${rendered}</div>`;
+        return `<div class="katex-scroll-container">${rendered}</div>`;
       }
       return `<span class="katex-inline">${rendered}</span>`;
     } catch {

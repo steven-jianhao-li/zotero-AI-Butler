@@ -8,9 +8,12 @@ const CHAT_NOTE_TAG = "AI-Butler-Chat";
 const MINDMAP_NOTE_TAG = "AI-Mindmap";
 const IMAGE_NOTE_TAGS = ["AI-Image-Summary", "AI-ImageSummary"];
 
-const AI_BUTLER_SUMMARY_HEADING_RE = /<h2>\s*AI\s*管家\s*-\s*(?!后续追问)/;
+const AI_SUMMARY_HEADING_RE =
+  /<h[12]>\s*AI\s*(?:\u603b\u7ed3|\u7ba1\u5bb6\s*-\s*(?!\u540e\u7eed\u8ffd\u95ee))/;
 const AI_BUTLER_DEEP_READ_HEADING_RE =
   /<h[12]>\s*AI\s*(?:\u7cbe\u8bfb|\u7ba1\u5bb6\s*-\s*\u7cbe\u8bfb)\s*-/;
+const DEEP_READ_SLOT_MARKER_RE =
+  /<!--\s*zab:(?:slot|deep-read-plan):[\s\S]*?-->/i;
 const AI_BUTLER_CHAT_HEADING_RE =
   /<h2>\s*AI\s*管家\s*-\s*后续追问(?:\s*-|\s*笔记|[\s<])/;
 const AI_BUTLER_MINDMAP_HEADING_RE = /AI\s*管家思维导图\s*-/;
@@ -46,6 +49,7 @@ export function isRegularSummaryNote(
   tags: NoteTag[],
   noteHtml: string,
 ): boolean {
+  const isMisTaggedSummary = isMisTaggedDeepReadSummaryNote(tags, noteHtml);
   const isTableNote = hasNoteTag(tags, TABLE_NOTE_TAG);
   const isMindmapNote =
     hasNoteTag(tags, MINDMAP_NOTE_TAG) ||
@@ -56,8 +60,9 @@ export function isRegularSummaryNote(
   const isReviewNote =
     hasNoteTag(tags, "AI-Review") || AI_BUTLER_REVIEW_HEADING_RE.test(noteHtml);
   const isDeepRead =
-    hasNoteTag(tags, DEEP_READ_NOTE_TAG) ||
-    AI_BUTLER_DEEP_READ_HEADING_RE.test(noteHtml);
+    !isMisTaggedSummary &&
+    (hasNoteTag(tags, DEEP_READ_NOTE_TAG) ||
+      AI_BUTLER_DEEP_READ_HEADING_RE.test(noteHtml));
 
   if (
     isDeepRead ||
@@ -71,16 +76,32 @@ export function isRegularSummaryNote(
   }
 
   return (
+    isMisTaggedSummary ||
     hasNoteTag(tags, SUMMARY_NOTE_TAG) ||
     hasNoteTag(tags, LEGACY_SUMMARY_NOTE_TAG) ||
-    AI_BUTLER_SUMMARY_HEADING_RE.test(noteHtml)
+    AI_SUMMARY_HEADING_RE.test(noteHtml)
   );
 }
 
 export function isDeepReadNote(tags: NoteTag[], noteHtml: string): boolean {
+  if (isMisTaggedDeepReadSummaryNote(tags, noteHtml)) {
+    return false;
+  }
   return (
     hasNoteTag(tags, DEEP_READ_NOTE_TAG) ||
     AI_BUTLER_DEEP_READ_HEADING_RE.test(noteHtml)
+  );
+}
+
+export function isMisTaggedDeepReadSummaryNote(
+  tags: NoteTag[],
+  noteHtml: string,
+): boolean {
+  return (
+    hasNoteTag(tags, DEEP_READ_NOTE_TAG) &&
+    AI_SUMMARY_HEADING_RE.test(noteHtml) &&
+    !AI_BUTLER_DEEP_READ_HEADING_RE.test(noteHtml) &&
+    !DEEP_READ_SLOT_MARKER_RE.test(noteHtml)
   );
 }
 

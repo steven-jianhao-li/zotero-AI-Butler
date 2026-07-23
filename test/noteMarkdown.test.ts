@@ -141,6 +141,17 @@ describe("note Markdown rendering", function () {
     expect(html).not.to.contain('<span class="math">');
   });
 
+  it("wraps display KaTeX in a scroll container for narrow UI panes", function () {
+    const html = markdownToDisplayHtml(
+      String.raw`$$\boxed{\begin{aligned}\text{PAF}_{\rm TsuKing}&=\frac{1}{P_{\rm in}}\mathbf{N}^{\!\top}\mathbf{A}\\&\approx 6.7\times10^{9}\end{aligned}}$$`,
+    );
+
+    expect(html).to.contain('class="katex-scroll-container"');
+    expect(html).to.contain('class="katex-display"');
+    expect(html).not.to.contain("math-fallback");
+    expect(html).not.to.contain("katex-error");
+  });
+
   it("strips XML-invalid clipboard controls before rendering (#347)", function () {
     const pastedText = ["·ccc", "\u000Bddd", "正常保留换行\t和制表符"].join(
       "\n",

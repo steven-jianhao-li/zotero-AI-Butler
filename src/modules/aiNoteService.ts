@@ -4,6 +4,7 @@
   SUMMARY_NOTE_TAG,
   isDeepReadNote,
   isFollowUpChatNote,
+  isMisTaggedDeepReadSummaryNote,
   isRegularSummaryNote,
   type NoteTag,
 } from "./aiNoteClassifier";
@@ -89,9 +90,17 @@ export class AiNoteService {
             : isDeepReadNote(tags, noteHtml);
         if (!matches) continue;
 
-        if (!target || compareModified(note, target) > 0) {
+        const shouldSelect = !target || compareModified(note, target) > 0;
+        const normalizedHtml = await this.normalizeMatchedNote(
+          note as Zotero.Item,
+          kind,
+          tags,
+          noteHtml,
+        );
+
+        if (shouldSelect) {
           target = note as Zotero.Item;
-          rawHtml = noteHtml;
+          rawHtml = normalizedHtml;
         }
       }
 
@@ -286,6 +295,66 @@ export class AiNoteService {
     if (!tags.some((entry) => entry.tag === tag)) {
       note.addTag(tag);
     }
+  }
+
+  private static async normalizeMatchedNote(
+    note: Zotero.Item,
+    kind: AiNoteKind,
+    tags: NoteTag[],
+    noteHtml: string,
+  ): Promise<string> {
+    if (kind !== "summary") return noteHtml;
+
+    let changed = false;
+    let normalizedHtml = noteHtml;
+    if (!tags.some((entry) => entry.tag === SUMMARY_NOTE_TAG)) {
+      note.addTag(SUMMARY_NOTE_TAG);
+      changed = true;
+    }
+
+    if (isMisTaggedDeepReadSummaryNote(tags, noteHtml)) {
+      if (tags.some((entry) => entry.tag === DEEP_READ_NOTE_TAG)) {
+        this.removeTag(note, DEEP_READ_NOTE_TAG, tags);
+        changed = true;
+      }
+
+      normalizedHtml = this.renameLegacySummaryHeading(normalizedHtml);
+      if (normalizedHtml !== noteHtml) {
+        (note as any).setNote?.(normalizedHtml);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      try {
+        await (note as any).saveTx?.();
+      } catch (error) {
+        ztoolkit.log("[AI-Butler] normalize summary note failed:", error);
+      }
+    }
+    return normalizedHtml;
+  }
+
+  private static removeTag(
+    note: Zotero.Item,
+    tag: string,
+    currentTags: NoteTag[],
+  ): void {
+    const noteApi = note as any;
+    if (typeof noteApi.removeTag === "function") {
+      noteApi.removeTag(tag);
+      return;
+    }
+    if (typeof noteApi.setTags === "function") {
+      noteApi.setTags(currentTags.filter((entry) => entry.tag !== tag));
+    }
+  }
+
+  private static renameLegacySummaryHeading(html: string): string {
+    return html.replace(
+      /<h2>\s*AI\s*\u7ba1\u5bb6\s*-\s*/,
+      `<h2>${getString("note-kind-summary")} - `,
+    );
   }
 }
 

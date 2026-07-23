@@ -31,6 +31,17 @@ import {
   type ChatAbortControllerLike,
 } from "./chatContext";
 import {
+  buildQuickChatQuestionWithRelatedContext,
+  createQuickChatRelatedContextSignature,
+  getQuickChatRelatedLimit,
+  resolveQuickChatRelatedContext,
+  validateQuickChatRelatedSelection,
+  type QuickChatRelatedContextResult,
+  type QuickChatRelatedItemRef,
+  type QuickChatRelatedMode,
+} from "./quickChatRelatedContext";
+import { openQuickChatRelatedSelectorDialog } from "./quickChatRelatedSelector";
+import {
   addZoteroNoteOverflowGuards,
   buildFollowUpChatPairNoteHtml,
   decodeMathHtmlEntities,
@@ -51,6 +62,10 @@ interface ChatState {
   itemId: number | null;
   pdfContent: string;
   isBase64: boolean;
+  relatedItems: QuickChatRelatedItemRef[];
+  relatedMode: QuickChatRelatedMode;
+  relatedContextSignature: string;
+  relatedContextIncludedCount: number;
   conversationHistory: Array<{
     role: "system" | "user" | "assistant";
     content: string;
@@ -134,6 +149,10 @@ let currentChatState: ChatState = {
   itemId: null,
   pdfContent: "",
   isBase64: false,
+  relatedItems: [],
+  relatedMode: "summary",
+  relatedContextSignature: "",
+  relatedContextIncludedCount: 0,
   conversationHistory: [],
   isChatting: false,
   abortController: null,
@@ -819,6 +838,10 @@ function renderItemPaneSection(
       itemId: item.id,
       pdfContent: "",
       isBase64: false,
+      relatedItems: [],
+      relatedMode: "summary",
+      relatedContextSignature: "",
+      relatedContextIncludedCount: 0,
       conversationHistory: [],
       isChatting: false,
       abortController: null,
@@ -2675,6 +2698,28 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
 #ai-butler-inline-chat * {
   box-sizing: border-box;
 }
+#ai-butler-inline-chat {
+  width: 100%;
+  inline-size: 100%;
+  max-width: 100%;
+  max-inline-size: 100%;
+  min-width: 0;
+  min-inline-size: 0;
+  overflow-x: hidden;
+  contain: inline-size;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-pair,
+#ai-butler-inline-chat .ai-butler-quick-chat-user,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant {
+  width: 100%;
+  inline-size: 100%;
+  max-width: 100%;
+  max-inline-size: 100%;
+  min-width: 0;
+  min-inline-size: 0;
+  overflow-x: hidden;
+  contain: inline-size;
+}
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant,
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant * {
   min-width: 0;
@@ -2683,6 +2728,14 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
   overflow-wrap: anywhere;
   word-break: break-word;
   white-space: normal;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-display,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex * {
+  max-width: none !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  white-space: nowrap !important;
 }
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant p {
   margin: 0.35em 0;
@@ -2730,7 +2783,7 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
   border-left: 5px solid #f22f27;
 }
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant h4 {
-  display: inline-block;
+  display: block;
   font-size: 1em;
   padding: 0.1em 0.45em;
   border: 1px solid #f22f27;
@@ -2762,27 +2815,69 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
 }
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant table {
   display: block;
-  width: max-content;
+  width: 100%;
   max-width: 100%;
   overflow-x: auto;
   border-collapse: collapse;
 }
-#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-display,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant th,
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant td {
+  max-width: 220px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-scroll-container,
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant pre,
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant table {
   overflow-x: auto;
   overflow-y: hidden;
 }
-#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-inline {
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-scroll-container {
+  display: block;
+  width: 100%;
+  inline-size: 100%;
   max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  max-inline-size: 100%;
+  min-width: 0;
+  min-inline-size: 0;
+  margin: 0.5em 0;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding-bottom: 0.2em;
+  white-space: nowrap !important;
+  contain: inline-size;
 }
-#ai-butler-inline-chat .katex-display {
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-scroll-container .katex-display {
+  display: inline-block !important;
+  width: auto;
+  min-width: 0;
+  max-width: none !important;
+  margin: 0;
+  overflow: visible !important;
+  text-align: left;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-scroll-container .katex {
+  display: inline-block !important;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-inline {
+  display: inline-block;
   max-width: 100%;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
+  vertical-align: middle;
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+#ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-inline > .katex {
+  display: inline-block !important;
+  max-width: none !important;
+}
+#ai-butler-inline-chat .katex-display {
+  max-width: none !important;
+  overflow-x: visible;
+  overflow-y: visible;
 }
 #ai-butler-inline-chat .katex-inline {
   overflow-wrap: normal;
@@ -2807,6 +2902,10 @@ function renderChatArea(
     getString("itempane-quick-chat-abort-refreshed"),
   );
   currentChatState.conversationHistory = [];
+  currentChatState.relatedItems = [];
+  currentChatState.relatedMode = "summary";
+  currentChatState.relatedContextSignature = "";
+  currentChatState.relatedContextIncludedCount = 0;
   currentChatState.isChatting = false;
   currentChatState.abortController = null;
   currentChatState.savedPairIds = new Set();
@@ -2817,6 +2916,13 @@ function renderChatArea(
   chatArea.style.cssText = `
     display: ${initiallyVisible ? "flex" : "none"};
     flex-direction: column;
+    width: 100%;
+    inline-size: 100%;
+    max-width: 100%;
+    max-inline-size: 100%;
+    min-width: 0;
+    min-inline-size: 0;
+    contain: inline-size;
     border: 1px solid rgba(128, 128, 128, 0.3);
     border-radius: 6px;
     overflow: hidden;
@@ -2916,50 +3022,333 @@ function renderChatArea(
     return button;
   };
 
+  const newConversationBtn = createQuickControlButton(
+    "🧹",
+    getString("itempane-quick-chat-new-conversation"),
+  );
   const decreaseFontBtn = createQuickControlButton(
-    "?",
+    "A−",
     getString("itempane-quick-chat-decrease-font"),
   );
   const increaseFontBtn = createQuickControlButton(
-    "+",
+    "A+",
     getString("itempane-quick-chat-increase-font"),
   );
-  const decreaseHeightBtn = createQuickControlButton(
-    "?",
-    getString("itempane-quick-chat-decrease-height"),
-  );
-  const increaseHeightBtn = createQuickControlButton(
-    "?",
-    getString("itempane-quick-chat-increase-height"),
-  );
-  const resetHeightBtn = createQuickControlButton(
-    "?",
-    getString("itempane-quick-chat-reset-height"),
-  );
-
+  chatControls.appendChild(newConversationBtn);
   chatControls.appendChild(decreaseFontBtn);
   chatControls.appendChild(quickFontLabel);
   chatControls.appendChild(increaseFontBtn);
-  chatControls.appendChild(decreaseHeightBtn);
-  chatControls.appendChild(increaseHeightBtn);
-  chatControls.appendChild(resetHeightBtn);
   chatHeader.appendChild(chatControls);
 
   // 消息显示区
   const messagesArea = doc.createElement("div");
   messagesArea.style.cssText = `
     height: ${currentQuickChatHeight}px;
+    width: 100%;
+    inline-size: 100%;
+    max-width: 100%;
+    max-inline-size: 100%;
+    min-width: 0;
+    min-inline-size: 0;
+    contain: inline-size;
     min-height: 100px;
     max-height: 520px;
     overflow-y: auto;
     overflow-x: hidden;
-    resize: vertical;
     padding: 8px;
     font-size: ${currentQuickChatFontSize}px;
     line-height: 1.5;
     user-select: text;
     cursor: text;
   `;
+
+  const getRelatedModeLabel = (mode = currentChatState.relatedMode): string =>
+    mode === "summary"
+      ? getString("itempane-related-mode-summary")
+      : getString("itempane-related-mode-fulltext");
+
+  const relatedPanel = doc.createElement("div");
+  relatedPanel.style.cssText = `
+    display: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    padding: 0 2px 4px;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.14);
+  `;
+
+  const relatedChipList = doc.createElement("div");
+  relatedChipList.style.cssText = `
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+  `;
+  relatedPanel.appendChild(relatedChipList);
+
+  const relatedStatus = doc.createElement("span");
+  relatedStatus.style.cssText = `
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    color: rgba(128, 128, 128, 0.9);
+  `;
+
+  const createRelatedButton = (text: string, title?: string) => {
+    const button = doc.createElement("button");
+    button.textContent = text;
+    if (title) button.title = title;
+    button.style.cssText = `
+      height: 28px;
+      min-width: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 8px;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+    `;
+    button.addEventListener("mouseenter", () => {
+      if (button.disabled) return;
+      button.style.background = "rgba(89, 192, 188, 0.12)";
+      button.style.borderColor = "rgba(89, 192, 188, 0.45)";
+    });
+    button.addEventListener("mouseleave", () => {
+      const outlined = button.dataset.outlined === "true";
+      button.style.background =
+        button.dataset.active === "true"
+          ? "rgba(89, 192, 188, 0.16)"
+          : "transparent";
+      button.style.borderColor =
+        button.dataset.active === "true"
+          ? "rgba(89, 192, 188, 0.55)"
+          : outlined
+            ? "rgba(89, 192, 188, 0.45)"
+            : "transparent";
+    });
+    return button;
+  };
+
+  const openPickerBtn = createRelatedButton(
+    "📎",
+    getString("itempane-related-open-picker"),
+  );
+  openPickerBtn.setAttribute(
+    "aria-label",
+    getString("itempane-related-open-picker"),
+  );
+  openPickerBtn.dataset.outlined = "true";
+  openPickerBtn.style.color = "#00b894";
+  openPickerBtn.style.fontSize = "15px";
+  openPickerBtn.style.borderColor = "rgba(89, 192, 188, 0.45)";
+
+  const clearRelatedBtn = createRelatedButton(
+    getString("itempane-related-clear"),
+    getString("itempane-related-clear-title"),
+  );
+  clearRelatedBtn.style.fontSize = "11px";
+  clearRelatedBtn.style.padding = "0 9px";
+
+  let quickChatPinnedToBottom = true;
+
+  const setRelatedStatus = (
+    message: string,
+    color = "rgba(128, 128, 128, 0.9)",
+  ): void => {
+    relatedStatus.textContent = message;
+    relatedStatus.style.color = color;
+  };
+
+  const renderRelatedControls = (): void => {
+    relatedChipList.innerHTML = "";
+    for (const ref of currentChatState.relatedItems) {
+      const chip = doc.createElement("span");
+      chip.style.cssText = `
+        display: inline-flex;
+        align-items: center;
+        max-width: 100%;
+        gap: 5px;
+        padding: 3px 7px;
+        border-radius: 999px;
+        background: rgba(89, 192, 188, 0.18);
+        border: 1px solid rgba(89, 192, 188, 0.42);
+        color: inherit;
+        font-size: 11px;
+        line-height: 1.35;
+      `;
+
+      const chipIcon = doc.createElement("span");
+      chipIcon.textContent = "📄";
+      chipIcon.style.cssText = `
+        flex-shrink: 0;
+        font-size: 10px;
+        opacity: 0.82;
+      `;
+      chip.appendChild(chipIcon);
+
+      const chipText = doc.createElement("span");
+      chipText.textContent = ref.title;
+      chipText.style.cssText = `
+        display: inline-block;
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      `;
+      chip.appendChild(chipText);
+
+      const removeBtn = doc.createElement("button");
+      removeBtn.textContent = "×";
+      removeBtn.title = getString("itempane-related-remove");
+      removeBtn.style.cssText = `
+        border: none;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        padding: 0 2px;
+        font-size: 13px;
+        line-height: 1;
+        opacity: 0.75;
+      `;
+      removeBtn.addEventListener("click", () => {
+        currentChatState.relatedItems = currentChatState.relatedItems.filter(
+          (candidate) => candidate.itemId !== ref.itemId,
+        );
+        resetQuickChatConversationForRelatedChange(
+          getString("itempane-related-context-updated"),
+        );
+        renderRelatedControls();
+      });
+      chip.appendChild(removeBtn);
+      relatedChipList.appendChild(chip);
+    }
+
+    const hasRelatedItems = currentChatState.relatedItems.length > 0;
+    relatedPanel.style.display = hasRelatedItems ? "flex" : "none";
+    openPickerBtn.dataset.active = hasRelatedItems ? "true" : "false";
+    openPickerBtn.style.background = hasRelatedItems
+      ? "rgba(89, 192, 188, 0.16)"
+      : "transparent";
+    openPickerBtn.style.borderColor = hasRelatedItems
+      ? "rgba(89, 192, 188, 0.55)"
+      : "rgba(89, 192, 188, 0.45)";
+    clearRelatedBtn.disabled = currentChatState.relatedItems.length === 0;
+    clearRelatedBtn.style.opacity =
+      currentChatState.relatedItems.length === 0 ? "0.45" : "1";
+    clearRelatedBtn.style.display =
+      currentChatState.relatedItems.length === 0 ? "none" : "inline-flex";
+
+    if (currentChatState.relatedItems.length === 0) {
+      setRelatedStatus("");
+    } else {
+      const summary = getString("itempane-related-count", {
+        args: {
+          count: currentChatState.relatedItems.length,
+          mode: getRelatedModeLabel(),
+        },
+      });
+      setRelatedStatus(summary);
+    }
+  };
+
+  function resetQuickChatConversationForRelatedChange(message: string): void {
+    currentChatState.abortController?.abort(message);
+    currentChatState.conversationHistory = [];
+    currentChatState.relatedContextSignature = "";
+    currentChatState.relatedContextIncludedCount = 0;
+    currentChatState.isChatting = false;
+    currentChatState.abortController = null;
+    currentChatState.savedPairIds = new Set();
+    messagesArea.innerHTML = `<div style="color: #777; text-align: center; padding: 10px;">${escapeHtmlForChat(message)}</div>`;
+    quickChatPinnedToBottom = true;
+  }
+
+  function showRelatedLimitMessage(mode = currentChatState.relatedMode): void {
+    const limit = getQuickChatRelatedLimit(mode);
+    setRelatedStatus(
+      getString("itempane-related-limit-items", {
+        args: {
+          mode: getRelatedModeLabel(mode),
+          max: limit.maxItems,
+        },
+      }),
+      "#f44336",
+    );
+  }
+
+  function applyRelatedSelection(
+    refs: QuickChatRelatedItemRef[],
+    mode: QuickChatRelatedMode,
+  ): boolean {
+    const validation = validateQuickChatRelatedSelection(refs, mode);
+    if (!validation.ok) {
+      showRelatedLimitMessage(mode);
+      return false;
+    }
+
+    const previousSignature = createQuickChatRelatedContextSignature(
+      currentChatState.relatedMode,
+      currentChatState.relatedItems,
+    );
+    const nextSignature = createQuickChatRelatedContextSignature(mode, refs);
+
+    currentChatState.relatedMode = mode;
+    currentChatState.relatedItems = refs;
+    renderRelatedControls();
+
+    if (previousSignature === nextSignature) {
+      return false;
+    }
+
+    resetQuickChatConversationForRelatedChange(
+      refs.length === 0
+        ? getString("itempane-related-context-cleared")
+        : getString("itempane-related-context-updated"),
+    );
+    renderRelatedControls();
+    if (refs.length > 0) {
+      setRelatedStatus(
+        getString("itempane-related-applied-count", {
+          args: {
+            count: refs.length,
+            mode: getRelatedModeLabel(mode),
+          },
+        }),
+        "#4caf50",
+      );
+    }
+    return true;
+  }
+
+  async function pickRelatedItemsFromCollection(): Promise<void> {
+    const result = await openQuickChatRelatedSelectorDialog(
+      doc,
+      item.id,
+      currentChatState.relatedItems,
+      currentChatState.relatedMode,
+    );
+    if (!result) return;
+    applyRelatedSelection(result.refs, result.mode);
+  }
+
+  openPickerBtn.addEventListener("click", () => {
+    void pickRelatedItemsFromCollection();
+  });
+  clearRelatedBtn.addEventListener("click", () => {
+    if (currentChatState.relatedItems.length === 0) return;
+    applyRelatedSelection([], currentChatState.relatedMode);
+  });
+  renderRelatedControls();
 
   const applyQuickChatFontSize = (nextSize: number): void => {
     currentQuickChatFontSize = Math.max(10, Math.min(20, nextSize));
@@ -2971,30 +3360,18 @@ function renderChatArea(
     );
   };
 
-  const applyQuickChatHeight = (nextHeight: number): void => {
-    currentQuickChatHeight = Math.max(100, Math.min(520, nextHeight));
-    messagesArea.style.height = `${currentQuickChatHeight}px`;
-    setPref(
-      "sidebarQuickChatHeight" as any,
-      String(currentQuickChatHeight) as any,
-    );
-  };
-
   decreaseFontBtn.addEventListener("click", () => {
     applyQuickChatFontSize(currentQuickChatFontSize - 1);
   });
   increaseFontBtn.addEventListener("click", () => {
     applyQuickChatFontSize(currentQuickChatFontSize + 1);
   });
-  decreaseHeightBtn.addEventListener("click", () => {
-    applyQuickChatHeight(currentQuickChatHeight - 40);
-  });
-  increaseHeightBtn.addEventListener("click", () => {
-    applyQuickChatHeight(currentQuickChatHeight + 40);
-  });
-  resetHeightBtn.addEventListener("click", () => {
-    applyQuickChatHeight(DEFAULT_QUICK_CHAT_HEIGHT);
-  });
+
+  const quickChatResizeHandle = createResizeHandle(
+    doc,
+    messagesArea,
+    "sidebarQuickChatHeight",
+  );
 
   // 输入区域
   const isQuickChatAtBottom = (): boolean =>
@@ -3002,7 +3379,6 @@ function renderChatArea(
       messagesArea.scrollTop -
       messagesArea.clientHeight <
     8;
-  let quickChatPinnedToBottom = true;
   messagesArea.addEventListener("scroll", () => {
     quickChatPinnedToBottom = isQuickChatAtBottom();
   });
@@ -3016,40 +3392,88 @@ function renderChatArea(
 
   const inputArea = doc.createElement("div");
   inputArea.style.cssText = `
-    display: flex;
-    gap: 6px;
     padding: 8px;
     border-top: 1px solid rgba(128, 128, 128, 0.2);
-    background: transparent;
+    background: rgba(128, 128, 128, 0.025);
+  `;
+
+  const composer = doc.createElement("div");
+  composer.style.cssText = `
+    width: 100%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    box-sizing: border-box;
+    padding: 7px;
+    border: 1px solid rgba(128, 128, 128, 0.28);
+    border-radius: 15px;
+    background: rgba(128, 128, 128, 0.045);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   `;
 
   const inputBox = doc.createElement("textarea");
   inputBox.placeholder = getString("itempane-question-placeholder");
   inputBox.style.cssText = `
-    flex: 1;
-    min-height: 36px;
-    max-height: 80px;
-    padding: 6px 8px;
-    border: 1px solid rgba(128, 128, 128, 0.3);
-    border-radius: 4px;
+    width: 100%;
+    min-height: 38px;
+    max-height: 96px;
+    box-sizing: border-box;
+    padding: 2px 6px;
+    border: none;
+    outline: none;
     resize: none;
     font-size: 12px;
+    line-height: 1.45;
     font-family: inherit;
     color: inherit;
     background: transparent;
   `;
 
+  const composerToolbar = doc.createElement("div");
+  composerToolbar.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+  `;
+
+  const composerTools = doc.createElement("div");
+  composerTools.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    flex: 1;
+  `;
+
+  const composerActions = doc.createElement("div");
+  composerActions.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  `;
+
   const sendBtn = doc.createElement("button");
-  sendBtn.textContent = getString("itempane-send");
+  sendBtn.textContent = "↑";
+  sendBtn.title = getString("itempane-send");
   sendBtn.style.cssText = `
-    padding: 6px 12px;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 9px;
     background: #59c0bc;
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 999px;
     cursor: pointer;
-    font-size: 12px;
-    align-self: flex-end;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   `;
 
   const stopBtn = doc.createElement("button");
@@ -3057,14 +3481,17 @@ function renderChatArea(
   stopBtn.title = getString("itempane-stop-current");
   stopBtn.style.cssText = `
     display: none;
-    padding: 6px 12px;
+    height: 28px;
+    padding: 0 10px;
     background: #f44336;
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 999px;
     cursor: pointer;
     font-size: 12px;
-    align-self: flex-end;
+    line-height: 1;
+    align-items: center;
+    justify-content: center;
   `;
   stopBtn.addEventListener("click", () => {
     if (!currentChatState.isChatting) return;
@@ -3074,11 +3501,84 @@ function renderChatArea(
     currentChatState.abortController?.abort(getString("itempane-stop-current"));
   });
 
-  inputArea.appendChild(inputBox);
-  inputArea.appendChild(stopBtn);
-  inputArea.appendChild(sendBtn);
+  const resizeQuickChatInput = (): void => {
+    inputBox.style.height = "auto";
+    inputBox.style.height = `${Math.min(96, Math.max(38, inputBox.scrollHeight))}px`;
+  };
+  inputBox.addEventListener("input", resizeQuickChatInput);
+  inputBox.addEventListener("focus", () => {
+    composer.style.borderColor = "rgba(89, 192, 188, 0.7)";
+    composer.style.boxShadow = "0 0 0 2px rgba(89, 192, 188, 0.12)";
+  });
+  inputBox.addEventListener("blur", () => {
+    composer.style.borderColor = "rgba(128, 128, 128, 0.28)";
+    composer.style.boxShadow = "inset 0 1px 0 rgba(255, 255, 255, 0.06)";
+  });
+
+  const startNewQuickChatConversation = (): void => {
+    currentChatState.abortController?.abort(
+      getString("itempane-quick-chat-new-conversation-abort"),
+    );
+    currentChatState.conversationHistory = [];
+    currentChatState.relatedContextSignature = "";
+    currentChatState.relatedContextIncludedCount = 0;
+    currentChatState.isChatting = false;
+    currentChatState.abortController = null;
+    currentChatState.savedPairIds = new Set();
+
+    messagesArea.innerHTML = `<div style="color: #777; text-align: center; padding: 10px;">${escapeHtmlForChat(getString("itempane-quick-chat-new-conversation-created"))}</div>`;
+    inputBox.value = "";
+    resizeQuickChatInput();
+    sendBtn.textContent = "↑";
+    sendBtn.title = getString("itempane-send");
+    sendBtn.style.background = "#59c0bc";
+    (sendBtn as HTMLButtonElement).disabled = false;
+    stopBtn.style.display = "none";
+    (stopBtn as HTMLButtonElement).disabled = false;
+    (inputBox as HTMLTextAreaElement).disabled = false;
+    quickChatPinnedToBottom = true;
+    inputBox.focus();
+  };
+
+  newConversationBtn.addEventListener("click", async () => {
+    const hasConversationContent =
+      currentChatState.conversationHistory.length > 0 ||
+      currentChatState.isChatting ||
+      currentChatState.savedPairIds.size > 0 ||
+      messagesArea.querySelector("[data-pair-id]") !== null;
+    if (!hasConversationContent) {
+      startNewQuickChatConversation();
+      return;
+    }
+
+    const suppressWarning = Boolean(
+      getPref("quickChatSuppressNewConversationWarning"),
+    );
+    if (!suppressWarning) {
+      const confirmed = await confirmQuickChatNewConversation(doc);
+      if (!confirmed.ok) return;
+      if (confirmed.suppressFutureWarning) {
+        setPref("quickChatSuppressNewConversationWarning", true);
+      }
+    }
+
+    startNewQuickChatConversation();
+  });
+
+  composerTools.appendChild(openPickerBtn);
+  composerTools.appendChild(relatedStatus);
+  composerTools.appendChild(clearRelatedBtn);
+  composerActions.appendChild(stopBtn);
+  composerActions.appendChild(sendBtn);
+  composerToolbar.appendChild(composerTools);
+  composerToolbar.appendChild(composerActions);
+  composer.appendChild(relatedPanel);
+  composer.appendChild(inputBox);
+  composer.appendChild(composerToolbar);
+  inputArea.appendChild(composer);
   chatArea.appendChild(chatHeader);
   chatArea.appendChild(messagesArea);
+  chatArea.appendChild(quickChatResizeHandle);
   chatArea.appendChild(inputArea);
   body.appendChild(chatArea);
 
@@ -3187,13 +3687,14 @@ function renderChatArea(
     // 设置为正在聊天状态
     currentChatState.isChatting = true;
     currentChatState.abortController = createChatAbortController();
-    sendBtn.textContent = getString("itempane-generating-status");
+    sendBtn.textContent = "…";
+    sendBtn.title = getString("itempane-generating-status");
     sendBtn.style.background = "#9e9e9e";
     (sendBtn as HTMLButtonElement).disabled = true;
     stopBtn.textContent = getString("itempane-stop");
     stopBtn.style.background = "#f44336";
     (stopBtn as HTMLButtonElement).disabled = false;
-    stopBtn.style.display = "block";
+    stopBtn.style.display = "inline-flex";
     (inputBox as HTMLTextAreaElement).disabled = false;
 
     // 生成唯一对话对 ID
@@ -3202,7 +3703,15 @@ function renderChatArea(
 
     // 创建对话对容器
     const pairWrapper = doc.createElement("div");
+    pairWrapper.className = "ai-butler-quick-chat-pair";
     pairWrapper.style.cssText = `
+      width: 100%;
+      inline-size: 100%;
+      max-width: 100%;
+      max-inline-size: 100%;
+      min-width: 0;
+      min-inline-size: 0;
+      contain: inline-size;
       margin-bottom: 12px;
       padding: 8px;
       border: 1px solid rgba(128, 128, 128, 0.2);
@@ -3215,7 +3724,15 @@ function renderChatArea(
 
     // 显示用户问题
     const userMsgDiv = doc.createElement("div");
+    userMsgDiv.className = "ai-butler-quick-chat-user";
     userMsgDiv.style.cssText = `
+      width: 100%;
+      inline-size: 100%;
+      max-width: 100%;
+      max-inline-size: 100%;
+      min-width: 0;
+      min-inline-size: 0;
+      contain: inline-size;
       margin-bottom: 8px;
       padding: 8px;
       background: rgba(89, 192, 188, 0.1);
@@ -3223,6 +3740,9 @@ function renderChatArea(
       border-left: 3px solid #59c0bc;
       user-select: text;
       cursor: text;
+      overflow-x: hidden;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     `;
     userMsgDiv.innerHTML = `<strong>${getString("itempane-user-label")}</strong> ${escapeHtmlForChat(question)}`;
     pairWrapper.appendChild(userMsgDiv);
@@ -3237,8 +3757,12 @@ function renderChatArea(
       border-radius: 6px;
       border-left: 3px solid #667eea;
       width: 100%;
+      inline-size: 100%;
       max-width: 100%;
+      max-inline-size: 100%;
       min-width: 0;
+      min-inline-size: 0;
+      contain: inline-size;
       overflow-x: hidden;
       overflow-wrap: anywhere;
       word-break: break-word;
@@ -3302,14 +3826,77 @@ function renderChatArea(
 
     // 清空输入框
     inputBox.value = "";
+    resizeQuickChatInput();
     let fullResponse = "";
 
     try {
       const { default: LLMService } = await import("./llmService");
 
+      let relatedContextResult: QuickChatRelatedContextResult | null = null;
+      let conversationQuestion = question;
+      let sourceLabel = getString("itempane-quick-chat-source-label");
+      if (currentChatState.relatedItems.length > 0) {
+        const nextSignature = createQuickChatRelatedContextSignature(
+          currentChatState.relatedMode,
+          currentChatState.relatedItems,
+        );
+        if (
+          currentChatState.relatedContextSignature &&
+          currentChatState.relatedContextSignature !== nextSignature
+        ) {
+          currentChatState.conversationHistory = [];
+        }
+
+        if (currentChatState.conversationHistory.length === 0) {
+          setRelatedStatus(getString("itempane-related-context-loading"));
+          relatedContextResult = await resolveQuickChatRelatedContext(
+            currentChatState.relatedItems,
+            currentChatState.relatedMode,
+          );
+          currentChatState.relatedContextSignature =
+            relatedContextResult.signature;
+          currentChatState.relatedContextIncludedCount =
+            relatedContextResult.included.length;
+
+          if (relatedContextResult.skipped.length > 0) {
+            setRelatedStatus(
+              getString("itempane-related-context-skipped", {
+                args: { count: relatedContextResult.skipped.length },
+              }),
+              "#ff9800",
+            );
+          }
+          if (relatedContextResult.included.length > 0) {
+            conversationQuestion = buildQuickChatQuestionWithRelatedContext(
+              question,
+              relatedContextResult,
+            );
+            sourceLabel = getString("itempane-related-source-label", {
+              args: {
+                count: relatedContextResult.included.length,
+                mode: getRelatedModeLabel(),
+              },
+            });
+          } else {
+            setRelatedStatus(
+              getString("itempane-related-context-none"),
+              "#ff9800",
+            );
+            sourceLabel = getString("itempane-quick-chat-source-label");
+          }
+        } else if (currentChatState.relatedContextIncludedCount > 0) {
+          sourceLabel = getString("itempane-related-source-label", {
+            args: {
+              count: currentChatState.relatedContextIncludedCount,
+              mode: getRelatedModeLabel(),
+            },
+          });
+        }
+      }
+
       const conversationHistory = buildQuickChatConversation(
         currentChatState.conversationHistory,
-        question,
+        conversationQuestion,
       );
 
       let responseMetadata: LLMNoteMetadata | null = null;
@@ -3340,7 +3927,7 @@ function renderChatArea(
 
       currentChatState.conversationHistory = appendQuickChatTurn(
         currentChatState.conversationHistory,
-        question,
+        conversationQuestion,
         fullResponse,
       );
 
@@ -3367,6 +3954,7 @@ function renderChatArea(
             question,
             fullResponse,
             responseMetadata,
+            sourceLabel,
           );
           currentChatState.savedPairIds.add(pairId);
           saveBtn.textContent = getString("itempane-saved");
@@ -3397,7 +3985,8 @@ function renderChatArea(
       // 恢复状态
       currentChatState.isChatting = false;
       currentChatState.abortController = null;
-      sendBtn.textContent = getString("itempane-send");
+      sendBtn.textContent = "↑";
+      sendBtn.title = getString("itempane-send");
       sendBtn.style.background = "#59c0bc";
       (sendBtn as HTMLButtonElement).disabled = false;
       stopBtn.style.display = "none";
@@ -3414,6 +4003,148 @@ function renderChatArea(
       e.preventDefault();
       sendBtn.click();
     }
+  });
+}
+
+async function confirmQuickChatNewConversation(
+  doc: Document,
+): Promise<{ ok: boolean; suppressFutureWarning: boolean }> {
+  const host = doc.body || doc.documentElement;
+  if (!host) return { ok: false, suppressFutureWarning: false };
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    const overlay = doc.createElement("div");
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      z-index: 100000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(15, 23, 42, 0.28);
+      box-sizing: border-box;
+    `;
+
+    const dialog = doc.createElement("div");
+    dialog.style.cssText = `
+      width: min(420px, calc(100vw - 32px));
+      max-width: 100%;
+      padding: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.32);
+      border-radius: 14px;
+      background: Canvas;
+      color: CanvasText;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.26);
+      font-family: system-ui, -apple-system, sans-serif;
+      box-sizing: border-box;
+    `;
+    overlay.appendChild(dialog);
+
+    const finish = (ok: boolean, suppressFutureWarning = false): void => {
+      if (resolved) return;
+      resolved = true;
+      doc.defaultView?.removeEventListener("keydown", onKeyDown, true);
+      overlay.remove();
+      resolve({ ok, suppressFutureWarning });
+    };
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finish(false);
+      }
+    };
+    doc.defaultView?.addEventListener("keydown", onKeyDown, true);
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) finish(false);
+    });
+
+    const title = doc.createElement("div");
+    title.textContent = getString("itempane-quick-chat-new-conversation-title");
+    title.style.cssText = `
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    `;
+    dialog.appendChild(title);
+
+    const message = doc.createElement("div");
+    message.textContent = getString(
+      "itempane-quick-chat-new-conversation-message",
+    );
+    message.style.cssText = `
+      font-size: 12px;
+      line-height: 1.55;
+      color: rgba(128, 128, 128, 0.98);
+      margin-bottom: 12px;
+    `;
+    dialog.appendChild(message);
+
+    const optionLabel = doc.createElement("label");
+    optionLabel.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      margin-bottom: 14px;
+      cursor: pointer;
+      user-select: none;
+    `;
+    const dontRemindCheckbox = doc.createElement("input");
+    dontRemindCheckbox.type = "checkbox";
+    optionLabel.appendChild(dontRemindCheckbox);
+    const optionText = doc.createElement("span");
+    optionText.textContent = getString(
+      "itempane-quick-chat-new-conversation-dont-remind",
+    );
+    optionLabel.appendChild(optionText);
+    dialog.appendChild(optionLabel);
+
+    const actions = doc.createElement("div");
+    actions.style.cssText = `
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    `;
+
+    const cancelBtn = doc.createElement("button");
+    cancelBtn.textContent = getString("dialog-button-cancel");
+    cancelBtn.style.cssText = `
+      padding: 6px 12px;
+      border: 1px solid rgba(148, 163, 184, 0.42);
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 12px;
+    `;
+    cancelBtn.addEventListener("click", () => finish(false));
+
+    const confirmBtn = doc.createElement("button");
+    confirmBtn.textContent = getString(
+      "itempane-quick-chat-new-conversation-confirm",
+    );
+    confirmBtn.style.cssText = `
+      padding: 6px 12px;
+      border: none;
+      border-radius: 8px;
+      background: #59c0bc;
+      color: white;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 650;
+    `;
+    confirmBtn.addEventListener("click", () =>
+      finish(true, dontRemindCheckbox.checked),
+    );
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+    dialog.appendChild(actions);
+    host.appendChild(overlay);
+    confirmBtn.focus();
   });
 }
 
@@ -3643,6 +4374,7 @@ async function saveChatPairToNote(
   userMessage: string,
   assistantMessage: string,
   metadata?: LLMNoteMetadata | null,
+  sourceLabel = getString("itempane-quick-chat-source-label"),
 ): Promise<void> {
   const note = await getOrCreateChatNote(item);
   let noteHtml = (note as any).getNote?.() || "";
@@ -3663,7 +4395,7 @@ async function saveChatPairToNote(
     pairId,
     userMessage,
     assistantMessage,
-    sourceLabel: getString("itempane-quick-chat-source-label"),
+    sourceLabel,
   });
   const block = metadata
     ? LLMNoteMetadataService.wrapHtml(blockContent, metadata)

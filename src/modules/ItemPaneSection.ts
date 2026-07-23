@@ -2700,17 +2700,25 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
 }
 #ai-butler-inline-chat {
   width: 100%;
+  inline-size: 100%;
   max-width: 100%;
+  max-inline-size: 100%;
   min-width: 0;
+  min-inline-size: 0;
   overflow-x: hidden;
+  contain: inline-size;
 }
 #ai-butler-inline-chat .ai-butler-quick-chat-pair,
 #ai-butler-inline-chat .ai-butler-quick-chat-user,
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant {
   width: 100%;
+  inline-size: 100%;
   max-width: 100%;
+  max-inline-size: 100%;
   min-width: 0;
+  min-inline-size: 0;
   overflow-x: hidden;
+  contain: inline-size;
 }
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant,
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant * {
@@ -2828,17 +2836,22 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-scroll-container {
   display: block;
   width: 100%;
+  inline-size: 100%;
   max-width: 100%;
+  max-inline-size: 100%;
   min-width: 0;
+  min-inline-size: 0;
   margin: 0.5em 0;
   overflow-x: auto;
   overflow-y: visible;
   padding-bottom: 0.2em;
   white-space: nowrap !important;
+  contain: inline-size;
 }
 #ai-butler-inline-chat .ai-butler-quick-chat-assistant .katex-scroll-container .katex-display {
-  width: max-content;
-  min-width: max-content;
+  display: inline-block !important;
+  width: auto;
+  min-width: 0;
   max-width: none !important;
   margin: 0;
   overflow: visible !important;
@@ -2904,8 +2917,12 @@ function renderChatArea(
     display: ${initiallyVisible ? "flex" : "none"};
     flex-direction: column;
     width: 100%;
+    inline-size: 100%;
     max-width: 100%;
+    max-inline-size: 100%;
     min-width: 0;
+    min-inline-size: 0;
+    contain: inline-size;
     border: 1px solid rgba(128, 128, 128, 0.3);
     border-radius: 6px;
     overflow: hidden;
@@ -3039,8 +3056,12 @@ function renderChatArea(
   messagesArea.style.cssText = `
     height: ${currentQuickChatHeight}px;
     width: 100%;
+    inline-size: 100%;
     max-width: 100%;
+    max-inline-size: 100%;
     min-width: 0;
+    min-inline-size: 0;
+    contain: inline-size;
     min-height: 100px;
     max-height: 520px;
     overflow-y: auto;
@@ -3658,8 +3679,12 @@ function renderChatArea(
     pairWrapper.className = "ai-butler-quick-chat-pair";
     pairWrapper.style.cssText = `
       width: 100%;
+      inline-size: 100%;
       max-width: 100%;
+      max-inline-size: 100%;
       min-width: 0;
+      min-inline-size: 0;
+      contain: inline-size;
       margin-bottom: 12px;
       padding: 8px;
       border: 1px solid rgba(128, 128, 128, 0.2);
@@ -3675,8 +3700,12 @@ function renderChatArea(
     userMsgDiv.className = "ai-butler-quick-chat-user";
     userMsgDiv.style.cssText = `
       width: 100%;
+      inline-size: 100%;
       max-width: 100%;
+      max-inline-size: 100%;
       min-width: 0;
+      min-inline-size: 0;
+      contain: inline-size;
       margin-bottom: 8px;
       padding: 8px;
       background: rgba(89, 192, 188, 0.1);
@@ -3701,8 +3730,12 @@ function renderChatArea(
       border-radius: 6px;
       border-left: 3px solid #667eea;
       width: 100%;
+      inline-size: 100%;
       max-width: 100%;
+      max-inline-size: 100%;
       min-width: 0;
+      min-inline-size: 0;
+      contain: inline-size;
       overflow-x: hidden;
       overflow-wrap: anywhere;
       word-break: break-word;

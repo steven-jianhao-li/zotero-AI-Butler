@@ -18,6 +18,9 @@ type QueueInternals = {
   tasks: Map<string, TaskItem>;
   deletedFixedTasks: Map<string, any>;
   clearedDeletedFixedTaskKeys: Set<string>;
+  processingTasks: Set<string>;
+  taskAbortControllers: Map<string, AbortController>;
+  abortingTasks: Set<string>;
   progressCallbacks: Set<(...args: any[]) => void>;
   completeCallbacks: Set<(...args: any[]) => void>;
   isRunning: boolean;
@@ -68,6 +71,9 @@ function createQueueInternals(): QueueInternals {
   manager.tasks = new Map();
   manager.deletedFixedTasks = new Map();
   manager.clearedDeletedFixedTaskKeys = new Set();
+  manager.processingTasks = new Set();
+  manager.taskAbortControllers = new Map();
+  manager.abortingTasks = new Set();
   manager.progressCallbacks = new Set();
   manager.completeCallbacks = new Set();
   manager.isRunning = true;

@@ -3034,14 +3034,6 @@ function renderChatArea(
     "A+",
     getString("itempane-quick-chat-increase-font"),
   );
-  const decreaseHeightBtn = createQuickControlButton(
-    "⬇️",
-    getString("itempane-quick-chat-decrease-height"),
-  );
-  const increaseHeightBtn = createQuickControlButton(
-    "⬆️",
-    getString("itempane-quick-chat-increase-height"),
-  );
   const resetHeightBtn = createQuickControlButton(
     "🔄",
     getString("itempane-quick-chat-reset-height"),
@@ -3051,8 +3043,6 @@ function renderChatArea(
   chatControls.appendChild(decreaseFontBtn);
   chatControls.appendChild(quickFontLabel);
   chatControls.appendChild(increaseFontBtn);
-  chatControls.appendChild(decreaseHeightBtn);
-  chatControls.appendChild(increaseHeightBtn);
   chatControls.appendChild(resetHeightBtn);
   chatHeader.appendChild(chatControls);
 
@@ -3071,7 +3061,6 @@ function renderChatArea(
     max-height: 520px;
     overflow-y: auto;
     overflow-x: hidden;
-    resize: vertical;
     padding: 8px;
     font-size: ${currentQuickChatFontSize}px;
     line-height: 1.5;
@@ -3392,15 +3381,15 @@ function renderChatArea(
   increaseFontBtn.addEventListener("click", () => {
     applyQuickChatFontSize(currentQuickChatFontSize + 1);
   });
-  decreaseHeightBtn.addEventListener("click", () => {
-    applyQuickChatHeight(currentQuickChatHeight - 40);
-  });
-  increaseHeightBtn.addEventListener("click", () => {
-    applyQuickChatHeight(currentQuickChatHeight + 40);
-  });
   resetHeightBtn.addEventListener("click", () => {
     applyQuickChatHeight(DEFAULT_QUICK_CHAT_HEIGHT);
   });
+
+  const quickChatResizeHandle = createResizeHandle(
+    doc,
+    messagesArea,
+    "sidebarQuickChatHeight",
+  );
 
   // 输入区域
   const isQuickChatAtBottom = (): boolean =>
@@ -3607,6 +3596,7 @@ function renderChatArea(
   inputArea.appendChild(composer);
   chatArea.appendChild(chatHeader);
   chatArea.appendChild(messagesArea);
+  chatArea.appendChild(quickChatResizeHandle);
   chatArea.appendChild(inputArea);
   body.appendChild(chatArea);
 

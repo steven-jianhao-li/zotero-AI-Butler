@@ -43,7 +43,7 @@
     "d3": "^7.9.0",
     "docx": "^9.7.1",
     "jszip": "^3.10.1",
-    "katex": "^0.16.28",
+    "katex": "^0.17.0",
     "marked": "^16.4.1",
     "markmap-lib": "^0.18.12",
     "markmap-view": "^0.18.12",
@@ -51,21 +51,21 @@
     "simple-mind-map": "^0.14.0-fix.1",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2",
-    "zotero-plugin-toolkit": "5.1.0-beta.13"
+    "zotero-plugin-toolkit": "5.1.4"
   },
   "devDependencies": {
     "@types/chai": "^5.2.3",
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.2.0",
     "@types/turndown": "^5.0.6",
-    "@zotero-plugin/eslint-config": "^0.6.7",
+    "@zotero-plugin/eslint-config": "^0.6.9",
     "chai": "^6.2.2",
     "eslint": "^9.39.2",
-    "mocha": "^11.7.5",
-    "prettier": "^3.8.1",
+    "mocha": "^11.7.6",
+    "prettier": "^3.9.4",
     "typescript": "^5.9.3",
-    "zotero-plugin-scaffold": "^0.8.2",
-    "zotero-types": "^4.1.0-beta.1"
+    "zotero-plugin-scaffold": "^0.8.7",
+    "zotero-types": "^4.1.2"
   },
   "prettier": {
     "printWidth": 80,

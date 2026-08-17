@@ -351,4 +351,4 @@ AI管家支持自动生成论文思维导图，将长篇论文的层次结构可
 
 如果你觉得这个项目对你有帮助，请不要吝啬你的 ⭐️！
 
-[![Star History Chart](https://api.star-history.com/svg?repos=steven-jianhao-li/zotero-AI-Butler&type=Date)](https://star-history.com/#steven-jianhao-li/zotero-AI-Butler&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=steven-jianhao-li/zotero-AI-Butler&type=Date)](https://star-history.dera.page/#steven-jianhao-li/zotero-AI-Butler&Date)

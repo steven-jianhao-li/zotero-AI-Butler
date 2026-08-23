@@ -385,6 +385,7 @@ llm-endpoint-provider-openai-compat = OpenAI Compatible (Chat Completions)
 llm-endpoint-provider-google = Google Gemini
 llm-endpoint-provider-anthropic = Anthropic Claude
 llm-endpoint-provider-openrouter = OpenRouter
+llm-endpoint-provider-orcarouter = OrcaRouter
 llm-endpoint-provider-ollama = Ollama
 llm-endpoint-provider-openai = OpenAI (Responses API)
 llm-endpoint-provider-volcanoark = Volcano Ark

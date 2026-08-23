@@ -251,6 +251,10 @@ function initializeDefaultPrefsOnStartup() {
     openRouterApiUrl: "https://openrouter.ai/api/v1/chat/completions",
     openRouterApiKey: "",
     openRouterModel: "google/gemma-3-27b-it",
+    // OrcaRouter 默认
+    orcarouterApiUrl: "https://api.orcarouter.ai/v1/chat/completions",
+    orcarouterApiKey: "",
+    orcarouterModel: "orcarouter/auto",
     ollamaApiUrl: "http://localhost:11434",
     ollamaApiKey: "",
     ollamaModel: "llama3.2",
@@ -265,6 +269,7 @@ function initializeDefaultPrefsOnStartup() {
     geminiApiKeysFallback: "[]",
     anthropicApiKeysFallback: "[]",
     openRouterApiKeysFallback: "[]",
+    orcarouterApiKeysFallback: "[]",
     volcanoArkApiKeysFallback: "[]",
     ollamaApiKeysFallback: "[]",
     // API 轮换配置

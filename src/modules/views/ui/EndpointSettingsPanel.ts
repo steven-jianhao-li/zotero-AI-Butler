@@ -91,7 +91,8 @@ function endpointSupportsReasoningEffort(endpoint: LLMEndpoint): boolean {
   return (
     endpoint.providerType === "openai" ||
     endpoint.providerType === "openai-compat" ||
-    endpoint.providerType === "openrouter"
+    endpoint.providerType === "openrouter" ||
+    endpoint.providerType === "orcarouter"
   );
 }
 
@@ -1421,7 +1422,8 @@ export class EndpointSettingsPanel {
     }
     if (
       endpoint.providerType === "openai-compat" ||
-      endpoint.providerType === "openrouter"
+      endpoint.providerType === "openrouter" ||
+      endpoint.providerType === "orcarouter"
     ) {
       return this.toChatCompletionsEndpoint(rawUrl);
     }

@@ -20,6 +20,7 @@ export type ProviderId =
   | "google"
   | "anthropic"
   | "openrouter"
+  | "orcarouter"
   | "volcanoark"
   | "ollama";
 
@@ -56,6 +57,10 @@ const PROVIDER_KEY_MAPPINGS: Record<ProviderId, ProviderKeyMapping> = {
   openrouter: {
     primaryPrefKey: "openRouterApiKey",
     extraKeysPrefKey: "openRouterApiKeysFallback",
+  },
+  orcarouter: {
+    primaryPrefKey: "orcarouterApiKey",
+    extraKeysPrefKey: "orcarouterApiKeysFallback",
   },
   volcanoark: {
     primaryPrefKey: "volcanoArkApiKey",

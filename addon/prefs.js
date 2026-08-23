@@ -32,6 +32,12 @@ pref(
 pref("__prefsPrefix__.openRouterApiKey", "");
 pref("__prefsPrefix__.openRouterModel", "google/gemma-3-27b-it");
 pref(
+  "__prefsPrefix__.orcarouterApiUrl",
+  "https://api.orcarouter.ai/v1/chat/completions",
+);
+pref("__prefsPrefix__.orcarouterApiKey", "");
+pref("__prefsPrefix__.orcarouterModel", "orcarouter/auto");
+pref(
   "__prefsPrefix__.volcanoArkApiUrl",
   "https://ark.cn-beijing.volces.com/api/v3/responses",
 );

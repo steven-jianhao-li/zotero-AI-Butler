@@ -136,6 +136,7 @@ AI Butler supports multiple mainstream LLM platforms:
 | **OpenAI**            | gpt-5                    | Official new API                                                                              |
 | **Anthropic Claude**  | claude-opus-4-5-20251101 | Strong overall capability                                                                     |
 | **OpenAI Compatible** | Custom                   | Legacy OpenAI-style Chat Completions API, supporting third-party services such as SiliconFlow |
+| **OrcaRouter**        | orcarouter/auto          | [OrcaRouter](https://www.orcarouter.ai) gateway aggregating multiple model endpoints          |
 | **Volcano Ark**       | doubao-seed-1-8-251228   | 🆕 2 million free tokens per day, supports Doubao models                                      |
 | **Ollama**            | llama3.2                 | Local or LAN model service; use text extraction or MinerU for PDF processing                  |
 

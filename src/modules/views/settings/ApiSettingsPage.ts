@@ -101,6 +101,10 @@ export class ApiSettingsPage {
             label: getString("settings-api-provider-openrouter"),
           },
           {
+            value: "orcarouter",
+            label: getString("settings-api-provider-orcarouter"),
+          },
+          {
             value: "volcanoark",
             label: getString("settings-api-provider-volcanoark"),
           },
@@ -168,6 +172,25 @@ export class ApiSettingsPage {
               modelInput.value = "google/gemma-3-27b-it";
             }
           }
+          // 若切换到 OrcaRouter 且未填写，填充默认
+          if (newVal === "orcarouter") {
+            const curUrl = (getPref("orcarouterApiUrl") as string) || "";
+            const urlInput = this.container.querySelector(
+              "#setting-orcarouterApiUrl",
+            ) as HTMLInputElement;
+            const modelInput = this.container.querySelector(
+              "#setting-orcarouterModel",
+            ) as HTMLInputElement;
+            if (urlInput && (!curUrl || urlInput.value.trim() === "")) {
+              urlInput.value = "https://api.orcarouter.ai/v1/chat/completions";
+            }
+            if (
+              modelInput &&
+              (!modelInput.value || modelInput.value.trim() === "")
+            ) {
+              modelInput.value = "orcarouter/auto";
+            }
+          }
           // 若切换到火山方舟且未填写，填充默认
           if (newVal === "volcanoark") {
             const curUrl = (getPref("volcanoArkApiUrl") as string) || "";
@@ -233,6 +256,9 @@ export class ApiSettingsPage {
       });
       const sectionOpenRouter = this.createElement("div", {
         id: "provider-openrouter",
+      });
+      const sectionOrcaRouter = this.createElement("div", {
+        id: "provider-orcarouter",
       });
       const sectionVolcanoArk = this.createElement("div", {
         id: "provider-volcanoark",
@@ -459,6 +485,43 @@ export class ApiSettingsPage {
         ),
       );
 
+      // OrcaRouter 字段
+      sectionOrcaRouter.appendChild(
+        this.createEndpointFormGroup(
+          getString("settings-api-base-url-required"),
+          "orcarouterApiUrl",
+          getPref("orcarouterApiUrl") as string,
+          "https://api.orcarouter.ai/v1/chat/completions",
+          {
+            officialEndpoint: "https://api.orcarouter.ai/v1/chat/completions",
+            previewKind: "chatCompletions",
+          },
+        ),
+      );
+      sectionOrcaRouter.appendChild(
+        this.createFormGroup(
+          getString("settings-api-api-key-required"),
+          this.createPasswordInput(
+            "orcarouterApiKey",
+            getPref("orcarouterApiKey") as string,
+            "sk-orca-...",
+            "orcarouter",
+          ),
+          getString("settings-api-orcarouter-key-help"),
+          "orcarouter",
+        ),
+      );
+      sectionOrcaRouter.appendChild(
+        this.createModelFormGroup(
+          getString("settings-api-model-required"),
+          "orcarouter",
+          "orcarouterModel",
+          getPref("orcarouterModel") as string,
+          "orcarouter/auto",
+          getString("settings-api-orcarouter-model-help"),
+        ),
+      );
+
       // 火山方舟字段
       sectionVolcanoArk.appendChild(
         this.createEndpointFormGroup(
@@ -566,6 +629,7 @@ export class ApiSettingsPage {
       legacyProviderForm.appendChild(sectionGemini);
       legacyProviderForm.appendChild(sectionAnthropic);
       legacyProviderForm.appendChild(sectionOpenRouter);
+      legacyProviderForm.appendChild(sectionOrcaRouter);
       legacyProviderForm.appendChild(sectionVolcanoArk);
       legacyProviderForm.appendChild(sectionOllama);
 
@@ -573,6 +637,7 @@ export class ApiSettingsPage {
         const isGemini = prov === "google";
         const isAnthropic = prov === "anthropic";
         const isOpenRouter = prov === "openrouter";
+        const isOrcaRouter = prov === "orcarouter";
         const isOpenAICompat = prov === "openai-compat";
         const isVolcanoArk = prov === "volcanoark";
         const isOllama = prov === "ollama";
@@ -581,6 +646,7 @@ export class ApiSettingsPage {
           isAnthropic ||
           isOpenAICompat ||
           isOpenRouter ||
+          isOrcaRouter ||
           isVolcanoArk ||
           isOllama
             ? "none"
@@ -595,6 +661,9 @@ export class ApiSettingsPage {
           ? "block"
           : "none";
         (sectionOpenRouter as HTMLElement).style.display = isOpenRouter
+          ? "block"
+          : "none";
+        (sectionOrcaRouter as HTMLElement).style.display = isOrcaRouter
           ? "block"
           : "none";
         (sectionVolcanoArk as HTMLElement).style.display = isVolcanoArk
@@ -1987,6 +2056,11 @@ export class ApiSettingsPage {
         apiKeyId: "openRouterApiKey",
         modelId: "openRouterModel",
       },
+      orcarouter: {
+        apiUrlId: "orcarouterApiUrl",
+        apiKeyId: "orcarouterApiKey",
+        modelId: "orcarouterModel",
+      },
       volcanoark: {
         apiUrlId: "volcanoArkApiUrl",
         apiKeyId: "volcanoArkApiKey",
@@ -2113,6 +2187,7 @@ export class ApiSettingsPage {
         google: "geminiApiKey",
         anthropic: "anthropicApiKey",
         openrouter: "openRouterApiKey",
+        orcarouter: "orcarouterApiKey",
         volcanoark: "volcanoArkApiKey",
         ollama: "ollamaApiKey",
       };
@@ -2794,6 +2869,16 @@ export class ApiSettingsPage {
       const orModelEl = this.container.querySelector(
         "#setting-openRouterModel",
       ) as HTMLInputElement;
+      // OrcaRouter
+      const orcUrlEl = this.container.querySelector(
+        "#setting-orcarouterApiUrl",
+      ) as HTMLInputElement;
+      const orcKeyEl = this.container.querySelector(
+        "#setting-orcarouterApiKey",
+      ) as HTMLInputElement;
+      const orcModelEl = this.container.querySelector(
+        "#setting-orcarouterModel",
+      ) as HTMLInputElement;
       // Volcano Ark (火山方舟)
       const vaUrlEl = this.container.querySelector(
         "#setting-volcanoArkApiUrl",
@@ -2887,6 +2972,9 @@ export class ApiSettingsPage {
         openRouterApiUrl: orUrlEl?.value?.trim() || "",
         openRouterApiKey: orKeyEl?.value?.trim() || "",
         openRouterModel: orModelEl?.value?.trim() || "",
+        orcarouterApiUrl: orcUrlEl?.value?.trim() || "",
+        orcarouterApiKey: orcKeyEl?.value?.trim() || "",
+        orcarouterModel: orcModelEl?.value?.trim() || "",
         volcanoArkApiUrl: vaUrlEl?.value?.trim() || "",
         volcanoArkApiKey: vaKeyEl?.value?.trim() || "",
         volcanoArkModel: vaModelEl?.value?.trim() || "",
@@ -2972,6 +3060,19 @@ export class ApiSettingsPage {
             missingFields.push(
               getString("settings-api-field-openrouter-model"),
             );
+        } else if (provider === "orcarouter") {
+          if (!values.orcarouterApiUrl)
+            missingFields.push(
+              getString("settings-api-field-orcarouter-api-url"),
+            );
+          if (!values.orcarouterApiKey)
+            missingFields.push(
+              getString("settings-api-field-orcarouter-api-key"),
+            );
+          if (!values.orcarouterModel)
+            missingFields.push(
+              getString("settings-api-field-orcarouter-model"),
+            );
         } else if (provider === "volcanoark") {
           if (!values.volcanoArkApiUrl)
             missingFields.push(
@@ -3046,6 +3147,9 @@ export class ApiSettingsPage {
       setPref("openRouterApiUrl", values.openRouterApiUrl);
       setPref("openRouterApiKey", values.openRouterApiKey);
       setPref("openRouterModel", values.openRouterModel);
+      setPref("orcarouterApiUrl", values.orcarouterApiUrl);
+      setPref("orcarouterApiKey", values.orcarouterApiKey);
+      setPref("orcarouterModel", values.orcarouterModel);
       setPref("volcanoArkApiUrl", values.volcanoArkApiUrl);
       setPref("volcanoArkApiKey", values.volcanoArkApiKey);
       setPref("volcanoArkModel", values.volcanoArkModel);
@@ -3187,6 +3291,7 @@ export class ApiSettingsPage {
     if (provider === "google") return "google";
     if (provider === "anthropic") return "anthropic";
     if (provider === "openrouter") return "openrouter";
+    if (provider === "orcarouter") return "orcarouter";
     if (provider === "openai-compat") return "openai-compat";
     if (provider === "volcanoark") return "volcanoark";
     if (provider === "ollama") return "ollama";
@@ -3642,6 +3747,13 @@ export class ApiSettingsPage {
     );
     setPref("openRouterApiKey", "");
     setPref("openRouterModel", "google/gemma-3-27b-it");
+    // OrcaRouter 默认
+    setPref(
+      "orcarouterApiUrl",
+      "https://api.orcarouter.ai/v1/chat/completions",
+    );
+    setPref("orcarouterApiKey", "");
+    setPref("orcarouterModel", "orcarouter/auto");
     // 火山方舟默认
     setPref(
       "volcanoArkApiUrl",

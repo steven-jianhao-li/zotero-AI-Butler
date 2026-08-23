@@ -36,6 +36,9 @@ const prefKeys = [
   "ollamaApiUrl",
   "ollamaApiKey",
   "ollamaModel",
+  "orcarouterApiUrl",
+  "orcarouterApiKey",
+  "orcarouterModel",
 ];
 
 function prefName(key: string): string {
@@ -112,6 +115,21 @@ describe("LLMEndpointManager", function () {
       providerType: "openai",
       reasoningEffort: "medium",
     });
+  });
+
+  it("creates an OrcaRouter endpoint with gateway defaults", function () {
+    const endpoint = LLMEndpointManager.createEndpoint("orcarouter");
+
+    expect(endpoint).to.include({
+      providerType: "orcarouter",
+      apiUrl: "https://api.orcarouter.ai/v1/chat/completions",
+      model: "orcarouter/auto",
+      reasoningEffort: "default",
+    });
+    expect(LLMEndpointManager.providerLabel("orcarouter")).to.equal(
+      "OrcaRouter",
+    );
+    expect(LLMEndpointManager.providerTypes()).to.include("orcarouter");
   });
 
   it("syncs the migrated legacy endpoint from current provider prefs", function () {

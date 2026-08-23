@@ -256,6 +256,7 @@ export class LLMService {
     if (id.includes("anthropic") || id.includes("claude")) return "anthropic";
     if (id === "openai-compat") return "openai-compat";
     if (id === "openrouter") return "openrouter";
+    if (id === "orcarouter") return "orcarouter";
     if (id === "volcanoark") return "volcanoark";
     if (id === "ollama") return "ollama";
     return "openai";
@@ -408,6 +409,14 @@ export class LLMService {
       common.model = (
         getPref("openRouterModel") || "google/gemma-3-27b-it"
       ).trim();
+    } else if (id === "orcarouter") {
+      const keyManagerId = this.mapToKeyManagerId(id);
+      common.apiUrl = (
+        getPref("orcarouterApiUrl") ||
+        "https://api.orcarouter.ai/v1/chat/completions"
+      ).trim();
+      common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
+      common.model = (getPref("orcarouterModel") || "orcarouter/auto").trim();
     } else if (id === "volcanoark") {
       const keyManagerId = this.mapToKeyManagerId(id);
       common.apiUrl = (

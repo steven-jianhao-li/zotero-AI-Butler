@@ -26,6 +26,7 @@ function providerLabel(raw: unknown): string {
     google: "Google Gemini",
     anthropic: "Anthropic Claude",
     openrouter: "OpenRouter",
+    orcarouter: "OrcaRouter",
     volcanoark: getString("setup-preset-provider-volcanoark"),
     ollama: getString("setup-preset-provider-ollama"),
   };

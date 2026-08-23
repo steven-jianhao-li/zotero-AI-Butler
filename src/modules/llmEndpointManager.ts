@@ -74,6 +74,12 @@ const PROVIDER_DEFAULTS: Record<
     model: "google/gemma-3-27b-it",
     reasoningEffort: "default",
   },
+  orcarouter: {
+    labelKey: "llm-endpoint-provider-orcarouter",
+    apiUrl: "https://api.orcarouter.ai/v1/chat/completions",
+    model: "orcarouter/auto",
+    reasoningEffort: "default",
+  },
   volcanoark: {
     labelKey: "llm-endpoint-provider-volcanoark",
     apiUrl: "https://ark.cn-beijing.volces.com/api/v3/responses",
@@ -499,6 +505,7 @@ export class LLMEndpointManager {
       google: "geminiApiUrl",
       anthropic: "anthropicApiUrl",
       openrouter: "openRouterApiUrl",
+      orcarouter: "orcarouterApiUrl",
       volcanoark: "volcanoArkApiUrl",
       ollama: "ollamaApiUrl",
     };
@@ -514,6 +521,7 @@ export class LLMEndpointManager {
       google: "geminiApiKey",
       anthropic: "anthropicApiKey",
       openrouter: "openRouterApiKey",
+      orcarouter: "orcarouterApiKey",
       volcanoark: "volcanoArkApiKey",
       ollama: "ollamaApiKey",
     };
@@ -531,6 +539,7 @@ export class LLMEndpointManager {
       google: "geminiModel",
       anthropic: "anthropicModel",
       openrouter: "openRouterModel",
+      orcarouter: "orcarouterModel",
       volcanoark: "volcanoArkModel",
       ollama: "ollamaModel",
     };

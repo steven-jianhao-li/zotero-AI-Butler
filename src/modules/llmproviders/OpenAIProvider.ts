@@ -9,6 +9,7 @@ import {
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getString } from "../../utils/locale";
 import { getRequestTimeoutMs } from "./shared/llmutils";
+import { mergeRequestHeaders } from "./shared/requestHeaders";
 import {
   getConnectionTestInput,
   formatConnectionTestSuccess,
@@ -64,6 +65,16 @@ export class OpenAIProvider implements ILlmProvider {
       "reasoningEffort",
     ],
   };
+
+  private buildHeaders(apiKey: string, options?: LLMOptions) {
+    return mergeRequestHeaders(
+      {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      options?.customHeaders,
+    );
+  }
 
   async generateSummary(
     content: string,
@@ -138,10 +149,7 @@ export class OpenAIProvider implements ILlmProvider {
 
         try {
           await Zotero.HTTP.request("POST", responsesUrl, {
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
-            },
+            headers: this.buildHeaders(apiKey, options),
             body: JSON.stringify(payload),
             responseType: "text",
             timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -284,10 +292,7 @@ export class OpenAIProvider implements ILlmProvider {
       let cleanupAbortSignal: (() => void) | undefined;
       try {
         const res = await Zotero.HTTP.request("POST", responsesUrl, {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
+          headers: this.buildHeaders(apiKey, options),
           body: JSON.stringify(basePayload),
           responseType: "json",
           timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -368,10 +373,7 @@ export class OpenAIProvider implements ILlmProvider {
 
       try {
         await Zotero.HTTP.request("POST", apiUrl, {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
+          headers: this.buildHeaders(apiKey, options),
           body,
           responseType: "text",
           timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -614,10 +616,7 @@ export class OpenAIProvider implements ILlmProvider {
         let cleanupAbortSignal: (() => void) | undefined;
         try {
           const res = await Zotero.HTTP.request("POST", responsesUrl, {
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
-            },
+            headers: this.buildHeaders(apiKey, options),
             body: JSON.stringify(basePayload),
             responseType: "json",
             timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -683,10 +682,7 @@ export class OpenAIProvider implements ILlmProvider {
 
       try {
         await Zotero.HTTP.request("POST", responsesUrl, {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
+          headers: this.buildHeaders(apiKey, options),
           body: JSON.stringify(payload),
           responseType: "text",
           timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -869,10 +865,7 @@ export class OpenAIProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", apiUrl, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -1028,7 +1021,7 @@ export class OpenAIProvider implements ILlmProvider {
     );
     const data = await requestModelListJson(
       url,
-      { Authorization: `Bearer ${apiKey}` },
+      this.buildHeaders(apiKey, options),
       options.requestTimeoutMs ?? 30000,
     );
     return parseModelListResponse(data);
@@ -1084,10 +1077,7 @@ export class OpenAIProvider implements ILlmProvider {
     const responseHeaders: Record<string, string> = {};
     try {
       response = await Zotero.HTTP.request("POST", responsesUrl, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         errorDelayMax: 0,
         responseType: "text", // 使用 text 以获取原始响应
@@ -1265,10 +1255,7 @@ export class OpenAIProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", responsesUrl, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -1441,10 +1428,7 @@ export class OpenAIProvider implements ILlmProvider {
     let cleanupAbortSignal: (() => void) | undefined;
     try {
       const res = await Zotero.HTTP.request("POST", apiUrl, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "json",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),

@@ -370,6 +370,9 @@ export class LLMService {
       common.apiUrl = endpoint.apiUrl.trim();
       common.apiKey = endpoint.apiKey.trim();
       common.model = endpoint.model.trim();
+      if (endpoint.customHeaders?.trim()) {
+        common.customHeaders = endpoint.customHeaders.trim();
+      }
     } else if (id.includes("gemini") || id === "google") {
       const keyManagerId = this.mapToKeyManagerId(id);
       common.apiUrl = (

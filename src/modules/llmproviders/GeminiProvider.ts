@@ -8,6 +8,7 @@ import {
 } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
+import { mergeRequestHeaders } from "./shared/requestHeaders";
 import {
   getConnectionTestInput,
   formatConnectionTestSuccess,
@@ -48,6 +49,16 @@ export class GeminiProvider implements ILlmProvider {
     supportsSystemPrompt: true,
     supportedParams: ["temperature", "topP", "maxTokens", "stream"],
   };
+
+  private buildHeaders(apiKey: string, options?: LLMOptions) {
+    return mergeRequestHeaders(
+      {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      options?.customHeaders,
+    );
+  }
 
   async generateSummary(
     content: string,
@@ -117,10 +128,7 @@ export class GeminiProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -306,10 +314,7 @@ export class GeminiProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -468,7 +473,7 @@ export class GeminiProvider implements ILlmProvider {
     const url = deriveGeminiModelsUrl(baseUrl);
     const data = await requestModelListJson(
       url,
-      { "x-goog-api-key": apiKey },
+      this.buildHeaders(apiKey, options),
       options.requestTimeoutMs ?? 30000,
     );
     return parseModelListResponse(data, { stripModelsPrefix: true });
@@ -510,10 +515,7 @@ export class GeminiProvider implements ILlmProvider {
     const responseHeaders: Record<string, string> = {};
     try {
       response = await Zotero.HTTP.request("POST", url, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         errorDelayMax: 0,
         responseType: "text", // 使用 text 以获取原始响应
@@ -658,6 +660,7 @@ export class GeminiProvider implements ILlmProvider {
     displayName: string,
     apiKey: string,
     baseUrl: string,
+    options?: LLMOptions,
   ): Promise<string> {
     // 读取文件内容
     const fileData = await IOUtils.read(filePath);
@@ -670,14 +673,18 @@ export class GeminiProvider implements ILlmProvider {
     let uploadUrl: string;
     try {
       const startResponse = await Zotero.HTTP.request("POST", startUploadUrl, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-          "X-Goog-Upload-Protocol": "resumable",
-          "X-Goog-Upload-Command": "start",
-          "X-Goog-Upload-Header-Content-Length": String(numBytes),
-          "X-Goog-Upload-Header-Content-Type": mimeType,
-        },
+        headers: mergeRequestHeaders(
+          {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+            "X-Goog-Upload-Protocol": "resumable",
+            "X-Goog-Upload-Command": "start",
+            "X-Goog-Upload-Header-Content-Length": String(numBytes),
+            "X-Goog-Upload-Header-Content-Type": mimeType,
+          },
+          options?.customHeaders,
+          { protectAllBaseHeaders: true },
+        ),
         body: JSON.stringify({
           file: { display_name: displayName },
         }),
@@ -828,10 +835,7 @@ export class GeminiProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),

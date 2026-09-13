@@ -18,6 +18,7 @@ export interface LLMEndpoint {
   model: string;
   reasoningEffort?: LLMReasoningEffortSetting;
   pdfProcessMode?: LLMEndpointPdfProcessMode;
+  customHeaders?: string;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -164,6 +165,7 @@ function normalizeEndpoint(
       defaults.reasoningEffort || "default",
     ),
     pdfProcessMode: normalizeEndpointPdfProcessMode(raw.pdfProcessMode),
+    customHeaders: String(raw.customHeaders || "").trim(),
     enabled: raw.enabled !== false,
     createdAt,
     updatedAt: raw.updatedAt || createdAt,
@@ -257,6 +259,7 @@ export class LLMEndpointManager {
       model: defaults.model,
       reasoningEffort: defaults.reasoningEffort || "default",
       pdfProcessMode: "global",
+      customHeaders: "",
       enabled: true,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -448,6 +451,7 @@ export class LLMEndpointManager {
       createdAt: previous.createdAt,
       enabled: previous.enabled,
       pdfProcessMode: previous.pdfProcessMode || "global",
+      customHeaders: previous.customHeaders || "",
     };
 
     if (this.endpointCoreEquals(previous, synced)) {
@@ -484,6 +488,7 @@ export class LLMEndpointManager {
       model: this.getLegacyModel(providerType) || defaults.model,
       reasoningEffort: this.getLegacyReasoningEffort(providerType),
       pdfProcessMode: "global",
+      customHeaders: "",
       enabled: true,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -564,6 +569,7 @@ export class LLMEndpointManager {
       a.model === b.model &&
       a.reasoningEffort === b.reasoningEffort &&
       (a.pdfProcessMode || "global") === (b.pdfProcessMode || "global") &&
+      (a.customHeaders || "") === (b.customHeaders || "") &&
       a.enabled === b.enabled
     );
   }

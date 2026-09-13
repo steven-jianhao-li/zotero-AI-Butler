@@ -165,6 +165,22 @@ describe("LLMEndpointManager", function () {
     });
   });
 
+  it("persists per-endpoint custom request headers", function () {
+    LLMEndpointManager.saveEndpoints([
+      {
+        ...makeEndpoint("custom-headers"),
+        customHeaders:
+          '{"HTTP-Referer":"https://example.com","X-Title":"AI Butler"}',
+      },
+    ]);
+
+    const endpoints = LLMEndpointManager.getEndpoints();
+
+    expect(endpoints[0].customHeaders).to.equal(
+      '{"HTTP-Referer":"https://example.com","X-Title":"AI Butler"}',
+    );
+  });
+
   it("normalizes stored reasoning effort values", function () {
     LLMEndpointManager.saveEndpoints([
       { ...makeEndpoint("a"), reasoningEffort: "high" },

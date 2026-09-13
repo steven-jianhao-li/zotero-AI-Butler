@@ -677,6 +677,13 @@ llm-error-all-endpoints-failed = All configured LLM endpoints failed.
 llm-error-no-pdf-content = No available PDF content
 llm-error-missing-uploadable-pdf = The current input has no uploadable PDF/Base64 content.
 llm-error-missing-text-or-pdf = The current input has no usable text or uploadable PDF/Base64 content
+llm-error-custom-headers-format = Custom request header format error
+llm-error-custom-headers-object = Custom request headers must be an object, for example HTTP-Referer: https://example.com
+llm-error-custom-header-name = Invalid custom request header name
+llm-error-custom-header-name-detail = Header name "{ $name }" is invalid
+llm-error-custom-header-value = Invalid custom request header value
+llm-error-custom-header-value-type = Header "{ $name }" must be a string, number, or boolean
+llm-error-custom-header-value-newline = Header "{ $name }" must not contain line breaks
 literature-review-error-multifile-and-text-unavailable = The current API does not support multi-file processing, and PDF text content could not be extracted
 mindmap-error-empty-llm-response = The LLM returned empty content, so the mind map could not be generated  { $details }
 # Misc runtime errors

@@ -677,6 +677,13 @@ llm-error-all-endpoints-failed = 所有已配置的 LLM Endpoint 均调用失败
 llm-error-no-pdf-content = 没有可用的 PDF 内容
 llm-error-missing-uploadable-pdf = 当前输入缺少可上传的 PDF/Base64 内容。
 llm-error-missing-text-or-pdf = 当前输入缺少可用文本或可上传的 PDF/Base64 内容
+llm-error-custom-headers-format = 自定义请求头格式错误
+llm-error-custom-headers-object = 自定义请求头必须是对象格式，例如 HTTP-Referer: https://example.com
+llm-error-custom-header-name = 自定义请求头名称无效
+llm-error-custom-header-name-detail = 请求头名称 "{ $name }" 不合法
+llm-error-custom-header-value = 自定义请求头值无效
+llm-error-custom-header-value-type = 请求头 "{ $name }" 的值必须是字符串、数字或布尔值
+llm-error-custom-header-value-newline = 请求头 "{ $name }" 的值不能包含换行符
 literature-review-error-multifile-and-text-unavailable = 当前 API 不支持多文件处理，且无法提取 PDF 文本内容
 mindmap-error-empty-llm-response = LLM 返回了空内容，无法生成思维导图  { $details }
 # Misc runtime errors

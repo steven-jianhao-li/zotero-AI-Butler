@@ -30,6 +30,8 @@
     "release": "zotero-plugin release",
     "pretest": "node ./scripts/check-i18n.mjs && node ./scripts/gen-env-setup.mjs",
     "test": "zotero-plugin test --exit-on-finish",
+    "test:agent": "node ./scripts/test-agent.mjs",
+    "test:agent:live": "node ./scripts/test-agent-live.mjs",
     "pretest:watch": "node ./scripts/gen-env-setup.mjs",
     "test:watch": "zotero-plugin test",
     "scaffold:provider": "node ./scripts/create-provider.mjs",

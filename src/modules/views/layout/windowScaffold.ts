@@ -2,6 +2,7 @@ export type MainTabDescriptor<T extends string> = {
   id: T;
   label: string;
   icon: string;
+  className?: string;
 };
 
 export type SettingsNavDescriptor<T extends string> = {
@@ -138,7 +139,7 @@ export function createMainWindowScaffold<T extends string>(
   for (const tab of tabs) {
     const button = createElement(doc, "button", {
       id: `tab-${tab.id}`,
-      className: "tab-button",
+      className: `tab-button ${tab.className || ""}`.trim(),
       styles: {
         flex: "1",
         minWidth: "0",
@@ -159,7 +160,7 @@ export function createMainWindowScaffold<T extends string>(
         whiteSpace: "nowrap",
       },
     });
-    button.innerHTML = `${tab.icon} ${tab.label}`;
+    button.textContent = `${tab.icon} ${tab.label}`;
     button.addEventListener("click", () => onTabClick(tab.id));
     button.addEventListener("mouseenter", () => {
       if (!button.classList.contains("active")) {

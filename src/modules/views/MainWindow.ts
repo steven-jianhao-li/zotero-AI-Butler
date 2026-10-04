@@ -30,6 +30,7 @@
 import { config } from "../../../package.json";
 import { DashboardView } from "./DashboardView";
 import { SummaryView } from "./SummaryView";
+import { AgentView } from "./agent/AgentView";
 import { TaskQueueView } from "./TaskQueueView";
 import { SettingsView } from "./SettingsView";
 import { LibraryScannerView } from "./LibraryScannerView";
@@ -50,6 +51,7 @@ import {
 export type TabType =
   | "dashboard"
   | "summary"
+  | "agent"
   | "tasks"
   | "settings"
   | "scanner"
@@ -119,6 +121,8 @@ export class MainWindow {
   /** AI 总结视图 */
   private summaryView: SummaryView;
 
+  private agentView: AgentView;
+
   /** 任务队列视图 */
   private taskQueueView: TaskQueueView;
 
@@ -138,6 +142,7 @@ export class MainWindow {
     // 初始化各个视图
     this.dashboardView = new DashboardView();
     this.summaryView = new SummaryView();
+    this.agentView = new AgentView();
     this.taskQueueView = new TaskQueueView();
     this.settingsView = new SettingsView();
     this.libraryScannerView = new LibraryScannerView();
@@ -152,6 +157,7 @@ export class MainWindow {
     // 注册视图
     this.views.set("dashboard", this.dashboardView);
     this.views.set("summary", this.summaryView);
+    this.views.set("agent", this.agentView);
     this.views.set("tasks", this.taskQueueView);
     this.views.set("settings", this.settingsView);
     this.views.set("scanner", this.libraryScannerView);
@@ -501,6 +507,12 @@ export class MainWindow {
           label: getString("main-window-tab-summary"),
           icon: "📝",
         },
+        {
+          id: "agent",
+          label: getString("main-window-tab-agent"),
+          icon: "✦",
+          className: "agent-tab",
+        },
         { id: "tasks", label: getString("main-window-tab-tasks"), icon: "📋" },
         {
           id: "settings",
@@ -566,6 +578,13 @@ export class MainWindow {
       themeLink.rel = "stylesheet";
       themeLink.href = `chrome://${config.addonRef}/content/aiButlerTheme.css`;
       head.appendChild(themeLink);
+    }
+    if (!doc.getElementById("ai-butler-agent-css")) {
+      const agentLink = doc.createElement("link");
+      agentLink.id = "ai-butler-agent-css";
+      agentLink.rel = "stylesheet";
+      agentLink.href = `chrome://${config.addonRef}/content/agent.css`;
+      head.appendChild(agentLink);
     }
   }
 

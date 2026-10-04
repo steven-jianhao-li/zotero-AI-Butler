@@ -23,6 +23,12 @@
 import { getString } from "../utils/locale";
 import { getPref } from "../utils/prefs";
 import type { TaskProgressMeta } from "./taskQueue";
+import type { LLMAbortSignal } from "./llmproviders/types";
+import {
+  isAbortError,
+  normalizeAbortError,
+  throwIfAborted,
+} from "./llmproviders/shared/requestAbort";
 
 type PDFTextExtractionStep = {
   step: string;
@@ -378,7 +384,9 @@ export class PDFExtractor {
     item: Zotero.Item,
     pdfProcessMode?: string,
     progressCallback?: PdfExtractionProgressCallback,
+    options: { persist?: boolean; abortSignal?: LLMAbortSignal } = {},
   ): Promise<string> {
+    throwIfAborted(options.abortSignal);
     // 第一步:获取条目的所有附件 ID
     const attachments = item.getAttachments();
 
@@ -436,8 +444,16 @@ export class PDFExtractor {
       );
       try {
         const { MineruClient } = await import("./mineruIntegration");
-        return await MineruClient.extractMarkdown(item, progressCallback);
+        throwIfAborted(options.abortSignal);
+        return await MineruClient.extractMarkdown(
+          item,
+          progressCallback,
+          options,
+        );
       } catch (e) {
+        if (isAbortError(e, options.abortSignal)) {
+          throw normalizeAbortError(e, options.abortSignal);
+        }
         ztoolkit.log(
           "[AI Butler] MinerU extraction failed, returning to Zotero built-in extraction",
           e,
@@ -446,6 +462,7 @@ export class PDFExtractor {
     }
 
     // 若选择 Zotero 全文索引模式或MinerU失效，则使用 Zotero 全文索引提取文本
+    throwIfAborted(options.abortSignal);
     progressCallback?.(getString("progress-pdf-zotero-index-message"), 20, {
       stage: "pdf-extracting",
       label: getString("progress-pdf-extracting"),
@@ -453,7 +470,12 @@ export class PDFExtractor {
         args: { title: pdfAttachment.getField("title") || "PDF" },
       }),
     });
-    const text = await this.extractTextFromPDF(pdfAttachment, progressCallback);
+    const text = await this.extractTextFromPDF(
+      pdfAttachment,
+      progressCallback,
+      options.abortSignal,
+    );
+    throwIfAborted(options.abortSignal);
 
     // 第四步:验证文本有效性
     if (!text || text.trim().length === 0) {
@@ -494,7 +516,9 @@ export class PDFExtractor {
   private static async extractTextFromPDF(
     pdfAttachment: Zotero.Item,
     progressCallback?: PdfExtractionProgressCallback,
+    abortSignal?: LLMAbortSignal,
   ): Promise<string> {
+    throwIfAborted(abortSignal);
     const startedAtMs = Date.now();
     const diagnostics = this.createTextExtractionDiagnostics(pdfAttachment);
 
@@ -506,6 +530,7 @@ export class PDFExtractor {
         progressTarget: 18,
       });
       diagnostics.filePath = path || undefined;
+      throwIfAborted(abortSignal);
       if (!path) {
         throw new Error(getString("pdf-error-file-path-not-found"));
       }
@@ -528,6 +553,7 @@ export class PDFExtractor {
         startedAtMs,
         "fulltext-cache:initial",
       );
+      throwIfAborted(abortSignal);
       if (cachedText) {
         return cachedText;
       }
@@ -541,6 +567,7 @@ export class PDFExtractor {
       );
 
       // 如果未索引,触发索引操作
+      throwIfAborted(abortSignal);
       if (indexedState !== Zotero.Fulltext.INDEX_STATE_INDEXED) {
         await this.tryIndexPdf(pdfAttachment, diagnostics, startedAtMs);
       }
@@ -548,8 +575,10 @@ export class PDFExtractor {
       const deadline = Date.now() + this.TEXT_EXTRACTION_TIMEOUT_MS;
       let pollCount = 0;
       while (Date.now() < deadline) {
+        throwIfAborted(abortSignal);
         pollCount++;
         await Zotero.Promise.delay(this.TEXT_EXTRACTION_POLL_INTERVAL_MS);
+        throwIfAborted(abortSignal);
 
         const polledAttachmentText = await this.tryReadAttachmentText(
           pdfAttachment,
@@ -586,6 +615,9 @@ export class PDFExtractor {
         startedAtMs,
       );
     } catch (error: any) {
+      if (isAbortError(error, abortSignal)) {
+        throw normalizeAbortError(error, abortSignal);
+      }
       if (error instanceof PDFTextExtractionError) {
         throw error;
       }
@@ -1071,7 +1103,9 @@ export class PDFExtractor {
   public static async extractBase64FromItem(
     item: Zotero.Item,
     progressCallback?: PdfExtractionProgressCallback,
+    abortSignal?: LLMAbortSignal,
   ): Promise<string> {
+    throwIfAborted(abortSignal);
     // 第一步: 获取条目的所有附件 ID
     progressCallback?.(getString("progress-pdf-preparing-base64-message"), 12, {
       stage: "pdf-extracting",
@@ -1113,11 +1147,13 @@ export class PDFExtractor {
     );
 
     // 第三步: 获取 PDF 文件路径；必要时先从 Zotero 云端按需下载
+    throwIfAborted(abortSignal);
     const pdfPath = await this.ensurePdfAttachmentAvailable(pdfAttachment, {
       progressCallback,
       progressBase: 18,
       progressTarget: 25,
     });
+    throwIfAborted(abortSignal);
     if (!pdfPath) {
       throw new Error(getString("pdf-error-get-file-path-failed"));
     }
@@ -1126,6 +1162,7 @@ export class PDFExtractor {
     try {
       // 使用 Zotero 的 File.readAsync 读取二进制文件
       const pdfData = await Zotero.File.getBinaryContentsAsync(pdfPath);
+      throwIfAborted(abortSignal);
 
       if (!pdfData || pdfData.length === 0) {
         throw new Error(getString("pdf-error-file-empty-or-unreadable"));
@@ -1155,6 +1192,9 @@ export class PDFExtractor {
       });
       return base64String;
     } catch (error: any) {
+      if (isAbortError(error, abortSignal)) {
+        throw normalizeAbortError(error, abortSignal);
+      }
       throw new Error(
         getString("pdf-error-read-or-encode-failed", {
           args: { message: error.message },

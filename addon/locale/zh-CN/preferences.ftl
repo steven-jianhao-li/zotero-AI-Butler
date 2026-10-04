@@ -834,3 +834,26 @@ settings-api-key-click-enable = 点击启用
 settings-api-key-click-disable = 点击禁用
 settings-image-summary-default-language = 中文
 preferences-open-main-window-failed = 打开主窗口失败: { $message }
+
+# Agent 文献库工具权限与参数校验
+agent-tool-error-read-only = 当前会话为只读模式，无法修改文献库。
+agent-tool-error-library-read-only = 所选文献库不可编辑。
+agent-tool-error-target-unavailable = 目标已不在所选文献库中，或已被删除。
+agent-tool-error-item-unavailable = 条目在所选文献库中不可用。
+agent-tool-error-collection-unavailable = 分类在所选文献库中不可用。
+agent-tool-error-audit-size = 本次变更过大，无法完整记录审计信息。请减少条目或标签数量。
+agent-tool-error-not-note = 请求的条目不是笔记。
+agent-tool-error-not-paper = 精读需要选择常规文献条目。
+agent-tool-error-endpoint-unavailable = 配置的精读端点不可用。
+agent-tool-error-tags-empty = 请至少指定一个要添加或移除的标签。
+agent-tool-error-tags-conflict = 同一标签不能同时添加和移除。
+agent-tool-error-top-level-required = 请整理顶级条目，而不是其子笔记或附件。
+agent-tool-error-parent-required = 子笔记需要常规文献作为父条目。
+agent-tool-error-object-required = 工具参数必须是对象。
+agent-tool-error-unknown-argument = 未知参数：{ $key }
+agent-tool-error-string = { $key } 必须是不含空字符、最多 { $maxLength } 个字符的字符串。
+agent-tool-error-nonempty-string = { $key } 必须是不含空字符、最多 { $maxLength } 个字符的非空字符串。
+agent-tool-error-integer = { $key } 必须是 { $minimum } 到 { $maximum } 之间的整数。
+agent-tool-error-enum = { $key } 必须是以下值之一：{ $values }。
+agent-tool-error-item-ids = { $key } 必须包含 1–50 个条目 ID。
+agent-tool-error-string-array = { $key } 必须是最多包含 50 个字符串的数组。

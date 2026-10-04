@@ -834,3 +834,26 @@ settings-api-key-click-enable = Click to enable
 settings-api-key-click-disable = Click to disable
 settings-image-summary-default-language = English
 preferences-open-main-window-failed = Failed to open main window: { $message }
+
+# Agent library tool permissions and validation
+agent-tool-error-read-only = This session is read-only. Library changes are disabled.
+agent-tool-error-library-read-only = The selected library is not editable.
+agent-tool-error-target-unavailable = The target is no longer available in the selected library.
+agent-tool-error-item-unavailable = Item is unavailable in the selected library.
+agent-tool-error-collection-unavailable = Collection is unavailable in the selected library.
+agent-tool-error-audit-size = This change is too large to audit in one operation. Use fewer items or tags.
+agent-tool-error-not-note = The requested item is not a note.
+agent-tool-error-not-paper = Paper reading requires a regular paper item.
+agent-tool-error-endpoint-unavailable = The configured deep-reading endpoint is unavailable.
+agent-tool-error-tags-empty = Specify at least one tag to add or remove.
+agent-tool-error-tags-conflict = The same tag cannot be added and removed together.
+agent-tool-error-top-level-required = Organize top-level items, not their child notes or attachments.
+agent-tool-error-parent-required = A child note requires a regular parent item.
+agent-tool-error-object-required = Tool arguments must be an object.
+agent-tool-error-unknown-argument = Unknown argument: { $key }
+agent-tool-error-string = { $key } must be a string of at most { $maxLength } characters without null characters.
+agent-tool-error-nonempty-string = { $key } must be a nonempty string of at most { $maxLength } characters without null characters.
+agent-tool-error-integer = { $key } must be an integer between { $minimum } and { $maximum }.
+agent-tool-error-enum = { $key } must be one of: { $values }.
+agent-tool-error-item-ids = { $key } must contain 1–50 item IDs.
+agent-tool-error-string-array = { $key } must be an array of at most 50 strings.

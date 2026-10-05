@@ -349,4 +349,4 @@ Special thanks to `BlueBlueKitty`, the author of `zotero-ainote`, whose project 
 
 If this project helps you, please consider giving it a ⭐️.
 
-[![Star History Chart](https://api.star-history.com/svg?repos=steven-jianhao-li/zotero-AI-Butler&type=Date)](https://star-history.com/#steven-jianhao-li/zotero-AI-Butler&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=steven-jianhao-li/zotero-AI-Butler&type=Date)](https://star-history.dera.page/#steven-jianhao-li/zotero-AI-Butler&Date)

@@ -3,6 +3,7 @@ import type { FluentMessageId } from "../../../../typings/i10n";
 import { getPref, setPref } from "../../../utils/prefs";
 import LLMService from "../../llmService";
 import { normalizeReasoningEffortSetting } from "../../llmproviders/shared/reasoning";
+import { parseCustomRequestHeaders } from "../../llmproviders/shared/requestHeaders";
 import {
   LLMEndpointManager,
   type LLMEndpoint,
@@ -733,6 +734,7 @@ export class EndpointSettingsPanel {
     details.appendChild(this.renderApiUrlField(endpoint));
     details.appendChild(this.renderApiKeyField(endpoint));
     details.appendChild(this.renderModelField(endpoint));
+    details.appendChild(this.renderCustomHeadersField(endpoint));
     details.appendChild(this.renderPdfProcessModeField(endpoint));
     if (endpointSupportsReasoningEffort(endpoint)) {
       details.appendChild(this.renderReasoningEffortField(endpoint));
@@ -933,6 +935,67 @@ export class EndpointSettingsPanel {
     );
   }
 
+  private renderCustomHeadersField(endpoint: LLMEndpoint): HTMLElement {
+    const document = doc();
+    const wrapper = document.createElement("div");
+    const input = document.createElement("textarea");
+    input.id = `setting-endpoint-${endpoint.id}-customHeaders`;
+    input.value = endpoint.customHeaders || "";
+    input.placeholder = t("endpoint-custom-headers-placeholder");
+    input.rows = 4;
+    input.spellcheck = false;
+    Object.assign(input.style, {
+      width: "100%",
+      padding: "10px 12px",
+      fontSize: "13px",
+      fontFamily: "monospace",
+      border: "1px solid var(--ai-border)",
+      borderRadius: "4px",
+      background: "var(--ai-surface-2)",
+      color: "var(--ai-text)",
+      boxSizing: "border-box",
+      resize: "vertical",
+    });
+    wrapper.appendChild(input);
+
+    const error = document.createElement("div");
+    error.id = `${input.id}-error`;
+    error.setAttribute("role", "status");
+    input.setAttribute("aria-describedby", error.id);
+    Object.assign(error.style, {
+      color: "#f44336",
+      fontSize: "12px",
+      marginTop: "6px",
+    });
+    wrapper.appendChild(error);
+
+    const validate = () => {
+      try {
+        parseCustomRequestHeaders(input.value);
+        error.textContent = "";
+        input.setAttribute("aria-invalid", "false");
+      } catch (cause) {
+        error.textContent =
+          cause instanceof Error ? cause.message : String(cause);
+        input.setAttribute("aria-invalid", "true");
+      }
+    };
+    input.addEventListener("input", () => {
+      endpoint.customHeaders = input.value;
+      validate();
+      this.persist();
+    });
+    validate();
+
+    const group = createFormGroup(
+      t("endpoint-custom-headers-label"),
+      wrapper,
+      t("endpoint-custom-headers-help"),
+    );
+    group.querySelector("label")?.setAttribute("for", input.id);
+    return group;
+  }
+
   private renderPdfProcessModeField(endpoint: LLMEndpoint): HTMLElement {
     const document = doc();
     const value = LLMEndpointManager.normalizePdfProcessMode(
@@ -1117,6 +1180,7 @@ export class EndpointSettingsPanel {
         apiUrl: endpoint.apiUrl,
         apiKey: endpoint.apiKey,
         model: endpoint.model,
+        customHeaders: parseCustomRequestHeaders(endpoint.customHeaders),
         stream: false,
       });
       this.renderModelList(models, container, endpoint, modelInput);

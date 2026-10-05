@@ -1,4 +1,5 @@
 import { AgentProtocolError } from "./agentErrors";
+import { mergeRequestHeaders } from "./requestHeaders";
 import type {
   LLMAgentMessage,
   LLMAgentTurn,
@@ -351,7 +352,7 @@ export function buildAgentHttpRequest(
     return {
       protocol,
       url: versionedUrl(rawUrl, "responses"),
-      headers,
+      headers: mergeRequestHeaders(headers, options.customHeaders),
       body: {
         ...options.vendorOptions,
         ...common,
@@ -390,7 +391,7 @@ export function buildAgentHttpRequest(
     return {
       protocol,
       url: versionedUrl(rawUrl, "messages"),
-      headers,
+      headers: mergeRequestHeaders(headers, options.customHeaders),
       body: {
         ...options.vendorOptions,
         ...temperature,
@@ -422,7 +423,7 @@ export function buildAgentHttpRequest(
     return {
       protocol,
       url: url.toString(),
-      headers,
+      headers: mergeRequestHeaders(headers, options.customHeaders),
       body: {
         generationConfig: {
           ...options.vendorOptions,
@@ -453,7 +454,7 @@ export function buildAgentHttpRequest(
   return {
     protocol,
     url: versionedUrl(rawUrl, "chat/completions"),
-    headers,
+    headers: mergeRequestHeaders(headers, options.customHeaders),
     body: {
       ...options.vendorOptions,
       ...common,

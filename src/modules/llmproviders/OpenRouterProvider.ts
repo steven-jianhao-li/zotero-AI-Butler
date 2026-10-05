@@ -1,3 +1,4 @@
+import { mergeRequestHeaders } from "./shared/requestHeaders";
 import { ILlmProvider } from "./ILlmProvider";
 import {
   ConversationMessage,
@@ -83,13 +84,16 @@ export class OpenRouterProvider implements ILlmProvider {
     return `${raw}/v1/chat/completions`;
   }
 
-  private buildHeaders(apiKey: string) {
-    return {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "HTTP-Referer": "https://github.com/steven-jianhao-li/zotero-AI-Butler", // Required by OpenRouter for rankings
-      "X-Title": "Zotero AI Butler", // Optional
-    } as Record<string, string>;
+  private buildHeaders(apiKey: string, customHeaders?: Record<string, string>) {
+    return mergeRequestHeaders(
+      {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "HTTP-Referer": "https://github.com/steven-jianhao-li/zotero-AI-Butler", // Required by OpenRouter for rankings
+        "X-Title": "Zotero AI Butler", // Optional
+      },
+      customHeaders,
+    );
   }
 
   private buildGenParams(options: LLMOptions) {
@@ -266,7 +270,7 @@ export class OpenRouterProvider implements ILlmProvider {
 
     try {
       response = await Zotero.HTTP.request("POST", apiUrl, {
-        headers: this.buildHeaders(apiKey),
+        headers: this.buildHeaders(apiKey, options.customHeaders),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? 30000,
@@ -375,7 +379,7 @@ export class OpenRouterProvider implements ILlmProvider {
     );
     const data = await requestModelListJson(
       url,
-      this.buildHeaders(apiKey),
+      this.buildHeaders(apiKey, options.customHeaders),
       options.requestTimeoutMs ?? 30000,
     );
     return parseModelListResponse(data);
@@ -402,7 +406,7 @@ export class OpenRouterProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", apiUrl, {
-        headers: this.buildHeaders(apiKey),
+        headers: this.buildHeaders(apiKey, options.customHeaders),
         body: JSON.stringify(payloadWithStream),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -533,7 +537,7 @@ export class OpenRouterProvider implements ILlmProvider {
     let cleanupAbortSignal: (() => void) | undefined;
     try {
       const res = await Zotero.HTTP.request("POST", apiUrl, {
-        headers: this.buildHeaders(apiKey),
+        headers: this.buildHeaders(apiKey, options.customHeaders),
         body: JSON.stringify(payload),
         responseType: "json",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),

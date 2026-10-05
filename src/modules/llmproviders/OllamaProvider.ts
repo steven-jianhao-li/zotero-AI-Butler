@@ -1,3 +1,4 @@
+import { mergeRequestHeaders } from "./shared/requestHeaders";
 import { ILlmProvider } from "./ILlmProvider";
 import {
   APITestError,
@@ -93,7 +94,10 @@ export class OllamaProvider implements ILlmProvider {
     return `${base}/api`;
   }
 
-  private buildHeaders(apiKey: string): Record<string, string> {
+  private buildHeaders(
+    apiKey: string,
+    customHeaders?: Record<string, string>,
+  ): Record<string, string> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Accept: "application/json",
@@ -101,7 +105,7 @@ export class OllamaProvider implements ILlmProvider {
     if (apiKey) {
       headers.Authorization = `Bearer ${apiKey}`;
     }
-    return headers;
+    return mergeRequestHeaders(headers, customHeaders);
   }
 
   private buildOllamaOptions(options: LLMOptions): Record<string, unknown> {
@@ -232,7 +236,7 @@ export class OllamaProvider implements ILlmProvider {
     const { tagsUrl, apiKey } = this.ensureConfig(options);
     const data = await requestModelListJson(
       tagsUrl,
-      this.buildHeaders(apiKey),
+      this.buildHeaders(apiKey, options.customHeaders),
       options.requestTimeoutMs ?? 30000,
     );
     return parseModelListResponse(data).map((model) => ({
@@ -262,7 +266,7 @@ export class OllamaProvider implements ILlmProvider {
 
     try {
       response = await Zotero.HTTP.request("POST", chatUrl, {
-        headers: this.buildHeaders(apiKey),
+        headers: this.buildHeaders(apiKey, options.customHeaders),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? 30000,
@@ -328,7 +332,7 @@ export class OllamaProvider implements ILlmProvider {
     let cleanupAbortSignal: (() => void) | undefined;
     try {
       const response = await Zotero.HTTP.request("POST", chatUrl, {
-        headers: this.buildHeaders(apiKey),
+        headers: this.buildHeaders(apiKey, options.customHeaders),
         body: JSON.stringify({ ...payload, stream: false }),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -405,7 +409,7 @@ export class OllamaProvider implements ILlmProvider {
     let response: any;
     try {
       response = await Zotero.HTTP.request("POST", chatUrl, {
-        headers: this.buildHeaders(apiKey),
+        headers: this.buildHeaders(apiKey, options.customHeaders),
         body: JSON.stringify({ ...payload, stream: true }),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),

@@ -45,6 +45,7 @@ It is your always-on, tireless, and loyal research assistant. Add papers to Zote
 6. **Multi-paper literature review**: Right-click a collection to analyze multiple papers, automatically generate a literature review report, create an independent report item, and link all original PDFs.
 7. **Immersive reading**: Built-in AI Butler sidebar with LaTeX rendering and follow-up questions. Read the original paper, view explanations, and ask the LLM questions at any time. You can also pin the AI Butler sidebar so switching papers does not interrupt your flow.
 8. **Open-source platform**: AI Butler aims to provide a free and customizable intelligent paper-management platform. All prompts can be customized; how to read papers is up to you. Multiple LLM APIs are supported; which model to use is also up to you. AI Butler itself has no paid channel.
+9. **Research Agent**: Search your library autonomously, progressively read existing notes, and delegate original PDF reading to a separate model. Supports context compaction and read-only research teammates. Library organization uses explicit approval or an elevated permission mode. [Usage guide](./docs/agent.md)
 
 ![AI Butler preview](./assets/images/AI管家直观效果.png)
 

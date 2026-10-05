@@ -5,6 +5,8 @@ import {
 } from "./pdfExtractor";
 import { SnapshotExtractor } from "./snapshotExtractor";
 import type { LLMPdfProcessMode } from "./llmEndpointManager";
+import type { LLMAbortSignal } from "./llmproviders/types";
+import { throwIfAborted } from "./llmproviders/shared/requestAbort";
 
 export type AnalyzableContentKind = "pdf" | "web-snapshot";
 
@@ -76,14 +78,18 @@ export class ContentExtractor {
     preferBase64: boolean,
     pdfProcessMode?: LLMPdfProcessMode,
     progressCallback?: PdfExtractionProgressCallback,
+    options: { persist?: boolean; abortSignal?: LLMAbortSignal } = {},
   ): Promise<ResolvedAnalyzableContent> {
+    throwIfAborted(options.abortSignal);
     const pdfAttachments = await PDFExtractor.getAllPdfAttachments(item);
+    throwIfAborted(options.abortSignal);
     if (pdfAttachments.length > 0) {
       if (preferBase64) {
         return {
           content: await PDFExtractor.extractBase64FromItem(
             item,
             progressCallback,
+            options.abortSignal,
           ),
           isBase64: true,
           kind: "pdf",
@@ -96,6 +102,7 @@ export class ContentExtractor {
           item,
           pdfProcessMode || "text",
           progressCallback,
+          options,
         ),
         isBase64: false,
         kind: "pdf",
@@ -105,6 +112,7 @@ export class ContentExtractor {
 
     const snapshot =
       await SnapshotExtractor.getOldestWebSnapshotAttachment(item);
+    throwIfAborted(options.abortSignal);
     if (!snapshot) {
       throw new Error(getString("content-error-no-analyzable-attachment"));
     }

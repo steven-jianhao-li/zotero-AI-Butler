@@ -42,6 +42,7 @@ import {
 import { MainWindow } from "./modules/views/MainWindow";
 import { AutoScanManager } from "./modules/autoScanManager";
 import { AutoNoteExportManager } from "./modules/autoNoteExportManager";
+import { AgentService } from "./modules/agent/AgentService";
 import {
   CONTEXT_MENU_ITEMS,
   DEFAULT_CONTEXT_MENU_COLLAPSED,
@@ -1824,6 +1825,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
  * - 需要重启 Zotero 才能重新加载插件
  */
 function onShutdown(): void {
+  AgentService.shutdown();
   AutoNoteExportManager.getInstance().stop();
 
   // 注销文献库 AI 精读状态列和相关监听

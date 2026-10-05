@@ -1,3 +1,6 @@
+import { AgentProtocolError } from "./agentErrors";
+import type { LLMAgentTurn, LLMToolCall } from "../agentTypes";
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -57,4 +60,56 @@ export function parseOpenAIResponsesDelta(event: unknown): string {
     typeof event.delta === "string"
     ? event.delta
     : "";
+}
+
+/** Parse only complete native tool calls; partial JSON must never reach tools. */
+export function parseOpenAIResponsesAgentTurn(data: unknown): LLMAgentTurn {
+  if (!isRecord(data) || data.error || data.status !== "completed") {
+    throw new AgentProtocolError("responses-incomplete");
+  }
+  if (!Array.isArray(data.output)) {
+    throw new AgentProtocolError("responses-missing-output");
+  }
+  const toolCalls: LLMToolCall[] = [];
+  const reasoning: Record<string, unknown>[] = [];
+  for (const item of data.output) {
+    if (!isRecord(item)) throw new AgentProtocolError("responses-invalid-item");
+    if (item.status && item.status !== "completed") {
+      throw new AgentProtocolError("responses-unfinished-item");
+    }
+    if (item.type === "function_call") {
+      if (
+        typeof item.call_id !== "string" ||
+        typeof item.name !== "string" ||
+        typeof item.arguments !== "string"
+      ) {
+        throw new AgentProtocolError("responses-malformed-call");
+      }
+      toolCalls.push({
+        id: item.call_id,
+        name: item.name,
+        arguments: item.arguments,
+      });
+    } else if (item.type === "reasoning" && item.encrypted_content) {
+      reasoning.push(item);
+    }
+  }
+  const usage = isRecord(data.usage) ? data.usage : {};
+  const number = (value: unknown): number | undefined =>
+    typeof value === "number" && Number.isFinite(value) && value >= 0
+      ? value
+      : undefined;
+  return {
+    text: parseOpenAIResponsesText(data),
+    toolCalls,
+    finishReason: "completed",
+    usage: {
+      inputTokens: number(usage.input_tokens),
+      outputTokens: number(usage.output_tokens),
+      totalTokens: number(usage.total_tokens),
+    },
+    ...(reasoning.length
+      ? { providerState: { providerId: "openai", parts: reasoning } }
+      : {}),
+  };
 }

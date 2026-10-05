@@ -28,6 +28,12 @@ import {
   resolveReasoningEffort,
 } from "./llmproviders/shared/reasoning";
 import { sanitizeLLMOutputText } from "./llmproviders/shared/outputSanitizer";
+import { requestAgentTurn } from "./llmproviders/shared/agentTransport";
+import type {
+  LLMAgentMessage,
+  LLMAgentTurn,
+  LLMToolDefinition,
+} from "./llmproviders/agentTypes";
 import {
   isAutoContinuableTruncation,
   resetTruncationState,
@@ -72,6 +78,8 @@ export type LLMZoteroItemContent = {
   policy?: LLMContentPolicy;
   attachmentMode?: LLMAttachmentMode;
   maxAttachments?: number;
+  /** False prevents extraction from creating notes, attachments, or external files. */
+  persistExtractedContent?: boolean;
 };
 
 export type LLMPdfAttachmentContent = {
@@ -159,6 +167,15 @@ export type LLMChatRequest = {
   generation?: LLMGenerationOptions;
   transport?: LLMTransportOptions;
   metadata?: Record<string, unknown>;
+  onProgress?: ProgressCb;
+};
+
+export type LLMAgentRequest = {
+  messages: LLMAgentMessage[];
+  tools: LLMToolDefinition[];
+  endpointId?: string;
+  generation?: LLMGenerationOptions;
+  transport?: LLMTransportOptions;
   onProgress?: ProgressCb;
 };
 
@@ -346,7 +363,7 @@ export class LLMService {
         generation?.topP ??
         (parseFloat((getPref("topP") as string) || "1.0") || 1.0);
     }
-    if (enableMaxTokens) {
+    if (enableMaxTokens || generation?.maxOutputTokens !== undefined) {
       common.maxTokens =
         generation?.maxOutputTokens ??
         (parseInt((getPref("maxTokens") as string) || "81920", 10) || 81920);
@@ -488,6 +505,75 @@ export class LLMService {
 
   static async chatText(request: LLMChatRequest): Promise<string> {
     return (await this.chat(request)).text;
+  }
+
+  /** Native tool calling uses the same endpoint, credentials and retry boundary. */
+  static async agentTurn(request: LLMAgentRequest): Promise<LLMAgentTurn> {
+    throwIfAborted(request.transport?.abortSignal);
+    const endpoints = request.endpointId
+      ? [this.getRunnableEndpoint(request.endpointId)]
+      : LLMEndpointManager.prepareRoute().endpoints;
+    const maxAttempts =
+      request.transport?.retry === false
+        ? 1
+        : LLMEndpointManager.getMaxAttemptCount();
+    let lastError: Error | undefined;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      throwIfAborted(request.transport?.abortSignal);
+      const endpoint =
+        endpoints[
+          request.transport?.keyRotation === false
+            ? 0
+            : attempt % endpoints.length
+        ];
+      try {
+        this.getProviderForEndpoint(endpoint);
+        const options = this.buildOptions(
+          endpoint,
+          request.generation,
+          request.transport,
+          {
+            stream: false,
+            // Explicit Agent budgets apply even when ordinary generation uses defaults.
+            ...(request.generation?.maxOutputTokens !== undefined
+              ? { maxTokens: request.generation.maxOutputTokens }
+              : {}),
+            ...(request.generation?.temperature !== undefined
+              ? { temperature: request.generation.temperature }
+              : {}),
+            ...(request.generation?.topP !== undefined
+              ? { topP: request.generation.topP }
+              : {}),
+          },
+        );
+        request.transport?.onStatus?.({
+          stage: "llm-waiting",
+          label: getString("progress-llm-waiting"),
+          endpointName: endpoint.name,
+          model: endpoint.model,
+        });
+        return await requestAgentTurn(
+          endpoint.providerType,
+          request.messages,
+          request.tools,
+          options,
+          request.onProgress,
+        );
+      } catch (error: unknown) {
+        if (isAbortError(error, request.transport?.abortSignal)) {
+          throw normalizeAbortError(error, request.transport?.abortSignal);
+        }
+        lastError = this.toApiCallError(endpoint, error);
+        // Do not log request/response text: Agent turns can contain library data.
+        ztoolkit.log(
+          `[LLMService] Agent request failed (${attempt + 1}/${maxAttempts}).`,
+        );
+      } finally {
+        if (!request.endpointId)
+          LLMEndpointManager.markEndpointAttempted(endpoint.id);
+      }
+    }
+    throw new LLMApiExhaustedError(maxAttempts, lastError);
   }
 
   static async testConnection(): Promise<string> {
@@ -884,6 +970,7 @@ export class LLMService {
               progress,
             })
         : undefined,
+      request.transport?.abortSignal,
     );
     throwIfAborted(request.transport?.abortSignal);
     const options = this.buildOptions(
@@ -1113,6 +1200,7 @@ export class LLMService {
               progress,
             })
         : undefined,
+      request.transport?.abortSignal,
     );
     throwIfAborted(request.transport?.abortSignal);
     if (resolved.mode !== "single") {
@@ -1362,7 +1450,9 @@ export class LLMService {
       progress: number,
       meta?: TaskProgressMeta,
     ) => void,
+    abortSignal?: LLMAbortSignal,
   ): Promise<ResolvedContent> {
+    throwIfAborted(abortSignal);
     if (input.kind === "text") {
       return { mode: "single", content: input.text, isBase64: false, warnings };
     }
@@ -1390,6 +1480,7 @@ export class LLMService {
         warnings,
         allowMultiFile,
         statusCallback,
+        abortSignal,
       );
     }
 
@@ -1454,6 +1545,7 @@ export class LLMService {
       progress: number,
       meta?: TaskProgressMeta,
     ) => void,
+    abortSignal?: LLMAbortSignal,
   ): Promise<ResolvedContent> {
     const attachmentMode =
       input.attachmentMode ||
@@ -1461,6 +1553,7 @@ export class LLMService {
       "default";
     const maxAttachments = Math.max(input.maxAttachments || Infinity, 1);
     const pdfAttachments = await PDFExtractor.getAllPdfAttachments(input.item);
+    throwIfAborted(abortSignal);
     const hasPdf = pdfAttachments.length > 0;
 
     if (!hasPdf) {
@@ -1470,6 +1563,7 @@ export class LLMService {
           false,
           policy === "mineru" ? "mineru" : "text",
           statusCallback,
+          { persist: input.persistExtractedContent, abortSignal },
         );
       if (snapshotContent.kind === "web-snapshot") {
         warnings.push(getString("llm-warning-web-snapshot-used"));
@@ -1522,6 +1616,7 @@ export class LLMService {
       const content = await PDFExtractor.extractBase64FromItem(
         input.item,
         statusCallback,
+        abortSignal,
       );
       return { mode: "single", content, isBase64: true, warnings };
     }
@@ -1548,6 +1643,7 @@ export class LLMService {
       input.item,
       policy,
       statusCallback,
+      { persist: input.persistExtractedContent, abortSignal },
     );
     return {
       mode: "single",

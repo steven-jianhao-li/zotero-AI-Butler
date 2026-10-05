@@ -15,6 +15,7 @@ import {
   createStyledButton,
 } from "../ui/components";
 import { getString } from "../../../utils/locale";
+import { getSelectedCollection } from "../../../utils/collectionSelection";
 
 export class NoteExportSettingsPage {
   private container: HTMLElement;
@@ -259,7 +260,7 @@ export class NoteExportSettingsPage {
     );
     Object.assign(addSelectedButton.style, { borderRadius: "10px" });
     addSelectedButton.addEventListener("click", () => {
-      const collection = Zotero.getActiveZoteroPane()?.getSelectedCollection();
+      const collection = getSelectedCollection();
       if (!collection) {
         showToast(
           getString("settings-note-export-select-collection-first"),

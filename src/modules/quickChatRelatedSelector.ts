@@ -1,4 +1,5 @@
 import { getString } from "../utils/locale";
+import { getSelectedCollection } from "../utils/collectionSelection";
 import {
   createQuickChatRelatedItemRef,
   getQuickChatRelatedLimit,
@@ -87,8 +88,7 @@ function getQuickChatOverlayDocument(ownerDoc: Document): Document {
 
 function getQuickChatSelectedCollectionId(): number | null {
   try {
-    const collection =
-      Zotero.getActiveZoteroPane?.()?.getSelectedCollection?.();
+    const collection = getSelectedCollection();
     return typeof collection?.id === "number" ? collection.id : null;
   } catch {
     return null;

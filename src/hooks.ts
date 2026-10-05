@@ -23,6 +23,7 @@
  */
 
 import { getString, initLocale, getLocaleID } from "./utils/locale";
+import { getSelectedCollection } from "./utils/collectionSelection";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
 import { TaskQueueManager } from "./modules/taskQueue";
@@ -2059,7 +2060,7 @@ async function handleLiteratureReview() {
   try {
     // 获取当前选中的分类
     const zoteroPane = Zotero.getActiveZoteroPane();
-    const collection = zoteroPane?.getSelectedCollection();
+    const collection = getSelectedCollection(zoteroPane);
 
     if (!collection) {
       new ztoolkit.ProgressWindow("AI Butler", {
@@ -2105,7 +2106,7 @@ async function handleLiteratureReview() {
 async function handleClearCollectionAiNotes() {
   try {
     const zoteroPane = Zotero.getActiveZoteroPane();
-    const collection = zoteroPane?.getSelectedCollection();
+    const collection = getSelectedCollection(zoteroPane);
 
     if (!collection) {
       showAIButlerToast(getString("collection-error-no-collection"), "error");
@@ -2201,7 +2202,7 @@ type CollectionExportDialogChoice = {
 
 async function handleExportCollectionNotes() {
   try {
-    const collection = Zotero.getActiveZoteroPane()?.getSelectedCollection();
+    const collection = getSelectedCollection();
     if (!collection) {
       showAIButlerToast(getString("collection-error-no-collection"), "error");
       return;

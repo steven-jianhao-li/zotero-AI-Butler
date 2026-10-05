@@ -8,6 +8,7 @@ import {
 } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs } from "./shared/llmutils";
+import { mergeRequestHeaders } from "./shared/requestHeaders";
 import {
   getConnectionTestInput,
   formatConnectionTestSuccess,
@@ -56,6 +57,16 @@ export class VolcanoArkProvider implements ILlmProvider {
     supportsSystemPrompt: true,
     supportedParams: ["temperature", "maxTokens", "stream"],
   };
+
+  private buildHeaders(apiKey: string, options?: LLMOptions) {
+    return mergeRequestHeaders(
+      {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      options?.customHeaders,
+    );
+  }
 
   async generateSummary(
     content: string,
@@ -141,10 +152,7 @@ export class VolcanoArkProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -354,10 +362,7 @@ export class VolcanoArkProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -559,10 +564,7 @@ export class VolcanoArkProvider implements ILlmProvider {
     const responseHeaders: Record<string, string> = {};
     try {
       response = await Zotero.HTTP.request("POST", url, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: 30000,
@@ -676,7 +678,7 @@ export class VolcanoArkProvider implements ILlmProvider {
     );
     const data = await requestModelListJson(
       url,
-      { Authorization: `Bearer ${apiKey}` },
+      this.buildHeaders(apiKey, options),
       options.requestTimeoutMs ?? 30000,
     );
     return parseModelListResponse(data);
@@ -873,10 +875,7 @@ export class VolcanoArkProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),

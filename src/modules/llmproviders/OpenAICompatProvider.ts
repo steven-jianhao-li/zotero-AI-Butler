@@ -8,6 +8,7 @@ import {
 } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs, logPromptCacheUsage } from "./shared/llmutils";
+import { mergeRequestHeaders } from "./shared/requestHeaders";
 import {
   getConnectionTestInput,
   formatConnectionTestSuccess,
@@ -88,11 +89,14 @@ export class OpenAICompatProvider implements ILlmProvider {
     return `${raw}/v1/chat/completions`;
   }
 
-  private buildHeaders(apiKey: string) {
-    return {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    } as Record<string, string>;
+  private buildHeaders(apiKey: string, options?: LLMOptions) {
+    return mergeRequestHeaders(
+      {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      options?.customHeaders,
+    );
   }
 
   private buildGenParams(options: LLMOptions) {
@@ -175,7 +179,7 @@ export class OpenAICompatProvider implements ILlmProvider {
 
       try {
         await Zotero.HTTP.request("POST", apiUrl, {
-          headers: this.buildHeaders(apiKey),
+          headers: this.buildHeaders(apiKey, options),
           body: JSON.stringify(payload),
           responseType: "text",
           timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -331,7 +335,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     let cleanupAbortSignal: (() => void) | undefined;
     try {
       const res = await Zotero.HTTP.request("POST", apiUrl, {
-        headers: this.buildHeaders(apiKey),
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(basePayload),
         responseType: "json",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -449,7 +453,7 @@ export class OpenAICompatProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", apiUrl, {
-        headers: this.buildHeaders(apiKey),
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -633,7 +637,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     );
     const data = await requestModelListJson(
       url,
-      this.buildHeaders(apiKey),
+      this.buildHeaders(apiKey, options),
       options.requestTimeoutMs ?? 30000,
     );
     return parseModelListResponse(data);
@@ -671,7 +675,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     const responseHeaders: Record<string, string> = {};
     try {
       response = await Zotero.HTTP.request("POST", apiUrl, {
-        headers: this.buildHeaders(apiKey),
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         errorDelayMax: 0,
         responseType: "text", // 使用 text 以获取原始响应
@@ -844,7 +848,7 @@ export class OpenAICompatProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", apiUrl, {
-        headers: this.buildHeaders(apiKey),
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),

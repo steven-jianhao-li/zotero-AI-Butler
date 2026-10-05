@@ -8,6 +8,7 @@ import {
 } from "./types";
 import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { getRequestTimeoutMs, logPromptCacheUsage } from "./shared/llmutils";
+import { mergeRequestHeaders } from "./shared/requestHeaders";
 import {
   getConnectionTestInput,
   formatConnectionTestSuccess,
@@ -74,6 +75,17 @@ export class AnthropicProvider implements ILlmProvider {
     supportsSystemPrompt: true,
     supportedParams: ["temperature", "maxTokens", "stream"],
   };
+
+  private buildHeaders(apiKey: string, options?: LLMOptions) {
+    return mergeRequestHeaders(
+      {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      options?.customHeaders,
+    );
+  }
 
   async generateSummary(
     content: string,
@@ -145,11 +157,7 @@ export class AnthropicProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -357,11 +365,7 @@ export class AnthropicProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -528,10 +532,7 @@ export class AnthropicProvider implements ILlmProvider {
     const url = deriveAnthropicModelsUrl(baseUrl);
     const data = await requestModelListJson(
       url,
-      {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
+      this.buildHeaders(apiKey, options),
       options.requestTimeoutMs ?? 30000,
     );
     return parseModelListResponse(data);
@@ -579,11 +580,7 @@ export class AnthropicProvider implements ILlmProvider {
     const responseHeaders: Record<string, string> = {};
     try {
       response = await Zotero.HTTP.request("POST", url, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         errorDelayMax: 0,
         responseType: "text", // 使用 text 以获取原始响应
@@ -763,11 +760,7 @@ export class AnthropicProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
+        headers: this.buildHeaders(apiKey, options),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),

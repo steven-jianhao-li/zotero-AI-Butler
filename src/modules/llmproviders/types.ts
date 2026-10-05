@@ -44,6 +44,7 @@ export type LLMOptions = {
   reasoningEffort?: LLMReasoningEffort;
   enablePromptCache?: boolean;
   vendorOptions?: Record<string, unknown>;
+  customHeaders?: string | Record<string, unknown>;
   abortSignal?: LLMAbortSignal;
   truncation?: LLMTruncationState;
 };

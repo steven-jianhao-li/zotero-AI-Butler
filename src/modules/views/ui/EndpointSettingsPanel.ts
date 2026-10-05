@@ -15,6 +15,7 @@ import {
   createInput,
   createSelect,
   createStyledButton,
+  createTextarea,
 } from "./components";
 
 type EndpointPanelOptions = {
@@ -733,6 +734,7 @@ export class EndpointSettingsPanel {
     details.appendChild(this.renderApiUrlField(endpoint));
     details.appendChild(this.renderApiKeyField(endpoint));
     details.appendChild(this.renderModelField(endpoint));
+    details.appendChild(this.renderCustomHeadersField(endpoint));
     details.appendChild(this.renderPdfProcessModeField(endpoint));
     if (endpointSupportsReasoningEffort(endpoint)) {
       details.appendChild(this.renderReasoningEffortField(endpoint));
@@ -930,6 +932,25 @@ export class EndpointSettingsPanel {
       t("endpoint-model-label"),
       wrapper,
       fieldDescription(t("endpoint-model-help")),
+    );
+  }
+
+  private renderCustomHeadersField(endpoint: LLMEndpoint): HTMLElement {
+    const textarea = createTextarea(
+      `endpoint-${endpoint.id}-customHeaders`,
+      endpoint.customHeaders || "",
+      4,
+      '{"HTTP-Referer":"https://example.com","X-Title":"Zotero AI Butler"}',
+    );
+    textarea.addEventListener("input", () => {
+      endpoint.customHeaders = textarea.value;
+      this.persist();
+    });
+
+    return createFormGroup(
+      t("endpoint-custom-headers-label"),
+      textarea,
+      fieldDescription(t("endpoint-custom-headers-help")),
     );
   }
 

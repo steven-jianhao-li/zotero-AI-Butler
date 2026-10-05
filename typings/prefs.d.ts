@@ -45,6 +45,10 @@ declare namespace _ZoteroTypes {
       "enablePromptCacheOptimization": boolean;
       "requestTimeout": string;
       "autoContinuationRounds": string;
+      "mineruServiceMode": string;
+      "mineruCustomApiUrl": string;
+      "mineruCustomApiFormat": string;
+      "mineruCustomApiKey": string;
       "mineruApiKey": string;
       "mineruModelVersion": string;
       "mineruSaveMarkdown": boolean;

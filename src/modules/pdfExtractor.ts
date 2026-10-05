@@ -22,6 +22,7 @@
 
 import { getString } from "../utils/locale";
 import { getPref } from "../utils/prefs";
+import { isCustomMineruServer } from "./mineruConfig";
 import type { TaskProgressMeta } from "./taskQueue";
 import type { LLMAbortSignal } from "./llmproviders/types";
 import {
@@ -433,14 +434,14 @@ export class PDFExtractor {
       .trim()
       .toLowerCase();
     const mineruApiKey = (getPref("mineruApiKey") as string) || "";
-    // 若选择 MinerU API 模式且已配置 API Key，则使用 MinerU API 提取文本
+    const customMineruServer = isCustomMineruServer();
+    // 自建服务可匿名访问；官方服务仍要求 API Key。
     if (
       currentPdfMode === "mineru" &&
-      mineruApiKey &&
-      mineruApiKey.trim().length > 0
+      (customMineruServer || mineruApiKey.trim().length > 0)
     ) {
       ztoolkit.log(
-        "[AI Butler] MinerU pdf process mode selected and API Key detected, routing to MineruClient for extraction...",
+        "[AI Butler] MinerU pdf process mode selected, routing to MineruClient for extraction...",
       );
       try {
         const { MineruClient } = await import("./mineruIntegration");
@@ -453,6 +454,10 @@ export class PDFExtractor {
       } catch (e) {
         if (isAbortError(e, options.abortSignal)) {
           throw normalizeAbortError(e, options.abortSignal);
+        }
+        if (customMineruServer) {
+          // Surface custom-server errors so a configured service is not bypassed.
+          throw e;
         }
         ztoolkit.log(
           "[AI Butler] MinerU extraction failed, returning to Zotero built-in extraction",

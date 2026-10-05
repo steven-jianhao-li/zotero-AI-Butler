@@ -17,6 +17,12 @@
 
 import { getString } from "../utils/locale";
 import { getPref } from "../utils/prefs";
+import {
+  getMineruServiceConfig,
+  getMineruRequestHeaders,
+  resolveMineruResultUrl,
+  type MineruServiceConfig,
+} from "./mineruConfig";
 import { PDFExtractor } from "./pdfExtractor";
 import {
   MineruMarkdownSaver,
@@ -39,6 +45,34 @@ const DEFAULT_MINERU_TIMEOUT_MS = 300000;
 interface MineruExtractedResult {
   markdown: string;
   assets: MineruMarkdownAsset[];
+}
+
+interface MineruV4BatchResponse {
+  data?: {
+    batch_id?: string;
+    file_urls?: string[];
+    urls?: string[] | Record<string, string>;
+    items?: Array<{ url?: string }>;
+    upload_url?: string;
+  };
+}
+
+interface MineruV1Upload {
+  id?: string;
+  status?: string;
+  file?: { id?: string };
+  upload_url?: string;
+  upload_method?: string;
+  upload_headers?: Record<string, string>;
+}
+
+interface MineruV1Job {
+  job_id?: string;
+  status?: string;
+  files?: Array<{
+    status?: string;
+    output_files?: { zip?: { file_id?: string } };
+  }>;
 }
 
 function getMineruModelVersion(): MineruModelVersion {
@@ -89,6 +123,12 @@ export class MineruClient {
     // signal from a different Zotero window or the Agent runner.
     const controller = new AbortController();
     const abort = () => controller.abort(signal?.reason);
+    const timeoutMs = getMineruTimeoutMs();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
     signal?.addEventListener?.("abort", abort, { once: true });
     try {
       throwIfAborted(signal);
@@ -97,11 +137,18 @@ export class MineruClient {
         abortSignal: controller.signal,
       });
     } catch (error) {
+      if (timedOut && !signal?.aborted) {
+        throw new Error(
+          getString("mineru-error-task-timeout", { args: { timeoutMs } }),
+          { cause: error },
+        );
+      }
       if (isAbortError(error, signal)) {
         throw normalizeAbortError(error, signal);
       }
       throw error;
     } finally {
+      clearTimeout(timer);
       signal?.removeEventListener?.("abort", abort);
     }
   }
@@ -113,10 +160,7 @@ export class MineruClient {
   ): Promise<string> {
     const signal = options.abortSignal;
     throwIfAborted(signal);
-    const apiKey = (getPref("mineruApiKey") as string) || "";
-    if (!apiKey) {
-      throw new Error(getString("mineru-error-api-key-missing"));
-    }
+    const service = getMineruServiceConfig();
 
     if (options.persist === false || MineruMarkdownSaver.isSaveEnabled()) {
       const cachedMarkdown = await MineruMarkdownSaver.readCachedMarkdown(item);
@@ -159,93 +203,23 @@ export class MineruClient {
     // Read PDF binary
     const fileData = await IOUtils.read(filePath);
     throwIfAborted(signal);
-    const modelVersion = getMineruModelVersion();
 
-    // Get Batch & Upload URLs
-    // Assuming simple payload for /api/v4/file-urls/batch based on standard implementations
-    const fileName = "document.pdf";
-    progressCallback?.(getString("progress-mineru-upload-url-message"), 14, {
-      stage: "mineru-uploading",
-      label: getString("progress-mineru-upload-url"),
-      detail: getString("progress-mineru-model-detail", {
-        args: { model: modelVersion },
-      }),
-    });
-    const batchRes = await fetch("https://mineru.net/api/v4/file-urls/batch", {
-      signal,
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        files: [{ name: fileName }],
-        model_version: modelVersion,
-      }),
-    });
-
-    if (!batchRes.ok) {
-      const err = await batchRes.text();
-      throw new Error(
-        getString("mineru-error-upload-url-failed", { args: { message: err } }),
-      );
-    }
-
-    const batchData = (await batchRes.json()) as any;
-    let putUrl = "";
-    const batchId = batchData?.data?.batch_id;
-
-    // Dynamic property search, crash if not found
-    if (batchData?.data?.file_urls?.[0]) putUrl = batchData.data.file_urls[0];
-    else if (batchData?.data?.urls?.[0]) putUrl = batchData.data.urls[0];
-    else if (batchData?.data?.urls?.[fileName])
-      putUrl = batchData.data.urls[fileName];
-    else if (batchData?.data?.items?.[0]?.url)
-      putUrl = batchData.data.items[0].url;
-    else if (batchData?.data?.upload_url) putUrl = batchData.data.upload_url;
-
-    if (!putUrl || !batchId) {
-      throw new Error(
-        `MinerU API returned unexpected batch response: ${JSON.stringify(batchData)}`,
-      );
-    }
-
-    // Upload file content to the presigned URL
-    ztoolkit.log(`[MineruIntegration] Uploading PDF to Mineru PUT URL...`);
-    progressCallback?.(getString("progress-mineru-uploading-message"), 16, {
-      stage: "mineru-uploading",
-      label: getString("progress-mineru-uploading"),
-      detail: getString("progress-mineru-upload-size-detail", {
-        args: { size: (fileData.byteLength / 1024 / 1024).toFixed(2) },
-      }),
-    });
-    const putRes = await fetch(putUrl, {
-      signal,
-      method: "PUT",
-      body: fileData,
-    });
-
-    if (!putRes.ok) {
-      const errText = await putRes.text();
-      throw new Error(
-        getString("mineru-error-upload-file-failed", {
-          args: { status: putRes.status, message: errText },
-        }),
-      );
-    }
-
-    // Poll for task completion
-    const timeoutMs = getMineruTimeoutMs();
-    ztoolkit.log(
-      `[MineruIntegration] Polling for task completion... Batch ID: ${batchId}, timeout: ${timeoutMs}ms`,
-    );
-    const result = await this.pollStatusAndDownload(
-      apiKey,
-      batchId,
-      timeoutMs,
-      progressCallback,
-      signal,
-    );
+    const result =
+      service.apiFormat === "file-parse"
+        ? await this.extractViaFileParse(
+            fileData,
+            service,
+            progressCallback,
+            signal,
+          )
+        : service.apiFormat === "v1"
+          ? await this.extractViaV1(fileData, service, progressCallback, signal)
+          : await this.extractViaV4(
+              fileData,
+              service,
+              progressCallback,
+              signal,
+            );
     throwIfAborted(signal);
     if (options.persist !== false && MineruMarkdownSaver.isSaveEnabled()) {
       progressCallback?.(getString("progress-mineru-save-cache-message"), 39, {
@@ -266,14 +240,330 @@ export class MineruClient {
     return result.markdown;
   }
 
+  private static async extractViaV4(
+    fileData: Uint8Array,
+    service: MineruServiceConfig,
+    progressCallback: PdfExtractionProgressCallback | undefined,
+    signal: AbortSignal,
+  ): Promise<MineruExtractedResult> {
+    const modelVersion = getMineruModelVersion();
+
+    // Get Batch & Upload URLs
+    // Assuming simple payload for /api/v4/file-urls/batch based on standard implementations
+    const fileName = "document.pdf";
+    progressCallback?.(getString("progress-mineru-upload-url-message"), 14, {
+      stage: "mineru-uploading",
+      label: getString("progress-mineru-upload-url"),
+      detail: getString("progress-mineru-model-detail", {
+        args: { model: modelVersion },
+      }),
+    });
+    const batchRes = await fetch(`${service.apiUrl}/file-urls/batch`, {
+      signal,
+      method: "POST",
+      headers: {
+        ...getMineruRequestHeaders(service),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        files: [{ name: fileName }],
+        model_version: modelVersion,
+      }),
+    });
+
+    if (!batchRes.ok) {
+      const err = await batchRes.text();
+      throw new Error(
+        getString("mineru-error-upload-url-failed", { args: { message: err } }),
+      );
+    }
+
+    const batchData = (await batchRes.json()) as MineruV4BatchResponse;
+    let putUrl = "";
+    const batchId = batchData?.data?.batch_id;
+
+    // Dynamic property search, crash if not found
+    if (batchData?.data?.file_urls?.[0]) putUrl = batchData.data.file_urls[0];
+    else if (Array.isArray(batchData?.data?.urls))
+      putUrl = batchData.data.urls[0] || "";
+    else if (batchData?.data?.urls?.[fileName])
+      putUrl = batchData.data.urls[fileName];
+    else if (batchData?.data?.items?.[0]?.url)
+      putUrl = batchData.data.items[0].url;
+    else if (batchData?.data?.upload_url) putUrl = batchData.data.upload_url;
+
+    if (
+      typeof putUrl !== "string" ||
+      !putUrl ||
+      typeof batchId !== "string" ||
+      !batchId
+    ) {
+      throw new Error(
+        `MinerU API returned unexpected batch response: ${JSON.stringify(batchData)}`,
+      );
+    }
+    putUrl = resolveMineruResultUrl(service, putUrl);
+
+    // Upload file content to the presigned URL
+    ztoolkit.log(`[MineruIntegration] Uploading PDF to Mineru PUT URL...`);
+    progressCallback?.(getString("progress-mineru-uploading-message"), 16, {
+      stage: "mineru-uploading",
+      label: getString("progress-mineru-uploading"),
+      detail: getString("progress-mineru-upload-size-detail", {
+        args: { size: (fileData.byteLength / 1024 / 1024).toFixed(2) },
+      }),
+    });
+    const putRes = await fetch(putUrl, {
+      signal,
+      method: "PUT",
+      headers: getMineruRequestHeaders(service, putUrl),
+      body: new Uint8Array(fileData),
+    });
+
+    if (!putRes.ok) {
+      const errText = await putRes.text();
+      throw new Error(
+        getString("mineru-error-upload-file-failed", {
+          args: { status: putRes.status, message: errText },
+        }),
+      );
+    }
+
+    // Poll for task completion
+    const timeoutMs = getMineruTimeoutMs();
+    ztoolkit.log(
+      `[MineruIntegration] Polling for task completion... Batch ID: ${batchId}, timeout: ${timeoutMs}ms`,
+    );
+    return await this.pollStatusAndDownload(
+      service,
+      batchId,
+      timeoutMs,
+      progressCallback,
+      signal,
+    );
+  }
+
+  private static async extractViaFileParse(
+    fileData: Uint8Array,
+    service: MineruServiceConfig,
+    progressCallback: PdfExtractionProgressCallback | undefined,
+    signal: AbortSignal,
+  ): Promise<MineruExtractedResult> {
+    // The local HTTP API uses multipart uploads and its own default backend.
+    const FormDataCtor =
+      typeof FormData === "undefined"
+        ? ztoolkit.getGlobal("FormData")
+        : FormData;
+    const BlobCtor =
+      typeof Blob === "undefined" ? ztoolkit.getGlobal("Blob") : Blob;
+    const body = new FormDataCtor();
+    body.append(
+      "files",
+      new BlobCtor([new Uint8Array(fileData)], { type: "application/pdf" }),
+      "document.pdf",
+    );
+    body.append("return_md", "true");
+    body.append("return_images", "true");
+    body.append("response_format_zip", "true");
+    progressCallback?.(getString("progress-mineru-processing-message"), 20, {
+      stage: "mineru-processing",
+      label: getString("progress-mineru-processing"),
+    });
+    const res = await fetch(`${service.apiUrl}/file_parse`, {
+      signal,
+      method: "POST",
+      headers: getMineruRequestHeaders(service),
+      body,
+    });
+    if (!res.ok) {
+      throw new Error(
+        getString("mineru-error-parse-failed", {
+          args: { status: res.status, message: await res.text() },
+        }),
+      );
+    }
+    return await this.extractMarkdownFromZip(
+      await res.arrayBuffer(),
+      progressCallback,
+      signal,
+    );
+  }
+
+  private static async requestV1Json<T>(
+    service: MineruServiceConfig,
+    path: string,
+    signal: AbortSignal,
+    body?: unknown,
+  ): Promise<T> {
+    throwIfAborted(signal);
+    const res = await fetch(`${service.apiUrl}${path}`, {
+      signal,
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        ...getMineruRequestHeaders(service),
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (!res.ok) {
+      throw new Error(
+        getString("mineru-error-parse-failed", {
+          args: { status: res.status, message: await res.text() },
+        }),
+      );
+    }
+    const result = await res.json();
+    throwIfAborted(signal);
+    if (!result || typeof result !== "object" || Array.isArray(result)) {
+      throw new Error(getString("mineru-error-invalid-response"));
+    }
+    return result as T;
+  }
+
+  private static async extractViaV1(
+    fileData: Uint8Array,
+    service: MineruServiceConfig,
+    progressCallback: PdfExtractionProgressCallback | undefined,
+    signal: AbortSignal,
+  ): Promise<MineruExtractedResult> {
+    progressCallback?.(getString("progress-mineru-uploading-message"), 16, {
+      stage: "mineru-uploading",
+      label: getString("progress-mineru-uploading"),
+    });
+    let upload = await this.requestV1Json<MineruV1Upload>(
+      service,
+      "/uploads",
+      signal,
+      {
+        filename: "document.pdf",
+        bytes: fileData.byteLength,
+        mime_type: "application/pdf",
+        purpose: "parse",
+      },
+    );
+    if (upload.status === "pending") {
+      if (
+        typeof upload.id !== "string" ||
+        !upload.id ||
+        typeof upload.upload_url !== "string" ||
+        !upload.upload_url ||
+        upload.upload_method !== "PUT"
+      ) {
+        throw new Error(getString("mineru-error-invalid-response"));
+      }
+      const putUrl = resolveMineruResultUrl(service, upload.upload_url);
+      const uploadHeaders = { ...upload.upload_headers };
+      for (const [key, value] of Object.entries(
+        getMineruRequestHeaders(service, putUrl),
+      )) {
+        if (
+          !Object.keys(uploadHeaders).some(
+            (name) => name.toLowerCase() === key.toLowerCase(),
+          )
+        ) {
+          uploadHeaders[key] = value;
+        }
+      }
+      const res = await fetch(putUrl, {
+        signal,
+        method: "PUT",
+        headers: uploadHeaders,
+        body: new Uint8Array(fileData),
+      });
+      if (!res.ok) {
+        throw new Error(
+          getString("mineru-error-upload-file-failed", {
+            args: { status: res.status, message: await res.text() },
+          }),
+        );
+      }
+      upload = await this.requestV1Json<MineruV1Upload>(
+        service,
+        `/uploads/${encodeURIComponent(upload.id)}/complete`,
+        signal,
+        {},
+      );
+    }
+    const fileId = upload.file?.id;
+    if (
+      upload.status !== "completed" ||
+      typeof fileId !== "string" ||
+      !fileId
+    ) {
+      throw new Error(getString("mineru-error-invalid-response"));
+    }
+    const job = await this.requestV1Json<MineruV1Job>(
+      service,
+      "/parse/jobs",
+      signal,
+      {
+        files: [{ source: { type: "file_id", file_id: fileId } }],
+        output_formats: ["markdown", "zip"],
+      },
+    );
+    if (typeof job.job_id !== "string" || !job.job_id) {
+      throw new Error(getString("mineru-error-invalid-response"));
+    }
+    const startedAt = Date.now();
+    const timeoutMs = getMineruTimeoutMs();
+    let attempt = 0;
+    while (Date.now() - startedAt < timeoutMs) {
+      if (attempt > 0) await this.waitForPoll(MINERU_POLL_INTERVAL_MS, signal);
+      const result = await this.requestV1Json<MineruV1Job>(
+        service,
+        `/parse/jobs/${encodeURIComponent(job.job_id)}`,
+        signal,
+      );
+      attempt += 1;
+      progressCallback?.(getString("progress-mineru-processing-message"), 25, {
+        stage: "mineru-processing",
+        label: getString("progress-mineru-processing"),
+        detail: getString("progress-mineru-poll-detail", {
+          args: {
+            attempt,
+            state: result.status || "pending",
+            seconds: Math.floor((Date.now() - startedAt) / 1000),
+            batchId: job.job_id,
+          },
+        }),
+        attempt,
+      });
+      if (result.status === "completed" || result.status === "partial") {
+        const file = result.files?.[0];
+        if (file?.status !== "completed") {
+          throw new Error(getString("mineru-error-task-failed"));
+        }
+        const zipId = file.output_files?.zip?.file_id;
+        if (typeof zipId !== "string" || !zipId) {
+          throw new Error(getString("mineru-error-invalid-response"));
+        }
+        return await this.downloadAndExtractMarkdown(
+          `${service.apiUrl}/files/${encodeURIComponent(zipId)}/content`,
+          progressCallback,
+          signal,
+          service,
+        );
+      }
+      if (result.status === "failed" || result.status === "canceled") {
+        throw new Error(getString("mineru-error-task-failed"));
+      }
+      if (result.status !== "queued" && result.status !== "running") {
+        throw new Error(getString("mineru-error-invalid-response"));
+      }
+    }
+    throw new Error(
+      getString("mineru-error-task-timeout", { args: { timeoutMs } }),
+    );
+  }
+
   private static async pollStatusAndDownload(
-    apiKey: string,
+    service: MineruServiceConfig,
     batchId: string,
     timeoutMs: number,
     progressCallback?: PdfExtractionProgressCallback,
     signal?: AbortSignal,
   ): Promise<MineruExtractedResult> {
-    const url = `https://mineru.net/api/v4/extract-results/batch/${batchId}`;
+    const url = `${service.apiUrl}/extract-results/batch/${encodeURIComponent(batchId)}`;
     const startedAt = Date.now();
     let attempt = 0;
 
@@ -290,9 +580,7 @@ export class MineruClient {
 
       const res = await fetch(url, {
         signal,
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers: getMineruRequestHeaders(service),
       });
       if (!res.ok) {
         const errText = await res.text();
@@ -347,11 +635,12 @@ export class MineruClient {
           },
         );
         return await this.downloadAndExtractMarkdown(
-          zipUrl,
+          resolveMineruResultUrl(service, zipUrl),
           progressCallback,
           signal,
+          service,
         );
-      } else if (state === "error") {
+      } else if (state === "error" || state === "failed") {
         throw new Error(getString("mineru-error-task-failed"));
       }
 
@@ -366,10 +655,14 @@ export class MineruClient {
     zipUrl: string,
     progressCallback?: PdfExtractionProgressCallback,
     signal?: AbortSignal,
+    service?: MineruServiceConfig,
   ): Promise<MineruExtractedResult> {
     throwIfAborted(signal);
     ztoolkit.log(`[MineruIntegration] Downloading zip result from ${zipUrl}`);
-    const res = await fetch(zipUrl, { signal });
+    const res = await fetch(zipUrl, {
+      signal,
+      headers: service ? getMineruRequestHeaders(service, zipUrl) : {},
+    });
     if (!res.ok) {
       throw new Error(
         getString("mineru-error-download-zip-failed", {
@@ -378,6 +671,18 @@ export class MineruClient {
       );
     }
     const arrayBuffer = await res.arrayBuffer();
+    return await this.extractMarkdownFromZip(
+      arrayBuffer,
+      progressCallback,
+      signal,
+    );
+  }
+
+  private static async extractMarkdownFromZip(
+    arrayBuffer: ArrayBuffer,
+    progressCallback?: PdfExtractionProgressCallback,
+    signal?: AbortSignal,
+  ): Promise<MineruExtractedResult> {
     throwIfAborted(signal);
     progressCallback?.(getString("progress-mineru-unzipping-message"), 37, {
       stage: "mineru-parsing",

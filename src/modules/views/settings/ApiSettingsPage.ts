@@ -20,6 +20,10 @@ import type { LLMModelInfo, LLMOptions } from "../../llmproviders/types";
 import { ApiKeyManager, type ProviderId } from "../../apiKeyManager";
 import { LLMEndpointManager } from "../../llmEndpointManager";
 import { pickFolder } from "../../folderPicker";
+import {
+  getMineruCustomApiFormat,
+  isCustomMineruServer,
+} from "../../mineruConfig";
 
 /**
  * API 设置页面类
@@ -936,6 +940,96 @@ export class ApiSettingsPage {
     );
     sectionMineru.appendChild(mineruHeader);
 
+    const mineruServiceMode = isCustomMineruServer() ? "custom" : "official";
+    const mineruCustomSettings = this.createElement("div", {
+      id: "mineru-custom-server-settings",
+    });
+    const mineruServiceSelect = createSelect(
+      "mineruServiceMode",
+      [
+        {
+          value: "official",
+          label: getString("settings-api-mineru-service-official"),
+        },
+        {
+          value: "custom",
+          label: getString("settings-api-mineru-service-custom"),
+        },
+      ],
+      mineruServiceMode,
+      (value) => {
+        setPref(
+          "mineruServiceMode",
+          value === "custom" ? "custom" : "official",
+        );
+        updateMineruServiceVisibility();
+      },
+    );
+    sectionMineru.appendChild(
+      this.createFormGroup(
+        getString("settings-api-mineru-service-label"),
+        mineruServiceSelect,
+        getString("settings-api-mineru-service-help"),
+      ),
+    );
+    const mineruCustomUrlInput = this.createInput(
+      "mineruCustomApiUrl",
+      "url",
+      String(getPref("mineruCustomApiUrl") || ""),
+      "http://127.0.0.1:8000",
+    );
+    mineruCustomUrlInput.addEventListener("blur", () => {
+      setPref("mineruCustomApiUrl", mineruCustomUrlInput.value.trim());
+    });
+    mineruCustomSettings.appendChild(
+      this.createFormGroup(
+        getString("settings-api-mineru-server-url-label"),
+        mineruCustomUrlInput,
+        getString("settings-api-mineru-server-url-help"),
+      ),
+    );
+    const mineruCustomFormatSelect = createSelect(
+      "mineruCustomApiFormat",
+      [
+        {
+          value: "file-parse",
+          label: getString("settings-api-mineru-format-file-parse"),
+        },
+        { value: "v1", label: getString("settings-api-mineru-format-v1") },
+        { value: "v4", label: getString("settings-api-mineru-format-v4") },
+      ],
+      getMineruCustomApiFormat(),
+      (value) => {
+        setPref("mineruCustomApiFormat", value);
+        updateMineruServiceVisibility();
+      },
+    );
+    mineruCustomSettings.appendChild(
+      this.createFormGroup(
+        getString("settings-api-mineru-format-label"),
+        mineruCustomFormatSelect,
+        getString("settings-api-mineru-format-help"),
+      ),
+    );
+    const mineruCustomKeyWrapper = this.createPasswordInput(
+      "mineruCustomApiKey",
+      String(getPref("mineruCustomApiKey") || ""),
+      getString("settings-api-mineru-custom-key-placeholder"),
+    );
+    const mineruCustomKeyInput =
+      mineruCustomKeyWrapper.querySelector<HTMLInputElement>("input");
+    mineruCustomKeyInput?.addEventListener("blur", () => {
+      setPref("mineruCustomApiKey", mineruCustomKeyInput.value.trim());
+    });
+    mineruCustomSettings.appendChild(
+      this.createFormGroup(
+        getString("settings-api-mineru-custom-key-label"),
+        mineruCustomKeyWrapper,
+        getString("settings-api-mineru-custom-key-help"),
+      ),
+    );
+    sectionMineru.appendChild(mineruCustomSettings);
+
     const mineruInputWrapper = this.createPasswordInput(
       "mineruApiKey",
       (getPref("mineruApiKey") as string) || "",
@@ -960,13 +1054,12 @@ export class ApiSettingsPage {
       },
     );
 
-    sectionMineru.appendChild(
-      this.createFormGroup(
-        getString("settings-api-mineru-model-version-label"),
-        mineruModelSelect,
-        getString("settings-api-mineru-model-version-help"),
-      ),
+    const mineruModelGroup = this.createFormGroup(
+      getString("settings-api-mineru-model-version-label"),
+      mineruModelSelect,
+      getString("settings-api-mineru-model-version-help"),
     );
+    sectionMineru.appendChild(mineruModelGroup);
 
     // 手动绑定保存事件，因为 createPasswordInput 只有存在 providerId 时才自动保存
     const mineruInputEl = mineruInputWrapper.querySelector(
@@ -989,13 +1082,20 @@ export class ApiSettingsPage {
       });
     }
 
-    sectionMineru.appendChild(
-      this.createFormGroup(
-        getString("settings-api-mineru-key-label"),
-        mineruInputWrapper,
-        getString("settings-api-mineru-key-help"),
-      ),
+    const mineruOfficialKeyGroup = this.createFormGroup(
+      getString("settings-api-mineru-key-label"),
+      mineruInputWrapper,
+      getString("settings-api-mineru-key-help"),
     );
+    sectionMineru.appendChild(mineruOfficialKeyGroup);
+    const updateMineruServiceVisibility = () => {
+      const custom = isCustomMineruServer();
+      mineruCustomSettings.style.display = custom ? "" : "none";
+      mineruOfficialKeyGroup.style.display = custom ? "none" : "";
+      mineruModelGroup.style.display =
+        !custom || getMineruCustomApiFormat() === "v4" ? "" : "none";
+    };
+    updateMineruServiceVisibility();
 
     sectionMineru.appendChild(
       this.createFormGroup(
@@ -2661,6 +2761,18 @@ export class ApiSettingsPage {
       setPref("scanInterval", inputValue("scanInterval", "300"));
       setPref("pdfProcessMode", selectValue("pdfProcessMode", "base64"));
       setPref(
+        "mineruServiceMode",
+        selectValue("mineruServiceMode", "official") === "custom"
+          ? "custom"
+          : "official",
+      );
+      setPref("mineruCustomApiUrl", inputValue("mineruCustomApiUrl", ""));
+      setPref(
+        "mineruCustomApiFormat",
+        selectValue("mineruCustomApiFormat", "file-parse"),
+      );
+      setPref("mineruCustomApiKey", inputValue("mineruCustomApiKey", ""));
+      setPref(
         "mineruSaveMarkdown" as any,
         checkboxValue("mineruSaveMarkdown", false),
       );
@@ -3582,6 +3694,10 @@ export class ApiSettingsPage {
     setPref("batchInterval", "60");
     setPref("scanInterval", "300");
     setPref("pdfProcessMode", "base64");
+    setPref("mineruServiceMode", "official");
+    setPref("mineruCustomApiUrl", "");
+    setPref("mineruCustomApiFormat", "file-parse");
+    setPref("mineruCustomApiKey", "");
     setPref("mineruApiKey" as any, "");
     setPref("mineruModelVersion", "vlm");
     setPref("mineruSaveMarkdown" as any, false);

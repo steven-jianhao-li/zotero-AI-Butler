@@ -280,12 +280,13 @@ library-scanner-selected-count = Selected: { $count } papers
 library-scanner-confirm-add = Confirm and Add to Queue
 library-scanner-add-to-queue = Add to Queue
 common-back = Back
-library-scanner-all-have-target = 🎉 All papers already have { $target }!
-library-scanner-empty-message = 🎉 All papers already have { $target }!
+library-scanner-all-have-target = No papers with available analyzable attachments are missing { $target }.
+library-scanner-empty-message = No papers with available analyzable attachments are missing { $target }.
 library-scanner-select-all-label = 📚 Select/Deselect All ({ $count } papers missing { $target })
 library-scanner-select-items-first = Please select papers to analyze first
 library-scanner-queue-added = ✅ Added { $count } papers to the { $target } queue
 library-scanner-queue-failed = ❌ Failed to add to queue: { $error }
+queue-items-without-content-skipped = Skipped { $count } papers with no available analyzable attachment.
 summary-chat-welcome-title = 🤖 Ready for follow-up questions!
 summary-chat-welcome-description = This paper does not have an AI summary yet. You can type a question below to chat with AI, or right-click the paper and choose “Generate AI Summary” first.
 # Task queue view
@@ -1223,6 +1224,7 @@ summary-queue-button-ready = View Task Queue
 summary-title = AI Summary Output
 
 content-error-no-analyzable-attachment = This item has no analyzable attachment. Please add a PDF file or web snapshot first.
+content-error-no-usable-attachment = No available analyzable attachment. Please add a PDF file or web snapshot, or download the attachment locally first.
 content-error-unsupported-attachment = This attachment is not a supported analyzable content source.
 snapshot-error-not-web-snapshot = This attachment is not a web snapshot.
 snapshot-error-no-file-path = Could not get the web snapshot file path.

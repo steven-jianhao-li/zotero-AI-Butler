@@ -13,6 +13,7 @@ import {
   type FixedTaskArtifactType,
 } from "../src/modules/taskArtifacts";
 import { AiNoteService } from "../src/modules/aiNoteService";
+import { ContentExtractor } from "../src/modules/contentExtractor";
 
 type QueueInternals = {
   tasks: Map<string, TaskItem>;
@@ -101,12 +102,16 @@ function createTask(status: TaskStatus): TaskItem {
 describe("TaskQueue artifact-aware requeue", function () {
   const item = { id: 1, getField: () => "Paper" } as unknown as Zotero.Item;
   let originalProbe: typeof TaskArtifacts.probe;
+  let originalHasUsableAttachment: typeof ContentExtractor.hasUsableAnalyzableAttachment;
   let originalFindNote: typeof AiNoteService.findNote;
   let originalNoteStrategy: string | number | boolean | null | undefined;
   let originalTableStrategy: string | number | boolean | null | undefined;
 
   beforeEach(function () {
     originalProbe = TaskArtifacts.probe;
+    originalHasUsableAttachment =
+      ContentExtractor.hasUsableAnalyzableAttachment;
+    ContentExtractor.hasUsableAnalyzableAttachment = async () => true;
     originalFindNote = AiNoteService.findNote;
     originalNoteStrategy = Zotero.Prefs.get(noteStrategyPref, true) as
       string | number | boolean | null | undefined;
@@ -118,6 +123,8 @@ describe("TaskQueue artifact-aware requeue", function () {
 
   afterEach(function () {
     TaskArtifacts.probe = originalProbe;
+    ContentExtractor.hasUsableAnalyzableAttachment =
+      originalHasUsableAttachment;
     AiNoteService.findNote = originalFindNote;
     if (originalNoteStrategy == null) {
       Zotero.Prefs.clear(noteStrategyPref, true);

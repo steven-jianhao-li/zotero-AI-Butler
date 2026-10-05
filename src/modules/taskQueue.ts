@@ -699,6 +699,14 @@ export class TaskQueueManager {
 
   // ==================== 任务管理 ====================
 
+  private async hasUsableTaskSource(item: Zotero.Item): Promise<boolean> {
+    if (!isQueueableAiSourceItem(item)) {
+      logTaskQueue(`[AI-Butler] 跳过非顶层文献 AI 任务: ${item.id}`);
+      throw new Error(getInvalidAiSourceItemMessage());
+    }
+    return ContentExtractor.hasUsableAnalyzableAttachment(item);
+  }
+
   /**
    * 添加单个任务到队列
    *
@@ -711,6 +719,9 @@ export class TaskQueueManager {
     priority: boolean = false,
     options?: TaskOptions,
   ): Promise<string> {
+    if (!(await this.hasUsableTaskSource(item))) {
+      throw new Error(getString("content-error-no-usable-attachment"));
+    }
     return this.enqueueTask(item, priority, options);
   }
 
@@ -720,11 +731,6 @@ export class TaskQueueManager {
     options?: TaskOptions,
     batch?: TaskEnqueueBatch,
   ): Promise<string> {
-    if (!isQueueableAiSourceItem(item)) {
-      logTaskQueue(`[AI-Butler] 跳过非顶层文献 AI 总结任务: ${item.id}`);
-      throw new Error(getInvalidAiSourceItemMessage());
-    }
-
     if (options?.summaryMode && options.summaryMode !== "single") {
       return this.enqueueDeepReadTask(item, priority, options, batch);
     }
@@ -838,6 +844,9 @@ export class TaskQueueManager {
     priority: boolean = false,
     options?: TaskOptions,
   ): Promise<string> {
+    if (!(await this.hasUsableTaskSource(item))) {
+      throw new Error(getString("content-error-no-usable-attachment"));
+    }
     return this.enqueueDeepReadTask(item, priority, options);
   }
 
@@ -847,11 +856,6 @@ export class TaskQueueManager {
     options?: TaskOptions,
     batch?: TaskEnqueueBatch,
   ): Promise<string> {
-    if (!isQueueableAiSourceItem(item)) {
-      logTaskQueue(`[AI-Butler] 跳过非顶层文献 AI 精读任务: ${item.id}`);
-      throw new Error(getInvalidAiSourceItemMessage());
-    }
-
     const taskId = getDeepReadTaskId(item.id);
     const deepReadOptions = {
       ...(options || {}),
@@ -950,7 +954,7 @@ export class TaskQueueManager {
    * @param items Zotero 文献条目数组
    * @param priority 是否优先处理
    * @param options 总结/精读模式及入队策略
-   * @returns 任务ID数组
+   * @returns 有可用分析附件的条目的任务ID数组；无可用附件的条目不入队
    */
   public async addTasks(
     items: Zotero.Item[],
@@ -968,11 +972,20 @@ export class TaskQueueManager {
     this.mergeStoredDeletedFixedTasks();
 
     try {
-      for (const item of items) {
-        taskIds.push(await this.enqueueTask(item, priority, options, batch));
-        if (taskIds.length % 50 === 0 && taskIds.length < items.length) {
+      let skippedCount = 0;
+      for (const [index, item] of items.entries()) {
+        if (await this.hasUsableTaskSource(item)) {
+          taskIds.push(await this.enqueueTask(item, priority, options, batch));
+        } else {
+          skippedCount++;
+        }
+        // 以检查数计数，全部被过滤的批次也需要让出 UI。
+        if ((index + 1) % 50 === 0 && index + 1 < items.length) {
           await new Promise<void>((resolve) => setTimeout(resolve, 0));
         }
+      }
+      if (skippedCount > 0) {
+        logTaskQueue(`[AI-Butler] 跳过 ${skippedCount} 篇无可用分析附件的文献`);
       }
       return taskIds;
     } finally {

@@ -19,6 +19,7 @@
 
 import { BaseView } from "./BaseView";
 import { AiNoteService, type AiNoteKind } from "../aiNoteService";
+import { ContentExtractor } from "../contentExtractor";
 import { TaskQueueManager } from "../taskQueue";
 import { MainWindow } from "./MainWindow";
 import { getString } from "../../utils/locale";
@@ -516,6 +517,20 @@ export class LibraryScannerView extends BaseView {
 
       const item = await this.getLoadedItem(itemID);
       if (!item || !this.shouldScanItem(item)) {
+        skippedCount++;
+        continue;
+      }
+
+      try {
+        if (!(await ContentExtractor.hasUsableAnalyzableAttachment(item))) {
+          skippedCount++;
+          continue;
+        }
+      } catch (error) {
+        this.log(
+          `[LibraryScanner] 检查可分析附件失败，已跳过: item=${this.getItemDebugID(item)}`,
+          error,
+        );
         skippedCount++;
         continue;
       }
@@ -1655,18 +1670,41 @@ export class LibraryScannerView extends BaseView {
     this.updateSelectedCount();
     const targetLabel = this.getScanTargetLabel();
     try {
-      await this.taskQueueManager.addTasks(selectedItems, false, {
-        summaryMode: this.scanTarget === "summary" ? "single" : "deepRead",
-      });
+      const taskIds = await this.taskQueueManager.addTasks(
+        selectedItems,
+        false,
+        {
+          summaryMode: this.scanTarget === "summary" ? "single" : "deepRead",
+        },
+      );
 
-      new ztoolkit.ProgressWindow(getString("app-name"))
-        .createLine({
-          text: getString("library-scanner-queue-added", {
-            args: { count: selectedItems.length, target: targetLabel },
+      if (taskIds.length === 0) {
+        new ztoolkit.ProgressWindow(getString("app-name"))
+          .createLine({
+            text: getString("content-error-no-usable-attachment"),
+            type: "default",
+          })
+          .show();
+        return;
+      }
+
+      const progressWin = new ztoolkit.ProgressWindow(getString("app-name"));
+      progressWin.createLine({
+        text: getString("library-scanner-queue-added", {
+          args: { count: taskIds.length, target: targetLabel },
+        }),
+        type: "success",
+      });
+      const skippedCount = selectedItems.length - taskIds.length;
+      if (skippedCount > 0) {
+        progressWin.createLine({
+          text: getString("queue-items-without-content-skipped", {
+            args: { count: skippedCount },
           }),
-          type: "success",
-        })
-        .show();
+          type: "default",
+        });
+      }
+      progressWin.show();
 
       MainWindow.getInstance().switchTab("tasks");
     } catch (error) {

@@ -8,7 +8,11 @@ await mkdir(directory, { recursive: true });
 const outfile = path.join(directory, "queue-suite.cjs");
 await build({
   stdin: {
-    contents: ["taskQueue.artifact-requeue", "taskQueue.batch-enqueue"]
+    contents: [
+      "taskQueue.artifact-requeue",
+      "taskQueue.batch-enqueue",
+      "taskQueue.source-filter",
+    ]
       .map((name) => `import './test/${name}.test.ts';`)
       .join("\n"),
     resolveDir: process.cwd(),

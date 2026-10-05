@@ -1748,19 +1748,36 @@ async function handleGenerateSummary() {
   try {
     const manager = TaskQueueManager.getInstance();
     const priority = items.length === 1;
-    await manager.addTasks(items, priority);
+    const taskIds = await manager.addTasks(items, priority);
+    if (taskIds.length === 0) {
+      progressWin
+        .createLine({
+          text: getString("content-error-no-usable-attachment"),
+          type: "default",
+        })
+        .show();
+      return;
+    }
     await maybeOpenTaskPanelAfterQueue();
 
-    progressWin
-      .createLine({
-        text: priority
-          ? getString("summary-queue-priority-added")
-          : getString("summary-queue-normal-added", {
-              args: { count: items.length },
-            }),
-        type: "success",
-      })
-      .show();
+    progressWin.createLine({
+      text: priority
+        ? getString("summary-queue-priority-added")
+        : getString("summary-queue-normal-added", {
+            args: { count: taskIds.length },
+          }),
+      type: "success",
+    });
+    const skippedCount = items.length - taskIds.length;
+    if (skippedCount > 0) {
+      progressWin.createLine({
+        text: getString("queue-items-without-content-skipped", {
+          args: { count: skippedCount },
+        }),
+        type: "default",
+      });
+    }
+    progressWin.show();
   } catch (error: any) {
     ztoolkit.log("[AI-Butler] 入队失败:", error);
     progressWin
@@ -2738,25 +2755,41 @@ async function handleMultiRoundSummary() {
 
     // 批量添加任务，遵守“已有 AI 总结 / AI 精读时的策略”。
     // 若设置为 skip 且已有完整 AI 精读，任务队列会跳过；若精读半成品，仍会补跑未完成轮次。
-    for (const item of items) {
-      await taskQueue.addDeepReadTask(item, priority, {
-        summaryMode: "deepRead",
-      });
-    }
+    const taskIds = await taskQueue.addTasks(items, priority, {
+      summaryMode: "deepRead",
+    });
 
-    new ztoolkit.ProgressWindow("AI Butler", {
+    const progressWin = new ztoolkit.ProgressWindow("AI Butler", {
       closeOnClick: true,
       closeTime: 3000,
-    })
-      .createLine({
-        text: priority
-          ? getString("deep-read-queue-priority-added")
-          : getString("deep-read-queue-normal-added", {
-              args: { count: items.length },
-            }),
-        type: "success",
-      })
-      .show();
+    });
+    if (taskIds.length === 0) {
+      progressWin
+        .createLine({
+          text: getString("content-error-no-usable-attachment"),
+          type: "default",
+        })
+        .show();
+      return;
+    }
+    progressWin.createLine({
+      text: priority
+        ? getString("deep-read-queue-priority-added")
+        : getString("deep-read-queue-normal-added", {
+            args: { count: taskIds.length },
+          }),
+      type: "success",
+    });
+    const skippedCount = items.length - taskIds.length;
+    if (skippedCount > 0) {
+      progressWin.createLine({
+        text: getString("queue-items-without-content-skipped", {
+          args: { count: skippedCount },
+        }),
+        type: "default",
+      });
+    }
+    progressWin.show();
   } catch (error: any) {
     ztoolkit.log("[AI Butler] 加入重分析队列失败:", error);
     new ztoolkit.ProgressWindow("AI Butler", {

@@ -280,12 +280,13 @@ library-scanner-selected-count = 已选择: { $count } 篇
 library-scanner-confirm-add = 确认并加入队列
 library-scanner-add-to-queue = 添加到队列
 common-back = 返回
-library-scanner-all-have-target = 🎉 所有文献都已有 { $target }！
-library-scanner-empty-message = 🎉 所有文献都已有 { $target }！
+library-scanner-all-have-target = 没有缺少 { $target } 且有可用分析附件的文献。
+library-scanner-empty-message = 没有缺少 { $target } 且有可用分析附件的文献。
 library-scanner-select-all-label = 📚 全选/全不选 (共 { $count } 篇缺 { $target })
 library-scanner-select-items-first = 请先选择要分析的文献
 library-scanner-queue-added = ✅ 已将 { $count } 篇文献加入 { $target } 队列
 library-scanner-queue-failed = ❌ 加入队列失败: { $error }
+queue-items-without-content-skipped = 已跳过 { $count } 篇没有可用分析附件的文献。
 summary-chat-welcome-title = 🤖 准备好开始追问了！
 summary-chat-welcome-description = 该文献尚未生成 AI 总结。您可以直接在下方输入问题与 AI 对话，或者先右键该文献选择“AI 管家生成 AI 总结”生成完整总结。
 # Task queue view
@@ -1223,6 +1224,7 @@ summary-queue-button-ready = 查看任务队列
 summary-title = AI 总结输出
 
 content-error-no-analyzable-attachment = 该条目没有可分析附件，无法进行 AI 分析。请先添加 PDF 文件或网页快照。
+content-error-no-usable-attachment = 没有可用的分析附件。请先添加 PDF 文件、网页快照，或将附件下载到本地。
 content-error-unsupported-attachment = 附件不是当前支持的可分析内容源
 snapshot-error-not-web-snapshot = 附件不是网页快照
 snapshot-error-no-file-path = 无法获取网页快照文件路径

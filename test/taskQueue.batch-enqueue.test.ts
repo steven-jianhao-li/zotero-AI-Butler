@@ -11,6 +11,7 @@ import {
   type TaskCompleteCallback,
 } from "../src/modules/taskQueue";
 import { TaskArtifacts } from "../src/modules/taskArtifacts";
+import { ContentExtractor } from "../src/modules/contentExtractor";
 import { LibraryScannerView } from "../src/modules/views/LibraryScannerView";
 import { TaskQueueView } from "../src/modules/views/TaskQueueView";
 import { DashboardView } from "../src/modules/views/DashboardView";
@@ -73,6 +74,7 @@ describe("TaskQueue batch enqueue (#415)", function () {
   const globals = globalThis as unknown as Record<string, unknown>;
   let previous: Record<string, unknown>;
   let originalProbe: typeof TaskArtifacts.probe;
+  let originalHasUsableAttachment: typeof ContentExtractor.hasUsableAnalyzableAttachment;
   let originalMainWindow: typeof MainWindow.getInstance;
   let prefs: Map<string, unknown>;
   let queueReads: number;
@@ -87,6 +89,8 @@ describe("TaskQueue batch enqueue (#415)", function () {
       ["Zotero", "addon", "ztoolkit"].map((key) => [key, globals[key]]),
     );
     originalProbe = TaskArtifacts.probe;
+    originalHasUsableAttachment =
+      ContentExtractor.hasUsableAnalyzableAttachment;
     originalMainWindow = MainWindow.getInstance;
     prefs = new Map([[`${config.prefsPrefix}.noteStrategy`, "skip"]]);
     queueReads = 0;
@@ -121,12 +125,15 @@ describe("TaskQueue batch enqueue (#415)", function () {
       },
     };
     TaskArtifacts.probe = async () => ({ exists: false });
+    ContentExtractor.hasUsableAnalyzableAttachment = async () => true;
     MainWindow.getInstance = () =>
       ({ switchTab: (tab: string) => tabs.push(tab) }) as unknown as MainWindow;
   });
 
   afterEach(function () {
     TaskArtifacts.probe = originalProbe;
+    ContentExtractor.hasUsableAnalyzableAttachment =
+      originalHasUsableAttachment;
     MainWindow.getInstance = originalMainWindow;
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete globals[key];
@@ -513,7 +520,11 @@ describe("TaskQueue batch enqueue (#415)", function () {
         calls++;
         options.push(requestedOptions);
         await barrier;
-        return [];
+        return _items.map((item) =>
+          target === "summary"
+            ? getSummaryTaskId(item.id)
+            : getDeepReadTaskId(item.id),
+        );
       };
       const { view, button } = scanner(target, manager);
       const pending = view.handleConfirm();

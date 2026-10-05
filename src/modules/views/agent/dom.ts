@@ -37,19 +37,3 @@ export function button(
   node.addEventListener("click", onClick);
   return node;
 }
-
-export function select(
-  doc: Document,
-  label: string,
-  choices: Array<{ value: string; label: string }>,
-): HTMLSelectElement {
-  const node = element(doc, "select", "agent-select");
-  node.setAttribute("aria-label", label);
-  node.title = label;
-  for (const choice of choices) {
-    const option = element(doc, "option", "", choice.label);
-    option.value = choice.value;
-    node.append(option);
-  }
-  return node;
-}

@@ -7,7 +7,9 @@ import {
 } from "../../agent/types";
 import { LLMEndpointManager } from "../../llmEndpointManager";
 import { AgentTimeline } from "./AgentTimeline";
-import { button, documentOf, element, select, t } from "./dom";
+import { button, documentOf, element, t } from "./dom";
+import { AgentSelect, type AgentSelectOption } from "./AgentSelect";
+import { icon, type AgentIcon } from "./icons";
 import type { FluentMessageId } from "../../../../typings/i10n";
 
 type SessionDraft = {
@@ -38,15 +40,31 @@ export class AgentView extends BaseView {
   private sendButton!: HTMLButtonElement;
   private stopButton!: HTMLButtonElement;
   private attachButton!: HTMLButtonElement;
-  private permission!: HTMLSelectElement;
+  private permission!: AgentSelect;
   private permissionHelp!: HTMLElement;
-  private endpoint!: HTMLSelectElement;
-  private deepReadEndpoint!: HTMLSelectElement;
-  private pdfPolicy!: HTMLSelectElement;
+  private endpoint!: AgentSelect;
+  private deepReadEndpoint!: AgentSelect;
+  private pdfPolicy!: AgentSelect;
   private contextWindow!: HTMLInputElement;
   private outputTokens!: HTMLInputElement;
   private maxSteps!: HTMLInputElement;
   private contextLabel!: HTMLElement;
+  private layout!: HTMLElement;
+  private railToggle!: HTMLButtonElement;
+  private inspectorPanel!: HTMLElement;
+  private inspectorToggle!: HTMLButtonElement;
+  private settings!: HTMLDetailsElement;
+  private activityButton!: HTMLButtonElement;
+  private activityLabel!: HTMLElement;
+  private panelTabs = new Map<"conversation" | "activity", HTMLButtonElement>();
+  private panelMode: "conversation" | "activity" = "conversation";
+  private compactMedia?: MediaQueryList;
+  private syncRail = (): void => {
+    const open = this.compactMedia?.matches
+      ? this.layout.classList.contains("agent-rail-open")
+      : !this.layout.classList.contains("agent-rail-collapsed");
+    this.railToggle.setAttribute("aria-expanded", String(open));
+  };
   private approvalSignature = "";
   private inspectorSignature = "";
 
@@ -58,45 +76,58 @@ export class AgentView extends BaseView {
     const doc = Zotero.getMainWindow().document;
     const root = element(doc, "div", "agent-view");
     root.id = this.viewId;
-    const layout = element(doc, "div", "agent-layout");
+    const layout = (this.layout = element(doc, "div", "agent-layout"));
 
     const rail = element(doc, "aside", "agent-rail");
     rail.setAttribute("aria-label", t("agent-sessions"));
     const railHeader = element(doc, "div", "agent-rail-header");
+    const brandMark = element(doc, "span", "agent-brand-mark");
+    brandMark.append(icon(doc, "book"));
     railHeader.append(
-      element(doc, "span", "agent-brand-mark", "✦"),
+      brandMark,
       element(doc, "strong", "agent-brand", t("agent-brand")),
+    );
+    const newSession = button(
+      doc,
+      "",
+      () => this.newSession(),
+      "agent-button agent-new-session",
+    );
+    newSession.append(
+      icon(doc, "plus"),
+      element(doc, "span", "", t("agent-new-session")),
     );
     rail.append(
       railHeader,
-      button(
-        doc,
-        t("agent-new-session"),
-        () => this.newSession(),
-        "agent-button agent-new-session",
-      ),
+      newSession,
       element(doc, "div", "agent-section-label", t("agent-sessions")),
     );
     this.sessionsHost = element(doc, "div", "agent-sessions");
-    rail.append(
-      this.sessionsHost,
-      element(doc, "p", "agent-rail-footer", t("agent-session-storage")),
+    const railFooter = element(doc, "div", "agent-rail-footer");
+    railFooter.append(
+      icon(doc, "local"),
+      element(doc, "span", "", t("agent-session-storage")),
     );
+    rail.append(this.sessionsHost, railFooter);
 
     const center = element(doc, "main", "agent-center");
     const header = element(doc, "header", "agent-header");
-    const railToggle = button(
+    const titleRow = element(doc, "div", "agent-title-row");
+    this.railToggle = this.iconButton(
       doc,
-      "☰",
+      "sidebar",
+      t("agent-toggle-sessions"),
       () => {
-        const collapsed = layout.classList.toggle("agent-rail-collapsed");
-        railToggle.setAttribute("aria-expanded", String(!collapsed));
+        layout.classList.toggle(
+          this.compactMedia?.matches
+            ? "agent-rail-open"
+            : "agent-rail-collapsed",
+        );
+        this.syncRail();
       },
-      "agent-icon-button",
+      "agent-rail-toggle",
     );
-    railToggle.title = t("agent-toggle-sessions");
-    railToggle.setAttribute("aria-label", railToggle.title);
-    railToggle.setAttribute("aria-expanded", "true");
+    this.railToggle.setAttribute("aria-expanded", "true");
     this.titleHost = element(
       doc,
       "h2",
@@ -110,19 +141,67 @@ export class AgentView extends BaseView {
       t("agent-status-idle"),
     );
     this.statusHost.setAttribute("role", "status");
-    const inspectorToggle = button(
+    this.inspectorToggle = button(
       doc,
-      t("agent-inspector"),
-      () => {
-        const expanded = layout.classList.toggle("agent-inspector-open");
-        inspectorToggle.setAttribute("aria-expanded", String(expanded));
-      },
+      "",
+      () => this.toggleInspector(),
       "agent-button agent-inspector-toggle",
     );
-    inspectorToggle.setAttribute("aria-expanded", "false");
-    header.append(railToggle, this.titleHost, this.statusHost, inspectorToggle);
+    this.inspectorToggle.append(
+      icon(doc, "activity"),
+      element(doc, "span", "", t("agent-inspector")),
+    );
+    this.inspectorToggle.setAttribute("aria-expanded", "false");
+    this.inspectorToggle.setAttribute("aria-label", t("agent-inspector"));
+    this.inspectorToggle.setAttribute("aria-controls", "agent-inspector-panel");
+    titleRow.append(
+      this.railToggle,
+      this.titleHost,
+      this.statusHost,
+      this.inspectorToggle,
+    );
+    const tabs = element(doc, "div", "agent-panel-tabs");
+    tabs.setAttribute("role", "tablist");
+    tabs.setAttribute("aria-label", t("agent-conversation"));
+    this.panelTabs.clear();
+    for (const mode of ["conversation", "activity"] as const) {
+      const tab = button(
+        doc,
+        t(
+          mode === "conversation"
+            ? "agent-tab-conversation"
+            : "agent-tab-activity",
+        ),
+        () => this.setPanelMode(mode),
+        "agent-panel-tab",
+      );
+      tab.id = `agent-tab-${mode}`;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-controls", "agent-conversation-panel");
+      tab.addEventListener("keydown", (event: KeyboardEvent) => {
+        if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+          event.preventDefault();
+          const next =
+            event.key === "Home"
+              ? "conversation"
+              : event.key === "End"
+                ? "activity"
+                : mode === "conversation"
+                  ? "activity"
+                  : "conversation";
+          this.setPanelMode(next);
+          this.panelTabs.get(next)?.focus();
+        }
+      });
+      this.panelTabs.set(mode, tab);
+      tabs.append(tab);
+    }
+    header.append(titleRow, tabs);
 
     const conversation = element(doc, "div", "agent-conversation");
+    conversation.id = "agent-conversation-panel";
+    conversation.setAttribute("role", "tabpanel");
+    conversation.tabIndex = 0;
     this.welcome = this.renderWelcome(doc);
     this.timelineHost = element(doc, "div", "agent-timeline");
     this.timelineHost.setAttribute("role", "log");
@@ -131,6 +210,7 @@ export class AgentView extends BaseView {
     this.timelineHost.setAttribute("aria-relevant", "additions");
     this.timeline = new AgentTimeline(this.timelineHost);
     conversation.append(this.welcome, this.timelineHost);
+    this.setPanelMode(this.panelMode);
     this.approvalHost = element(doc, "div", "agent-approvals");
     this.errorHost = element(doc, "div", "agent-ui-error");
     this.errorHost.setAttribute("role", "alert");
@@ -142,9 +222,48 @@ export class AgentView extends BaseView {
       this.renderComposer(doc),
     );
 
-    this.inspector = element(doc, "aside", "agent-inspector");
-    this.inspector.setAttribute("aria-label", t("agent-inspector"));
-    layout.append(rail, center, this.inspector);
+    this.inspectorPanel = element(doc, "aside", "agent-inspector");
+    this.inspectorPanel.id = "agent-inspector-panel";
+    this.inspectorPanel.hidden = true;
+    this.inspectorPanel.setAttribute("aria-label", t("agent-inspector"));
+    const inspectorHeader = element(doc, "div", "agent-inspector-header");
+    inspectorHeader.append(
+      element(doc, "strong", "", t("agent-inspector")),
+      this.iconButton(doc, "close", t("agent-close-panel"), () =>
+        this.toggleInspector(false),
+      ),
+    );
+    this.inspector = element(doc, "div", "agent-inspector-content");
+    this.inspectorPanel.append(inspectorHeader, this.inspector);
+    const railScrim = button(
+      doc,
+      "",
+      () => {
+        layout.classList.remove("agent-rail-open");
+        this.syncRail();
+        this.railToggle.focus();
+      },
+      "agent-rail-scrim",
+    );
+    railScrim.setAttribute("aria-label", t("agent-toggle-sessions"));
+    railScrim.tabIndex = -1;
+    layout.append(rail, railScrim, center, this.inspectorPanel);
+    root.addEventListener("keydown", (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (this.settings.open) {
+        this.settings.open = false;
+        this.settings.querySelector("summary")?.focus();
+      } else if (!this.inspectorPanel.hidden) this.toggleInspector(false);
+      else if (layout.classList.contains("agent-rail-open")) {
+        layout.classList.remove("agent-rail-open");
+        this.syncRail();
+        this.railToggle.focus();
+      }
+    });
+    root.addEventListener("click", (event) => {
+      if (event.target && !this.settings.contains(event.target as Node))
+        this.settings.open = false;
+    });
     root.append(layout);
     return root;
   }
@@ -171,8 +290,17 @@ export class AgentView extends BaseView {
 
   protected onShow(): void {
     this.applyTheme();
+    if (!this.compactMedia && this.container) {
+      this.compactMedia =
+        documentOf(this.container).defaultView?.matchMedia(
+          "(max-width: 760px)",
+        ) ?? undefined;
+      this.compactMedia?.addEventListener("change", this.syncRail);
+    }
+    this.syncRail();
     this.loadEndpoints();
     this.refresh();
+    this.resizeComposer();
   }
 
   protected onDestroy(): void {
@@ -185,12 +313,71 @@ export class AgentView extends BaseView {
     this.refreshTimer = undefined;
     this.approvalSignature = "";
     this.inspectorSignature = "";
+    this.compactMedia?.removeEventListener("change", this.syncRail);
+    this.compactMedia = undefined;
+    this.closeSelects();
+  }
+
+  protected onHide(): void {
+    this.closeSelects();
+    this.settings.open = false;
+  }
+
+  private closeSelects(): void {
+    for (const select of [
+      this.permission,
+      this.endpoint,
+      this.deepReadEndpoint,
+      this.pdfPolicy,
+    ])
+      select?.close();
+  }
+
+  private iconButton(
+    doc: Document,
+    name: AgentIcon,
+    label: string,
+    onClick: () => void,
+    className = "",
+  ): HTMLButtonElement {
+    const node = button(
+      doc,
+      "",
+      onClick,
+      `agent-icon-button ${className}`.trim(),
+    );
+    node.append(icon(doc, name));
+    node.title = label;
+    node.setAttribute("aria-label", label);
+    return node;
+  }
+
+  private toggleInspector(open = this.inspectorPanel.hidden): void {
+    this.inspectorPanel.hidden = !open;
+    this.inspectorToggle.setAttribute("aria-expanded", String(open));
+    if (open) this.inspectorPanel.querySelector("button")?.focus();
+    else this.inspectorToggle.focus();
+  }
+
+  private setPanelMode(mode: "conversation" | "activity"): void {
+    this.panelMode = mode;
+    this.panelTabs.forEach((tab, key) => {
+      tab.setAttribute("aria-selected", String(key === mode));
+      tab.tabIndex = key === mode ? 0 : -1;
+    });
+    this.timeline?.setMode(mode);
+    this.timelineHost?.parentElement?.setAttribute(
+      "aria-labelledby",
+      `agent-tab-${mode}`,
+    );
   }
 
   private renderWelcome(doc: Document): HTMLElement {
     const welcome = element(doc, "div", "agent-welcome");
+    const mark = element(doc, "div", "agent-welcome-mark");
+    mark.append(icon(doc, "book"));
     welcome.append(
-      element(doc, "div", "agent-welcome-mark", "✦"),
+      mark,
       element(doc, "h1", "", t("agent-welcome-title")),
       element(
         doc,
@@ -200,16 +387,37 @@ export class AgentView extends BaseView {
       ),
     );
     const suggestions = element(doc, "div", "agent-suggestions");
+    const suggestionsIcons = {
+      explore: "search",
+      compare: "compare",
+      organize: "folder",
+    } as const;
     for (const kind of ["explore", "compare", "organize"] as const) {
       const suggestion = button(
         doc,
-        t(`agent-suggestion-${kind}`),
+        "",
         () => {
           this.composer.value = t(`agent-prompt-${kind}`);
           this.composer.focus();
           this.saveDraft();
+          this.resizeComposer();
         },
         "agent-suggestion",
+      );
+      suggestion.append(
+        icon(doc, suggestionsIcons[kind]),
+        element(
+          doc,
+          "span",
+          "agent-suggestion-title",
+          t(`agent-suggestion-${kind}`),
+        ),
+        element(
+          doc,
+          "span",
+          "agent-suggestion-description",
+          t(`agent-suggestion-detail-${kind}`),
+        ),
       );
       suggestions.append(suggestion);
     }
@@ -219,13 +427,34 @@ export class AgentView extends BaseView {
 
   private renderComposer(doc: Document): HTMLElement {
     const area = element(doc, "div", "agent-composer-area");
+    this.activityButton = button(
+      doc,
+      "",
+      () => {
+        this.setPanelMode("activity");
+        this.timelineHost.scrollTop = this.timelineHost.scrollHeight;
+      },
+      "agent-activity-bar",
+    );
+    this.activityLabel = element(doc, "span", "agent-activity-label");
+    this.activityButton.append(
+      icon(doc, "activity"),
+      this.activityLabel,
+      element(doc, "span", "agent-activity-link", t("agent-view-activity")),
+    );
+    this.activityButton.hidden = true;
     const box = element(doc, "div", "agent-composer-box");
     this.attachmentHost = element(doc, "div", "agent-attachments");
     this.composer = element(doc, "textarea", "agent-composer");
-    this.composer.rows = 3;
+    // The composer shell owns focus styling, including in Zotero chrome windows.
+    this.composer.setAttribute("no-native", "true");
+    this.composer.rows = 2;
     this.composer.placeholder = t("agent-composer-placeholder");
     this.composer.setAttribute("aria-label", t("agent-composer-placeholder"));
-    this.composer.addEventListener("input", () => this.saveDraft());
+    this.composer.addEventListener("input", () => {
+      this.saveDraft();
+      this.resizeComposer();
+    });
     this.composer.addEventListener("keydown", (event: KeyboardEvent) => {
       if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
@@ -233,55 +462,83 @@ export class AgentView extends BaseView {
       }
     });
     const toolbar = element(doc, "div", "agent-composer-toolbar");
-    this.attachButton = button(
+    this.attachButton = this.iconButton(
       doc,
+      "plus",
       t("agent-attach-selection"),
       () => this.attachSelection(),
-      "agent-button agent-attach-button",
+      "agent-attach-button",
     );
-    this.permission = select(doc, t("agent-permission"), [
+    this.permission = new AgentSelect(doc, t("agent-permission"), [
       { value: "read-only", label: t("agent-permission-read-only") },
       { value: "confirm", label: t("agent-permission-confirm") },
       { value: "full", label: t("agent-permission-full") },
     ]);
-    this.permission.addEventListener("change", () => {
+    this.permission.onChange = () => {
       this.updatePermissionHelp();
       this.saveDraft();
-    });
-    this.sendButton = button(
+    };
+    this.permission.element.classList.add("agent-permission-select");
+    const permissionControl = element(doc, "div", "agent-permission-control");
+    permissionControl.append(icon(doc, "shield"), this.permission.element);
+    this.endpoint = new AgentSelect(
       doc,
+      t("agent-model"),
+      [],
+      "agent-model-select",
+    );
+    this.endpoint.onChange = () => this.saveDraft();
+    const modelControl = this.endpoint.element;
+    modelControl.classList.add("agent-model-control");
+    this.sendButton = this.iconButton(
+      doc,
+      "arrow",
       t("agent-send"),
       () => {
         void this.run();
       },
-      "agent-button agent-send",
+      "agent-send",
     );
-    this.stopButton = button(
+    this.stopButton = this.iconButton(
       doc,
+      "stop",
       t("agent-stop"),
       () => this.service.stop(this.activeId),
-      "agent-button agent-stop",
+      "agent-stop",
     );
     this.stopButton.hidden = true;
-    toolbar.append(
-      this.attachButton,
-      this.permission,
-      this.sendButton,
-      this.stopButton,
+    const settings = (this.settings = element(
+      doc,
+      "details",
+      "agent-run-settings",
+    ));
+    const settingsToggle = element(doc, "summary", "agent-icon-button");
+    settingsToggle.title = t("agent-run-settings");
+    settingsToggle.setAttribute("aria-label", settingsToggle.title);
+    settingsToggle.append(icon(doc, "settings"));
+    const settingsPanel = element(doc, "div", "agent-settings-panel");
+    const settingsHeader = element(doc, "div", "agent-settings-header");
+    settingsHeader.append(
+      element(doc, "strong", "", t("agent-run-settings")),
+      this.iconButton(doc, "close", t("agent-close-panel"), () => {
+        settings.open = false;
+        settingsToggle.focus();
+      }),
     );
-    box.append(this.attachmentHost, this.composer, toolbar);
-
-    const settings = element(doc, "details", "agent-run-settings");
-    settings.append(element(doc, "summary", "", t("agent-run-settings")));
     const fields = element(doc, "div", "agent-settings-fields");
-    this.endpoint = select(doc, t("agent-model"), []);
-    this.deepReadEndpoint = select(doc, t("agent-deep-read-model"), []);
-    this.pdfPolicy = select(doc, t("agent-pdf-policy"), [
+    this.deepReadEndpoint = new AgentSelect(
+      doc,
+      t("agent-deep-read-model"),
+      [],
+      "agent-reader-select",
+    );
+    this.pdfPolicy = new AgentSelect(doc, t("agent-pdf-policy"), [
       { value: "auto", label: t("agent-pdf-auto") },
       { value: "text", label: t("agent-pdf-text") },
       { value: "pdf-base64", label: t("agent-pdf-base64") },
       { value: "mineru", label: t("agent-pdf-mineru") },
     ]);
+    this.pdfPolicy.element.classList.add("agent-pdf-select");
     const defaults = defaultAgentOptions();
     this.contextWindow = this.numberInput(
       doc,
@@ -297,26 +554,43 @@ export class AgentView extends BaseView {
     );
     this.maxSteps = this.numberInput(doc, defaults.maxSteps, 1, 64);
     const fieldPairs: Array<[FluentMessageId, HTMLElement]> = [
-      ["agent-model", this.endpoint],
-      ["agent-deep-read-model", this.deepReadEndpoint],
-      ["agent-pdf-policy", this.pdfPolicy],
+      ["agent-deep-read-model", this.deepReadEndpoint.element],
+      ["agent-pdf-policy", this.pdfPolicy.element],
       ["agent-context-window", this.contextWindow],
       ["agent-output-tokens", this.outputTokens],
       ["agent-max-steps", this.maxSteps],
     ];
     for (const [key, input] of fieldPairs) {
-      const label = element(doc, "label", "agent-field");
+      // Picker buttons carry their own accessible names; labels wrap only inputs.
+      const label = element(
+        doc,
+        input.tagName.toLowerCase() === "input" ? "label" : "div",
+        "agent-field",
+      );
       label.append(element(doc, "span", "", t(key)), input);
       fields.append(label);
       input.addEventListener("change", () => this.saveDraft());
     }
+    this.deepReadEndpoint.onChange = () => this.saveDraft();
+    this.pdfPolicy.onChange = () => this.saveDraft();
     this.permissionHelp = element(doc, "p", "agent-permission-help");
     this.updatePermissionHelp();
-    settings.append(
+    settingsPanel.append(
+      settingsHeader,
       fields,
       element(doc, "p", "agent-settings-hint", t("agent-pdf-hint")),
       this.permissionHelp,
     );
+    settings.append(settingsToggle, settingsPanel);
+    toolbar.append(
+      this.attachButton,
+      permissionControl,
+      settings,
+      modelControl,
+      this.sendButton,
+      this.stopButton,
+    );
+    box.append(this.attachmentHost, this.composer, toolbar);
 
     const footer = element(doc, "div", "agent-composer-footer");
     this.contextLabel = element(doc, "span", "agent-context-label");
@@ -324,9 +598,14 @@ export class AgentView extends BaseView {
       this.contextLabel,
       element(doc, "span", "", t("agent-keyboard-hint")),
     );
-    area.append(box, settings, footer);
+    area.append(this.activityButton, box, footer);
     this.loadEndpoints();
     return area;
+  }
+
+  private resizeComposer(): void {
+    this.composer.style.height = "auto";
+    this.composer.style.height = `${Math.min(168, Math.max(64, this.composer.scrollHeight))}px`;
   }
 
   private numberInput(
@@ -336,6 +615,7 @@ export class AgentView extends BaseView {
     max: number,
   ): HTMLInputElement {
     const input = element(doc, "input", "agent-number");
+    input.setAttribute("no-native", "true");
     input.type = "number";
     input.value = String(value);
     input.min = String(min);
@@ -346,43 +626,30 @@ export class AgentView extends BaseView {
 
   private loadEndpoints(): void {
     if (!this.endpoint) return;
-    const endpoints = LLMEndpointManager.getEnabledEndpoints();
-    for (const [node, defaultKey] of [
-      [this.endpoint, "agent-model-auto"],
-      [this.deepReadEndpoint, "agent-model-inherit"],
-    ] as const) {
-      const selected = node.value;
-      node.replaceChildren();
-      const fallback = element(documentOf(node), "option", "", t(defaultKey));
-      fallback.value = "";
-      node.append(fallback);
-      for (const endpoint of endpoints) {
-        const option = element(
-          documentOf(node),
-          "option",
-          "",
-          `${endpoint.name} · ${endpoint.model}`,
-        );
-        option.value = endpoint.id;
-        node.append(option);
-      }
-      this.selectEndpoint(node, selected);
-    }
+    for (const node of [this.endpoint, this.deepReadEndpoint])
+      this.selectEndpoint(node, node.value);
   }
 
-  private selectEndpoint(node: HTMLSelectElement, id = ""): void {
-    node.value = id;
-    if (id && node.value !== id) {
-      const missing = element(
-        documentOf(node),
-        "option",
-        "",
-        t("agent-model-unavailable", { id }),
-      );
-      missing.value = id;
-      node.append(missing);
-    }
-    node.value = id;
+  private selectEndpoint(node: AgentSelect, id = ""): void {
+    const choices: AgentSelectOption[] = [
+      {
+        value: "",
+        label: t(
+          node === this.endpoint ? "agent-model-auto" : "agent-model-inherit",
+        ),
+      },
+      ...LLMEndpointManager.getEnabledEndpoints().map((endpoint) => ({
+        value: endpoint.id,
+        label: `${endpoint.name} · ${endpoint.model}`,
+      })),
+    ];
+    if (id && !choices.some((choice) => choice.value === id))
+      choices.push({
+        value: id,
+        label: t("agent-model-unavailable", { id }),
+        disabled: true,
+      });
+    node.setOptions(choices, id);
   }
 
   private newSession(): void {
@@ -392,6 +659,7 @@ export class AgentView extends BaseView {
   }
 
   private selectSession(id: string): void {
+    this.closeSelects();
     this.saveDraft();
     const session = this.service.getSession(id);
     if (!session) return;
@@ -422,6 +690,9 @@ export class AgentView extends BaseView {
     this.outputTokens.value = String(draft.options.maxOutputTokens);
     this.maxSteps.value = String(draft.options.maxSteps);
     this.displayedSessionId = id;
+    this.layout.classList.remove("agent-rail-open");
+    this.syncRail();
+    this.settings.open = false;
     this.updatePermissionHelp();
     this.timeline.clear();
     this.approvalSignature = "";
@@ -429,6 +700,7 @@ export class AgentView extends BaseView {
     this.errorHost.textContent = "";
     this.refresh();
     this.renderAttachments();
+    this.resizeComposer();
   }
 
   private saveDraft(): void {
@@ -464,6 +736,9 @@ export class AgentView extends BaseView {
       this.permissionHelp.textContent = t(
         `agent-permission-help-${this.permission.value as AgentRunOptions["permission"]}`,
       );
+    this.permission.trigger.title = t(
+      `agent-permission-help-${this.permission.value as AgentRunOptions["permission"]}`,
+    );
   }
 
   private attachSelection(): void {
@@ -535,6 +810,7 @@ export class AgentView extends BaseView {
     const eventCount = session.events.length;
     this.errorHost.textContent = "";
     this.composer.value = "";
+    this.resizeComposer();
     draft.prompt = "";
     try {
       await this.service.run(sessionId, prompt, {
@@ -550,6 +826,7 @@ export class AgentView extends BaseView {
       if (this.activeId === sessionId) this.showError(error);
     } finally {
       this.refresh();
+      this.resizeComposer();
     }
   }
 
@@ -576,6 +853,26 @@ export class AgentView extends BaseView {
     this.welcome.hidden = session.events.length > 0;
     this.timelineHost.hidden = !session.events.length;
     this.timeline.render(session.events, session.team);
+    const activity = session.events.filter(
+      (event) => event.type !== "user" && event.type !== "assistant",
+    );
+    const latest = activity[activity.length - 1];
+    this.activityButton.hidden = !latest;
+    this.activityButton.classList.toggle("is-running", running);
+    this.activityLabel.textContent = latest
+      ? [
+          t(`agent-event-${latest.type}`),
+          latest.toolName || latest.text.replace(/\s+/g, " ").slice(0, 90),
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : "";
+    this.activityLabel.title = this.activityLabel.textContent;
+    const activityTab = this.panelTabs.get("activity");
+    if (activityTab)
+      activityTab.textContent = activity.length
+        ? `${t("agent-tab-activity")} · ${activity.length}`
+        : t("agent-tab-activity");
     this.sendButton.hidden = running;
     this.sendButton.disabled = running;
     this.stopButton.hidden = !running;
@@ -618,19 +915,20 @@ export class AgentView extends BaseView {
         () => this.selectSession(session.id),
         "agent-session-entry",
       );
-      entry.title = title;
+      entry.title = `${title}\n${new Date(session.updatedAt).toLocaleString()}`;
       entry.setAttribute(
         "aria-current",
         session.id === this.activeId ? "true" : "false",
       );
+      const state = element(doc, "span", "agent-session-state");
+      state.dataset.status = session.status;
+      state.title = t(`agent-status-${session.status}`);
+      state.setAttribute("role", "img");
+      state.setAttribute("aria-label", state.title);
       entry.append(
+        icon(doc, "conversation"),
         element(doc, "span", "agent-session-name", title),
-        element(
-          doc,
-          "span",
-          "agent-session-meta",
-          t(`agent-status-${session.status}`),
-        ),
+        state,
       );
       const remove = button(
         doc,
@@ -702,7 +1000,7 @@ export class AgentView extends BaseView {
             this.service.approve(session.id, approval.id, allow);
             this.refresh();
           },
-          `agent-button${allow ? " agent-send" : ""}`,
+          `agent-button${allow ? " agent-primary" : ""}`,
         );
         actions.append(action);
       }

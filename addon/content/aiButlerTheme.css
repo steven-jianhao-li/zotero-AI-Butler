@@ -81,6 +81,49 @@
   border-bottom-color: var(--ai-accent) !important;
 }
 
+/* A bounded navigation row also neutralizes Zotero's native button margins. */
+#tab-bar.ai-butler-main-tabs {
+  border-bottom: 1px solid var(--ai-border) !important;
+}
+
+.ai-butler-main-tabs .tab-button {
+  -moz-appearance: none;
+  appearance: none;
+}
+
+.ai-butler-main-tabs .main-tab-icon {
+  flex: none;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.ai-butler-main-tabs .main-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-butler-main-tabs .tab-button:focus-visible {
+  outline: 2px solid var(--ai-accent);
+  outline-offset: -2px;
+}
+
+@media (max-width: 540px) {
+  #tab-bar.ai-butler-main-tabs {
+    padding-inline: 4px !important;
+    gap: 2px !important;
+  }
+
+  .ai-butler-main-tabs .tab-button {
+    padding-inline: 3px !important;
+    font-size: 12px !important;
+  }
+
+  .ai-butler-main-tabs .main-tab-icon {
+    display: none;
+  }
+}
+
 /* 表单控件（输入、选择、文本域）*/
 .ai-butler-root input,
 .ai-butler-root select,

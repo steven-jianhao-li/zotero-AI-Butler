@@ -12,12 +12,23 @@ type EventRow = {
 /** Incremental rendering preserves expanded tool output and scroll position. */
 export class AgentTimeline {
   private rows = new Map<string, EventRow>();
+  private mode: "conversation" | "activity" = "conversation";
+  private scrollPositions = new Map<string, number>();
 
   constructor(private host: HTMLElement) {}
 
   clear(): void {
     this.rows.clear();
+    this.scrollPositions.clear();
     this.host.replaceChildren();
+  }
+
+  setMode(mode: "conversation" | "activity"): void {
+    this.scrollPositions.set(this.mode, this.host.scrollTop);
+    this.mode = mode;
+    this.host.dataset.mode = mode;
+    this.host.scrollTop =
+      this.scrollPositions.get(mode) ?? this.host.scrollHeight;
   }
 
   render(events: AgentEvent[], team: AgentTeamMember[] = []): void {
@@ -50,6 +61,9 @@ export class AgentTimeline {
         ? team.find((member) => member.id === event.memberId)?.name ||
           event.memberId
         : "";
+      row.root.dataset.activity = String(
+        !["user", "assistant", "error", "approval"].includes(event.type),
+      );
       const signature = `${event.type}:${event.toolName || ""}:${member}:${event.text}`;
       if (row.signature === signature) continue;
       row.signature = signature;

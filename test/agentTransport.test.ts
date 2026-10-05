@@ -172,8 +172,11 @@ describe("Native Agent transport", function () {
         error: { code: "context_length_exceeded", message: "confidential" },
       }),
     )
-      .to.throw("Agent context window limit exceeded.")
-      .with.property("message", "Agent context window limit exceeded.");
+      .to.throw(AgentProtocolError)
+      .and.include({
+        code: "context-overflow",
+        message: new AgentProtocolError("context-overflow").message,
+      });
   });
 
   it("preserves calls, results and compatibility-model reasoning on the wire", function () {
@@ -221,7 +224,9 @@ describe("Native Agent transport", function () {
   it("rejects truncated calls even when their JSON happens to be valid", function () {
     const data = completion();
     data.choices[0].finish_reason = "length";
-    expect(() => parseAgentTurn("chat", data)).to.throw("truncated");
+    expect(() => parseAgentTurn("chat", data))
+      .to.throw(AgentProtocolError)
+      .with.property("code", "truncated-turn");
   });
 
   it("rejects malformed JSON, non-object arguments, unknown tools and duplicate IDs", function () {
@@ -231,17 +236,23 @@ describe("Native Agent transport", function () {
           { text: "", toolCalls: [{ ...call, arguments: argumentsValue }] },
           tools,
         ),
-      ).to.throw("complete JSON object");
+      )
+        .to.throw(AgentProtocolError)
+        .with.property("code", "invalid-arguments");
     }
     expect(() =>
       validateAgentTurn(
         { text: "", toolCalls: [{ ...call, name: "delete_library" }] },
         tools,
       ),
-    ).to.throw("unknown tool");
+    )
+      .to.throw(AgentProtocolError)
+      .with.property("code", "invalid-call");
     expect(() =>
       validateAgentTurn({ text: "", toolCalls: [call, call] }, tools),
-    ).to.throw("invalid tool call ID");
+    )
+      .to.throw(AgentProtocolError)
+      .with.property("code", "invalid-call");
     expect(() =>
       validateAgentTurn(
         {
@@ -259,17 +270,21 @@ describe("Native Agent transport", function () {
   });
 
   it("rejects orphan and incomplete history, including interruption between calls and results", function () {
-    expect(() => validateAgentMessages([conversation[3]])).to.throw("orphan");
-    expect(() => validateAgentMessages(conversation.slice(0, 3))).to.throw(
-      "unresolved",
-    );
+    expect(() => validateAgentMessages([conversation[3]]))
+      .to.throw(AgentProtocolError)
+      .with.property("code", "orphan-result");
+    expect(() => validateAgentMessages(conversation.slice(0, 3)))
+      .to.throw(AgentProtocolError)
+      .with.property("code", "unresolved-calls");
     expect(() =>
       validateAgentMessages([
         ...conversation.slice(0, 3),
         { role: "user", content: "Continue" },
         conversation[3],
       ]),
-    ).to.throw("unresolved");
+    )
+      .to.throw(AgentProtocolError)
+      .with.property("code", "unresolved-calls");
     expect(() => validateAgentMessages(conversation)).not.to.throw();
   });
 
@@ -376,13 +391,17 @@ describe("Native Agent transport", function () {
           },
         ],
       }),
-    ).to.throw("incomplete");
+    )
+      .to.throw(AgentProtocolError)
+      .with.property("code", "responses-incomplete");
     expect(() =>
       parseAgentTurn("responses", {
         status: "completed",
         output: [{ type: "function_call", call_id: call.id, name: call.name }],
       }),
-    ).to.throw("malformed");
+    )
+      .to.throw(AgentProtocolError)
+      .with.property("code", "responses-malformed-call");
   });
 
   it("keeps Anthropic signed thinking blocks and groups tool results", function () {
@@ -477,9 +496,9 @@ describe("Native Agent transport", function () {
   });
 
   it("rejects empty successful turns and missing declared tool calls", function () {
-    expect(() =>
-      validateAgentTurn({ text: "", toolCalls: [] }, tools),
-    ).to.throw("empty");
+    expect(() => validateAgentTurn({ text: "", toolCalls: [] }, tools))
+      .to.throw(AgentProtocolError)
+      .with.property("code", "empty-turn");
     expect(() =>
       parseAgentTurn("chat", {
         choices: [
@@ -489,6 +508,8 @@ describe("Native Agent transport", function () {
           },
         ],
       }),
-    ).to.throw("omitted");
+    )
+      .to.throw(AgentProtocolError)
+      .with.property("code", "missing-declared-calls");
   });
 });

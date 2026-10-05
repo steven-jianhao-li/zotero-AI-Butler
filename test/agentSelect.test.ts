@@ -88,27 +88,32 @@ describe("Agent picker in a Zotero document", function () {
     expect(picker.value).to.equal("auto");
   });
 
-  it("supports typeahead, Tab dismissal, and closing in the adopted document", async function () {
+  it("supports typeahead, Tab dismissal, and closing in the adopted document", function () {
     key("r");
     key("Enter");
     expect(picker.value).to.equal("reader");
     picker.trigger.click();
     key("Tab");
-    expect(expanded()).to.equal(false);
+    expect(expanded(), "Tab dismisses the picker").to.equal(false);
     picker.trigger.click();
     const outside = doc.createEvent("MouseEvents");
     outside.initEvent("mousedown", true, true);
     host.dispatchEvent(outside);
-    expect(expanded()).to.equal(false);
+    expect(expanded(), "Outside mousedown dismisses the picker").to.equal(
+      false,
+    );
     picker.trigger.click();
     const other = doc.createElement("button");
     other.textContent = "Outside picker";
     host.append(other);
     other.focus();
     expect(doc.activeElement).to.equal(other);
-    // Gecko dispatches focusin asynchronously in chrome dialogs.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(expanded()).to.equal(false);
+    // Background chrome windows update activeElement without emitting focusin.
+    // Dispatch explicitly so dismissal does not depend on window activation.
+    const focus = doc.createEvent("FocusEvent");
+    focus.initEvent("focusin", true, false);
+    other.dispatchEvent(focus);
+    expect(expanded(), "Outside focus dismisses the picker").to.equal(false);
   });
 
   it("closes when disabled and preserves the saved unavailable model", function () {

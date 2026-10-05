@@ -805,11 +805,12 @@ describe("Agent library tools", function () {
 
     beforeEach(async function () {
       previous = Object.fromEntries(
-        ["Zotero", "IOUtils", "addon", "fetch", "ztoolkit"].map((key) => [
-          key,
-          globals[key],
-        ]),
+        ["Zotero", "IOUtils", "addon", "fetch", "ztoolkit", "setImmediate"].map(
+          (key) => [key, globals[key]],
+        ),
       );
+      // JSZip's postMessage scheduler stalls in privileged chrome test windows.
+      globals.setImmediate = (callback: () => void) => setTimeout(callback, 0);
       getPdfs = PDFExtractor.getAllPdfAttachments;
       readCache = MineruMarkdownSaver.readCachedMarkdown;
       save = MineruMarkdownSaver.save;

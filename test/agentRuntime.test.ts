@@ -6,6 +6,7 @@ import {
 import { AgentStore } from "../src/modules/agent/AgentStore";
 import { AgentService } from "../src/modules/agent/AgentService";
 import { contextSize } from "../src/modules/agent/context";
+import { agentText } from "../src/modules/agent/messages";
 import {
   defaultAgentOptions,
   type AgentPermission,
@@ -224,7 +225,7 @@ describe("Agent runtime authority and recovery", function () {
     expect(approvals).to.equal(0);
     expect(
       state.messages.find((message) => message.role === "tool")?.content,
-    ).to.include("unavailable");
+    ).to.include(agentText("agent-runtime-tool-unavailable"));
     expect(() => validateAgentMessages(state.messages)).not.to.throw();
   });
 
@@ -256,7 +257,7 @@ describe("Agent runtime authority and recovery", function () {
     expect(writes).to.equal(0);
     expect(
       state.messages.find((message) => message.role === "tool")?.content,
-    ).to.include("declined");
+    ).to.include(agentText("agent-runtime-write-declined"));
   });
 
   it("asks once for an identical declined write per run and allows a later explicit follow-up", async function () {
@@ -619,7 +620,7 @@ describe("Agent runtime authority and recovery", function () {
       }),
     ).run(state, new AbortController().signal);
     expect(state.status).to.equal("error");
-    expect(state.error).to.include("original history was retained");
+    expect(state.error).to.equal(agentText("agent-runtime-summary-incomplete"));
     expect(state.messages.slice(1)).to.deep.equal(original);
     expect(state.context.compactions).to.equal(0);
     const archive = Object.values(state.artifacts).join("");
@@ -686,7 +687,7 @@ describe("Agent runtime authority and recovery", function () {
       await saving;
       expect(JSON.parse(writes[0]).session.title).to.equal("Research");
       expect(() => store.save({ ...loaded, id: "../../escape" })).to.throw(
-        "Invalid Agent session ID",
+        agentText("agent-runtime-invalid-session-id"),
       );
     } finally {
       for (const key of Object.keys(previous)) {

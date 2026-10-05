@@ -70,6 +70,7 @@ export class LibraryScannerView extends BaseView {
   private taskQueueManager: TaskQueueManager;
   private activeScanId: number = 0;
   private scanTarget: AiNoteKind = "summary";
+  private isEnqueuing = false;
   private readonly scannerInfoId = "scanner-info";
   private readonly scannerConfirmButtonId = "scanner-confirm-btn";
 
@@ -213,7 +214,7 @@ export class LibraryScannerView extends BaseView {
     }) as HTMLButtonElement;
 
     confirmButton.addEventListener("click", () => {
-      this.handleConfirm();
+      void this.handleConfirm();
     });
 
     buttonContainer.appendChild(cancelButton);
@@ -1602,10 +1603,11 @@ export class LibraryScannerView extends BaseView {
     // 更新按钮状态
     const confirmButton = this.getConfirmButton();
     if (confirmButton) {
-      confirmButton.disabled = this.selectedCount === 0;
-      confirmButton.style.opacity = this.selectedCount === 0 ? "0.5" : "1";
-      confirmButton.style.cursor =
-        this.selectedCount === 0 ? "not-allowed" : "pointer";
+      confirmButton.disabled = this.isEnqueuing || this.selectedCount === 0;
+      confirmButton.style.opacity = confirmButton.disabled ? "0.5" : "1";
+      confirmButton.style.cursor = confirmButton.disabled
+        ? "not-allowed"
+        : "pointer";
     }
   }
 
@@ -1635,7 +1637,8 @@ export class LibraryScannerView extends BaseView {
   /**
    * 处理确认操作
    */
-  private handleConfirm(): void {
+  private async handleConfirm(): Promise<void> {
+    if (this.isEnqueuing) return;
     const selectedItems = this.collectSelectedItems(this.treeRoot);
 
     if (selectedItems.length === 0) {
@@ -1648,31 +1651,40 @@ export class LibraryScannerView extends BaseView {
       return;
     }
 
-    // 批量添加到对应队列
-    for (const item of selectedItems) {
-      if (this.scanTarget === "summary") {
-        this.taskQueueManager.addTask(item, false, { summaryMode: "single" });
-      } else {
-        this.taskQueueManager.addDeepReadTask(item, false, {
-          summaryMode: "deepRead",
-        });
-      }
+    this.isEnqueuing = true;
+    this.updateSelectedCount();
+    const targetLabel = this.getScanTargetLabel();
+    try {
+      await this.taskQueueManager.addTasks(selectedItems, false, {
+        summaryMode: this.scanTarget === "summary" ? "single" : "deepRead",
+      });
+
+      new ztoolkit.ProgressWindow(getString("app-name"))
+        .createLine({
+          text: getString("library-scanner-queue-added", {
+            args: { count: selectedItems.length, target: targetLabel },
+          }),
+          type: "success",
+        })
+        .show();
+
+      MainWindow.getInstance().switchTab("tasks");
+    } catch (error) {
+      this.log("[LibraryScanner] 批量添加任务失败", error);
+      new ztoolkit.ProgressWindow(getString("app-name"))
+        .createLine({
+          text: getString("library-scanner-queue-failed", {
+            args: {
+              error: error instanceof Error ? error.message : String(error),
+            },
+          }),
+          type: "fail",
+        })
+        .show();
+    } finally {
+      this.isEnqueuing = false;
+      this.updateSelectedCount();
     }
-
-    new ztoolkit.ProgressWindow(getString("app-name"))
-      .createLine({
-        text: getString("library-scanner-queue-added", {
-          args: {
-            count: selectedItems.length,
-            target: this.getScanTargetLabel(),
-          },
-        }),
-        type: "success",
-      })
-      .show();
-
-    // 切换到任务队列视图
-    MainWindow.getInstance().switchTab("tasks");
   }
 
   /**

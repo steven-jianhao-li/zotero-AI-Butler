@@ -31,6 +31,7 @@
     "pretest": "node ./scripts/check-i18n.mjs && node ./scripts/gen-env-setup.mjs",
     "test": "zotero-plugin test --exit-on-finish",
     "test:agent": "node ./scripts/test-agent.mjs",
+    "test:task-queue": "node ./scripts/test-task-queue.mjs",
     "test:headers": "node ./scripts/test-request-headers.mjs",
     "test:agent:live": "node ./scripts/test-agent-live.mjs",
     "pretest:watch": "node ./scripts/gen-env-setup.mjs",

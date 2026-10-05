@@ -68,6 +68,8 @@ export class TaskQueueView extends BaseView {
   /** 定时刷新(兜底) */
   private refreshTimerId: number | null = null;
 
+  private syncScheduled = false;
+
   /** 统计信息容器 */
   private statsContainer: HTMLElement | null = null;
 
@@ -1621,7 +1623,7 @@ export class TaskQueueView extends BaseView {
       (taskId, progress, message, meta) => {
         const currentTask = this.manager?.getTask(taskId);
         if (currentTask && currentTask.status !== TaskStatus.PROCESSING) {
-          this.syncFromManager();
+          this.scheduleSyncFromManager();
           return;
         }
 
@@ -1645,33 +1647,9 @@ export class TaskQueueView extends BaseView {
       },
     );
 
-    this.unsubscribeComplete = this.manager.onComplete(
-      (taskId, success, error) => {
-        const t = this.tasks.find((t) => t.id === taskId);
-        if (t) {
-          t.status = success ? TaskStatus.COMPLETED : TaskStatus.FAILED;
-          t.error = success ? undefined : error || t.error;
-          t.completedAt = new Date();
-          t.progress = 100;
-          t.stage = success ? "completed" : "failed";
-          t.stageLabel = success
-            ? getString("task-queue-status-completed")
-            : getString("task-queue-status-failed");
-          t.workflowStage = success
-            ? getString("task-queue-status-completed")
-            : getString("task-queue-status-failed");
-          t.stageDetail = success
-            ? getString("task-queue-detail-task-completed")
-            : error || t.error;
-          t.stageUpdatedAt = new Date();
-          this.updateStats();
-          this.renderTaskList();
-        } else {
-          // 不在视图内,做一次全量同步
-          this.syncFromManager();
-        }
-      },
-    );
+    this.unsubscribeComplete = this.manager.onComplete(() => {
+      this.scheduleSyncFromManager();
+    });
 
     // 兜底定时刷新(5s)
     if (this.refreshTimerId) {
@@ -1705,6 +1683,17 @@ export class TaskQueueView extends BaseView {
     return task;
   }
 
+  /** 合并同一批入队/完成通知，避免反复重建整个任务列表。 */
+  private scheduleSyncFromManager(): void {
+    if (this.syncScheduled) return;
+    this.syncScheduled = true;
+    void Promise.resolve().then(() => {
+      if (!this.syncScheduled) return;
+      this.syncScheduled = false;
+      this.syncFromManager();
+    });
+  }
+
   /** 从管理器同步任务到视图 */
   private syncFromManager(): void {
     if (!this.manager) return;
@@ -1718,6 +1707,7 @@ export class TaskQueueView extends BaseView {
 
   /** 视图销毁时清理回调和计时器 */
   protected onDestroy(): void {
+    this.syncScheduled = false;
     if (this.refreshTimerId) {
       clearInterval(this.refreshTimerId);
       this.refreshTimerId = null;

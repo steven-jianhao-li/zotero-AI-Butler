@@ -66,9 +66,10 @@ type OverlayTourState = {
   highlight: HTMLElement;
   card: HTMLElement;
   index: number;
+  revealedStepId: string | null;
   steps: OverlayTourStep[];
   options: OverlayTourOptions;
-  reposition: () => void;
+  reposition: (event: Event) => void;
   keyHandler: (event: KeyboardEvent) => void;
   clickHandler: (event: MouseEvent) => void;
   setupAppliedHandler: () => void;
@@ -77,13 +78,20 @@ type OverlayTourState = {
   importStartedAt: number | null;
   trackedItemId: number | null;
   trackedSummaryTaskId: string | null;
+  pendingActionStepId?: string;
   importObserverId: string | null;
   importPollTimer: number | null;
   taskProgressCleanup: (() => void) | null;
+  navigationCleanup: (() => void) | null;
+  advanceTimer: number | null;
+  advanceStepId: string | null;
 };
 
 const OVERLAY_ID = "ai-butler-onboarding-overlay-tour";
+// The same tour mounts in HTML dashboards and legacy XUL library windows.
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 const CARD_WIDTH = 420;
+const MIN_CARD_SCROLL_HEIGHT = 80;
 
 let activeTour: OverlayTourState | null = null;
 
@@ -105,6 +113,11 @@ export async function startOnboardingOverlayTour(
 
   const state = createTourState(initial, steps, options);
   activeTour = state;
+  // Window readiness can arrive after a toolbar click has advanced the tour.
+  state.navigationCleanup = MainWindow.getInstance().onNavigationChange(() => {
+    const current = activeTour;
+    if (current?.steps[current.index].host === "aiButler") renderActiveStep();
+  });
   attachTourEvents(state);
 
   ztoolkit.log(`[AI-Butler] 启动覆盖式新手教程: ${source}`);
@@ -115,6 +128,8 @@ export async function startOnboardingOverlayTour(
 export function closeOnboardingOverlayTour(): void {
   if (!activeTour) return;
   const state = activeTour;
+  state.navigationCleanup?.();
+  state.navigationCleanup = null;
   detachTourEvents(state);
   stopImportTracking(state);
   state.root.remove();
@@ -334,15 +349,7 @@ function buildTourSteps(): OverlayTourStep[] {
       title: getString("onboarding-step-model-test-button-title"),
       description: getString("onboarding-step-model-test-button-description"),
       host: "aiButler",
-      target: (doc) =>
-        queryFirst(
-          [
-            "#endpoint-test-button-endpoint-preset-deepseek",
-            ".ai-butler-endpoint-test-button",
-            "#endpoint-status-endpoint-preset-deepseek",
-          ],
-          doc,
-        ),
+      target: "#endpoint-test-button-endpoint-preset-deepseek",
       placement: "top",
       requireTargetClick: true,
       advanceOnTargetClick: true,
@@ -400,6 +407,7 @@ function buildTourSteps(): OverlayTourStep[] {
       title: getString("onboarding-step-paper-area-drop-title"),
       description: getString("onboarding-step-paper-area-drop-description"),
       host: "zotero",
+      targetRect: getLibrarySourceRect,
       target: (doc) =>
         queryFirst(
           [
@@ -414,7 +422,7 @@ function buildTourSteps(): OverlayTourStep[] {
       placement: "right",
       action: {
         label: getString("onboarding-action-pdf-dropped-continue"),
-        run: () => undefined,
+        run: queueTrackedSummary,
         advance: true,
         enabled: (state) => !!state.trackedItemId,
         disabledLabel: getString("onboarding-action-wait-pdf"),
@@ -490,6 +498,7 @@ function buildTourSteps(): OverlayTourStep[] {
       title: getString("onboarding-step-select-paper-title"),
       description: getString("onboarding-step-select-paper-description"),
       host: "zotero",
+      targetRect: getLibrarySourceRect,
       target: (doc) =>
         queryFirst(
           [
@@ -510,7 +519,7 @@ function buildTourSteps(): OverlayTourStep[] {
       title: getString("onboarding-step-sidebar-ai-butler-title"),
       description: getString("onboarding-step-sidebar-ai-butler-description"),
       host: "zotero",
-      target: getAiButlerSidenavIcon,
+      target: getAiButlerSidebarEntry,
       placement: "left",
       requireTargetClick: true,
       advanceOnTargetClick: true,
@@ -687,29 +696,36 @@ function createTourState(
   options: OverlayTourOptions,
 ): OverlayTourState {
   const doc = win.document;
-  const root = doc.createElement("div");
+  const root = doc.createElementNS(HTML_NAMESPACE, "div") as HTMLDivElement;
   root.id = OVERLAY_ID;
   Object.assign(root.style, {
     position: "fixed",
-    inset: "0",
+    top: "0",
+    right: "0",
+    bottom: "0",
+    left: "0",
     zIndex: "2147483646",
     pointerEvents: "none",
     fontFamily: "system-ui, -apple-system, sans-serif",
   } as Partial<CSSStyleDeclaration>);
 
   const masks = Array.from({ length: 4 }, () => {
-    const mask = doc.createElement("div");
+    const mask = doc.createElementNS(HTML_NAMESPACE, "div") as HTMLDivElement;
     Object.assign(mask.style, {
       position: "fixed",
       backgroundColor: "rgba(0, 0, 0, 0.58)",
       transition: "all 0.18s ease",
       pointerEvents: "auto",
     } as Partial<CSSStyleDeclaration>);
+    mask.addEventListener("wheel", scrollTourTarget, { passive: false });
     root.appendChild(mask);
     return mask;
   });
 
-  const highlight = doc.createElement("div");
+  const highlight = doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   Object.assign(highlight.style, {
     position: "fixed",
     border: "3px solid #00d4a1",
@@ -721,10 +737,11 @@ function createTourState(
     display: "none",
   } as Partial<CSSStyleDeclaration>);
 
-  const card = doc.createElement("div");
+  const card = doc.createElementNS(HTML_NAMESPACE, "div") as HTMLDivElement;
   Object.assign(card.style, {
     position: "fixed",
-    width: `min(${CARD_WIDTH}px, calc(100vw - 32px))`,
+    width: `${CARD_WIDTH}px`,
+    maxWidth: "calc(100vw - 32px)",
     maxHeight: "calc(100vh - 32px)",
     overflow: "auto",
     backgroundColor: "var(--ai-bg, #fff)",
@@ -754,9 +771,17 @@ function createTourState(
     highlight,
     card,
     index: 0,
+    revealedStepId: null,
     steps,
     options,
-    reposition: () => renderActiveStep(),
+    reposition: (event) => {
+      if (
+        event.target instanceof win.Node &&
+        root.contains(event.target as Node)
+      )
+        return;
+      renderActiveStep();
+    },
     keyHandler: (event) => {
       if (event.key === "Escape") closeOnboardingOverlayTour();
       else if (event.key === "ArrowRight" && !currentStepRequiresAction())
@@ -773,6 +798,9 @@ function createTourState(
     importObserverId: null,
     importPollTimer: null,
     taskProgressCleanup: null,
+    navigationCleanup: null,
+    advanceTimer: null,
+    advanceStepId: null,
   };
 }
 
@@ -792,6 +820,7 @@ function attachTourEvents(state: OverlayTourState): void {
 }
 
 function detachTourEvents(state: OverlayTourState): void {
+  clearStepAdvance(state);
   clearTargetClickBinding(state);
   state.win.removeEventListener("resize", state.reposition);
   state.win.removeEventListener("scroll", state.reposition, true);
@@ -826,6 +855,8 @@ function moveTourToWindow(win: Window): void {
   replacement.trackedItemId = tracking.trackedItemId;
   replacement.trackedSummaryTaskId = tracking.trackedSummaryTaskId;
   replacement.confettiStepId = tracking.confettiStepId;
+  replacement.navigationCleanup = state.navigationCleanup;
+  state.navigationCleanup = null;
   activeTour = replacement;
   attachTourEvents(replacement);
 }
@@ -834,6 +865,7 @@ function renderActiveStep(): void {
   const state = activeTour;
   if (!state) return;
   const step = state.steps[state.index];
+  if (state.advanceStepId !== step.id) clearStepAdvance(state);
   prepareStep(step);
   try {
     syncStepTracking(state, step);
@@ -850,11 +882,27 @@ function renderActiveStep(): void {
   const nextState = activeTour;
   if (!nextState) return;
   const target = resolveTarget(step, nextState.doc);
+  if (nextState.revealedStepId !== step.id) {
+    const scrollTarget = step.waitForVisibleSelectors?.length
+      ? step.waitForVisibleSelectors
+          .map((selector) => nextState.doc.querySelector(selector))
+          .find((element) => element && element.getClientRects().length > 0)
+      : step.requireTargetClick || step.id === "final-auto-deepread-setting"
+        ? target
+        : null;
+    if (scrollTarget && typeof scrollTarget.scrollIntoView === "function") {
+      // Reveal actions once per step, without fighting subsequent user scrolling.
+      nextState.revealedStepId = step.id;
+      scrollTarget.scrollIntoView({
+        block: "center",
+        inline: "nearest",
+        behavior: "auto",
+      });
+    }
+  }
   const rect = resolveTargetRect(step, nextState.doc, nextState.win, target);
   if (shouldAutoAdvanceStep(step, nextState.doc)) {
-    setTimeout(() => {
-      if (activeTour?.steps[activeTour.index]?.id === step.id) goNext();
-    }, 120);
+    scheduleStepAdvance(nextState, step, 120);
   }
   bindTargetClickForStep(nextState, step, target, !!rect);
   renderStepCelebration(nextState, step);
@@ -865,6 +913,46 @@ function renderActiveStep(): void {
   } else {
     renderFullMask(nextState, step.requireTargetClick === true);
     renderCard(nextState, step, null);
+  }
+}
+
+function scrollTourTarget(event: WheelEvent): void {
+  const state = activeTour;
+  if (!state || state.root.querySelector(".ai-butler-tour-skip-dialog")) return;
+  const step = state.steps[state.index];
+  const target = resolveTarget(step, state.doc);
+  let ancestor = target?.parentElement;
+  while (ancestor) {
+    const styles = state.win.getComputedStyle(ancestor);
+    if (!styles) return;
+    const scrollX = /^(auto|scroll)$/.test(styles.overflowX);
+    const scrollY = /^(auto|scroll)$/.test(styles.overflowY);
+    const previousLeft = ancestor.scrollLeft;
+    const previousTop = ancestor.scrollTop;
+    const lineHeight = parseFloat(styles.lineHeight) || 16;
+    const horizontalUnit =
+      event.deltaMode === 2
+        ? ancestor.clientWidth
+        : event.deltaMode === 1
+          ? lineHeight
+          : 1;
+    const verticalUnit =
+      event.deltaMode === 2
+        ? ancestor.clientHeight
+        : event.deltaMode === 1
+          ? lineHeight
+          : 1;
+    if (scrollX) ancestor.scrollLeft += event.deltaX * horizontalUnit;
+    if (scrollY) ancestor.scrollTop += event.deltaY * verticalUnit;
+    if (
+      ancestor.scrollLeft !== previousLeft ||
+      ancestor.scrollTop !== previousTop
+    ) {
+      // Masks block unrelated clicks, but wheel gestures belong to the target's scrollport.
+      event.preventDefault();
+      return;
+    }
+    ancestor = ancestor.parentElement;
   }
 }
 
@@ -925,7 +1013,10 @@ function renderCard(
   const stageProgress = getStageProgress(state.steps, state.index);
   state.card.innerHTML = "";
 
-  const stage = state.doc.createElement("div");
+  const stage = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   stage.textContent = getString("onboarding-stage-progress", {
     args: {
       current: stageProgress.stageIndex + 1,
@@ -941,7 +1032,10 @@ function renderCard(
     marginBottom: "6px",
   } as Partial<CSSStyleDeclaration>);
 
-  const small = state.doc.createElement("div");
+  const small = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   small.textContent = getString("onboarding-step-progress", {
     args: {
       current: stageProgress.stepIndex + 1,
@@ -955,7 +1049,10 @@ function renderCard(
     marginBottom: "10px",
   } as Partial<CSSStyleDeclaration>);
 
-  const progressWrap = state.doc.createElement("div");
+  const progressWrap = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   Object.assign(progressWrap.style, {
     height: "6px",
     borderRadius: "999px",
@@ -963,7 +1060,10 @@ function renderCard(
     overflow: "hidden",
     marginBottom: "14px",
   } as Partial<CSSStyleDeclaration>);
-  const progressBar = state.doc.createElement("div");
+  const progressBar = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   Object.assign(progressBar.style, {
     width: `${Math.round(((state.index + 1) / state.steps.length) * 100)}%`,
     height: "100%",
@@ -972,7 +1072,10 @@ function renderCard(
   } as Partial<CSSStyleDeclaration>);
   progressWrap.appendChild(progressBar);
 
-  const title = state.doc.createElement("div");
+  const title = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   title.textContent = step.title;
   Object.assign(title.style, {
     fontSize: "19px",
@@ -981,7 +1084,10 @@ function renderCard(
     lineHeight: "1.35",
   } as Partial<CSSStyleDeclaration>);
 
-  const desc = state.doc.createElement("div");
+  const desc = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   desc.textContent = missingTarget
     ? step.fallbackDescription || step.description
     : step.description;
@@ -992,7 +1098,10 @@ function renderCard(
   } as Partial<CSSStyleDeclaration>);
 
   if (step.waitForVisibleSelectors?.length) {
-    const hint = state.doc.createElement("div");
+    const hint = state.doc.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLDivElement;
     hint.textContent = getString("onboarding-scroll-to-target-hint");
     Object.assign(hint.style, {
       marginTop: "10px",
@@ -1008,7 +1117,10 @@ function renderCard(
   }
 
   if (step.requireTargetClick && rect) {
-    const hint = state.doc.createElement("div");
+    const hint = state.doc.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLDivElement;
     hint.textContent = getString("onboarding-click-highlighted-target-hint");
     Object.assign(hint.style, {
       marginTop: "10px",
@@ -1025,7 +1137,10 @@ function renderCard(
 
   appendLiveStatus(state, step, desc);
 
-  const actions = state.doc.createElement("div");
+  const actions = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   Object.assign(actions.style, {
     display: "flex",
     justifyContent: "space-between",
@@ -1035,7 +1150,10 @@ function renderCard(
     marginTop: "18px",
   } as Partial<CSSStyleDeclaration>);
 
-  const left = state.doc.createElement("div");
+  const left = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   Object.assign(left.style, {
     display: "flex",
     alignItems: "center",
@@ -1051,7 +1169,10 @@ function renderCard(
       ),
     );
 
-  const right = state.doc.createElement("div");
+  const right = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   Object.assign(right.style, {
     display: "flex",
     alignItems: "center",
@@ -1068,7 +1189,8 @@ function renderCard(
     );
   }
   if (step.action) {
-    const actionEnabled = step.action.enabled?.(state) ?? true;
+    const actionEnabled =
+      !state.pendingActionStepId && (step.action.enabled?.(state) ?? true);
     right.appendChild(
       createTourButton(
         actionEnabled
@@ -1076,11 +1198,26 @@ function renderCard(
           : step.action.disabledLabel || step.action.label,
         "secondary",
         () => {
-          if (!actionEnabled) return;
-          void Promise.resolve(step.action?.run()).then(() => {
-            if (step.action?.advance) goNext();
-            else setTimeout(renderActiveStep, 180);
-          });
+          if (!actionEnabled || state.pendingActionStepId) return;
+          state.pendingActionStepId = step.id;
+          void Promise.resolve()
+            .then(() => step.action?.run())
+            .then(() => {
+              if (activeTour !== state || state.steps[state.index] !== step)
+                return;
+              if (step.action?.advance) goNext();
+              else setTimeout(renderActiveStep, 180);
+            })
+            .catch((error) => {
+              ztoolkit.log("[AI-Butler] Tutorial action failed:", error);
+              new ztoolkit.ProgressWindow("AI Butler", { closeTime: 5000 })
+                .createLine({ text: String(error), type: "error" })
+                .show();
+            })
+            .finally(() => {
+              delete state.pendingActionStepId;
+              if (activeTour === state) renderActiveStep();
+            });
         },
         !actionEnabled,
       ),
@@ -1131,11 +1268,17 @@ function showSkipConfirmationDialog(): void {
     .querySelectorAll<HTMLElement>(".ai-butler-tour-skip-dialog")
     .forEach((element: HTMLElement) => element.remove());
 
-  const backdrop = state.doc.createElement("div");
+  const backdrop = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   backdrop.className = "ai-butler-tour-skip-dialog";
   Object.assign(backdrop.style, {
     position: "fixed",
-    inset: "0",
+    top: "0",
+    right: "0",
+    bottom: "0",
+    left: "0",
     zIndex: "2147483647",
     background: "rgba(0, 0, 0, 0.32)",
     display: "flex",
@@ -1146,9 +1289,13 @@ function showSkipConfirmationDialog(): void {
     boxSizing: "border-box",
   } as Partial<CSSStyleDeclaration>);
 
-  const panel = state.doc.createElement("div");
+  const panel = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   Object.assign(panel.style, {
-    width: "min(440px, calc(100vw - 36px))",
+    width: "440px",
+    maxWidth: "calc(100vw - 36px)",
     background: "var(--ai-bg, #fff)",
     color: "var(--ai-text, #222)",
     border: "1px solid rgba(89, 192, 188, 0.32)",
@@ -1158,7 +1305,10 @@ function showSkipConfirmationDialog(): void {
     boxSizing: "border-box",
   } as Partial<CSSStyleDeclaration>);
 
-  const title = state.doc.createElement("div");
+  const title = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   title.textContent = getString("onboarding-skip-title");
   Object.assign(title.style, {
     fontSize: "18px",
@@ -1166,7 +1316,10 @@ function showSkipConfirmationDialog(): void {
     marginBottom: "10px",
   } as Partial<CSSStyleDeclaration>);
 
-  const desc = state.doc.createElement("div");
+  const desc = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   desc.textContent = getString("onboarding-skip-description");
   Object.assign(desc.style, {
     color: "var(--ai-text-muted, #666)",
@@ -1175,7 +1328,10 @@ function showSkipConfirmationDialog(): void {
     marginBottom: "18px",
   } as Partial<CSSStyleDeclaration>);
 
-  const actions = state.doc.createElement("div");
+  const actions = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   Object.assign(actions.style, {
     display: "flex",
     justifyContent: "flex-end",
@@ -1217,7 +1373,6 @@ function positionCard(
   rect: DOMRect | null,
 ): void {
   const margin = 16;
-  const docked = step.cardDock === "bottom" || step.cardDock === "right";
   const cardWidth = Math.min(
     step.cardDock === "bottom" ? 760 : CARD_WIDTH,
     state.win.innerWidth - 32,
@@ -1228,7 +1383,7 @@ function positionCard(
     state.card.getBoundingClientRect().height || 0,
     280,
   );
-  const cardHeight = Math.min(
+  let cardHeight = Math.min(
     measuredHeight,
     step.cardDock === "bottom"
       ? Math.max(170, state.win.innerHeight * 0.36)
@@ -1274,12 +1429,21 @@ function positionCard(
     if (alternative) {
       left = alternative.left;
       top = alternative.top;
+    } else {
+      const above = rect.top - margin * 2;
+      const below = state.win.innerHeight - rect.bottom - margin * 2;
+      const availableHeight = Math.max(above, below);
+      if (availableHeight >= MIN_CARD_SCROLL_HEIGHT) {
+        // Keep the required action exposed even when the instructions need their own scrollbar.
+        cardHeight = Math.min(cardHeight, availableHeight);
+        top = above >= below ? margin : rect.bottom + margin;
+      }
     }
   }
 
   Object.assign(state.card.style, {
     width: `${cardWidth}px`,
-    maxHeight: docked ? `${cardHeight}px` : "calc(100vh - 32px)",
+    maxHeight: `${cardHeight}px`,
     left: `${left}px`,
     top: `${top}px`,
   } as Partial<CSSStyleDeclaration>);
@@ -1489,6 +1653,29 @@ async function pollImportTracking(state: OverlayTourState): Promise<void> {
   }
 }
 
+async function queueTrackedSummary(): Promise<void> {
+  const state = activeTour;
+  if (!state) return;
+  await pollImportTracking(state);
+  const item = state.trackedItemId
+    ? await Zotero.Items.getAsync(state.trackedItemId)
+    : null;
+  if (
+    !item ||
+    !isRegularTopLevelItem(item) ||
+    !(await hasPdfAttachment(item))
+  ) {
+    throw new Error(getString("onboarding-action-wait-pdf"));
+  }
+  const queue = TaskQueueManager.getInstance();
+  queue.refreshFromStorage();
+  const taskId = getSummaryTaskId(item.id);
+  // Explicit tutorial consent must work without enabling library-wide auto scan.
+  state.trackedSummaryTaskId = queue.getTask(taskId)
+    ? taskId
+    : await queue.addTask(item);
+}
+
 function getSelectedZoteroItems(): Zotero.Item[] {
   try {
     const pane = Zotero.getActiveZoteroPane?.();
@@ -1509,7 +1696,14 @@ async function considerImportedItem(
   const hasPdf = await hasPdfAttachment(parent, item);
   if (!hasPdf && state.trackedItemId !== parent.id) return;
 
-  if (!state.trackedItemId) {
+  if (
+    !state.trackedItemId ||
+    (state.steps[state.index].id === "paper-area-drop" &&
+      getSelectedZoteroItems().some(
+        (selected) =>
+          selected.id === parent.id || selected.parentID === parent.id,
+      ))
+  ) {
     state.trackedItemId = parent.id;
   }
   if (state.trackedItemId === parent.id) {
@@ -1667,7 +1861,10 @@ function appendLiveStatus(
   } catch (error) {
     ztoolkit.log("[AI-Butler] 读取新手教程任务状态失败:", error);
   }
-  const panel = state.doc.createElement("div");
+  const panel = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   Object.assign(panel.style, {
     marginTop: "12px",
     padding: "11px 12px",
@@ -1679,20 +1876,29 @@ function appendLiveStatus(
     lineHeight: "1.55",
   } as Partial<CSSStyleDeclaration>);
 
-  const title = state.doc.createElement("div");
+  const title = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   title.style.fontWeight = "800";
   title.style.color = "#007f61";
   title.style.marginBottom = "6px";
   title.textContent = getLiveStatusTitle(state, task);
   panel.appendChild(title);
 
-  const body = state.doc.createElement("div");
+  const body = state.doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLDivElement;
   body.textContent = getLiveStatusBody(state, task);
   panel.appendChild(body);
 
   if (task) {
     const progress = Math.max(0, Math.min(100, Math.round(task.progress || 0)));
-    const track = state.doc.createElement("div");
+    const track = state.doc.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLDivElement;
     Object.assign(track.style, {
       height: "6px",
       marginTop: "9px",
@@ -1700,7 +1906,10 @@ function appendLiveStatus(
       overflow: "hidden",
       background: "rgba(0, 166, 126, 0.18)",
     } as Partial<CSSStyleDeclaration>);
-    const bar = state.doc.createElement("div");
+    const bar = state.doc.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLDivElement;
     Object.assign(bar.style, {
       height: "100%",
       width: progress + "%",
@@ -1785,7 +1994,10 @@ function renderConfetti(state: OverlayTourState): void {
   ];
   const count = 150;
   for (let i = 0; i < count; i++) {
-    const piece = state.doc.createElement("div");
+    const piece = state.doc.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLDivElement;
     piece.className = "ai-butler-tour-confetti";
     const size = 6 + Math.random() * 8;
     const startX = Math.random() * state.win.innerWidth;
@@ -1838,7 +2050,10 @@ function createTourButton(
   disabled: boolean = false,
 ): HTMLButtonElement {
   const doc = activeTour?.doc || Zotero.getMainWindow().document;
-  const button = doc.createElement("button");
+  const button = doc.createElementNS(
+    HTML_NAMESPACE,
+    "button",
+  ) as HTMLButtonElement;
   button.type = "button";
   button.textContent = label;
   button.disabled = disabled;
@@ -1906,6 +2121,15 @@ function createTourButton(
 }
 
 function shouldAutoAdvanceStep(step: OverlayTourStep, doc: Document): boolean {
+  if (step.id === "deep-read-tasks") {
+    const tab = doc.getElementById("tab-tasks");
+    const queue = doc.getElementById("ai-butler-task-queue-view");
+    return (
+      tab?.getAttribute("aria-current") === "page" &&
+      tab.getClientRects().length > 0 &&
+      !!queue?.getClientRects().length
+    );
+  }
   if (step.id === "model-deepseek-card") {
     return !!doc.getElementById("endpoint-status-endpoint-preset-deepseek");
   }
@@ -1925,12 +2149,9 @@ function bindTargetClickForStep(
   if (!target || !visible || !step.requireTargetClick) return;
 
   const handler = () => {
+    if (activeTour !== state || state.steps[state.index] !== step) return;
     if (!step.advanceOnTargetClick) return;
-    setTimeout(() => {
-      if (activeTour?.steps[activeTour.index]?.id === step.id) {
-        goNext();
-      }
-    }, step.advanceDelayMs ?? 120);
+    scheduleStepAdvance(state, step, step.advanceDelayMs ?? 120);
   };
 
   target.addEventListener("click", handler, true);
@@ -1944,6 +2165,34 @@ function bindTargetClickForStep(
 function clearTargetClickBinding(state: OverlayTourState): void {
   state.targetClickCleanup?.();
   state.targetClickCleanup = null;
+}
+
+function clearStepAdvance(state: OverlayTourState): void {
+  if (state.advanceTimer !== null) state.win.clearTimeout(state.advanceTimer);
+  state.advanceTimer = null;
+  state.advanceStepId = null;
+}
+
+function scheduleStepAdvance(
+  state: OverlayTourState,
+  step: OverlayTourStep,
+  delayMs: number,
+): void {
+  if (state.advanceStepId === step.id) return;
+  clearStepAdvance(state);
+  state.advanceStepId = step.id;
+  state.advanceTimer = state.win.setTimeout(() => {
+    state.advanceTimer = null;
+    state.advanceStepId = null;
+    // A restarted tour can revisit the same ID; only this exact step owns it.
+    if (activeTour !== state || state.steps[state.index] !== step) return;
+    if (
+      step.id === "deep-read-tasks" &&
+      !shouldAutoAdvanceStep(step, state.doc)
+    )
+      return;
+    goNext();
+  }, delayMs);
 }
 
 function prepareStep(_step: OverlayTourStep): void {
@@ -1970,15 +2219,12 @@ function handleDocumentClick(event: MouseEvent): void {
   const targetElement = resolveTarget(step, state.doc);
   if (!targetElement) return;
   const clicked =
-    event.target instanceof Node && targetElement.contains(event.target);
+    event.target instanceof state.win.Node &&
+    targetElement.contains(event.target as Node);
   if (!clicked) return;
 
   if (step.advanceOnTargetClick) {
-    setTimeout(() => {
-      if (activeTour?.steps[activeTour.index]?.id === step.id) {
-        goNext();
-      }
-    }, step.advanceDelayMs ?? 120);
+    scheduleStepAdvance(state, step, step.advanceDelayMs ?? 120);
   }
 }
 
@@ -1987,15 +2233,12 @@ function handleSetupApplied(): void {
   if (!state) return;
   const step = state.steps[state.index];
   if (!step.advanceOnSetupApplied) return;
-  setTimeout(() => {
-    if (activeTour?.steps[activeTour.index]?.id === step.id) {
-      goNext();
-    }
-  }, 700);
+  scheduleStepAdvance(state, step, 700);
 }
 
 function goNext(): void {
   if (!activeTour) return;
+  activeTour.revealedStepId = null;
   activeTour.index = Math.min(
     activeTour.steps.length - 1,
     activeTour.index + 1,
@@ -2005,6 +2248,7 @@ function goNext(): void {
 
 function goPrev(): void {
   if (!activeTour) return;
+  activeTour.revealedStepId = null;
   activeTour.index = Math.max(0, activeTour.index - 1);
   renderActiveStep();
 }
@@ -2057,6 +2301,28 @@ function getAiButlerDocument(): Document {
 
 function getCurrentTourDocument(): Document {
   return activeTour?.doc || Zotero.getMainWindow().document;
+}
+
+function getLibrarySourceRect(doc: Document, win: Window): DOMRect | null {
+  // Collection navigation and item selection form one native drag-and-drop workflow.
+  return unionElementRects(
+    queryVisibleAll(
+      [
+        "#zotero-collections-pane",
+        "#collections-pane",
+        "#zotero-collections-tree",
+        "#collections-tree",
+        "#zotero-items-tree",
+        "#items-tree-main-default",
+        "#item-tree-main-default",
+        "#zotero-items-pane",
+        ".items-tree",
+      ],
+      doc,
+      win,
+    ),
+    win,
+  );
 }
 
 function getCollectionAreaRect(doc: Document, win: Window): DOMRect | null {
@@ -2131,6 +2397,9 @@ function getAiButlerSidebarContentRect(
   doc: Document,
   win: Window,
 ): DOMRect | null {
+  const legacyPanel = doc.getElementById("ai-butler-legacy-panel");
+  const legacyRect = legacyPanel ? getVisibleRect(legacyPanel, win) : null;
+  if (legacyRect) return legacyRect;
   const candidates = queryVisibleAll(
     [
       '[data-pane="ai-butler-chat-section"]',
@@ -2166,8 +2435,11 @@ function getAiButlerSidebarContentRect(
   );
 }
 
-function getAiButlerSidenavIcon(doc: Document): Element | null {
+function getAiButlerSidebarEntry(doc: Document): Element | null {
   const win = doc.defaultView || Zotero.getMainWindow();
+  // Zotero 6 hosts the assistant in the horizontal item-pane tab strip.
+  const legacyTab = doc.getElementById("ai-butler-legacy-tab");
+  if (legacyTab && getVisibleRect(legacyTab, win)) return legacyTab;
   const sidenavLabel = getString("aibutler-itempane-ai-section-sidenav");
   const explicit = queryFirst(
     [

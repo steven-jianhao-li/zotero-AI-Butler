@@ -340,7 +340,11 @@ export abstract class BaseView {
     } = {},
     doc: Document = Zotero.getMainWindow().document,
   ): HTMLElementTagNameMap[K] {
-    const element = doc.createElement(tag);
+    // Views are adopted into dialogs from Zotero 6's XML chrome document.
+    const element = doc.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      tag,
+    ) as HTMLElementTagNameMap[K];
 
     if (options.id) {
       element.id = options.id;

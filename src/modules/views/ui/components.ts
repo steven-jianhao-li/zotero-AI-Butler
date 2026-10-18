@@ -10,6 +10,9 @@
  */
 import { getString } from "../../../utils/locale";
 
+// Native input behavior must survive creation in Zotero 6's XML chrome document.
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+
 function isDarkMode(): boolean {
   try {
     return (
@@ -40,7 +43,10 @@ export function createStyledButton(
   size: ButtonSize = "medium",
 ): HTMLButtonElement {
   const doc = Zotero.getMainWindow().document;
-  const button = doc.createElement("button");
+  const button = doc.createElementNS(
+    HTML_NAMESPACE,
+    "button",
+  ) as HTMLButtonElement;
 
   // 尺寸映射
   const sizeMap = {
@@ -176,14 +182,20 @@ export function createFormGroup(
   description?: string,
 ): HTMLElement {
   const doc = Zotero.getMainWindow().document;
-  const group = doc.createElement("div");
+  const group = doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLElementTagNameMap["div"];
 
   Object.assign(group.style, {
     marginBottom: "24px",
   });
 
   if (label.trim()) {
-    const labelElement = doc.createElement("label");
+    const labelElement = doc.createElementNS(
+      HTML_NAMESPACE,
+      "label",
+    ) as HTMLElementTagNameMap["label"];
     labelElement.textContent = label;
     Object.assign(labelElement.style, {
       display: "block",
@@ -198,7 +210,10 @@ export function createFormGroup(
   group.appendChild(input);
 
   if (description) {
-    const desc = doc.createElement("div");
+    const desc = doc.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     desc.className = "form-description";
     desc.textContent = description;
     Object.assign(desc.style, {
@@ -223,7 +238,10 @@ export function createInput(
   placeholder?: string,
 ): HTMLInputElement {
   const doc = Zotero.getMainWindow().document;
-  const input = doc.createElement("input");
+  const input = doc.createElementNS(
+    HTML_NAMESPACE,
+    "input",
+  ) as HTMLInputElement;
   input.type = type;
   input.id = `setting-${id}`;
   input.value = value || "";
@@ -268,7 +286,10 @@ export function createTextarea(
   placeholder?: string,
 ): HTMLTextAreaElement {
   const doc = Zotero.getMainWindow().document;
-  const textarea = doc.createElement("textarea");
+  const textarea = doc.createElementNS(
+    HTML_NAMESPACE,
+    "textarea",
+  ) as HTMLTextAreaElement;
   textarea.id = `setting-${id}`;
   textarea.value = value || "";
   textarea.rows = rows;
@@ -320,7 +341,10 @@ export function createSelect(
   const currentIsDark = isDarkMode();
 
   // 容器
-  const container = doc.createElement("div");
+  const container = doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLElementTagNameMap["div"];
   container.id = `setting-${id}`;
   container.setAttribute("data-value", value);
   Object.assign(container.style, {
@@ -330,7 +354,10 @@ export function createSelect(
   });
 
   // 当前选中项显示框
-  const display = doc.createElement("div");
+  const display = doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLElementTagNameMap["div"];
   const currentOption =
     options.find((opt) => opt.value === value) || options[0];
   display.textContent = currentOption ? currentOption.label : "";
@@ -350,7 +377,10 @@ export function createSelect(
   });
 
   // 下拉箭头
-  const arrow = doc.createElement("span");
+  const arrow = doc.createElementNS(
+    HTML_NAMESPACE,
+    "span",
+  ) as HTMLElementTagNameMap["span"];
   arrow.textContent = "▼";
   Object.assign(arrow.style, {
     position: "absolute",
@@ -364,7 +394,10 @@ export function createSelect(
   display.appendChild(arrow);
 
   // 下拉选项容器
-  const dropdown = doc.createElement("div");
+  const dropdown = doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLElementTagNameMap["div"];
   dropdown.className = "custom-select-dropdown";
   Object.assign(dropdown.style, {
     position: "absolute",
@@ -384,7 +417,10 @@ export function createSelect(
 
   // 创建选项
   options.forEach((opt) => {
-    const item = doc.createElement("div");
+    const item = doc.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     item.textContent = opt.label;
     item.setAttribute("data-value", opt.value);
 
@@ -511,14 +547,20 @@ export function createSelect(
  */
 export function createCheckbox(id: string, checked: boolean): HTMLElement {
   const doc = Zotero.getMainWindow().document;
-  const container = doc.createElement("div");
+  const container = doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLElementTagNameMap["div"];
   Object.assign(container.style, {
     display: "flex",
     alignItems: "center",
     gap: "12px",
   });
 
-  const checkbox = doc.createElement("input");
+  const checkbox = doc.createElementNS(
+    HTML_NAMESPACE,
+    "input",
+  ) as HTMLInputElement;
   checkbox.type = "checkbox";
   checkbox.id = `setting-${id}`;
   checkbox.checked = checked;
@@ -529,7 +571,10 @@ export function createCheckbox(id: string, checked: boolean): HTMLElement {
     cursor: "pointer",
   });
 
-  const label = doc.createElement("span");
+  const label = doc.createElementNS(
+    HTML_NAMESPACE,
+    "span",
+  ) as HTMLElementTagNameMap["span"];
   label.textContent = checked
     ? getString("endpoint-enabled")
     : getString("endpoint-disabled");
@@ -561,14 +606,20 @@ export function createSlider(
   value: number,
 ): HTMLElement {
   const doc = Zotero.getMainWindow().document;
-  const container = doc.createElement("div");
+  const container = doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLElementTagNameMap["div"];
   Object.assign(container.style, {
     display: "flex",
     alignItems: "center",
     gap: "12px",
   });
 
-  const slider = doc.createElement("input");
+  const slider = doc.createElementNS(
+    HTML_NAMESPACE,
+    "input",
+  ) as HTMLInputElement;
   slider.type = "range";
   slider.id = `setting-${id}`;
   slider.min = min.toString();
@@ -583,7 +634,10 @@ export function createSlider(
     outline: "none",
   });
 
-  const valueDisplay = doc.createElement("span");
+  const valueDisplay = doc.createElementNS(
+    HTML_NAMESPACE,
+    "span",
+  ) as HTMLElementTagNameMap["span"];
   valueDisplay.textContent = value.toFixed(2);
   Object.assign(valueDisplay.style, {
     minWidth: "50px",
@@ -604,7 +658,10 @@ export function createSlider(
 
 /** 创建分节标题 */
 export function createSectionTitle(text: string): HTMLElement {
-  const el = Zotero.getMainWindow().document.createElement("h3");
+  const el = Zotero.getMainWindow().document.createElementNS(
+    HTML_NAMESPACE,
+    "h3",
+  ) as HTMLElementTagNameMap["h3"];
   el.textContent = text;
   Object.assign(el.style, {
     marginTop: "12px",
@@ -619,7 +676,10 @@ export function createNotice(
   html: string,
   type: "info" | "warn" | "error" = "info",
 ): HTMLElement {
-  const el = Zotero.getMainWindow().document.createElement("div");
+  const el = Zotero.getMainWindow().document.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLElementTagNameMap["div"];
   const palette = {
     info: { bg: "#e3f2fd", bd: "#2196f3", fg: "#1565c0" },
     warn: { bg: "#fff8e1", bd: "#ff9800", fg: "#ef6c00" },
@@ -661,7 +721,10 @@ export function createCard(
   opts: CardOptions = {},
 ): HTMLElement {
   const doc = Zotero.getMainWindow().document;
-  const card = doc.createElement("div");
+  const card = doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLElementTagNameMap["div"];
   card.className = "ai-card ai-card--" + type;
   if (opts.classes) card.classList.add(...opts.classes);
   if (opts.accentColor) {
@@ -670,16 +733,25 @@ export function createCard(
   }
 
   // Header
-  const header = doc.createElement("div");
+  const header = doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLElementTagNameMap["div"];
   header.className = "ai-card__header";
-  const titleEl = doc.createElement("div");
+  const titleEl = doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLElementTagNameMap["div"];
   titleEl.className = "ai-card__title";
   titleEl.textContent = title;
   header.appendChild(titleEl);
 
   if (opts.extra) {
     if (typeof opts.extra === "string") {
-      const wrap = doc.createElement("div");
+      const wrap = doc.createElementNS(
+        HTML_NAMESPACE,
+        "div",
+      ) as HTMLElementTagNameMap["div"];
       wrap.innerHTML = opts.extra;
       header.appendChild(wrap);
     } else {
@@ -688,18 +760,27 @@ export function createCard(
   }
 
   // Body
-  const body = doc.createElement("div");
+  const body = doc.createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLElementTagNameMap["div"];
   body.className = "ai-card__body";
 
   if (type === "stat") {
-    const valueEl = doc.createElement("div");
+    const valueEl = doc.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     // 兼容旧选择器 .stat-value，避免现有视图更新逻辑失效
     valueEl.className = "ai-card__value stat-value";
     valueEl.textContent = opts.value || "-";
     body.appendChild(valueEl);
   } else if (content) {
     if (typeof content === "string") {
-      const c = doc.createElement("div");
+      const c = doc.createElementNS(
+        HTML_NAMESPACE,
+        "div",
+      ) as HTMLElementTagNameMap["div"];
       c.textContent = content;
       body.appendChild(c);
     } else {
@@ -708,7 +789,10 @@ export function createCard(
   }
 
   if (opts.icon) {
-    const iconEl = doc.createElement("div");
+    const iconEl = doc.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     iconEl.className = "ai-card__icon";
     iconEl.textContent = opts.icon;
     body.appendChild(iconEl);

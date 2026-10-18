@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        title="AI Butler" width="420" height="140">
+  <script src="chrome://__addonRef__/content/legacyOptions.js"/>
+  <button id="ai-butler-open-settings" label="AI Butler"/>
+</window>

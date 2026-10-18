@@ -94,6 +94,9 @@ export class AutoScanManager {
    * 停止自动扫描监听
    */
   public stop(): void {
+    for (const timer of this.retryTimers.values()) clearTimeout(timer);
+    this.retryTimers.clear();
+    this.pendingParents.clear();
     if (!this.running) {
       return;
     }

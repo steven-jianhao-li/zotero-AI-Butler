@@ -97,7 +97,10 @@ export function createMainWindowScaffold<T extends string>(
     id: "ai-butler-window-scaffold",
     styles: {
       position: "fixed",
-      inset: "0",
+      top: "0",
+      right: "0",
+      bottom: "0",
+      left: "0",
       width: "100vw",
       height: "100vh",
       minHeight: "0",
@@ -248,7 +251,10 @@ export function createSettingsScaffold<T extends string>(
     id: "ai-butler-settings-scaffold",
     styles: {
       position: "absolute",
-      inset: "0",
+      top: "0",
+      right: "0",
+      bottom: "0",
+      left: "0",
       display: "grid",
       gridTemplateColumns: "220px minmax(0, 1fr)",
       minHeight: "0",

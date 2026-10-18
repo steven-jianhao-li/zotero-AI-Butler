@@ -13,6 +13,8 @@
 import { config } from "../../package.json";
 import { getString, getLocaleID } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
+import { registerLegacySidebar } from "../compatibility/legacyUi";
+import { isLegacyHost } from "../compatibility/host";
 import {
   isTableFeatureEnabled,
   isSidebarModuleEnabled,
@@ -48,6 +50,7 @@ import {
   normalizeLatexForKatex,
   requiresDisplayMath,
   stripMathDelimiters,
+  replaceInlineMath,
 } from "./noteMarkdown";
 import { AiNoteService, type AiNoteKind } from "./aiNoteService";
 import { SummaryView } from "./views/SummaryView";
@@ -806,6 +809,13 @@ async function ensureSidebarAutoRefresh(): Promise<void> {
 export function registerItemPaneSection(
   handleOpenAIChat: (itemId: number) => Promise<void>,
 ): void {
+  if (isLegacyHost()) {
+    registerLegacySidebar(
+      (body, item) => renderItemPaneSection(body, item, handleOpenAIChat),
+      cleanupSidebarWorkspace,
+    );
+    return;
+  }
   const pluginID = config.addonID;
   const rootURI = `chrome://${config.addonRef}/content/`;
 
@@ -879,7 +889,7 @@ export async function refreshCurrentItemPaneSection(): Promise<void> {
  */
 function renderItemPaneSection(
   body: HTMLElement,
-  item: Zotero.Item,
+  item: Zotero.Item | undefined,
   handleOpenAIChat: (itemId: number) => Promise<void>,
 ): void {
   cleanupSidebarWorkspace(body);
@@ -5667,10 +5677,7 @@ function normalizeHtmlFragmentForXhtml(doc: Document, html: string): string {
   return repaired
     .replace(/<hr\s*(?:([^>/]*))?>/gi, "<hr $1/>")
     .replace(/<br\s*(?:([^>/]*))?>/gi, "<br $1/>")
-    .replace(/<img\s+([^>]*)(?<!\/)>/gi, "<img $1/>")
-    .replace(/<input\s+([^>]*)(?<!\/)>/gi, "<input $1/>")
-    .replace(/<meta\s+([^>]*)(?<!\/)>/gi, "<meta $1/>")
-    .replace(/<link\s+([^>]*)(?<!\/)>/gi, "<link $1/>")
+    .replace(/<(img|input|meta|link)\b([^>]*?)\/?\s*>/gi, "<$1$2/>")
     .replace(/\s+\/>/g, "/>")
     .replace(/&nbsp;/gi, "&#160;")
     .replace(new RegExp("<(?=[^a-zA-Z/?!])", "g"), "&lt;");
@@ -6453,39 +6460,30 @@ async function loadNoteContent(
       );
 
       // 4. Render legacy inline formulas $...$ (backward compatibility)
-      // Use RegExp constructor to avoid ESLint escape warnings
-      // In RegExp string: \\$ becomes \$ in pattern (matches literal $)
-      const inlineRegex = new RegExp(
-        "(?<!\\$)\\$(?!\\$)([^\\$\\n]+?)\\$(?!\\$)",
-        "g",
-      );
-      result = result.replace(
-        inlineRegex,
-        (_match: string, formula: string) => {
-          try {
-            const latex = decodeMathHtmlEntities(formula.trim());
-            const isTaggedDisplay = requiresDisplayMath(latex);
-            const rendered = katex.renderToString(cleanLatex(latex), {
-              throwOnError: false,
-              displayMode: isTaggedDisplay ? true : false,
-              output: "html",
-              trust: true,
-              strict: false,
-            });
-            if (isTaggedDisplay) {
-              return `<div class="katex-scroll-container" style="display:block;width:100%;max-width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;contain:inline-size;"><div class="katex-display">${rendered}</div></div>`;
-            }
-            return `<span class="katex-inline">${rendered}</span>`;
-          } catch {
-            // Render failed, escape the formula for safe display
-            const escaped = formula
-              .replace(/&/g, "&amp;")
-              .replace(/</g, "&lt;")
-              .replace(/>/g, "&gt;");
-            return `<code>$${escaped}$</code>`;
+      result = replaceInlineMath(result, (formula) => {
+        try {
+          const latex = decodeMathHtmlEntities(formula.trim());
+          const isTaggedDisplay = requiresDisplayMath(latex);
+          const rendered = katex.renderToString(cleanLatex(latex), {
+            throwOnError: false,
+            displayMode: isTaggedDisplay ? true : false,
+            output: "html",
+            trust: true,
+            strict: false,
+          });
+          if (isTaggedDisplay) {
+            return `<div class="katex-scroll-container" style="display:block;width:100%;max-width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;contain:inline-size;"><div class="katex-display">${rendered}</div></div>`;
           }
-        },
-      );
+          return `<span class="katex-inline">${rendered}</span>`;
+        } catch {
+          // Render failed, escape the formula for safe display
+          const escaped = formula
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+          return `<code>$${escaped}$</code>`;
+        }
+      });
 
       return result;
     };

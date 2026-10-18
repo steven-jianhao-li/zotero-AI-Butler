@@ -19,7 +19,7 @@
 import { ContentExtractor } from "./contentExtractor";
 import { PDFExtractor } from "./pdfExtractor";
 import { NoteGenerator } from "./noteGenerator";
-import { zoteroNoteMathHtml } from "./noteMarkdown";
+import { replaceInlineMath, zoteroNoteMathHtml } from "./noteMarkdown";
 import LLMService from "./llmService";
 import {
   LLMNoteMetadataService,
@@ -821,11 +821,8 @@ ${entryList}
       /\$\$([\s\S]*?)\$\$/g,
       (_match, formula) => zoteroNoteMathHtml(formula.trim(), true),
     );
-    // 行内公式: $...$ → <span class="math">$...$</span>
-    // 使用负向前瞻/后瞻避免匹配已处理的 $$
-    renderedHtml = renderedHtml.replace(
-      /(?<!\$)\$(?!\$)([^$\n]+?)(?<!\$)\$(?!\$)/g,
-      (_match, formula) => zoteroNoteMathHtml(formula.trim(), false),
+    renderedHtml = replaceInlineMath(renderedHtml, (formula) =>
+      zoteroNoteMathHtml(formula.trim(), false),
     );
 
     // 将原始 Markdown 存储在预格式区块中，供 findTableNote 提取

@@ -1727,7 +1727,11 @@ export class SummaryView extends BaseView {
           return;
         }
 
-        const styleEl = doc.createElement("style");
+        // XUL style nodes display CSS as text and can push the library toolbar offscreen.
+        const styleEl = doc.createElementNS(
+          "http://www.w3.org/1999/xhtml",
+          "style",
+        );
         styleEl.id = "ai-butler-katex-style";
         styleEl.textContent = katexCss;
 
@@ -1937,7 +1941,7 @@ export class SummaryView extends BaseView {
     // 检查是否已添加
     if (doc.getElementById("ai-butler-spinner-style")) return;
 
-    const style = doc.createElement("style");
+    const style = doc.createElementNS("http://www.w3.org/1999/xhtml", "style");
     style.id = "ai-butler-spinner-style";
     style.textContent = `
       @keyframes spin {

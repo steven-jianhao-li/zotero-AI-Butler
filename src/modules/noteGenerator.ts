@@ -41,7 +41,11 @@ import {
   LLMNoteMetadataService,
   type LLMNoteMetadata,
 } from "./llmNoteMetadata";
-import { markdownToZoteroNoteHtml, zoteroNoteMathHtml } from "./noteMarkdown";
+import {
+  markdownToZoteroNoteHtml,
+  zoteroNoteMathHtml,
+  replaceInlineMath,
+} from "./noteMarkdown";
 import type { LLMAbortSignal, LLMResponse } from "./llmproviders/types";
 import {
   isAbortError,
@@ -1001,17 +1005,11 @@ export class NoteGenerator {
     );
 
     // 保护内联公式 $...$ 和 \(...\)
-    processedMarkdown = processedMarkdown.replace(
-      // eslint-disable-next-line no-useless-escape
-      /((?<!\$)\$(?!\$)|\\\()([^\$\n]+?)((?<!\$)\$(?!\$)|\\\))/g,
-      (_match, start, formula, end) => {
-        // 简单的完整性检查：start 和 end 应该属于同一类（$配$，\(配\)）
-        // 但为了宽容度，我们暂不严格校验配对，因为正则已经限制了内部不含 delimiters
-        const placeholder = `FORMULA_INLINE_${formulas.length}_END`;
-        formulas.push({ content: formula.trim(), isBlock: false });
-        return placeholder;
-      },
-    );
+    processedMarkdown = replaceInlineMath(processedMarkdown, (formula) => {
+      const placeholder = `FORMULA_INLINE_${formulas.length}_END`;
+      formulas.push({ content: formula.trim(), isBlock: false });
+      return placeholder;
+    });
 
     // ===== 步骤 2: 预处理加粗语法 =====
     processedMarkdown = processedMarkdown.replace(

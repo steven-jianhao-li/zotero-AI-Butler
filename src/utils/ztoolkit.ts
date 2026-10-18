@@ -24,6 +24,14 @@ import {
 } from "zotero-plugin-toolkit";
 import { config } from "../../package.json";
 import { ModernProgressWindow } from "./modernProgressWindow";
+import { prepareDocument } from "../compatibility/document";
+
+class AIButlerDialog extends DialogHelper {
+  override createXULElement(doc: Document, type: string): XULElement {
+    prepareDocument(doc);
+    return super.createXULElement(doc, type);
+  }
+}
 
 /**
  * 项目实际使用的 toolkit 能力集合。
@@ -44,7 +52,7 @@ class AIButlerToolkit extends BasicTool {
   constructor() {
     super();
     this.UI = new UITool(this);
-    this.Dialog = makeHelperTool(DialogHelper, this) as typeof DialogHelper;
+    this.Dialog = makeHelperTool(AIButlerDialog, this) as typeof DialogHelper;
   }
 
   /**
@@ -77,6 +85,8 @@ function initZToolkit(ztoolkit: AIButlerToolkit) {
 
   ztoolkit.UI.basicOptions.ui.enableElementJSONLog = env === "development";
   ztoolkit.UI.basicOptions.ui.enableElementDOMLog = env === "development";
+  ztoolkit.UI.basicOptions.ui.enableElementRecord =
+    typeof (globalThis as any).WeakRef === "function";
 
   ztoolkit.basicOptions.api.pluginID = config.addonID;
 

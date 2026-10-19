@@ -1,16 +1,26 @@
+import { isLegacyHost } from "../compatibility/host";
+
 export async function pickFolder(
   title: string,
   ownerWindow?: Window | null,
 ): Promise<string | null> {
   const restoreWindow = ownerWindow || getMostRecentWindow();
-  const FilePicker = ChromeUtils.importESModule(
-    "chrome://zotero/content/modules/filePicker.mjs",
-  ).FilePicker;
-  const fp = new FilePicker();
+  const FilePicker = !isLegacyHost()
+    ? ChromeUtils.importESModule(
+        "chrome://zotero/content/modules/filePicker.mjs",
+      ).FilePicker
+    : null;
+  const fp = FilePicker
+    ? new FilePicker()
+    : (Components.classes as any)["@mozilla.org/filepicker;1"].createInstance(
+        Components.interfaces.nsIFilePicker,
+      );
   fp.init(Zotero.getMainWindow(), title, fp.modeGetFolder);
 
   try {
-    const result = await fp.show();
+    const result = FilePicker
+      ? await fp.show()
+      : await new Promise<number>((resolve) => fp.open(resolve));
 
     if (result !== fp.returnOK && result !== fp.returnReplace) {
       return null;

@@ -1,5 +1,7 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
+import { legacyItemColumns } from "../compatibility/legacyUi";
+import { isLegacyHost } from "../compatibility/host";
 import {
   isDeepReadNote,
   isRegularSummaryNote,
@@ -246,7 +248,9 @@ export function registerLibraryStatusColumn(): void {
 
   try {
     for (const columnConfig of COLUMN_CONFIGS) {
-      const result = Zotero.ItemTreeManager.registerColumn({
+      const result = (
+        isLegacyHost() ? legacyItemColumns : Zotero.ItemTreeManager
+      ).registerColumn({
         dataKey: columnConfig.dataKey,
         label: getString(columnConfig.labelKey),
         pluginID: config.addonID,
@@ -310,7 +314,10 @@ export function unregisterLibraryStatusColumn(): void {
 
   for (const dataKey of registeredDataKeys) {
     try {
-      Zotero.ItemTreeManager.unregisterColumn(dataKey);
+      (isLegacyHost()
+        ? legacyItemColumns
+        : Zotero.ItemTreeManager
+      ).unregisterColumn(dataKey);
     } catch (error) {
       logLibraryStatusColumn("[AI-Butler] 注销 AI 状态列失败", dataKey, error);
     }
@@ -649,7 +656,10 @@ async function flushRefresh(): Promise<void> {
   }
 
   try {
-    Zotero.ItemTreeManager.refreshColumns();
+    (isLegacyHost()
+      ? legacyItemColumns
+      : Zotero.ItemTreeManager
+    ).refreshColumns();
   } catch (error) {
     logLibraryStatusColumn("[AI-Butler] AI 状态列刷新失败", error);
   }

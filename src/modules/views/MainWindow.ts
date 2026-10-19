@@ -28,6 +28,7 @@
  */
 
 import { config } from "../../../package.json";
+import { prepareDocument } from "../../compatibility/document";
 import { DashboardView } from "./DashboardView";
 import { SummaryView } from "./SummaryView";
 import { AgentView } from "./agent/AgentView";
@@ -486,6 +487,7 @@ export class MainWindow {
     }
 
     const doc = dialog.window.document;
+    prepareDocument(doc);
     const tryInit = () => {
       if (this.dialog !== dialog || !this.isDialogHandleActive(dialog)) {
         this.uiInitializing = false;

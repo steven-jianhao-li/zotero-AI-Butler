@@ -48,10 +48,14 @@ export function showSetupWizard(
   options: SetupWizardOptions = {},
 ): void {
   const doc = ownerDocument || Zotero.getMainWindow().document;
+  // Firefox 60 needs explicit edges and width limits instead of inset/min().
   const overlay = createElement(doc, "div", {
     styles: {
       position: "fixed",
-      inset: "0",
+      top: "0",
+      right: "0",
+      bottom: "0",
+      left: "0",
       zIndex: "2147483647",
       backgroundColor: "rgba(0, 0, 0, 0.45)",
       display: "flex",
@@ -64,7 +68,8 @@ export function showSetupWizard(
 
   const modal = createElement(doc, "div", {
     styles: {
-      width: "min(760px, 96vw)",
+      width: "760px",
+      maxWidth: "96vw",
       maxHeight: "88vh",
       overflow: "auto",
       backgroundColor: "var(--ai-bg, #fff)",

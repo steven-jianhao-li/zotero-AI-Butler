@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RDF xmlns="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:em="http://www.mozilla.org/2004/em-rdf#">
+  <Description about="urn:mozilla:install-manifest">
+    <em:id>__addonID__</em:id>
+    <em:name>__addonName__</em:name>
+    <em:version>__buildVersion__</em:version>
+    <em:description>__description__</em:description>
+    <em:creator>__author__</em:creator>
+    <em:type>2</em:type>
+    <em:bootstrap>true</em:bootstrap>
+    <em:optionsURL>chrome://__addonRef__/content/legacyOptions.xul</em:optionsURL>
+    <em:targetApplication>
+      <Description>
+        <em:id>zotero@chnm.gmu.edu</em:id>
+        <em:minVersion>6.0.27</em:minVersion>
+        <em:maxVersion>6.*</em:maxVersion>
+      </Description>
+    </em:targetApplication>
+  </Description>
+</RDF>

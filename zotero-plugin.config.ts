@@ -1,5 +1,6 @@
 import { defineConfig } from "zotero-plugin-scaffold";
 import pkg from "./package.json";
+import { buildCompatibility } from "./scripts/build-compatibility.mjs";
 
 export default defineConfig({
   source: ["src", "addon"],
@@ -12,6 +13,9 @@ export default defineConfig({
     "https://github.com/{{owner}}/{{repo}}/releases/download/v{{version}}/{{xpiName}}.xpi",
 
   build: {
+    hooks: {
+      "build:bundle": buildCompatibility,
+    },
     assets: ["addon/**/*.*"],
     define: {
       ...pkg.config,
@@ -33,6 +37,12 @@ export default defineConfig({
         bundle: true,
         target: "firefox115",
         outfile: `.scaffold/build/addon/content/scripts/${pkg.config.addonRef}.js`,
+      },
+      {
+        entryPoints: ["src/compatibility/runtime.ts"],
+        bundle: true,
+        target: "firefox115",
+        outfile: ".scaffold/build/addon/content/scripts/compatibility.js",
       },
       {
         entryPoints: ["src/prefs-entry.ts"],

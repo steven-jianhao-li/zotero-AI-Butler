@@ -17,6 +17,9 @@ import {
   createStyledButton,
 } from "./components";
 
+// XUL-created nodes retain their namespace when adopted into HTML dialogs.
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+
 type EndpointPanelOptions = {
   modalHost?: HTMLElement;
   onChange?: () => void;
@@ -44,7 +47,10 @@ function endpointProviderOptions(): Array<{ value: string; label: string }> {
 }
 
 function smallMuted(text: string): HTMLElement {
-  const el = doc().createElement("div");
+  const el = doc().createElementNS(
+    HTML_NAMESPACE,
+    "div",
+  ) as HTMLElementTagNameMap["div"];
   el.textContent = text;
   Object.assign(el.style, {
     color: "var(--ai-text-muted)",
@@ -103,7 +109,10 @@ export class EndpointSettingsPanel {
 
   constructor(options: EndpointPanelOptions = {}) {
     this.options = options;
-    this.root = doc().createElement("section");
+    this.root = doc().createElementNS(
+      HTML_NAMESPACE,
+      "section",
+    ) as HTMLElementTagNameMap["section"];
     this.root.id = "ai-butler-endpoint-settings-panel";
     this.endpoints = LLMEndpointManager.getEndpoints();
     this.render();
@@ -142,7 +151,10 @@ export class EndpointSettingsPanel {
       boxSizing: "border-box",
     });
 
-    const header = document.createElement("div");
+    const header = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(header.style, {
       display: "flex",
       alignItems: "center",
@@ -153,8 +165,14 @@ export class EndpointSettingsPanel {
     });
 
     if (this.options.showTitle !== false) {
-      const titleWrap = document.createElement("div");
-      const title = document.createElement("h3");
+      const titleWrap = document.createElementNS(
+        HTML_NAMESPACE,
+        "div",
+      ) as HTMLElementTagNameMap["div"];
+      const title = document.createElementNS(
+        HTML_NAMESPACE,
+        "h3",
+      ) as HTMLElementTagNameMap["h3"];
       title.textContent = t("endpoint-panel-title");
       Object.assign(title.style, {
         margin: "0 0 4px 0",
@@ -181,7 +199,10 @@ export class EndpointSettingsPanel {
     header.appendChild(addButton);
     this.root.appendChild(header);
 
-    const list = document.createElement("div");
+    const list = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(list.style, {
       display: "flex",
       flexDirection: "column",
@@ -201,7 +222,10 @@ export class EndpointSettingsPanel {
 
   private renderRoutingControls(): HTMLElement {
     const document = doc();
-    const panel = document.createElement("div");
+    const panel = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(panel.style, {
       marginTop: "18px",
     });
@@ -258,7 +282,10 @@ export class EndpointSettingsPanel {
 
   private renderMultiModelControls(): HTMLElement {
     const document = doc();
-    const box = document.createElement("div");
+    const box = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     const enabled = LLMEndpointManager.isMultiModelSummaryEnabled();
     const selectedIds = new Set(
       LLMEndpointManager.getMultiModelSummaryEndpointIds(),
@@ -282,7 +309,10 @@ export class EndpointSettingsPanel {
       boxSizing: "border-box",
     });
 
-    const header = document.createElement("div");
+    const header = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(header.style, {
       display: "flex",
       alignItems: "center",
@@ -292,22 +322,34 @@ export class EndpointSettingsPanel {
       flexWrap: "wrap",
     });
 
-    const titleWrap = document.createElement("div");
-    const titleRow = document.createElement("div");
+    const titleWrap = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
+    const titleRow = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(titleRow.style, {
       display: "flex",
       alignItems: "center",
       gap: "8px",
       flexWrap: "wrap",
     });
-    const title = document.createElement("div");
+    const title = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     title.textContent = t("endpoint-multi-summary-title");
     Object.assign(title.style, {
       color: "var(--ai-text)",
       fontSize: "15px",
       fontWeight: "700",
     });
-    const badge = document.createElement("span");
+    const badge = document.createElementNS(
+      HTML_NAMESPACE,
+      "span",
+    ) as HTMLElementTagNameMap["span"];
     badge.textContent = enabled
       ? t("endpoint-multi-summary-selected", { count: selectedCount })
       : t("endpoint-disabled");
@@ -343,7 +385,10 @@ export class EndpointSettingsPanel {
     );
     box.appendChild(header);
 
-    const toolbar = document.createElement("div");
+    const toolbar = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(toolbar.style, {
       display: "flex",
       alignItems: "center",
@@ -353,14 +398,20 @@ export class EndpointSettingsPanel {
       marginBottom: "10px",
       flexWrap: "wrap",
     });
-    const selectionLabel = document.createElement("div");
+    const selectionLabel = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     selectionLabel.textContent = t("endpoint-multi-summary-select");
     Object.assign(selectionLabel.style, {
       color: "var(--ai-text)",
       fontSize: "13px",
       fontWeight: "600",
     });
-    const quickActions = document.createElement("div");
+    const quickActions = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(quickActions.style, {
       display: "flex",
       gap: "6px",
@@ -394,14 +445,20 @@ export class EndpointSettingsPanel {
     toolbar.appendChild(quickActions);
     box.appendChild(toolbar);
 
-    const endpointList = document.createElement("div");
+    const endpointList = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(endpointList.style, {
       display: "grid",
       gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
       gap: "10px",
     });
     if (this.endpoints.length === 0) {
-      const empty = document.createElement("div");
+      const empty = document.createElementNS(
+        HTML_NAMESPACE,
+        "div",
+      ) as HTMLElementTagNameMap["div"];
       empty.textContent = t("endpoint-empty");
       Object.assign(empty.style, {
         color: "var(--ai-text-muted)",
@@ -413,7 +470,10 @@ export class EndpointSettingsPanel {
       endpointList.appendChild(empty);
     }
     this.endpoints.forEach((endpoint) => {
-      const item = document.createElement("label");
+      const item = document.createElementNS(
+        HTML_NAMESPACE,
+        "label",
+      ) as HTMLElementTagNameMap["label"];
       const checked = endpoint.enabled && selectedIds.has(endpoint.id);
       Object.assign(item.style, {
         display: "flex",
@@ -432,7 +492,10 @@ export class EndpointSettingsPanel {
         cursor: endpoint.enabled ? "pointer" : "not-allowed",
         boxSizing: "border-box",
       });
-      const input = document.createElement("input");
+      const input = document.createElementNS(
+        HTML_NAMESPACE,
+        "input",
+      ) as HTMLElementTagNameMap["input"];
       input.type = "checkbox";
       input.checked = checked;
       input.disabled = !endpoint.enabled;
@@ -450,12 +513,18 @@ export class EndpointSettingsPanel {
         this.options.onChange?.();
         this.rerender();
       });
-      const content = document.createElement("div");
+      const content = document.createElementNS(
+        HTML_NAMESPACE,
+        "div",
+      ) as HTMLElementTagNameMap["div"];
       Object.assign(content.style, {
         minWidth: "0",
         flex: "1",
       });
-      const name = document.createElement("div");
+      const name = document.createElementNS(
+        HTML_NAMESPACE,
+        "div",
+      ) as HTMLElementTagNameMap["div"];
       name.textContent = endpoint.name;
       Object.assign(name.style, {
         fontSize: "13px",
@@ -464,7 +533,10 @@ export class EndpointSettingsPanel {
         textOverflow: "ellipsis",
         whiteSpace: "nowrap",
       });
-      const detail = document.createElement("div");
+      const detail = document.createElementNS(
+        HTML_NAMESPACE,
+        "div",
+      ) as HTMLElementTagNameMap["div"];
       detail.textContent = t("endpoint-multi-summary-detail", {
         provider: LLMEndpointManager.providerLabel(endpoint.providerType),
         model: endpoint.model || t("endpoint-model-empty"),
@@ -479,7 +551,10 @@ export class EndpointSettingsPanel {
         textOverflow: "ellipsis",
         whiteSpace: "nowrap",
       });
-      const state = document.createElement("div");
+      const state = document.createElementNS(
+        HTML_NAMESPACE,
+        "div",
+      ) as HTMLElementTagNameMap["div"];
       state.textContent = endpoint.enabled
         ? t("endpoint-can-summary")
         : t("endpoint-disabled");
@@ -498,7 +573,10 @@ export class EndpointSettingsPanel {
     box.appendChild(endpointList);
 
     if (enabled && selectedCount === 0) {
-      const warning = document.createElement("div");
+      const warning = document.createElementNS(
+        HTML_NAMESPACE,
+        "div",
+      ) as HTMLElementTagNameMap["div"];
       warning.textContent = t("endpoint-multi-summary-warning");
       Object.assign(warning.style, {
         marginTop: "10px",
@@ -516,7 +594,10 @@ export class EndpointSettingsPanel {
     onChange: (checked: boolean) => void,
   ): HTMLElement {
     const document = doc();
-    const button = document.createElement("button");
+    const button = document.createElementNS(
+      HTML_NAMESPACE,
+      "button",
+    ) as HTMLElementTagNameMap["button"];
     button.type = "button";
     button.title = checked ? t("endpoint-enabled") : t("endpoint-off");
     Object.assign(button.style, {
@@ -531,7 +612,10 @@ export class EndpointSettingsPanel {
       flex: "0 0 auto",
     });
 
-    const knob = document.createElement("span");
+    const knob = document.createElementNS(
+      HTML_NAMESPACE,
+      "span",
+    ) as HTMLElementTagNameMap["span"];
     Object.assign(knob.style, {
       display: "block",
       width: "20px",
@@ -557,7 +641,10 @@ export class EndpointSettingsPanel {
   ): HTMLElement {
     const document = doc();
     const isExpanded = this.expandedEndpointIds.has(endpoint.id);
-    const card = document.createElement("article");
+    const card = document.createElementNS(
+      HTML_NAMESPACE,
+      "article",
+    ) as HTMLElementTagNameMap["article"];
     card.id = `endpoint-card-${endpoint.id}`;
     card.setAttribute("data-ai-butler-endpoint-name", endpoint.name || "");
     Object.assign(card.style, {
@@ -570,7 +657,10 @@ export class EndpointSettingsPanel {
       zIndex: isExpanded ? String(1000 - index) : "0",
     });
 
-    const header = document.createElement("div");
+    const header = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(header.style, {
       display: "flex",
       alignItems: "center",
@@ -583,7 +673,10 @@ export class EndpointSettingsPanel {
       borderBottom: isExpanded ? "1px solid var(--ai-border)" : "none",
     });
 
-    const identity = document.createElement("div");
+    const identity = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(identity.style, {
       display: "flex",
       alignItems: "center",
@@ -593,11 +686,17 @@ export class EndpointSettingsPanel {
     });
     identity.appendChild(this.renderEnableSwitch(endpoint));
 
-    const textWrap = document.createElement("div");
+    const textWrap = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(textWrap.style, {
       minWidth: "0",
     });
-    const name = document.createElement("div");
+    const name = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     name.textContent = endpoint.name || t("endpoint-unnamed-provider");
     Object.assign(name.style, {
       fontWeight: "700",
@@ -607,7 +706,10 @@ export class EndpointSettingsPanel {
       textOverflow: "ellipsis",
       whiteSpace: "nowrap",
     });
-    const type = document.createElement("div");
+    const type = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     type.textContent = t("endpoint-card-subtitle", {
       provider: LLMEndpointManager.providerLabel(endpoint.providerType),
       pdf: this.describeEndpointPdfMode(endpoint),
@@ -622,7 +724,10 @@ export class EndpointSettingsPanel {
     identity.appendChild(textWrap);
     header.appendChild(identity);
 
-    const actions = document.createElement("div");
+    const actions = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(actions.style, {
       display: "flex",
       gap: "6px",
@@ -684,7 +789,10 @@ export class EndpointSettingsPanel {
 
   private renderEnableSwitch(endpoint: LLMEndpoint): HTMLElement {
     const document = doc();
-    const button = document.createElement("button");
+    const button = document.createElementNS(
+      HTML_NAMESPACE,
+      "button",
+    ) as HTMLElementTagNameMap["button"];
     button.type = "button";
     button.title = endpoint.enabled
       ? t("endpoint-enabled")
@@ -700,7 +808,10 @@ export class EndpointSettingsPanel {
       transition: "background 0.2s ease",
       flex: "0 0 auto",
     });
-    const knob = document.createElement("span");
+    const knob = document.createElementNS(
+      HTML_NAMESPACE,
+      "span",
+    ) as HTMLElementTagNameMap["span"];
     Object.assign(knob.style, {
       display: "block",
       width: "18px",
@@ -724,7 +835,10 @@ export class EndpointSettingsPanel {
 
   private renderEndpointDetails(endpoint: LLMEndpoint): HTMLElement {
     const document = doc();
-    const details = document.createElement("div");
+    const details = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(details.style, {
       padding: "14px 12px 16px",
       background: "var(--ai-surface)",
@@ -743,12 +857,18 @@ export class EndpointSettingsPanel {
 
   private renderApiUrlField(endpoint: LLMEndpoint): HTMLElement {
     const document = doc();
-    const group = document.createElement("div");
+    const group = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(group.style, {
       marginBottom: "24px",
     });
 
-    const label = document.createElement("label");
+    const label = document.createElementNS(
+      HTML_NAMESPACE,
+      "label",
+    ) as HTMLElementTagNameMap["label"];
     label.textContent = t("endpoint-api-url-label");
     Object.assign(label.style, {
       display: "block",
@@ -772,7 +892,10 @@ export class EndpointSettingsPanel {
     });
     group.appendChild(apiUrlInput);
 
-    const description = document.createElement("div");
+    const description = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(description.style, {
       marginTop: "6px",
       display: "flex",
@@ -783,13 +906,19 @@ export class EndpointSettingsPanel {
       minWidth: "0",
     });
 
-    const required = document.createElement("span");
+    const required = document.createElementNS(
+      HTML_NAMESPACE,
+      "span",
+    ) as HTMLElementTagNameMap["span"];
     required.textContent = t("endpoint-required");
     Object.assign(required.style, {
       flex: "0 0 auto",
     });
 
-    const preview = document.createElement("span");
+    const preview = document.createElementNS(
+      HTML_NAMESPACE,
+      "span",
+    ) as HTMLElementTagNameMap["span"];
     preview.setAttribute("data-endpoint-preview", endpoint.id);
     Object.assign(preview.style, {
       display: "block",
@@ -812,7 +941,10 @@ export class EndpointSettingsPanel {
     const allowsEmptyKey = LLMEndpointManager.providerAllowsEmptyApiKey(
       endpoint.providerType,
     );
-    const wrapper = document.createElement("div");
+    const wrapper = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(wrapper.style, {
       display: "flex",
       alignItems: "center",
@@ -835,7 +967,10 @@ export class EndpointSettingsPanel {
       this.persist();
     });
 
-    const toggleButton = document.createElement("button");
+    const toggleButton = document.createElementNS(
+      HTML_NAMESPACE,
+      "button",
+    ) as HTMLElementTagNameMap["button"];
     toggleButton.type = "button";
     toggleButton.textContent = "👁";
     toggleButton.title = t("endpoint-toggle-key");
@@ -876,14 +1011,20 @@ export class EndpointSettingsPanel {
 
   private renderModelField(endpoint: LLMEndpoint): HTMLElement {
     const document = doc();
-    const wrapper = document.createElement("div");
+    const wrapper = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(wrapper.style, {
       display: "flex",
       flexDirection: "column",
       gap: "8px",
     });
 
-    const row = document.createElement("div");
+    const row = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(row.style, {
       display: "flex",
       alignItems: "center",
@@ -911,7 +1052,10 @@ export class EndpointSettingsPanel {
     row.appendChild(fetchButton);
     wrapper.appendChild(row);
 
-    const modelList = document.createElement("div");
+    const modelList = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(modelList.style, {
       display: "none",
       border: "1px solid var(--ai-border)",
@@ -940,7 +1084,10 @@ export class EndpointSettingsPanel {
     );
     endpoint.pdfProcessMode = value;
 
-    const wrapper = document.createElement("div");
+    const wrapper = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(wrapper.style, {
       display: "flex",
       flexDirection: "column",
@@ -964,7 +1111,10 @@ export class EndpointSettingsPanel {
       LLMEndpointManager.getEffectivePdfProcessMode(endpoint);
     const effectiveLabel = localizedPdfProcessModeLabel(effectiveMode);
     const supportsBase64 = this.endpointSupportsPdfBase64(endpoint);
-    const status = document.createElement("div");
+    const status = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(status.style, {
       display: "flex",
       alignItems: "center",
@@ -975,7 +1125,10 @@ export class EndpointSettingsPanel {
       lineHeight: "1.45",
     });
 
-    const badge = document.createElement("span");
+    const badge = document.createElementNS(
+      HTML_NAMESPACE,
+      "span",
+    ) as HTMLElementTagNameMap["span"];
     badge.textContent = t("endpoint-effective-pdf-mode", {
       mode: effectiveLabel,
     });
@@ -998,7 +1151,10 @@ export class EndpointSettingsPanel {
     });
     status.appendChild(badge);
 
-    const hint = document.createElement("span");
+    const hint = document.createElementNS(
+      HTML_NAMESPACE,
+      "span",
+    ) as HTMLElementTagNameMap["span"];
     if (effectiveMode === "base64" && !supportsBase64) {
       hint.textContent = t("endpoint-pdf-unsupported");
       hint.style.color = "#f57c00";
@@ -1043,13 +1199,19 @@ export class EndpointSettingsPanel {
 
   private renderConnectionTest(endpoint: LLMEndpoint): HTMLElement {
     const document = doc();
-    const wrapper = document.createElement("div");
+    const wrapper = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(wrapper.style, {
       display: "flex",
       flexDirection: "column",
       gap: "8px",
     });
-    const actions = document.createElement("div");
+    const actions = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(actions.style, {
       display: "flex",
       alignItems: "center",
@@ -1068,7 +1230,10 @@ export class EndpointSettingsPanel {
       "#777",
       "small",
     );
-    const status = document.createElement("pre");
+    const status = document.createElementNS(
+      HTML_NAMESPACE,
+      "pre",
+    ) as HTMLElementTagNameMap["pre"];
     status.id = `endpoint-status-${endpoint.id}`;
     Object.assign(status.style, {
       margin: "0",
@@ -1141,7 +1306,10 @@ export class EndpointSettingsPanel {
     }
 
     models.forEach((model) => {
-      const item = document.createElement("button");
+      const item = document.createElementNS(
+        HTML_NAMESPACE,
+        "button",
+      ) as HTMLElementTagNameMap["button"];
       item.type = "button";
       item.textContent = model.name ? `${model.id} - ${model.name}` : model.id;
       Object.assign(item.style, {
@@ -1176,7 +1344,10 @@ export class EndpointSettingsPanel {
     const mountTarget =
       this.options.modalHost || this.root.parentElement || this.root;
     const document = mountTarget.ownerDocument || doc();
-    const overlay = document.createElement("div");
+    const overlay = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(overlay.style, {
       position: "fixed",
       background: "rgba(0,0,0,0.35)",
@@ -1188,7 +1359,10 @@ export class EndpointSettingsPanel {
       zIndex: "9999",
     });
 
-    const dialog = document.createElement("div");
+    const dialog = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(dialog.style, {
       width: "400px",
       maxWidth: "calc(100% - 32px)",
@@ -1203,7 +1377,10 @@ export class EndpointSettingsPanel {
       boxSizing: "border-box",
     });
 
-    const title = document.createElement("h3");
+    const title = document.createElementNS(
+      HTML_NAMESPACE,
+      "h3",
+    ) as HTMLElementTagNameMap["h3"];
     title.textContent = t("endpoint-add-provider-title");
     Object.assign(title.style, {
       margin: "0 0 14px 0",
@@ -1260,7 +1437,10 @@ export class EndpointSettingsPanel {
     });
     dialog.appendChild(providerGroup);
 
-    const error = document.createElement("div");
+    const error = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(error.style, {
       color: "#f44336",
       fontSize: "12px",
@@ -1270,7 +1450,10 @@ export class EndpointSettingsPanel {
     });
     dialog.appendChild(error);
 
-    const actions = document.createElement("div");
+    const actions = document.createElementNS(
+      HTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
     Object.assign(actions.style, {
       display: "flex",
       justifyContent: "flex-end",
@@ -1499,7 +1682,10 @@ export class EndpointSettingsPanel {
       try {
         const host = document.body || document.documentElement;
         if (!host) throw new Error("document host unavailable");
-        const textarea = document.createElement("textarea");
+        const textarea = document.createElementNS(
+          HTML_NAMESPACE,
+          "textarea",
+        ) as HTMLElementTagNameMap["textarea"];
         textarea.value = text;
         Object.assign(textarea.style, {
           position: "fixed",

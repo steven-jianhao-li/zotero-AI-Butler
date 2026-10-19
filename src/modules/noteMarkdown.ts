@@ -142,6 +142,26 @@ export function zoteroNoteMathHtml(content: string, isBlock: boolean): string {
  * Convert Markdown into the HTML dialect Zotero notes can render, including
  * Zotero-native math spans. Shared by summary notes and saved follow-up chats.
  */
+export function replaceInlineMath(
+  text: string,
+  render: (formula: string) => string,
+): string {
+  const expression = /(\$(?!\$)|\\\()([^$\n]+?)(\$(?!\$)|\\\))/g;
+  let renderedText = "";
+  let copiedUntil = 0;
+  let match: RegExpExecArray | null;
+  while ((match = expression.exec(text))) {
+    if (match[1] === "$" && text[match.index - 1] === "$") {
+      // Without lookbehind, a rejected delimiter must not consume the next formula.
+      expression.lastIndex = match.index + 1;
+      continue;
+    }
+    renderedText += text.slice(copiedUntil, match.index) + render(match[2]);
+    copiedUntil = expression.lastIndex;
+  }
+  return renderedText + text.slice(copiedUntil);
+}
+
 export function markdownToZoteroNoteHtml(markdown: string): string {
   const formulas: ProtectedFormula[] = [];
   let processedMarkdown = stripInvalidXmlChars(markdown);
@@ -157,15 +177,11 @@ export function markdownToZoteroNoteHtml(markdown: string): string {
 
   processedMarkdown = normalizeMarkdownBlockBoundaries(processedMarkdown);
 
-  processedMarkdown = processedMarkdown.replace(
-    // eslint-disable-next-line no-useless-escape
-    /((?<!\$)\$(?!\$)|\\\()([^\$\n]+?)((?<!\$)\$(?!\$)|\\\))/g,
-    (_match, _start, formula) => {
-      const placeholder = `FORMULA_INLINE_${formulas.length}_END`;
-      formulas.push({ content: formula.trim(), isBlock: false });
-      return placeholder;
-    },
-  );
+  processedMarkdown = replaceInlineMath(processedMarkdown, (formula) => {
+    const placeholder = `FORMULA_INLINE_${formulas.length}_END`;
+    formulas.push({ content: formula.trim(), isBlock: false });
+    return placeholder;
+  });
 
   processedMarkdown = processedMarkdown.replace(
     // eslint-disable-next-line no-useless-escape

@@ -20,7 +20,11 @@ export function element<K extends keyof HTMLElementTagNameMap>(
   className: string,
   text?: string,
 ): HTMLElementTagNameMap[K] {
-  const node = doc.createElement(tag);
+  // Legacy chrome documents otherwise create XML nodes without HTML APIs.
+  const node = doc.createElementNS(
+    "http://www.w3.org/1999/xhtml",
+    tag,
+  ) as HTMLElementTagNameMap[K];
   node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;

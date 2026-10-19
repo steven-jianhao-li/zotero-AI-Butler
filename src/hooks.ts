@@ -66,6 +66,13 @@ import {
   shouldUpdatePrompt,
 } from "./utils/prompts";
 import { maybeOpenOnboardingTutorialOnStartup } from "./modules/onboarding";
+import { isLegacyHost } from "./compatibility/host";
+import {
+  registerLegacyWindow,
+  unregisterLegacyWindow,
+  registerLegacyReaderToolbar,
+  unregisterLegacyUi,
+} from "./compatibility/legacyUi";
 
 /**
  * 插件启动钩子函数
@@ -150,21 +157,23 @@ async function onStartup() {
  * @returns Promise<void> 窗口初始化完成的承诺
  */
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
+  if (!windowListenerCleanups.has(win)) windowListenerCleanups.set(win, []);
+  registerLegacyWindow(win);
   // 为当前窗口创建专用的工具包实例
   // 每个窗口独立的工具包确保UI操作不会相互干扰
   addon.data.ztoolkit = createZToolkit();
 
   // 注入插件主窗口的国际化资源
-  win.MozXULElement.insertFTLIfNeeded(
+  win.MozXULElement?.insertFTLIfNeeded?.(
     `${addon.data.config.addonRef}-addon.ftl`,
   );
-  win.MozXULElement.insertFTLIfNeeded(
+  win.MozXULElement?.insertFTLIfNeeded?.(
     `${addon.data.config.addonRef}-mainWindow.ftl`,
   );
 
   // 注入偏好设置窗口的国际化资源
   // 即使主窗口尚未打开偏好设置,也预先加载资源文件
-  win.MozXULElement.insertFTLIfNeeded(
+  win.MozXULElement?.insertFTLIfNeeded?.(
     `${addon.data.config.addonRef}-preferences.ftl`,
   );
 
@@ -206,6 +215,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
  * - 支持国际化标题和图标定制
  */
 function registerPrefsPane() {
+  if (isLegacyHost()) return;
   const prefOptions = {
     pluginID: config.addonID, // 插件唯一标识
     src: rootURI + "content/preferences.xhtml", // 配置页面 XHTML 文件路径
@@ -357,6 +367,7 @@ async function openAIButlerDashboardFromUnifiedEntry(): Promise<void> {
 }
 
 const UI_CUSTOMIZATION_CHANGED_EVENT = "ai-butler-ui-customization-changed";
+const windowListenerCleanups = new Map<Window, (() => void)[]>();
 
 const CONTEXT_MENU_DOM_IDS: Record<ContextMenuItemId, string> = {
   generateSummary: "zotero-itemmenu-ai-butler-summary",
@@ -423,7 +434,7 @@ function bindContextMenuVisibilityUpdater(popup: Element): void {
   if ((popup as any)[flagKey]) return;
   (popup as any)[flagKey] = true;
 
-  popup.addEventListener("popupshowing", (event: Event) => {
+  const updateVisibility = (event: Event) => {
     const root = event.currentTarget as Element;
     const candidates = Array.from(
       root.querySelectorAll("[data-ai-butler-context-menu='true']"),
@@ -442,6 +453,11 @@ function bindContextMenuVisibilityUpdater(popup: Element): void {
         },
       );
     }
+  };
+  popup.addEventListener("popupshowing", updateVisibility);
+  windowListenerCleanups.get(popup.ownerDocument!.defaultView!)?.push(() => {
+    popup.removeEventListener("popupshowing", updateVisibility);
+    delete (popup as any)[flagKey];
   });
 }
 
@@ -522,9 +538,20 @@ function bindUICustomizationRefreshEvent(win: Window): void {
   if ((win as any)[flagKey]) return;
   (win as any)[flagKey] = true;
 
-  win.addEventListener(UI_CUSTOMIZATION_CHANGED_EVENT, () => {
+  const refreshMenus = () => {
     refreshAIButlerContextMenuItems();
+  };
+  win.addEventListener(UI_CUSTOMIZATION_CHANGED_EVENT, refreshMenus);
+  windowListenerCleanups.get(win)?.push(() => {
+    win.removeEventListener(UI_CUSTOMIZATION_CHANGED_EVENT, refreshMenus);
+    delete (win as any)[flagKey];
   });
+}
+
+function unregisterWindowListeners(win: Window): void {
+  for (const cleanup of windowListenerCleanups.get(win) || []) cleanup();
+  windowListenerCleanups.delete(win);
+  unregisterContextMenuItems(win.document);
 }
 
 function showAIButlerToast(
@@ -1414,6 +1441,7 @@ function registerLibraryToolbarButton(win: Window) {
 
     buttonContainer.appendChild(button);
     toolbar.appendChild(buttonContainer);
+    windowListenerCleanups.get(win)?.push(() => buttonContainer.remove());
 
     ztoolkit.log("[AI-Butler] 文献库工具栏按钮已添加");
   } catch (error) {
@@ -1488,7 +1516,9 @@ function registerReaderToolbarButton() {
     // 点击事件
     button.addEventListener("click", async () => {
       try {
-        const readerItem = reader._item;
+        const readerItem =
+          reader._item ||
+          (reader._itemID ? await Zotero.Items.getAsync(reader._itemID) : null);
         if (!readerItem) {
           new ztoolkit.ProgressWindow("AI Butler", {
             closeOnClick: true,
@@ -1549,6 +1579,10 @@ function registerReaderToolbarButton() {
 
   try {
     // 注册事件监听器，处理新打开的 Reader
+    if (isLegacyHost()) {
+      registerLegacyReaderToolbar(createToolbarButton);
+      return;
+    }
     (Zotero as any).Reader.registerEventListener(
       "renderToolbar",
       (event: any) => {
@@ -1788,6 +1822,8 @@ async function handleGenerateSummary() {
  * @returns Promise<void> 清理完成的承诺
  */
 async function onMainWindowUnload(win: Window): Promise<void> {
+  unregisterWindowListeners(win);
+  unregisterLegacyWindow(win);
   // 移除文献库工具栏按钮
   try {
     const button = win.document.getElementById("ai-butler-library-toolbar-btn");
@@ -1825,8 +1861,14 @@ async function onMainWindowUnload(win: Window): Promise<void> {
  * - 需要重启 Zotero 才能重新加载插件
  */
 function onShutdown(): void {
+  for (const win of windowListenerCleanups.keys())
+    unregisterWindowListeners(win);
+  unregisterLegacyUi();
   AgentService.shutdown();
+  AutoScanManager.getInstance().stop();
   AutoNoteExportManager.getInstance().stop();
+  TaskQueueManager.getInstance().stop();
+  MainWindow.getInstance().close();
 
   // 注销文献库 AI 精读状态列和相关监听
   unregisterLibraryStatusColumn();
@@ -2792,6 +2834,7 @@ function onDialogEvents(type: string) {
  * 开发者不需要手动调用这些函数
  */
 export default {
+  onOpenSettings: () => MainWindow.getInstance().open("settings"),
   onStartup, // 插件启动
   onShutdown, // 插件关闭
   onMainWindowLoad, // 主窗口加载

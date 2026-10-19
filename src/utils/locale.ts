@@ -4,6 +4,8 @@
 
 import { config } from "../../package.json";
 import { FluentMessageId } from "../../typings/i10n";
+import { LegacyLocalization } from "../compatibility/localization";
+import { isLegacyHost } from "../compatibility/host";
 
 export {
   initLocale,
@@ -26,14 +28,16 @@ function initLocale() {
       ? ztoolkit.getGlobal("Localization")
       : Localization;
 
-  const l10n = new LocalizationCtor(
-    [
-      config.addonRef + "-addon.ftl",
-      config.addonRef + "-mainWindow.ftl",
-      config.addonRef + "-preferences.ftl",
-    ],
-    true,
-  );
+  const l10n = !isLegacyHost()
+    ? new LocalizationCtor(
+        [
+          config.addonRef + "-addon.ftl",
+          config.addonRef + "-mainWindow.ftl",
+          config.addonRef + "-preferences.ftl",
+        ],
+        true,
+      )
+    : new LegacyLocalization();
 
   addon.data.locale = {
     current: l10n,

@@ -59,6 +59,7 @@ export type PDFTextExtractionDiagnostics = {
 };
 
 export class PDFTextExtractionError extends Error {
+  public readonly suppressTaskRetry = true;
   public readonly diagnostics: PDFTextExtractionDiagnostics;
   public readonly diagnosticText: string;
 
@@ -67,6 +68,39 @@ export class PDFTextExtractionError extends Error {
     this.name = "PDFTextExtractionError";
     this.diagnostics = diagnostics;
     this.diagnosticText = PDFExtractor.formatDiagnostics(diagnostics);
+  }
+
+  public static find(error: unknown): PDFTextExtractionError | undefined {
+    const pending: unknown[] = [error];
+    const visited = new Set<object>();
+    // Older request layers keep the original error under different cause fields.
+    while (pending.length && visited.size < 32) {
+      const candidate = pending.shift();
+      if (
+        !candidate ||
+        typeof candidate !== "object" ||
+        visited.has(candidate)
+      ) {
+        continue;
+      }
+      visited.add(candidate);
+      const nested = candidate as {
+        name?: string;
+        diagnosticText?: string;
+        cause?: unknown;
+        lastError?: unknown;
+        originalError?: unknown;
+      };
+      if (
+        candidate instanceof PDFTextExtractionError ||
+        (nested.name === "PDFTextExtractionError" &&
+          typeof nested.diagnosticText === "string")
+      ) {
+        return candidate as PDFTextExtractionError;
+      }
+      pending.push(nested.cause, nested.lastError, nested.originalError);
+    }
+    return undefined;
   }
 }
 
@@ -95,8 +129,6 @@ export class PDFExtractor {
     return filePath.toLowerCase().endsWith(".pdf");
   }
 
-  private static readonly TEXT_EXTRACTION_TIMEOUT_MS = 30000;
-  private static readonly TEXT_EXTRACTION_POLL_INTERVAL_MS = 1000;
   private static readonly pdfDownloadLocks = new Map<
     number,
     Promise<string | false>
@@ -543,6 +575,7 @@ export class PDFExtractor {
         startedAtMs,
         "attachmentText:initial",
       );
+      throwIfAborted(abortSignal);
       if (attachmentText) {
         return attachmentText;
       }
@@ -559,58 +592,88 @@ export class PDFExtractor {
       }
 
       // 检查全文索引状态
-      const indexedState = await this.tryGetIndexedState(
+      await this.tryGetIndexedState(
         pdfAttachment,
         diagnostics,
         startedAtMs,
         "indexed-state:before-index",
       );
 
-      // 如果未索引,触发索引操作
+      // Index statistics can outlive an empty cache. Repair once based on text,
+      // not INDEX_STATE_INDEXED; indexItems awaits conversion on both host lines.
       throwIfAborted(abortSignal);
-      if (indexedState !== Zotero.Fulltext.INDEX_STATE_INDEXED) {
-        await this.tryIndexPdf(pdfAttachment, diagnostics, startedAtMs);
+      await this.tryIndexPdf(pdfAttachment, diagnostics, startedAtMs);
+      throwIfAborted(abortSignal);
+
+      const repairedCache = await this.tryReadFulltextCache(
+        pdfAttachment,
+        diagnostics,
+        startedAtMs,
+        "fulltext-cache:after-index",
+      );
+      throwIfAborted(abortSignal);
+      if (repairedCache) return repairedCache;
+
+      const repairedText = await this.tryReadAttachmentText(
+        pdfAttachment,
+        diagnostics,
+        startedAtMs,
+        "attachmentText:after-index",
+      );
+      throwIfAborted(abortSignal);
+      if (repairedText) return repairedText;
+
+      const converterFailed = diagnostics.steps.some(
+        (step) =>
+          step.ok === false &&
+          step.textLength === undefined &&
+          (step.step.startsWith("attachmentText:") ||
+            step.step === "indexItems"),
+      );
+      if (
+        converterFailed &&
+        Zotero.isWin &&
+        String(Zotero.version).startsWith("6.") &&
+        typeof Zotero.Fulltext.getPDFConverterExecAndArgs === "function"
+      ) {
+        const stagedText = await this.extractLegacyPdfFromAsciiWorkspace(
+          path,
+          diagnostics,
+          startedAtMs,
+          abortSignal,
+        );
+        throwIfAborted(abortSignal);
+        if (stagedText) return stagedText;
       }
 
-      const deadline = Date.now() + this.TEXT_EXTRACTION_TIMEOUT_MS;
-      let pollCount = 0;
-      while (Date.now() < deadline) {
-        throwIfAborted(abortSignal);
-        pollCount++;
-        await Zotero.Promise.delay(this.TEXT_EXTRACTION_POLL_INTERVAL_MS);
-        throwIfAborted(abortSignal);
-
-        const polledAttachmentText = await this.tryReadAttachmentText(
-          pdfAttachment,
-          diagnostics,
-          startedAtMs,
-          `attachmentText:poll-${pollCount}`,
-        );
-        if (polledAttachmentText) {
-          return polledAttachmentText;
-        }
-
-        const polledCacheText = await this.tryReadFulltextCache(
-          pdfAttachment,
-          diagnostics,
-          startedAtMs,
-          `fulltext-cache:poll-${pollCount}`,
-        );
-        if (polledCacheText) {
-          return polledCacheText;
-        }
-
-        await this.tryGetIndexedState(
-          pdfAttachment,
-          diagnostics,
-          startedAtMs,
-          `indexed-state:poll-${pollCount}`,
-        );
-      }
-
-      // 所有尝试都失败
+      await this.tryGetIndexedState(
+        pdfAttachment,
+        diagnostics,
+        startedAtMs,
+        "indexed-state:after-index",
+      );
+      throwIfAborted(abortSignal);
+      diagnostics.steps.push({
+        step: "index-result",
+        ok: false,
+        textLength: 0,
+        message: getString("pdf-diagnostic-message-index-no-text"),
+        elapsedMs: Date.now() - startedAtMs,
+      });
+      const failedOperation = diagnostics.steps.find(
+        (step) =>
+          step.ok === false &&
+          step.textLength === undefined &&
+          (step.step.startsWith("attachmentText:") ||
+            step.step === "indexItems" ||
+            step.step === "legacy-pdf-staging"),
+      );
       throw this.createTextExtractionError(
-        "Unable to extract text from PDF",
+        failedOperation?.message
+          ? getString("pdf-error-conversion-failed", {
+              args: { message: failedOperation.message },
+            })
+          : getString("pdf-error-no-extractable-text"),
         diagnostics,
         startedAtMs,
       );
@@ -632,6 +695,140 @@ export class PDFExtractor {
         diagnostics,
         startedAtMs,
       );
+    }
+  }
+
+  private static async extractLegacyPdfFromAsciiWorkspace(
+    sourcePath: string,
+    diagnostics: PDFTextExtractionDiagnostics,
+    startedAtMs: number,
+    abortSignal?: LLMAbortSignal,
+  ): Promise<string> {
+    let directory: string | undefined;
+    let stagedPdf: string | undefined;
+    let stagedText: string | undefined;
+    try {
+      throwIfAborted(abortSignal);
+      // Zotero 6's Windows converter opens ANSI paths. Stage privately instead
+      // of renaming an attachment, mutating host APIs, or uploading its content.
+      const creationErrors: string[] = [];
+      const workspaceRoots = [
+        () => Zotero.DataDirectory.dir,
+        () => Zotero.getTempDirectory().path,
+        () => Services.dirsvc.get("TmpD", Ci.nsIFile).path,
+      ];
+      for (const workspaceRoot of workspaceRoots) {
+        let root: string;
+        try {
+          root = workspaceRoot();
+        } catch (error: unknown) {
+          if (isAbortError(error, abortSignal))
+            throw normalizeAbortError(error, abortSignal);
+          creationErrors.push(
+            error instanceof Error ? error.message : String(error),
+          );
+          continue;
+        }
+        if (!/^[\x20-\x7e]+$/.test(root)) continue;
+        const candidate = PathUtils.join(
+          root,
+          "ai-butler-pdf-" + Zotero.Utilities.randomString(16),
+        );
+        try {
+          await IOUtils.makeDirectory(candidate, {
+            createAncestors: false,
+            ignoreExisting: false,
+          });
+          // Ownership starts only after exclusive creation succeeds; a collision
+          // must never trigger cleanup of another task's files.
+          directory = candidate;
+          break;
+        } catch (error: unknown) {
+          if (isAbortError(error, abortSignal))
+            throw normalizeAbortError(error, abortSignal);
+          creationErrors.push(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }
+      if (!directory) {
+        throw new Error(
+          "No writable ASCII-path workspace: " +
+            (creationErrors.join("; ") ||
+              "library, host temporary and system temporary roots contain non-ASCII characters"),
+        );
+      }
+      stagedPdf = PathUtils.join(directory, "input.pdf");
+      stagedText = PathUtils.join(directory, "output.txt");
+      throwIfAborted(abortSignal);
+      await IOUtils.copy(sourcePath, stagedPdf, { noOverwrite: true });
+      throwIfAborted(abortSignal);
+      const { exec, args } = Zotero.Fulltext.getPDFConverterExecAndArgs();
+      await Zotero.Utilities.Internal.exec(exec, [
+        ...args,
+        "-nopgbrk",
+        stagedPdf,
+        stagedText,
+      ]);
+      throwIfAborted(abortSignal);
+      const content = await Zotero.File.getContentsAsync(stagedText);
+      throwIfAborted(abortSignal);
+      const text =
+        typeof content === "string"
+          ? content
+          : content
+            ? new TextDecoder().decode(content as BufferSource)
+            : "";
+      const textLength = text.trim().length;
+      diagnostics.steps.push({
+        step: "legacy-pdf-staging",
+        ok: textLength > 0,
+        textLength,
+        message: textLength
+          ? "Recovered using an ASCII-path PDF copy"
+          : "Staged converter completed without extractable text",
+        elapsedMs: Date.now() - startedAtMs,
+      });
+      return textLength > 0 ? text : "";
+    } catch (error: unknown) {
+      if (isAbortError(error, abortSignal))
+        throw normalizeAbortError(error, abortSignal);
+      diagnostics.steps.push({
+        step: "legacy-pdf-staging",
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        elapsedMs: Date.now() - startedAtMs,
+      });
+      return "";
+    } finally {
+      // Converter cancellation cannot kill the host process; cleanup follows
+      // its completion and must also run when copy/read/conversion fails.
+      if (directory) {
+        for (const temporaryPath of [stagedText, stagedPdf, directory]) {
+          if (!temporaryPath) continue;
+          try {
+            if (temporaryPath === directory) {
+              Zotero.File.pathToFile(directory).remove(false);
+            } else {
+              await IOUtils.remove(temporaryPath, { ignoreAbsent: true });
+            }
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            diagnostics.steps.push({
+              step: "legacy-pdf-staging-cleanup",
+              ok: false,
+              message,
+              elapsedMs: Date.now() - startedAtMs,
+            });
+            ztoolkit.log(
+              "[AI Butler] PDF staging cleanup failed",
+              temporaryPath,
+              message,
+            );
+          }
+        }
+      }
     }
   }
 
@@ -721,6 +918,7 @@ export class PDFExtractor {
       });
       return textLength > 0 ? text : "";
     } catch (error: unknown) {
+      if (isAbortError(error)) throw normalizeAbortError(error);
       diagnostics.steps.push({
         step,
         ok: false,
@@ -778,6 +976,7 @@ export class PDFExtractor {
 
       return textLength > 0 ? text : "";
     } catch (error: unknown) {
+      if (isAbortError(error)) throw normalizeAbortError(error);
       diagnostics.steps.push({
         step,
         ok: false,
@@ -804,6 +1003,7 @@ export class PDFExtractor {
       });
       return indexedState;
     } catch (error: unknown) {
+      if (isAbortError(error)) throw normalizeAbortError(error);
       diagnostics.steps.push({
         step,
         ok: false,
@@ -828,6 +1028,7 @@ export class PDFExtractor {
         elapsedMs: Date.now() - startedAtMs,
       });
     } catch (error: unknown) {
+      if (isAbortError(error)) throw normalizeAbortError(error);
       diagnostics.steps.push({
         step: "indexItems",
         ok: false,
@@ -968,12 +1169,17 @@ export class PDFExtractor {
    */
   public static async extractTextFromAttachment(
     pdfAttachment: Zotero.Item,
+    abortSignal?: LLMAbortSignal,
   ): Promise<string> {
     if (pdfAttachment.attachmentContentType !== "application/pdf") {
       throw new Error(getString("pdf-error-attachment-not-pdf"));
     }
 
-    const text = await this.extractTextFromPDF(pdfAttachment);
+    const text = await this.extractTextFromPDF(
+      pdfAttachment,
+      undefined,
+      abortSignal,
+    );
     if (!text || text.trim().length === 0) {
       throw new Error(getString("pdf-error-text-empty"));
     }

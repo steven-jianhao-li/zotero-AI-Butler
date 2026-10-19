@@ -1629,6 +1629,10 @@ async function handleImportItemNotify(
   state: OverlayTourState,
   ids: Array<string | number>,
 ): Promise<void> {
+  if (state.steps[state.index].id === "paper-area-drop") {
+    await pollImportTracking(state);
+    return;
+  }
   for (const rawId of ids) {
     const id = Number(rawId);
     if (!Number.isFinite(id)) continue;
@@ -1643,9 +1647,12 @@ async function handleImportItemNotify(
 }
 
 async function pollImportTracking(state: OverlayTourState): Promise<void> {
-  const selected = getSelectedZoteroItems();
-  for (const item of selected) {
-    await considerImportedItem(state, item);
+  if (state.steps[state.index].id === "paper-area-drop") {
+    await syncSelectedPdf(state);
+  } else {
+    for (const item of getSelectedZoteroItems()) {
+      await considerImportedItem(state, item);
+    }
   }
   refreshTrackedTaskFromQueue(state);
   if (activeTour === state && isTrackingStep(state.steps[state.index])) {
@@ -1656,15 +1663,8 @@ async function pollImportTracking(state: OverlayTourState): Promise<void> {
 async function queueTrackedSummary(): Promise<void> {
   const state = activeTour;
   if (!state) return;
-  await pollImportTracking(state);
-  const item = state.trackedItemId
-    ? await Zotero.Items.getAsync(state.trackedItemId)
-    : null;
-  if (
-    !item ||
-    !isRegularTopLevelItem(item) ||
-    !(await hasPdfAttachment(item))
-  ) {
+  const item = await syncSelectedPdf(state);
+  if (!item) {
     throw new Error(getString("onboarding-action-wait-pdf"));
   }
   const queue = TaskQueueManager.getInstance();
@@ -1674,6 +1674,44 @@ async function queueTrackedSummary(): Promise<void> {
   state.trackedSummaryTaskId = queue.getTask(taskId)
     ? taskId
     : await queue.addTask(item);
+}
+
+async function syncSelectedPdf(
+  state: OverlayTourState,
+): Promise<Zotero.Item | null> {
+  const selected = getSelectedZoteroItems();
+  let selectedParent: Zotero.Item | null = null;
+  for (const item of selected) {
+    if (item.isAttachment?.() && !isPdfAttachment(item)) continue;
+    const parent = await getTopLevelParentForImportedItem(item);
+    if (
+      parent &&
+      isRegularTopLevelItem(parent) &&
+      (await hasPdfAttachment(parent, item))
+    ) {
+      selectedParent = parent;
+      break;
+    }
+  }
+  if (
+    activeTour !== state ||
+    state.steps[state.index].id !== "paper-area-drop"
+  ) {
+    return null;
+  }
+  const currentSelection = getSelectedZoteroItems();
+  if (
+    selected.length !== currentSelection.length ||
+    selected.some((item, index) => item.id !== currentSelection[index].id)
+  ) {
+    selectedParent = null;
+  }
+  // Selection determines consent here; later steps keep the submitted task.
+  state.trackedItemId = selectedParent?.id ?? null;
+  state.trackedSummaryTaskId = selectedParent
+    ? getSummaryTaskId(selectedParent.id)
+    : null;
+  return selectedParent;
 }
 
 function getSelectedZoteroItems(): Zotero.Item[] {
@@ -1763,6 +1801,12 @@ function isPdfAttachment(item: Zotero.Item): boolean {
 }
 
 function refreshTrackedTaskFromQueue(state: OverlayTourState): void {
+  if (
+    state.steps[state.index].id === "paper-area-drop" &&
+    !state.trackedItemId
+  ) {
+    return;
+  }
   const manager = TaskQueueManager.getInstance();
   manager.refreshFromStorage();
   if (

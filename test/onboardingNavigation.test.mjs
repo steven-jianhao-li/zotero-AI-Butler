@@ -186,6 +186,190 @@ async function enterDeepRead(host) {
   host.tour.inspection.enterDeepRead();
 }
 
+function selectionHost() {
+  const regular = (id, attachments) => ({
+    id,
+    isRegularItem: () => true,
+    isAttachment: () => false,
+    isNote: () => false,
+    getAttachments: () => attachments,
+  });
+  const first = regular(1, [11]);
+  const second = regular(2, [21]);
+  const withoutPdf = regular(3, []);
+  const pdf = {
+    id: 11,
+    parentID: 1,
+    isAttachment: () => true,
+    attachmentMIMEType: "application/pdf",
+  };
+  const otherPdf = { ...pdf, id: 21, parentID: 2 };
+  const note = { id: 12, parentID: 1, isNote: () => true };
+  const html = { ...pdf, id: 13, attachmentMIMEType: "text/html" };
+  const items = new Map(
+    [first, second, withoutPdf, pdf, otherPdf, note, html].map((item) => [
+      item.id,
+      item,
+    ]),
+  );
+  let selected = [first];
+  let onRead = () => {};
+  const queued = [];
+  const tasks = new Map();
+  const queue = {
+    refreshFromStorage() {},
+    getTask: (id) => tasks.get(id),
+    getAllTasks: () => [...tasks.values()],
+    async addTask(item) {
+      queued.push(item.id);
+      return `task-${item.id}`;
+    },
+  };
+  const { inspection } = loadSource(
+    "modules/onboardingOverlayTour.ts",
+    {
+      "./taskQueue": {
+        getSummaryTaskId: (id) => `task-${id}`,
+        TaskQueueManager: { getInstance: () => queue },
+      },
+      "../utils/locale": { getString: (key) => key },
+    },
+    {
+      Zotero: {
+        getActiveZoteroPane: () => ({ getSelectedItems: () => selected }),
+        Items: {
+          async getAsync(id) {
+            await onRead(id);
+            return items.get(id);
+          },
+        },
+      },
+      ztoolkit: { log() {} },
+    },
+    `
+      renderActiveStep = () => {};
+      export const inspection = {
+        setState: state => { activeTour = state; },
+        poll: pollImportTracking, notify: handleImportItemNotify,
+        submit: queueTrackedSummary, refresh: refreshTrackedTaskFromQueue,
+      };
+    `,
+  );
+  const state = {
+    index: 0,
+    steps: [{ id: "paper-area-drop" }, { id: "summary-task-progress" }],
+    trackedItemId: null,
+    trackedSummaryTaskId: null,
+    importStartedAt: Date.now(),
+  };
+  inspection.setState(state);
+  return {
+    inspection,
+    state,
+    queued,
+    tasks,
+    first,
+    second,
+    withoutPdf,
+    pdf,
+    note,
+    html,
+    select: (...items) => (selected = items),
+    onRead: (callback) => (onRead = callback),
+  };
+}
+
+test("explicit tutorial consent queues the currently selected PDF parent", async () => {
+  const host = selectionHost();
+  await host.inspection.poll(host.state);
+  host.select(host.second);
+  await host.inspection.submit();
+  assert.deepEqual(host.queued, [2]);
+  assert.equal(host.state.trackedItemId, 2);
+  assert.equal(host.state.trackedSummaryTaskId, "task-2");
+});
+
+test("selecting a PDF child queues its regular parent", async () => {
+  const host = selectionHost();
+  host.select(host.pdf);
+  await host.inspection.submit();
+  assert.deepEqual(host.queued, [1]);
+});
+
+test("tutorial consent reuses an existing summary task", async () => {
+  const host = selectionHost();
+  host.tasks.set("task-1", { id: "task-1", itemId: 1, createdAt: new Date() });
+  await host.inspection.submit();
+  assert.deepEqual(host.queued, []);
+  assert.equal(host.state.trackedSummaryTaskId, "task-1");
+});
+
+for (const selection of ["withoutPdf", "note", "html", "empty"]) {
+  test(`tutorial selection ${selection} clears the previous PDF instead of submitting it`, async () => {
+    const host = selectionHost();
+    await host.inspection.poll(host.state);
+    assert.equal(host.state.trackedItemId, 1);
+    host.tasks.set("task-1", {
+      id: "task-1",
+      itemId: 1,
+      createdAt: new Date(),
+    });
+    host.select(...(selection === "empty" ? [] : [host[selection]]));
+    await host.inspection.poll(host.state);
+    await host.inspection.notify(host.state, [host.pdf.id]);
+    host.inspection.refresh(host.state);
+    assert.equal(host.state.trackedItemId, null);
+    assert.equal(host.state.trackedSummaryTaskId, null);
+    await assert.rejects(host.inspection.submit, /onboarding-action-wait-pdf/);
+    assert.deepEqual(host.queued, []);
+  });
+}
+
+test("a selection change during PDF lookup cannot enqueue the old selection", async () => {
+  const host = selectionHost();
+  await host.inspection.poll(host.state);
+  host.onRead((id) => {
+    if (id === host.pdf.id) host.select(host.withoutPdf);
+  });
+  await assert.rejects(host.inspection.submit, /onboarding-action-wait-pdf/);
+  assert.deepEqual(host.queued, []);
+  assert.equal(host.state.trackedItemId, null);
+});
+
+test("leaving the import step during PDF lookup cancels tutorial enqueueing", async () => {
+  const host = selectionHost();
+  host.onRead(() => {
+    host.state.index = 1;
+  });
+  await assert.rejects(host.inspection.submit, /onboarding-action-wait-pdf/);
+  assert.deepEqual(host.queued, []);
+});
+
+test("a submitted summary remains tracked after library selection changes", async () => {
+  const host = selectionHost();
+  await host.inspection.submit();
+  host.state.index = 1;
+  host.select(host.second);
+  await host.inspection.poll(host.state);
+  await host.inspection.notify(host.state, [host.second.id]);
+  assert.equal(host.state.trackedItemId, 1);
+  assert.equal(host.state.trackedSummaryTaskId, "task-1");
+  assert.deepEqual(host.queued, [1]);
+});
+
+test("import notifications detect a newly attached PDF on the selected item", async () => {
+  const host = selectionHost();
+  host.select(host.withoutPdf);
+  await host.inspection.poll(host.state);
+  assert.equal(host.state.trackedItemId, null);
+  host.withoutPdf.getAttachments().push(host.pdf.id);
+  host.pdf.parentID = host.withoutPdf.id;
+  await host.inspection.notify(host.state, [host.pdf.id]);
+  assert.equal(host.state.trackedItemId, host.withoutPdf.id);
+  await host.inspection.submit();
+  assert.deepEqual(host.queued, [host.withoutPdf.id]);
+});
+
 test("late dashboard readiness migrates the deep-reading tutorial without another library event", async () => {
   const host = tutorialHost();
   await enterDeepRead(host);

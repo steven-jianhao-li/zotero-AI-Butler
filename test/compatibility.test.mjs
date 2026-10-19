@@ -86,6 +86,49 @@ for (const version of ["7.0.32", "8.0", "10.0.6", "11.0-beta.1"]) {
   });
 }
 
+for (const nativeGlobals of [false, true]) {
+  test(`modern startup without a main window resolves browser globals (${nativeGlobals ? "native" : "late windows"})`, async () => {
+    const { context, host } = bootstrapHost();
+    let mainWindow = null;
+    host.getMainWindow = () => mainWindow;
+    host.version = "7.0.32";
+    host.__addonInstance__ = host.AIButler;
+    host.PreferencePanes = { register() {} };
+    host.ItemPaneManager = { registerSection() {} };
+    host.ItemTreeManager = { registerColumn() {} };
+    host.Reader = { registerEventListener() {} };
+    const names = ["DOMParser", "XMLSerializer", "AbortController"];
+    const createConstructors = () =>
+      Object.fromEntries(names.map((name) => [name, class {}]));
+    const native = createConstructors();
+    Object.assign(context, {
+      Zotero: host,
+      IOUtils: {},
+      PathUtils: {},
+      Localization: function () {},
+      ChromeUtils: { importESModule: () => ({ setTimeout, clearTimeout }) },
+      ...(nativeGlobals ? native : {}),
+    });
+    vm.runInContext(await read("addon/bootstrap.js"), context);
+    await context.startup({ id: "test", rootURI: "file:///addon/" }, 1);
+    for (const name of names) {
+      assert.equal(
+        context.pluginScope[name],
+        nativeGlobals ? native[name] : undefined,
+      );
+    }
+    for (let windowNumber = 0; windowNumber < 2; windowNumber++) {
+      mainWindow = createConstructors();
+      for (const name of names) {
+        const constructor = nativeGlobals ? native[name] : mainWindow[name];
+        assert.equal(context.pluginScope[name], constructor);
+        assert.ok(new context.pluginScope[name]() instanceof constructor);
+      }
+    }
+    await context.shutdown({}, 4);
+  });
+}
+
 test("missing modern capabilities reject startup instead of selecting legacy", async () => {
   const { context, calls, host } = bootstrapHost();
   host.version = "10.0.6";

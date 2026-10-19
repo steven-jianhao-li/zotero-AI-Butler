@@ -107,14 +107,25 @@ async function startup(data, reason) {
     pluginScope.console = Zotero.getMainWindow()
       ? Zotero.getMainWindow().console
       : { log: Zotero.debug, error: Zotero.logError };
-    var mainWindow = Zotero.getMainWindow();
-    if (mainWindow) {
-      ["DOMParser", "XMLSerializer", "AbortController"].forEach(
-        function (name) {
-          if (mainWindow[name]) pluginScope[name] = mainWindow[name];
+    var nativeBrowserGlobals = {
+      DOMParser: typeof DOMParser === "undefined" ? undefined : DOMParser,
+      XMLSerializer:
+        typeof XMLSerializer === "undefined" ? undefined : XMLSerializer,
+      AbortController:
+        typeof AbortController === "undefined" ? undefined : AbortController,
+    };
+    Object.keys(nativeBrowserGlobals).forEach(function (name) {
+      // Startup can precede the first main window. Resolve window-only APIs
+      // when used, and avoid retaining constructors from a closed window.
+      Object.defineProperty(pluginScope, name, {
+        configurable: true,
+        get: function () {
+          if (nativeBrowserGlobals[name]) return nativeBrowserGlobals[name];
+          var mainWindow = Zotero.getMainWindow();
+          return mainWindow ? mainWindow[name] : undefined;
         },
-      );
-    }
+      });
+    });
     var timers = legacy
       ? Components.utils.import("resource://gre/modules/Timer.jsm")
       : ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs");

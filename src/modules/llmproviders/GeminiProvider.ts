@@ -1,3 +1,4 @@
+import { mergeRequestHeaders } from "./shared/requestHeaders";
 import { ILlmProvider } from "./ILlmProvider";
 import {
   ConversationMessage,
@@ -117,10 +118,13 @@ export class GeminiProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
+        headers: mergeRequestHeaders(
+          {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          options.customHeaders,
+        ),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -306,10 +310,13 @@ export class GeminiProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
+        headers: mergeRequestHeaders(
+          {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          options.customHeaders,
+        ),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
@@ -470,6 +477,7 @@ export class GeminiProvider implements ILlmProvider {
       url,
       { "x-goog-api-key": apiKey },
       options.requestTimeoutMs ?? 30000,
+      options.customHeaders,
     );
     return parseModelListResponse(data, { stripModelsPrefix: true });
   }
@@ -510,10 +518,13 @@ export class GeminiProvider implements ILlmProvider {
     const responseHeaders: Record<string, string> = {};
     try {
       response = await Zotero.HTTP.request("POST", url, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
+        headers: mergeRequestHeaders(
+          {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          options.customHeaders,
+        ),
         body: JSON.stringify(payload),
         errorDelayMax: 0,
         responseType: "text", // 使用 text 以获取原始响应
@@ -658,6 +669,7 @@ export class GeminiProvider implements ILlmProvider {
     displayName: string,
     apiKey: string,
     baseUrl: string,
+    customHeaders?: Record<string, string>,
   ): Promise<string> {
     // 读取文件内容
     const fileData = await IOUtils.read(filePath);
@@ -670,14 +682,17 @@ export class GeminiProvider implements ILlmProvider {
     let uploadUrl: string;
     try {
       const startResponse = await Zotero.HTTP.request("POST", startUploadUrl, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-          "X-Goog-Upload-Protocol": "resumable",
-          "X-Goog-Upload-Command": "start",
-          "X-Goog-Upload-Header-Content-Length": String(numBytes),
-          "X-Goog-Upload-Header-Content-Type": mimeType,
-        },
+        headers: mergeRequestHeaders(
+          {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+            "X-Goog-Upload-Protocol": "resumable",
+            "X-Goog-Upload-Command": "start",
+            "X-Goog-Upload-Header-Content-Length": String(numBytes),
+            "X-Goog-Upload-Header-Content-Type": mimeType,
+          },
+          customHeaders,
+        ),
         body: JSON.stringify({
           file: { display_name: displayName },
         }),
@@ -707,11 +722,14 @@ export class GeminiProvider implements ILlmProvider {
     // 步骤 2: 上传文件内容
     try {
       const uploadResponse = await Zotero.HTTP.request("POST", uploadUrl, {
-        headers: {
-          "Content-Length": String(numBytes),
-          "X-Goog-Upload-Offset": "0",
-          "X-Goog-Upload-Command": "upload, finalize",
-        },
+        headers: mergeRequestHeaders(
+          {
+            "Content-Length": String(numBytes),
+            "X-Goog-Upload-Offset": "0",
+            "X-Goog-Upload-Command": "upload, finalize",
+          },
+          customHeaders,
+        ),
         body: new Uint8Array(fileData),
         responseType: "json",
         timeout: 120000, // 文件上传可能需要更长时间
@@ -828,10 +846,13 @@ export class GeminiProvider implements ILlmProvider {
 
     try {
       await Zotero.HTTP.request("POST", endpoint, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
+        headers: mergeRequestHeaders(
+          {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          options.customHeaders,
+        ),
         body: JSON.stringify(payload),
         responseType: "text",
         timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),

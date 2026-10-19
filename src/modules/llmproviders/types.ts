@@ -36,6 +36,7 @@ export type LLMOptions = {
   apiUrl?: string;
   apiKey?: string;
   model?: string;
+  customHeaders?: Record<string, string>;
   stream?: boolean;
   requestTimeoutMs?: number;
   temperature?: number;

@@ -1,6 +1,7 @@
 import { getString } from "../../../utils/locale";
 import type { LLMModelInfo } from "../types";
 import { providerHttpRequestFailed } from "./localizedErrors";
+import { mergeRequestHeaders } from "./requestHeaders";
 
 export function deriveVersionedModelsUrl(
   apiUrl: string | undefined,
@@ -37,13 +38,14 @@ export async function requestModelListJson(
   url: string,
   headers: Record<string, string>,
   timeout = 30000,
+  customHeaders?: Record<string, string>,
 ): Promise<unknown> {
   try {
     const response = await Zotero.HTTP.request("GET", url, {
-      headers: {
-        Accept: "application/json",
-        ...headers,
-      },
+      headers: mergeRequestHeaders(
+        { Accept: "application/json", ...headers },
+        customHeaders,
+      ),
       responseType: "text",
       timeout,
       errorDelayMax: 0,

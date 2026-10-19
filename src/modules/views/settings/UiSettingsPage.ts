@@ -38,17 +38,19 @@ import {
 
 export class UiSettingsPage {
   private container: HTMLElement;
+  private readonly document: Document;
   private preview!: HTMLElement;
   private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
+    this.document = container.ownerDocument!;
   }
 
   public render(): void {
     this.container.innerHTML = "";
 
-    const title = Zotero.getMainWindow().document.createElement("h2");
+    const title = this.document.createElement("h2");
     title.textContent = getString("settings-ui-title");
     Object.assign(title.style, {
       color: "#59c0bc",
@@ -63,7 +65,7 @@ export class UiSettingsPage {
       createNotice(getString("settings-ui-description")),
     );
 
-    const form = Zotero.getMainWindow().document.createElement("div");
+    const form = this.document.createElement("div");
     Object.assign(form.style, { maxWidth: "820px" });
 
     // 自动滚动
@@ -352,7 +354,7 @@ export class UiSettingsPage {
     // 预览区域（移除字号预览，不再提供字体大小设置）
 
     // 按钮
-    const actions = Zotero.getMainWindow().document.createElement("div");
+    const actions = this.document.createElement("div");
     Object.assign(actions.style, {
       display: "flex",
       gap: "12px",
@@ -418,7 +420,7 @@ export class UiSettingsPage {
   }
 
   private createSettingsPanel(title: string, description: string): HTMLElement {
-    const doc = Zotero.getMainWindow().document;
+    const doc = this.document;
     const panel = doc.createElement("div");
     Object.assign(panel.style, {
       border: "1px solid var(--ai-border)",
@@ -459,7 +461,7 @@ export class UiSettingsPage {
     setOrder: (order: ContextMenuItemId[]) => void,
     onAutoSave?: () => void,
   ): HTMLElement {
-    const doc = Zotero.getMainWindow().document;
+    const doc = this.document;
     const panel = this.createSettingsPanel(
       getString("settings-ui-context-menu-title"),
       getString("settings-ui-context-menu-description"),
@@ -635,7 +637,7 @@ export class UiSettingsPage {
     setOrder: (order: SidebarModuleId[]) => void,
     onAutoSave?: () => void,
   ): HTMLElement {
-    const doc = Zotero.getMainWindow().document;
+    const doc = this.document;
     const panel = this.createSettingsPanel(
       getString("settings-ui-sidebar-modules-title"),
       getString("settings-ui-sidebar-modules-description"),
@@ -742,7 +744,7 @@ export class UiSettingsPage {
     onMoveUp: () => void,
     onMoveDown: () => void,
   ): HTMLElement {
-    const doc = Zotero.getMainWindow().document;
+    const doc = this.document;
     const orderControls = doc.createElement("div");
     Object.assign(orderControls.style, {
       display: "flex",
@@ -779,7 +781,7 @@ export class UiSettingsPage {
     title: string,
     disabled: boolean,
   ): HTMLButtonElement {
-    const doc = Zotero.getMainWindow().document;
+    const doc = this.document;
     const button = doc.createElement("button");
     button.type = "button";
     button.textContent = text;

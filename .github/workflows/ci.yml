@@ -46,6 +46,8 @@ jobs:
         run: npm run test:pdf
       - name: Check Sidebar viewport scrolling
         run: npm run test:sidebar
+      - name: Check Onboarding visibility
+        run: npm run test:onboarding
       - name: Upload build result
         uses: actions/upload-artifact@v4
         with:

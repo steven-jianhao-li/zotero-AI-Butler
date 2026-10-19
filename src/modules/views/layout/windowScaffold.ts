@@ -264,7 +264,7 @@ export function createSettingsScaffold<T extends string>(
     styles: {
       minHeight: "0",
       minWidth: "0",
-      overflow: "hidden",
+      overflow: "auto",
       padding: compact ? "12px 0" : "18px 0",
       borderRight: "1px solid var(--ai-border)",
       backgroundColor: "var(--ai-surface-2)",
@@ -280,7 +280,7 @@ export function createSettingsScaffold<T extends string>(
       minHeight: "0",
       minWidth: "0",
       overflowY: "auto",
-      overflowX: "hidden",
+      overflowX: "auto",
       padding: compact ? "18px 22px 28px" : "24px 28px 36px",
       backgroundColor: "var(--ai-surface)",
       boxSizing: "border-box",
@@ -335,6 +335,7 @@ export function createSettingsScaffold<T extends string>(
     (event: WheelEvent) => {
       if (
         !event.deltaY ||
+        canScrollInDirection(settingsSidebar, event.deltaY) ||
         !canScrollInDirection(settingsContent, event.deltaY)
       ) {
         return;

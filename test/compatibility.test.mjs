@@ -50,7 +50,14 @@ test("legacy asset transforms preserve modern bytes", async () => {
   }
 });
 
-for (const version of ["7.0.32", "8.0", "10.0.6", "11.0-beta.1"]) {
+for (const version of [
+  "7.0.32",
+  "8.0",
+  "10.0.6",
+  "11.0-beta.1",
+  "7.0.0-beta.95+build.1",
+  "11.0-beta.1+b551fb670",
+]) {
   test("modern host " + version + " never loads legacy polyfills", async () => {
     const { context, calls, host } = bootstrapHost();
     host.version = version;
@@ -187,7 +194,15 @@ test("failed modern startup releases its scope and chrome registration", async (
   assert.equal(context.pluginScope, null);
 });
 
-for (const version of [undefined, "", "unknown", "5.0.96", "7garbage"]) {
+for (const version of [
+  undefined,
+  "",
+  "unknown",
+  "5.0.96",
+  "7garbage",
+  "11.0-beta.1+",
+  "11.0-beta.1+build/invalid",
+]) {
   test(
     "unrecognized or unsupported version " +
       version +

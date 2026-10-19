@@ -29,7 +29,7 @@ import { getString } from "../utils/locale";
 import { getPref } from "../utils/prefs";
 import { NoteGenerator } from "./noteGenerator";
 import { ContentExtractor } from "./contentExtractor";
-import { PDFExtractor } from "./pdfExtractor";
+import { PDFExtractor, PDFTextExtractionError } from "./pdfExtractor";
 import type { LLMAbortSignal } from "./llmproviders/types";
 import { isAbortError } from "./llmproviders/shared/requestAbort";
 import { TaskArtifacts, type FixedTaskArtifactType } from "./taskArtifacts";
@@ -2620,7 +2620,7 @@ export class TaskQueueManager {
             ? `任务已终止: ${task.title}`
             : isNoPdfError
               ? `任务失败（无 PDF 附件）: ${task.title}`
-              : `任务失败（API 尝试已用尽，不再进行队列重试）: ${task.title}`,
+              : `任务失败（错误不适合自动重试）: ${task.title}`,
         );
       } else {
         task.retryCount++;
@@ -2679,6 +2679,7 @@ export class TaskQueueManager {
   }
 
   private shouldSuppressTaskRetry(error: unknown, task?: TaskItem): boolean {
+    if (PDFTextExtractionError.find(error)) return true;
     const value = error as
       | {
           name?: string;
@@ -2694,6 +2695,7 @@ export class TaskQueueManager {
   }
 
   private isLikelyApiFailure(error: unknown, task?: TaskItem): boolean {
+    if (PDFTextExtractionError.find(error)) return false;
     const message = this.getTaskErrorMessage(error);
     const stack =
       typeof (error as { stack?: unknown })?.stack === "string"
@@ -2739,6 +2741,7 @@ export class TaskQueueManager {
   }
 
   private buildTaskErrorDetails(task: TaskItem, error: unknown): string {
+    const extractionError = PDFTextExtractionError.find(error);
     const errorInfo = error as
       | {
           name?: string;
@@ -2785,8 +2788,10 @@ export class TaskQueueManager {
       lines.push(`providerId: ${errorInfo.providerId || unknownValue}`);
     }
 
-    if (errorInfo?.diagnosticText) {
-      lines.push("", "--- diagnosticText ---", errorInfo.diagnosticText);
+    const diagnosticText =
+      extractionError?.diagnosticText || errorInfo?.diagnosticText;
+    if (diagnosticText) {
+      lines.push("", "--- diagnosticText ---", diagnosticText);
     }
     if (errorInfo?.details) {
       lines.push(

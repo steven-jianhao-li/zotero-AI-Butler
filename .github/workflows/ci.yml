@@ -42,6 +42,8 @@ jobs:
         run: npm install
       - name: Run Build
         run: npm run build
+      - name: Check PDF extraction recovery
+        run: npm run test:pdf
       - name: Check Sidebar viewport scrolling
         run: npm run test:sidebar
       - name: Upload build result

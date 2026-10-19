@@ -17,7 +17,7 @@ import {
   type LLMPdfProcessMode,
 } from "./llmEndpointManager";
 import { ContentExtractor } from "./contentExtractor";
-import { PDFExtractor } from "./pdfExtractor";
+import { PDFExtractor, PDFTextExtractionError } from "./pdfExtractor";
 import type { TaskProgressMeta } from "./taskQueue";
 import { ProviderRegistry } from "./llmproviders/ProviderRegistry";
 import "./llmproviders";
@@ -926,6 +926,8 @@ export class LLMService {
         if (isAbortError(error, request.transport?.abortSignal)) {
           throw normalizeAbortError(error, request.transport?.abortSignal);
         }
+        const extractionError = PDFTextExtractionError.find(error);
+        if (extractionError) throw extractionError;
         LLMEndpointManager.markEndpointAttempted(endpoint.id);
         lastError = error instanceof Error ? error : new Error(String(error));
         ztoolkit.log(
@@ -1128,6 +1130,8 @@ export class LLMService {
         if (isAbortError(error, request.transport?.abortSignal)) {
           throw normalizeAbortError(error, request.transport?.abortSignal);
         }
+        const extractionError = PDFTextExtractionError.find(error);
+        if (extractionError) throw extractionError;
         lastError = error instanceof Error ? error : new Error(String(error));
         ztoolkit.log(
           `[LLMService] API failed via ${endpoint.name} (${attempt + 1}/${maxAttempts}): ${lastError.message}`,
@@ -1157,6 +1161,8 @@ export class LLMService {
         if (isAbortError(error, request.transport?.abortSignal)) {
           throw normalizeAbortError(error, request.transport?.abortSignal);
         }
+        const extractionError = PDFTextExtractionError.find(error);
+        if (extractionError) throw extractionError;
         LLMEndpointManager.markEndpointAttempted(endpoint.id);
         lastError = error instanceof Error ? error : new Error(String(error));
         ztoolkit.log(
@@ -1321,6 +1327,8 @@ export class LLMService {
         if (isAbortError(error, request.transport?.abortSignal)) {
           throw normalizeAbortError(error, request.transport?.abortSignal);
         }
+        const extractionError = PDFTextExtractionError.find(error);
+        if (extractionError) throw extractionError;
         lastError = error instanceof Error ? error : new Error(String(error));
         ztoolkit.log(
           `[LLMService] Chat API failed via ${endpoint.name} (${attempt + 1}/${maxAttempts}): ${lastError.message}`,
@@ -1490,6 +1498,7 @@ export class LLMService {
         policy,
         warnings,
         statusCallback,
+        abortSignal,
       );
     }
 
@@ -1499,6 +1508,7 @@ export class LLMService {
         policy,
         warnings,
         statusCallback,
+        abortSignal,
       );
     }
 
@@ -1627,7 +1637,10 @@ export class LLMService {
         selected.map(async (pdf, index) => {
           const title =
             String(pdf.getField("title") || "").trim() || "PDF-" + (index + 1);
-          const text = await PDFExtractor.extractTextFromAttachment(pdf);
+          const text = await PDFExtractor.extractTextFromAttachment(
+            pdf,
+            abortSignal,
+          );
           return "\n\n=== " + title + " ===\n" + this.normalizeText(text);
         }),
       );
@@ -1662,6 +1675,7 @@ export class LLMService {
       progress: number,
       meta?: TaskProgressMeta,
     ) => void,
+    abortSignal?: LLMAbortSignal,
   ): Promise<ResolvedContent> {
     if (policy === "pdf-base64") {
       const content = await PDFExtractor.extractBase64FromAttachment(
@@ -1676,8 +1690,12 @@ export class LLMService {
             input.item,
             "mineru",
             statusCallback,
+            { abortSignal },
           )
-        : await PDFExtractor.extractTextFromAttachment(input.attachment);
+        : await PDFExtractor.extractTextFromAttachment(
+            input.attachment,
+            abortSignal,
+          );
     return {
       mode: "single",
       content: this.normalizeText(text),
@@ -1695,6 +1713,7 @@ export class LLMService {
       progress: number,
       meta?: TaskProgressMeta,
     ) => void,
+    abortSignal?: LLMAbortSignal,
   ): Promise<ResolvedContent> {
     if (PDFExtractor.isPdfAttachment(input.attachment)) {
       return this.resolvePdfAttachmentContent(
@@ -1707,6 +1726,7 @@ export class LLMService {
         policy,
         warnings,
         statusCallback,
+        abortSignal,
       );
     }
 

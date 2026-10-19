@@ -39,6 +39,7 @@
     "i18n:check": "node ./scripts/check-i18n.mjs",
     "i18n:check:build": "node ./scripts/check-i18n-build.mjs",
     "test:i18n": "node ./scripts/check-i18n.mjs",
+    "test:pdf": "node --test test/pdfExtractionRecovery.test.mjs",
     "test:sidebar": "node --test test/sidebarViewport.test.mjs"
   },
   "dependencies": {

@@ -17,8 +17,9 @@ async function startup(data, reason) {
     Zotero = await waitForLegacyHost();
     if (!Zotero) return;
   }
+  // Zotero beta builds may append a +revision or dotted build identifier.
   var versionMatch =
-    /^(\d+)(?:\.\d+)*(?:[-.](?:beta|dev|alpha|rc)[\w.-]*)?$/.exec(
+    /^(\d+)(?:\.\d+)*(?:[-.](?:beta|dev|alpha|rc)[\w.-]*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(
       String(Zotero.version),
     );
   var majorVersion = versionMatch ? Number(versionMatch[1]) : 0;

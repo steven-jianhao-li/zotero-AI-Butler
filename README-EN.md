@@ -33,19 +33,23 @@ Are these problems blocking your literature reading?
 
 Do not worry. Your dedicated AI Butler, `Zotero-AI-Butler`, is here.
 
-It is your always-on, tireless, and loyal research assistant. Add papers to Zotero as usual, and leave the repetitive work to it. The Butler automatically performs close reading, breaks down the paper, and turns it into structured notes so you can quickly understand the paper. Version 3.0 introduced "One-Image Summary", generating academic-poster-style summaries with Nano Banana Pro.
+It is your always-on, tireless, and loyal research assistant. Add papers to Zotero as usual, and leave the repetitive work to it. The Butler automatically performs close reading, breaks down the paper, and turns it into structured notes so you can quickly understand the paper.
+
+**Version 5.0 introduces the AI Butler Agent: your personal butler can now find papers, read them, and carry out research on your behalf!**
+
+![AI Butler Agent](./assets/images/Agent功能.png)
 
 ## 🎖️ Core Features
 
-1. **Automated processing**: Automatically scans newly added PDF papers, uses LLMs to generate structured Markdown notes, and saves them alongside the Zotero item for later review.
-2. **Close paper reading**: If paper summaries help you read a paper "thin", close reading helps you read it "thick". Great papers deserve chapter-by-chapter reading. The Butler expands the background, methods, experiments, and conclusions layer by layer to help you dig into details and understand the ideas.
-3. **Multimodal support**: Supports Base64 PDF upload, preserving formulas, figures, tables, and complex layouts. Chinese and English papers are supported, and even image-only PDFs can be read and summarized.
-4. **One-Image Summary**: Summarize a paper with one image. Use Nano Banana Pro to generate an academic-poster-style image for each paper, helping you build a quick mental knowledge map. One image can be worth a thousand words.
-5. **Mind maps**: Automatically generates paper mind maps and visualizes the hierarchy of long papers. Supports zooming, PNG export, and OPML outline export for reuse in other tools.
-6. **Multi-paper literature review**: Right-click a collection to analyze multiple papers, automatically generate a literature review report, create an independent report item, and link all original PDFs.
-7. **Immersive reading**: Built-in AI Butler sidebar with LaTeX rendering and follow-up questions. Read the original paper, view explanations, and ask the LLM questions at any time. You can also pin the AI Butler sidebar so switching papers does not interrupt your flow.
-8. **Open-source platform**: AI Butler aims to provide a free and customizable intelligent paper-management platform. All prompts can be customized; how to read papers is up to you. Multiple LLM APIs are supported; which model to use is also up to you. AI Butler itself has no paid channel.
-9. **Research Agent**: Search your library autonomously, progressively read existing notes, and delegate original PDF reading to a separate model. Supports context compaction and read-only research teammates. Library organization uses explicit approval or an elevated permission mode. [Usage guide](./docs/agent.md)
+1. **AI Butler Agent (new in 5.0)**: Your personal butler can now carry out research on its own: you ask the questions, and it finds papers, checks the evidence, and brings you answers! [Usage guide](./docs/agent.md)
+2. **Automated processing**: Automatically scans newly added PDF papers, uses LLMs to generate structured Markdown notes, and saves them alongside the Zotero item for later review.
+3. **Close paper reading**: If paper summaries help you read a paper "thin", close reading helps you read it "thick". Great papers deserve chapter-by-chapter reading. The Butler expands the background, methods, experiments, and conclusions layer by layer to help you dig into details and understand the ideas.
+4. **Multimodal support**: Supports Base64 PDF upload, preserving formulas, figures, tables, and complex layouts. Chinese and English papers are supported, and even image-only PDFs can be read and summarized.
+5. **One-Image Summary**: Summarize a paper with one image. Use Nano Banana Pro to generate an academic-poster-style image for each paper, helping you build a quick mental knowledge map. One image can be worth a thousand words.
+6. **Mind maps**: Automatically generates paper mind maps and visualizes the hierarchy of long papers. Supports zooming, PNG export, and OPML outline export for reuse in other tools.
+7. **Multi-paper literature review**: Right-click a collection to analyze multiple papers, automatically generate a literature review report, create an independent report item, and link all original PDFs.
+8. **Immersive reading**: Built-in AI Butler sidebar with LaTeX rendering and follow-up questions. Read the original paper, view explanations, and ask the LLM questions at any time. You can also pin the AI Butler sidebar so switching papers does not interrupt your flow.
+9. **Open-source platform**: AI Butler aims to provide a free and customizable intelligent paper-management platform. All prompts can be customized; how to read papers is up to you. Multiple LLM APIs are supported; which model to use is also up to you. AI Butler itself has no paid channel.
 
 ![AI Butler preview](./assets/images/AI管家直观效果.png)
 
@@ -56,6 +60,14 @@ Google Gemini 3 Pro is recommended for paper summarization. Gemini explanations 
 > **You focus on thinking; `Zotero-AI-Butler` clears the reading obstacles.**
 
 ## ✨ Feature Overview
+
+### ✦ AI Butler Agent (New in 5.0)
+
+Version 5.0 introduces the AI Butler Agent: your personal butler can now find papers, read them, and carry out research on your behalf!
+
+AI Butler preserves the native Base64 PDF reading capability that coding agents strip away, letting the model process figures and formulas directly, with planning, tool use, agent teamwork, and context compaction all included!
+
+Just ask your research question and leave the rest to your Butler! [Usage guide (Chinese)](./docs/agent.md)
 
 ### 1. Intelligent Note Generation and Review
 
@@ -101,11 +113,14 @@ AI Butler has a main page for managing tasks and configuration. Open it in eithe
 a. Zotero top menu: Edit -> Settings -> AI Butler tab.
 b. Right-click any item -> AI Butler Dashboard.
 
-The dashboard mainly includes these pages:
+The main interface has five pages: Dashboard, AI Summary, Agent, Task Queue, and Quick Settings.
 
 - Dashboard: statistics and quick actions.
 
 ![Dashboard page](./assets/images/仪表盘页面.png)
+
+- AI Summary: browse and read generated paper notes.
+- AI Butler Agent (Agent tab, new in 5.0): ask your Butler a research question and follow its answers and progress. The tab sits between AI Summary and Task Queue.
 
 - Task Queue: manage and monitor all paper analysis tasks. Paper analysis follows a producer-consumer workflow. You can view pending, running, completed, or failed tasks here.
 
@@ -310,6 +325,8 @@ In Quick Settings -> Mind Map, configure:
 3. Enable auto-scan: go to UI Settings and check Auto-scan new literature.
 
 > Now, when you drag in a new PDF paper, AI Butler will generate close-reading notes in about one minute, depending on model speed.
+
+**Try the AI Butler Agent**: Open the **Agent** tab in the dashboard, choose a model that supports tool calling, and tell your Butler what you want to research. [Usage guide (Chinese)](./docs/agent.md)
 
 ### Contributors
 

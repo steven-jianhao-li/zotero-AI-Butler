@@ -264,7 +264,7 @@ const sidebarWorkspaceResizeObservers = new WeakMap<
 const sidebarWorkspaceMenuCleanups = new WeakMap<HTMLElement, () => void>();
 const SIDEBAR_SUMMARY_SELECTION_PREF = "sidebarSelectedSummaryBlockIds" as any;
 
-type SidebarTabId = "summary" | "chat" | "deepRead" | "quickRead";
+type SidebarTabId = "summary" | "chat" | "deepRead" | "mindmap" | "quickRead";
 
 type SidebarTabDefinition = {
   id: SidebarTabId;
@@ -275,12 +275,6 @@ type SidebarTabDefinition = {
 
 const SIDEBAR_TAB_DEFINITIONS: SidebarTabDefinition[] = [
   {
-    id: "summary",
-    labelKey: "itempane-tab-summary",
-    icon: "✦",
-    isAvailable: () => isSidebarModuleEnabled("note"),
-  },
-  {
     id: "chat",
     labelKey: "itempane-tab-chat",
     icon: "◌",
@@ -289,19 +283,28 @@ const SIDEBAR_TAB_DEFINITIONS: SidebarTabDefinition[] = [
       isSidebarModuleEnabled("quickChat"),
   },
   {
+    id: "mindmap",
+    labelKey: "itempane-tab-mindmap",
+    icon: "🧠",
+    isAvailable: () => isSidebarModuleEnabled("mindmap"),
+  },
+  {
     id: "deepRead",
     labelKey: "itempane-tab-deep-read",
     icon: "◇",
     isAvailable: () => isSidebarModuleEnabled("deepRead"),
   },
   {
+    id: "summary",
+    labelKey: "itempane-tab-summary",
+    icon: "✦",
+    isAvailable: () => isSidebarModuleEnabled("note"),
+  },
+  {
     id: "quickRead",
     labelKey: "itempane-tab-quick-read",
     icon: "⌁",
-    isAvailable: () =>
-      isSidebarModuleEnabled("table") ||
-      isSidebarModuleEnabled("mindmap") ||
-      isSidebarModuleEnabled("imageSummary"),
+    isAvailable: () => isSidebarModuleEnabled("imageSummary"),
   },
 ];
 
@@ -1099,7 +1102,7 @@ function renderItemPaneSection(
   content.className = "ai-butler-sidebar-content";
 
   const preferredActiveTab = String(
-    (getPref("sidebarActiveTab" as any) as string) || "",
+    getPref("sidebarActiveTab") || "chat",
   ) as SidebarTabId;
   let activeTab = tabs.some((tab) => tab.id === preferredActiveTab)
     ? preferredActiveTab
@@ -1108,7 +1111,7 @@ function renderItemPaneSection(
   const activateTab = (tabId: SidebarTabId): void => {
     if (!panels.has(tabId)) return;
     activeTab = tabId;
-    setPref("sidebarActiveTab" as any, activeTab as any);
+    setPref("sidebarActiveTab", activeTab);
 
     for (const tab of tabs) {
       const isActive = tab.id === activeTab;
@@ -1573,6 +1576,11 @@ function ensureSidebarWorkspaceStyles(doc: Document): void {
     }
 
     .ai-butler-sidebar-tab-panel[data-tab-id="chat"],
+    .ai-butler-sidebar-tab-panel[data-tab-id="mindmap"] {
+      overflow: hidden;
+      overscroll-behavior: contain;
+    }
+
     .ai-butler-sidebar-tab-panel[data-tab-id="quickRead"] {
       overflow-y: auto;
       overflow-x: hidden;
@@ -1701,10 +1709,11 @@ function applySidebarTabOverflow(
 
   moreWrap.style.display = "block";
   const hidePriority: SidebarTabId[] = [
-    "deepRead",
-    "chat",
-    "summary",
     "quickRead",
+    "summary",
+    "deepRead",
+    "mindmap",
+    "chat",
   ];
   const orderedTabs = hidePriority
     .map((id) => tabs.find((tab) => tab.id === id))
@@ -1713,7 +1722,6 @@ function applySidebarTabOverflow(
   for (const tab of orderedTabs) {
     if (fits()) break;
     if (tab.id === activeTab && visibleTabs.size > 1) continue;
-    if (tab.id === "quickRead" && visibleTabs.size > 2) continue;
     const button = tabButtons.get(tab.id);
     const menuItem = overflowMenuItems.get(tab.id);
     if (!button || !menuItem) continue;
@@ -1761,13 +1769,10 @@ function renderSidebarTabPanel(
     case "deepRead":
       renderNoteSection(panel, doc, item, "deepRead", { mode: "page" });
       break;
+    case "mindmap":
+      renderMindmapSection(panel, doc, item, { mode: "page" });
+      break;
     case "quickRead":
-      if (isSidebarModuleEnabled("table")) {
-        renderTableSection(panel, doc, item);
-      }
-      if (isSidebarModuleEnabled("mindmap")) {
-        renderMindmapSection(panel, doc, item);
-      }
       if (isSidebarModuleEnabled("imageSummary")) {
         renderImageSummarySection(panel, doc, item);
       }
@@ -3176,10 +3181,27 @@ function renderMindmapSection(
   body: HTMLElement,
   doc: Document,
   item: Zotero.Item,
+  options: { mode?: "card" | "page" } = {},
 ): void {
+  const isPageMode = options.mode === "page";
   const mindmapSection = doc.createElement("div");
   mindmapSection.className = "ai-butler-mindmap-section";
-  mindmapSection.style.cssText = `
+  mindmapSection.style.cssText = isPageMode
+    ? `
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    overflow: hidden;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  `
+    : `
     margin-bottom: 12px;
     margin-top: 12px;
     border: 1px solid #e0e0e0;
@@ -3229,7 +3251,24 @@ function renderMindmapSection(
   // 思维导图容器
   const mindmapContainer = doc.createElement("div");
   mindmapContainer.id = "ai-butler-mindmap-container";
-  mindmapContainer.style.cssText = `
+  mindmapContainer.style.cssText = isPageMode
+    ? `
+    padding: 10px;
+    text-align: center;
+    background: transparent;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  `
+    : `
     padding: 10px;
     text-align: center;
     background: transparent;
@@ -3271,7 +3310,7 @@ function renderMindmapSection(
   body.appendChild(mindmapSection);
 
   // 异步加载思维导图
-  loadMindmapContent(doc, item, mindmapContainer);
+  void loadMindmapContent(doc, item, mindmapContainer, options);
 }
 
 /**
@@ -3281,7 +3320,9 @@ async function loadMindmapContent(
   doc: Document,
   item: Zotero.Item,
   container: HTMLElement,
+  options: { mode?: "card" | "page" } = {},
 ): Promise<void> {
+  const isPageMode = options.mode === "page";
   try {
     // Avoid accumulating message listeners across re-renders/refreshes
     const mindmapWin: any = doc.defaultView;
@@ -3466,7 +3507,18 @@ async function loadMindmapContent(
       // 创建 iframe 容器
       const iframeWrapper = doc.createElement("div");
       iframeWrapper.id = "ai-butler-mindmap-wrapper";
-      iframeWrapper.style.cssText = `
+      iframeWrapper.style.cssText = isPageMode
+        ? `
+        width: 100%;
+        height: 100%;
+        flex: 1 1 auto;
+        min-height: 0;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #fafafa;
+      `
+        : `
         width: 100%;
         height: ${savedMindmapHeight}px;
         min-height: 100px;
@@ -3668,13 +3720,15 @@ async function loadMindmapContent(
       iframeWrapper.appendChild(iframe);
       container.appendChild(iframeWrapper);
 
-      // 创建高度调整手柄
-      const resizeHandle = createResizeHandle(
-        doc,
-        iframeWrapper,
-        "sidebarMindmapHeight",
-      );
-      container.appendChild(resizeHandle);
+      // Page mode fills the tab. The card keeps a draggable height.
+      if (!isPageMode) {
+        const resizeHandle = createResizeHandle(
+          doc,
+          iframeWrapper,
+          "sidebarMindmapHeight",
+        );
+        container.appendChild(resizeHandle);
+      }
 
       ztoolkit.log("[AI-Butler] 思维导图 iframe 创建成功");
     } catch (renderError: any) {
@@ -3951,7 +4005,7 @@ function renderChatArea(
     max-inline-size: 100%;
     min-width: 0;
     min-inline-size: 0;
-    ${isPageMode ? "height: 100%; min-height: 0; flex: 1 1 auto;" : ""}
+    ${isPageMode ? "min-height: 0; flex: 1 1 auto;" : ""}
     contain: inline-size;
     border: 1px solid rgba(89, 192, 188, 0.22);
     border-radius: 10px;

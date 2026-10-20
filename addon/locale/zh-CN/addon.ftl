@@ -23,6 +23,7 @@ library-toolbar-ai-butler = AI 管家
 itempane-tab-summary = 总结
 itempane-tab-chat = 对话
 itempane-tab-deep-read = 精读
+itempane-tab-mindmap = 思维导图
 itempane-tab-quick-read = 快读
 itempane-no-enabled-tabs = 当前没有启用的 AI 管家侧边栏标签
 itempane-refresh-tooltip = 重新渲染 AI 管家侧边栏

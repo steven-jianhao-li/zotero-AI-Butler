@@ -127,12 +127,13 @@ pref(
 );
 pref(
   "__prefsPrefix__.sidebarModuleVisibility",
-  '{"actionButtons":true,"note":true,"table":true,"imageSummary":true,"mindmap":true,"quickChat":true}',
+  '{"actionButtons":true,"note":false,"deepRead":true,"table":false,"imageSummary":false,"mindmap":true,"quickChat":true}',
 );
 pref(
   "__prefsPrefix__.sidebarModuleOrder",
-  '["actionButtons","note","table","imageSummary","mindmap","quickChat"]',
+  '["actionButtons","note","deepRead","table","imageSummary","mindmap","quickChat"]',
 );
+pref("__prefsPrefix__.sidebarActiveTab", "chat");
 pref("__prefsPrefix__.sidebarNoteCollapsed", false);
 pref("__prefsPrefix__.sidebarImageCollapsed", false);
 pref("__prefsPrefix__.quickChatSuppressNewConversationWarning", false);

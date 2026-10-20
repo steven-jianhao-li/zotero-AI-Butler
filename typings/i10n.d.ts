@@ -663,6 +663,7 @@ export type FluentMessageId =
   | 'itempane-stopping'
   | 'itempane-tab-chat'
   | 'itempane-tab-deep-read'
+  | 'itempane-tab-mindmap'
   | 'itempane-tab-quick-read'
   | 'itempane-tab-summary'
   | 'itempane-table-badge-filled'

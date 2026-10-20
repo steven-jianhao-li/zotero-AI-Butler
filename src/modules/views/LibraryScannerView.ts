@@ -19,6 +19,7 @@
 
 import { BaseView } from "./BaseView";
 import { AiNoteService, type AiNoteKind } from "../aiNoteService";
+import { ContentExtractor } from "../contentExtractor";
 import { TaskQueueManager } from "../taskQueue";
 import { MainWindow } from "./MainWindow";
 import { getString } from "../../utils/locale";
@@ -70,6 +71,7 @@ export class LibraryScannerView extends BaseView {
   private taskQueueManager: TaskQueueManager;
   private activeScanId: number = 0;
   private scanTarget: AiNoteKind = "summary";
+  private isEnqueuing = false;
   private readonly scannerInfoId = "scanner-info";
   private readonly scannerConfirmButtonId = "scanner-confirm-btn";
 
@@ -213,7 +215,7 @@ export class LibraryScannerView extends BaseView {
     }) as HTMLButtonElement;
 
     confirmButton.addEventListener("click", () => {
-      this.handleConfirm();
+      void this.handleConfirm();
     });
 
     buttonContainer.appendChild(cancelButton);
@@ -515,6 +517,20 @@ export class LibraryScannerView extends BaseView {
 
       const item = await this.getLoadedItem(itemID);
       if (!item || !this.shouldScanItem(item)) {
+        skippedCount++;
+        continue;
+      }
+
+      try {
+        if (!(await ContentExtractor.hasUsableAnalyzableAttachment(item))) {
+          skippedCount++;
+          continue;
+        }
+      } catch (error) {
+        this.log(
+          `[LibraryScanner] 检查可分析附件失败，已跳过: item=${this.getItemDebugID(item)}`,
+          error,
+        );
         skippedCount++;
         continue;
       }
@@ -1602,10 +1618,11 @@ export class LibraryScannerView extends BaseView {
     // 更新按钮状态
     const confirmButton = this.getConfirmButton();
     if (confirmButton) {
-      confirmButton.disabled = this.selectedCount === 0;
-      confirmButton.style.opacity = this.selectedCount === 0 ? "0.5" : "1";
-      confirmButton.style.cursor =
-        this.selectedCount === 0 ? "not-allowed" : "pointer";
+      confirmButton.disabled = this.isEnqueuing || this.selectedCount === 0;
+      confirmButton.style.opacity = confirmButton.disabled ? "0.5" : "1";
+      confirmButton.style.cursor = confirmButton.disabled
+        ? "not-allowed"
+        : "pointer";
     }
   }
 
@@ -1635,7 +1652,8 @@ export class LibraryScannerView extends BaseView {
   /**
    * 处理确认操作
    */
-  private handleConfirm(): void {
+  private async handleConfirm(): Promise<void> {
+    if (this.isEnqueuing) return;
     const selectedItems = this.collectSelectedItems(this.treeRoot);
 
     if (selectedItems.length === 0) {
@@ -1648,31 +1666,63 @@ export class LibraryScannerView extends BaseView {
       return;
     }
 
-    // 批量添加到对应队列
-    for (const item of selectedItems) {
-      if (this.scanTarget === "summary") {
-        this.taskQueueManager.addTask(item, false, { summaryMode: "single" });
-      } else {
-        this.taskQueueManager.addDeepReadTask(item, false, {
-          summaryMode: "deepRead",
-        });
-      }
-    }
+    this.isEnqueuing = true;
+    this.updateSelectedCount();
+    const targetLabel = this.getScanTargetLabel();
+    try {
+      const taskIds = await this.taskQueueManager.addTasks(
+        selectedItems,
+        false,
+        {
+          summaryMode: this.scanTarget === "summary" ? "single" : "deepRead",
+        },
+      );
 
-    new ztoolkit.ProgressWindow(getString("app-name"))
-      .createLine({
+      if (taskIds.length === 0) {
+        new ztoolkit.ProgressWindow(getString("app-name"))
+          .createLine({
+            text: getString("content-error-no-usable-attachment"),
+            type: "default",
+          })
+          .show();
+        return;
+      }
+
+      const progressWin = new ztoolkit.ProgressWindow(getString("app-name"));
+      progressWin.createLine({
         text: getString("library-scanner-queue-added", {
-          args: {
-            count: selectedItems.length,
-            target: this.getScanTargetLabel(),
-          },
+          args: { count: taskIds.length, target: targetLabel },
         }),
         type: "success",
-      })
-      .show();
+      });
+      const skippedCount = selectedItems.length - taskIds.length;
+      if (skippedCount > 0) {
+        progressWin.createLine({
+          text: getString("queue-items-without-content-skipped", {
+            args: { count: skippedCount },
+          }),
+          type: "default",
+        });
+      }
+      progressWin.show();
 
-    // 切换到任务队列视图
-    MainWindow.getInstance().switchTab("tasks");
+      MainWindow.getInstance().switchTab("tasks");
+    } catch (error) {
+      this.log("[LibraryScanner] 批量添加任务失败", error);
+      new ztoolkit.ProgressWindow(getString("app-name"))
+        .createLine({
+          text: getString("library-scanner-queue-failed", {
+            args: {
+              error: error instanceof Error ? error.message : String(error),
+            },
+          }),
+          type: "fail",
+        })
+        .show();
+    } finally {
+      this.isEnqueuing = false;
+      this.updateSelectedCount();
+    }
   }
 
   /**

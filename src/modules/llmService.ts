@@ -29,6 +29,7 @@ import {
 } from "./llmproviders/shared/reasoning";
 import { sanitizeLLMOutputText } from "./llmproviders/shared/outputSanitizer";
 import { requestAgentTurn } from "./llmproviders/shared/agentTransport";
+import { parseCustomRequestHeaders } from "./llmproviders/shared/requestHeaders";
 import type {
   LLMAgentMessage,
   LLMAgentTurn,
@@ -387,6 +388,7 @@ export class LLMService {
       common.apiUrl = endpoint.apiUrl.trim();
       common.apiKey = endpoint.apiKey.trim();
       common.model = endpoint.model.trim();
+      common.customHeaders = parseCustomRequestHeaders(endpoint.customHeaders);
     } else if (id.includes("gemini") || id === "google") {
       const keyManagerId = this.mapToKeyManagerId(id);
       common.apiUrl = (

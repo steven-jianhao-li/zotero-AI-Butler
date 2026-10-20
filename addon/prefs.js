@@ -56,7 +56,11 @@ pref("__prefsPrefix__.stream", true);
 pref("__prefsPrefix__.enablePromptCacheOptimization", true);
 pref("__prefsPrefix__.requestTimeout", "300000"); // 5分钟超时
 pref("__prefsPrefix__.autoContinuationRounds", "2");
-// MINERU API KEY
+// MinerU service configuration
+pref("__prefsPrefix__.mineruServiceMode", "official");
+pref("__prefsPrefix__.mineruCustomApiUrl", "");
+pref("__prefsPrefix__.mineruCustomApiFormat", "file-parse");
+pref("__prefsPrefix__.mineruCustomApiKey", "");
 pref("__prefsPrefix__.mineruApiKey", "");
 pref("__prefsPrefix__.mineruModelVersion", "vlm");
 pref("__prefsPrefix__.mineruSaveMarkdown", false);

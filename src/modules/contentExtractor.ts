@@ -157,12 +157,10 @@ export class ContentExtractor {
     attachment: Zotero.Item,
   ): Promise<boolean> {
     try {
-      const file = await (attachment as any).getFile?.();
-      if (file) return true;
-
+      // getFile() 返回文件句柄并不保证文件存在，尤其是已删除的链接附件。
       const filePath =
-        (await (attachment as any).getFilePathAsync?.()) ||
-        (attachment as any).getFilePath?.() ||
+        (await attachment.getFilePathAsync?.()) ||
+        attachment.getFilePath?.() ||
         "";
       if (!filePath) return false;
       return typeof IOUtils !== "undefined"

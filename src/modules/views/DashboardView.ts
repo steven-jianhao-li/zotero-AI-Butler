@@ -106,6 +106,8 @@ export class DashboardView extends BaseView {
   /** 完成回调取消函数 */
   private unsubscribeComplete: (() => void) | null = null;
 
+  private refreshScheduled = false;
+
   /**
    * 构造函数
    */
@@ -154,6 +156,7 @@ export class DashboardView extends BaseView {
    * @protected
    */
   protected onDestroy(): void {
+    this.refreshScheduled = false;
     // 取消任务队列回调
     if (this.unsubscribeProgress) {
       this.unsubscribeProgress();
@@ -1008,6 +1011,17 @@ export class DashboardView extends BaseView {
 
   // ==================== 任务队列事件处理 ====================
 
+  /** 批量入队时合并进度通知触发的仪表盘刷新。 */
+  private scheduleRefreshData(): void {
+    if (this.refreshScheduled) return;
+    this.refreshScheduled = true;
+    void Promise.resolve().then(() => {
+      if (!this.refreshScheduled) return;
+      this.refreshScheduled = false;
+      this.refreshData();
+    });
+  }
+
   /**
    * 处理任务进度更新
    *
@@ -1021,7 +1035,7 @@ export class DashboardView extends BaseView {
     ztoolkit.log(`任务进度: ${taskId} - ${progress}% - ${message}`);
 
     // 刷新数据以更新状态
-    this.refreshData();
+    this.scheduleRefreshData();
   }
 
   /**
@@ -1050,7 +1064,7 @@ export class DashboardView extends BaseView {
     }
 
     // 刷新数据
-    this.refreshData();
+    this.scheduleRefreshData();
 
     // 显示通知
     if (success) {

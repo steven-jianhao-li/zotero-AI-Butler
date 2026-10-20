@@ -31,6 +31,7 @@ import {
   isChatAbortError,
   type ChatAbortControllerLike,
 } from "./chatContext";
+import { chatPersist } from "./chatPersist";
 import {
   buildQuickChatQuestionWithRelatedContext,
   createQuickChatRelatedContextSignature,
@@ -62,6 +63,7 @@ import katex from "katex";
 // 侧边栏聊天状态类型
 interface ChatState {
   itemId: number | null;
+  threadId: string | null;
   pdfContent: string;
   isBase64: boolean;
   relatedItems: QuickChatRelatedItemRef[];
@@ -204,6 +206,7 @@ const SIDEBAR_NOTE_OVERFLOW_GUARD_CSS = `
 // 当前聊天状态
 let currentChatState: ChatState = {
   itemId: null,
+  threadId: null,
   pdfContent: "",
   isBase64: false,
   relatedItems: [],
@@ -849,7 +852,9 @@ export function registerItemPaneSection(
  *
  * 设置页保存侧边栏显示/排序后调用，避免用户需要重新选择文献才能看到变化。
  */
-export async function refreshCurrentItemPaneSection(): Promise<void> {
+export async function refreshCurrentItemPaneSection(options?: {
+  force?: boolean;
+}): Promise<void> {
   if (!sidebarRenderContext) return;
   if (sidebarNoteEditState) {
     const doc = sidebarRenderContext.body.ownerDocument;
@@ -881,17 +886,71 @@ export async function refreshCurrentItemPaneSection(): Promise<void> {
   }
 
   if (!item) return;
-  renderItemPaneSection(body, item, handleOpenAIChat);
+  renderItemPaneSection(body, item, handleOpenAIChat, options);
 }
 
 /**
  * 渲染条目面板侧边栏内容
  */
+function sidebarHasQuickChat(body: HTMLElement): boolean {
+  return !!body.querySelector("#ai-butler-inline-chat");
+}
+
+function persistActiveQuickChatThread(): void {
+  try {
+    if (currentChatState.itemId != null && currentChatState.threadId) {
+      chatPersist.saveMessages(
+        currentChatState.itemId,
+        currentChatState.threadId,
+        currentChatState.conversationHistory,
+      );
+    }
+  } catch (err) {
+    ztoolkit.log("[AI-Butler] ChatPersist save failed:", err);
+  }
+}
+
+function resetQuickChatState(itemId: number | null): void {
+  currentChatState = {
+    itemId,
+    threadId: null,
+    pdfContent: "",
+    isBase64: false,
+    relatedItems: [],
+    relatedMode: "summary",
+    relatedContextSignature: "",
+    relatedContextIncludedCount: 0,
+    conversationHistory: [],
+    isChatting: false,
+    abortController: null,
+    savedPairIds: new Set(),
+  };
+}
+
 function renderItemPaneSection(
   body: HTMLElement,
   item: Zotero.Item | undefined,
   handleOpenAIChat: (itemId: number) => Promise<void>,
+  options?: { force?: boolean },
 ): void {
+  // Item-pane re-renders must not wipe an in-flight or already restored chat.
+  if (
+    !options?.force &&
+    item &&
+    item.isRegularItem() &&
+    currentChatState.itemId === item.id &&
+    body.childNodes.length > 0 &&
+    (currentChatState.isChatting || sidebarHasQuickChat(body))
+  ) {
+    sidebarRenderContext = {
+      body,
+      item,
+      itemId: item.id,
+      handleOpenAIChat,
+    };
+    return;
+  }
+
   cleanupSidebarWorkspace(body);
   body.innerHTML = "";
   const doc = body.ownerDocument;
@@ -920,6 +979,13 @@ function renderItemPaneSection(
 
   // 检查是否有有效的文献条目
   if (!item || !item.isRegularItem()) {
+    if (currentChatState.itemId != null) {
+      persistActiveQuickChatThread();
+      currentChatState.abortController?.abort(
+        getString("itempane-quick-chat-abort-item-switched"),
+      );
+      resetQuickChatState(null);
+    }
     setSidebarContext(doc, null);
     sidebarRenderContext = null;
     sidebarNoteEditState = null;
@@ -942,24 +1008,13 @@ function renderItemPaneSection(
     sidebarNoteEditState = null;
   }
 
-  // 重置聊天状态（如果切换了条目）
+  // 切换条目时先落盘上一篇的对话，再终止进行中的请求。
   if (currentChatState.itemId !== item.id) {
+    persistActiveQuickChatThread();
     currentChatState.abortController?.abort(
       getString("itempane-quick-chat-abort-item-switched"),
     );
-    currentChatState = {
-      itemId: item.id,
-      pdfContent: "",
-      isBase64: false,
-      relatedItems: [],
-      relatedMode: "summary",
-      relatedContextSignature: "",
-      relatedContextIncludedCount: 0,
-      conversationHistory: [],
-      isChatting: false,
-      abortController: null,
-      savedPairIds: new Set(),
-    };
+    resetQuickChatState(item.id);
   }
 
   const tabs = getAvailableSidebarTabs();
@@ -1002,7 +1057,7 @@ function renderItemPaneSection(
     refreshBtn.textContent = "…";
     refreshBtn.disabled = true;
     try {
-      await refreshCurrentItemPaneSection();
+      await refreshCurrentItemPaneSection({ force: true });
     } catch (err: any) {
       ztoolkit.log("[AI-Butler] 重新渲染侧边栏失败:", err);
     } finally {
@@ -1942,7 +1997,7 @@ function renderActionButtons(
     refreshBtn.textContent = "⏳";
     refreshBtn.style.pointerEvents = "none";
     try {
-      await refreshCurrentItemPaneSection();
+      await refreshCurrentItemPaneSection({ force: true });
     } catch (err: any) {
       ztoolkit.log("[AI-Butler] 重新渲染侧边栏失败:", err);
     } finally {
@@ -3854,17 +3909,35 @@ function renderChatArea(
   options: { mode?: "card" | "page" } = {},
 ): void {
   const isPageMode = options.mode === "page";
-  currentChatState.abortController?.abort(
-    getString("itempane-quick-chat-abort-refreshed"),
-  );
-  currentChatState.conversationHistory = [];
-  currentChatState.relatedItems = [];
-  currentChatState.relatedMode = "summary";
-  currentChatState.relatedContextSignature = "";
-  currentChatState.relatedContextIncludedCount = 0;
-  currentChatState.isChatting = false;
-  currentChatState.abortController = null;
-  currentChatState.savedPairIds = new Set();
+  const existingChat = body.querySelector("#ai-butler-inline-chat");
+  if (
+    currentChatState.isChatting &&
+    currentChatState.itemId === item.id &&
+    existingChat
+  ) {
+    return;
+  }
+  // Rebuilding the DOM while a reply is in flight is a real abort. A plain
+  // re-render keeps the saved thread instead of clearing it.
+  if (currentChatState.isChatting) {
+    currentChatState.abortController?.abort(
+      getString("itempane-quick-chat-abort-refreshed"),
+    );
+    currentChatState.isChatting = false;
+    currentChatState.abortController = null;
+  }
+  if (currentChatState.itemId !== item.id) {
+    currentChatState.itemId = item.id;
+    currentChatState.threadId = null;
+    currentChatState.conversationHistory = [];
+    currentChatState.pdfContent = "";
+    currentChatState.isBase64 = false;
+    currentChatState.relatedItems = [];
+    currentChatState.relatedMode = "summary";
+    currentChatState.relatedContextSignature = "";
+    currentChatState.relatedContextIncludedCount = 0;
+    currentChatState.savedPairIds = new Set();
+  }
   void ensureQuickChatKatexCss(doc);
 
   const chatArea = doc.createElement("div");
@@ -3979,6 +4052,34 @@ function renderChatArea(
     return button;
   };
 
+  const threadSelect = doc.createElement("select");
+  threadSelect.id = "ai-butler-chat-thread-select";
+  threadSelect.title = getString("itempane-quick-chat-thread-switch");
+  threadSelect.style.cssText = `
+    max-width: 120px;
+    height: 20px;
+    font-size: 10px;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    background: transparent;
+    color: inherit;
+    opacity: 0.85;
+  `;
+  const newThreadBtn = createQuickControlButton(
+    getString("itempane-quick-chat-thread-new"),
+    getString("itempane-quick-chat-thread-new-title"),
+  );
+  newThreadBtn.style.width = "auto";
+  newThreadBtn.style.padding = "0 4px";
+  newThreadBtn.style.fontSize = "10px";
+  const deleteThreadBtn = createQuickControlButton(
+    getString("itempane-quick-chat-thread-delete"),
+    getString("itempane-quick-chat-thread-delete-title"),
+  );
+  deleteThreadBtn.id = "ai-butler-chat-thread-delete";
+  deleteThreadBtn.style.width = "auto";
+  deleteThreadBtn.style.padding = "0 4px";
+  deleteThreadBtn.style.fontSize = "10px";
   const newConversationBtn = createQuickControlButton(
     "🧹",
     getString("itempane-quick-chat-new-conversation"),
@@ -3991,6 +4092,9 @@ function renderChatArea(
     "A+",
     getString("itempane-quick-chat-increase-font"),
   );
+  chatControls.appendChild(threadSelect);
+  chatControls.appendChild(newThreadBtn);
+  chatControls.appendChild(deleteThreadBtn);
   chatControls.appendChild(newConversationBtn);
   chatControls.appendChild(decreaseFontBtn);
   chatControls.appendChild(quickFontLabel);
@@ -4020,6 +4124,263 @@ function renderChatArea(
     user-select: text;
     cursor: text;
   `;
+
+  let quickChatBindGeneration = 0;
+
+  const syncQuickChatThreadControls = (): void => {
+    const busy = currentChatState.isChatting;
+    deleteThreadBtn.disabled = busy;
+    newThreadBtn.disabled = busy;
+    threadSelect.disabled = busy;
+    deleteThreadBtn.style.opacity = busy ? "0.45" : "0.75";
+    newThreadBtn.style.opacity = busy ? "0.45" : "0.75";
+  };
+
+  const renderPersistedMessages = (
+    messages: Array<{ role: string; content: string }>,
+  ): void => {
+    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+      return;
+    }
+    messagesArea.innerHTML = "";
+    const list = Array.isArray(messages) ? messages : [];
+    if (list.length === 0) {
+      messagesArea.innerHTML = `<div style="color: #777; text-align: center; padding: 10px;">${escapeHtmlForChat(getString("itempane-quick-chat-thread-empty"))}</div>`;
+      return;
+    }
+    let index = 0;
+    while (index < list.length) {
+      const message = list[index];
+      if (message.role !== "user") {
+        index += 1;
+        continue;
+      }
+      const question = message.content || "";
+      let answer = "";
+      if (index + 1 < list.length && list[index + 1].role === "assistant") {
+        answer = list[index + 1].content || "";
+        index += 2;
+      } else {
+        index += 1;
+      }
+      const pairWrapper = doc.createElement("div");
+      pairWrapper.className = "ai-butler-quick-chat-pair";
+      pairWrapper.setAttribute("data-pair-id", `restored_${index}`);
+      pairWrapper.style.cssText = `
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        margin-bottom: 12px;
+        padding: 8px;
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        border-radius: 8px;
+        background: transparent;
+        user-select: text;
+        cursor: text;
+      `;
+      const userMsgDiv = doc.createElement("div");
+      userMsgDiv.className = "ai-butler-quick-chat-user";
+      userMsgDiv.style.cssText = `
+        margin-bottom: 8px;
+        padding: 8px;
+        background: rgba(89, 192, 188, 0.1);
+        border-radius: 6px;
+        border-left: 3px solid #59c0bc;
+        user-select: text;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      `;
+      userMsgDiv.innerHTML = `<strong>${getString("itempane-user-label")}</strong> ${escapeHtmlForChat(question)}`;
+      pairWrapper.appendChild(userMsgDiv);
+      if (answer) {
+        const aiMsgDiv = doc.createElement("div");
+        aiMsgDiv.className = "ai-butler-quick-chat-assistant";
+        aiMsgDiv.style.cssText = `
+          margin-bottom: 8px;
+          padding: 8px;
+          background: rgba(128, 128, 128, 0.05);
+          border-radius: 6px;
+          border-left: 3px solid #667eea;
+          width: 100%;
+          max-width: 100%;
+          min-width: 0;
+          overflow-x: hidden;
+          user-select: text;
+        `;
+        updateQuickChatAssistantMessage(aiMsgDiv, answer);
+        pairWrapper.appendChild(aiMsgDiv);
+      }
+      messagesArea.appendChild(pairWrapper);
+    }
+    messagesArea.scrollTop = messagesArea.scrollHeight;
+  };
+
+  const refreshThreadSelect = (): void => {
+    const threads = chatPersist.listThreads(item.id);
+    const selectedId = currentChatState.threadId;
+    threadSelect.innerHTML = "";
+    if (threads.length === 0) {
+      const option = doc.createElement("option");
+      option.value = "";
+      option.textContent = getString("itempane-quick-chat-thread-untitled");
+      threadSelect.appendChild(option);
+      return;
+    }
+    for (const thread of threads) {
+      const option = doc.createElement("option");
+      option.value = thread.id;
+      option.textContent =
+        thread.title || getString("itempane-quick-chat-thread-untitled");
+      if (thread.id === selectedId) option.selected = true;
+      threadSelect.appendChild(option);
+    }
+  };
+
+  const bindThreadToState = (thread: {
+    id: string;
+    messages?: Array<{ role: string; content: string }>;
+  }): void => {
+    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+      return;
+    }
+    currentChatState.itemId = item.id;
+    currentChatState.threadId = thread.id;
+    currentChatState.conversationHistory = Array.isArray(thread.messages)
+      ? thread.messages.map((message) => ({
+          role:
+            message.role === "assistant"
+              ? "assistant"
+              : message.role === "system"
+                ? "system"
+                : "user",
+          content: message.content,
+        }))
+      : [];
+    currentChatState.savedPairIds = new Set();
+    renderPersistedMessages(currentChatState.conversationHistory);
+    refreshThreadSelect();
+    syncQuickChatThreadControls();
+  };
+
+  const ensureActiveThreadLoaded = async (): Promise<void> => {
+    const generation = quickChatBindGeneration;
+    const requestItemId = item.id;
+    await chatPersist.ensureLoaded();
+    if (
+      generation !== quickChatBindGeneration ||
+      !messagesArea.isConnected ||
+      currentChatState.itemId !== requestItemId
+    ) {
+      return;
+    }
+    if (currentChatState.threadId) {
+      const existing = chatPersist.getThread(
+        item.id,
+        currentChatState.threadId,
+      );
+      if (existing) {
+        if (
+          currentChatState.conversationHistory.length === 0 &&
+          existing.messages.length > 0
+        ) {
+          currentChatState.conversationHistory = existing.messages.map(
+            (message) => ({
+              role: message.role,
+              content: message.content,
+            }),
+          );
+        }
+        renderPersistedMessages(currentChatState.conversationHistory);
+        refreshThreadSelect();
+        return;
+      }
+    }
+    bindThreadToState(chatPersist.getOrCreateActiveThread(item.id));
+  };
+
+  newThreadBtn.addEventListener("click", async () => {
+    if (currentChatState.isChatting) return;
+    quickChatBindGeneration += 1;
+    await chatPersist.ensureLoaded();
+    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+      return;
+    }
+    try {
+      if (currentChatState.threadId) {
+        chatPersist.saveMessages(
+          item.id,
+          currentChatState.threadId,
+          currentChatState.conversationHistory,
+        );
+      }
+    } catch (err) {
+      ztoolkit.log("[AI-Butler] ChatPersist save failed:", err);
+    }
+    bindThreadToState(chatPersist.createThread(item.id));
+    if (!currentChatState.pdfContent) {
+      void loadPdfContentIfNeeded();
+    }
+  });
+
+  deleteThreadBtn.addEventListener("click", async () => {
+    if (currentChatState.isChatting) return;
+    const targetId = threadSelect.value || currentChatState.threadId;
+    if (!targetId) return;
+    let confirmed = true;
+    try {
+      const win = doc.defaultView;
+      if (win && typeof win.confirm === "function") {
+        confirmed = win.confirm(
+          getString("itempane-quick-chat-thread-delete-confirm"),
+        );
+      }
+    } catch {
+      confirmed = true;
+    }
+    if (!confirmed) return;
+    quickChatBindGeneration += 1;
+    await chatPersist.ensureLoaded();
+    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+      return;
+    }
+    const next = chatPersist.deleteThread(item.id, targetId);
+    if (next) {
+      bindThreadToState(next);
+    } else {
+      currentChatState.threadId = null;
+      currentChatState.conversationHistory = [];
+      currentChatState.savedPairIds = new Set();
+      renderPersistedMessages([]);
+      refreshThreadSelect();
+    }
+  });
+
+  threadSelect.addEventListener("change", async () => {
+    if (currentChatState.isChatting) {
+      refreshThreadSelect();
+      return;
+    }
+    quickChatBindGeneration += 1;
+    const nextId = threadSelect.value;
+    if (!nextId || nextId === currentChatState.threadId) return;
+    await chatPersist.ensureLoaded();
+    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+      return;
+    }
+    try {
+      if (currentChatState.threadId) {
+        chatPersist.saveMessages(
+          item.id,
+          currentChatState.threadId,
+          currentChatState.conversationHistory,
+        );
+      }
+    } catch (err) {
+      ztoolkit.log("[AI-Butler] ChatPersist save failed:", err);
+    }
+    const thread = chatPersist.setActiveThread(item.id, nextId);
+    if (thread) bindThreadToState(thread);
+  });
 
   const getRelatedModeLabel = (mode = currentChatState.relatedMode): string =>
     mode === "summary"
@@ -4228,8 +4589,17 @@ function renderChatArea(
     currentChatState.isChatting = false;
     currentChatState.abortController = null;
     currentChatState.savedPairIds = new Set();
+    if (currentChatState.itemId != null && currentChatState.threadId) {
+      chatPersist.saveMessages(
+        currentChatState.itemId,
+        currentChatState.threadId,
+        [],
+      );
+    }
+    refreshThreadSelect();
     messagesArea.innerHTML = `<div style="color: #777; text-align: center; padding: 10px;">${escapeHtmlForChat(message)}</div>`;
     quickChatPinnedToBottom = true;
+    syncQuickChatThreadControls();
   }
 
   function showRelatedLimitMessage(mode = currentChatState.relatedMode): void {
@@ -4474,7 +4844,8 @@ function renderChatArea(
     composer.style.boxShadow = "inset 0 1px 0 rgba(255, 255, 255, 0.06)";
   });
 
-  const startNewQuickChatConversation = (): void => {
+  const startNewQuickChatConversation = async (): Promise<void> => {
+    quickChatBindGeneration += 1;
     currentChatState.abortController?.abort(
       getString("itempane-quick-chat-new-conversation-abort"),
     );
@@ -4484,6 +4855,25 @@ function renderChatArea(
     currentChatState.isChatting = false;
     currentChatState.abortController = null;
     currentChatState.savedPairIds = new Set();
+    syncQuickChatThreadControls();
+    await chatPersist.ensureLoaded();
+    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+      return;
+    }
+    if (currentChatState.itemId != null) {
+      if (!currentChatState.threadId) {
+        const thread = chatPersist.getOrCreateActiveThread(
+          currentChatState.itemId,
+        );
+        currentChatState.threadId = thread.id;
+      }
+      chatPersist.saveMessages(
+        currentChatState.itemId,
+        currentChatState.threadId,
+        [],
+      );
+      refreshThreadSelect();
+    }
 
     messagesArea.innerHTML = `<div style="color: #777; text-align: center; padding: 10px;">${escapeHtmlForChat(getString("itempane-quick-chat-new-conversation-created"))}</div>`;
     inputBox.value = "";
@@ -4506,7 +4896,7 @@ function renderChatArea(
       currentChatState.savedPairIds.size > 0 ||
       messagesArea.querySelector("[data-pair-id]") !== null;
     if (!hasConversationContent) {
-      startNewQuickChatConversation();
+      void startNewQuickChatConversation();
       return;
     }
 
@@ -4521,7 +4911,7 @@ function renderChatArea(
       }
     }
 
-    startNewQuickChatConversation();
+    void startNewQuickChatConversation();
   });
 
   composerTools.appendChild(openPickerBtn);
@@ -4555,10 +4945,23 @@ function renderChatArea(
     quickChatBtn.style.borderColor = active ? "#4db6ac" : "#59c0bc";
   };
 
+  const quickChatHasVisibleMessages = (): boolean =>
+    currentChatState.conversationHistory.length > 0 ||
+    !!messagesArea.querySelector(
+      ".ai-butler-quick-chat-assistant, [data-pair-id]",
+    );
+
+  const showPdfStatus = (html: string): void => {
+    if (!messagesArea.isConnected || quickChatHasVisibleMessages()) return;
+    messagesArea.innerHTML = html;
+  };
+
   const loadPdfContentIfNeeded = async (): Promise<void> => {
     if (currentChatState.pdfContent) {
       if (!messagesArea.textContent?.trim()) {
-        messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-loaded")}</div>`;
+        showPdfStatus(
+          `<div style="color: #4caf50; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-loaded")}</div>`,
+        );
       }
       return;
     }
@@ -4570,7 +4973,9 @@ function renderChatArea(
         const { default: LLMService } = await import("./llmService");
         const pdfMode = LLMService.getEffectivePdfProcessMode();
 
-        messagesArea.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-chat-loading-pdf")}</div>`;
+        showPdfStatus(
+          `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-chat-loading-pdf")}</div>`,
+        );
 
         const { content: pdfContent, isBase64 } =
           await ContentExtractor.extractAnalyzableContentFromItem(
@@ -4582,13 +4987,19 @@ function renderChatArea(
         if (pdfContent) {
           currentChatState.pdfContent = pdfContent;
           currentChatState.isBase64 = isBase64;
-          messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-loaded")}</div>`;
+          showPdfStatus(
+            `<div style="color: #4caf50; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-loaded")}</div>`,
+          );
         } else {
-          messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-load-unavailable")}</div>`;
+          showPdfStatus(
+            `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-load-unavailable")}</div>`,
+          );
         }
       } catch (err: any) {
         ztoolkit.log("[AI-Butler] 快速追问加载 PDF 失败:", err);
-        messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-load-failed", { args: { message: escapeHtmlForChat(err?.message || getString("common-unknown-error")) } })}</div>`;
+        showPdfStatus(
+          `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-load-failed", { args: { message: escapeHtmlForChat(err?.message || getString("common-unknown-error")) } })}</div>`,
+        );
       }
     }
   };
@@ -4629,6 +5040,9 @@ function renderChatArea(
   body.addEventListener("ai-butler-toggle-inline-chat", toggleListener);
   quickChatToggleListeners.set(body, toggleListener);
 
+  void ensureActiveThreadLoaded();
+  syncQuickChatThreadControls();
+
   if (initiallyVisible) {
     void loadPdfContentIfNeeded();
   }
@@ -4642,12 +5056,15 @@ function renderChatArea(
 
     // 检查是否有 PDF 内容
     if (!currentChatState.pdfContent) {
-      messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-wait-pdf-loaded")}</div>`;
+      if (!quickChatHasVisibleMessages()) {
+        messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-wait-pdf-loaded")}</div>`;
+      }
       return;
     }
 
     // 设置为正在聊天状态
     currentChatState.isChatting = true;
+    syncQuickChatThreadControls();
     currentChatState.abortController = createChatAbortController();
     sendBtn.textContent = "…";
     sendBtn.title = getString("itempane-generating-status");
@@ -4892,6 +5309,20 @@ function renderChatArea(
         conversationQuestion,
         fullResponse,
       );
+      try {
+        if (!currentChatState.threadId) {
+          const thread = chatPersist.getOrCreateActiveThread(item.id);
+          currentChatState.threadId = thread.id;
+        }
+        chatPersist.saveMessages(
+          item.id,
+          currentChatState.threadId,
+          currentChatState.conversationHistory,
+        );
+        refreshThreadSelect();
+      } catch (persistErr) {
+        ztoolkit.log("[AI-Butler] persist quick chat failed:", persistErr);
+      }
 
       // 显示保存按钮
       saveArea.style.display = "flex";
@@ -4947,6 +5378,7 @@ function renderChatArea(
       // 恢复状态
       currentChatState.isChatting = false;
       currentChatState.abortController = null;
+      syncQuickChatThreadControls();
       sendBtn.textContent = "↑";
       sendBtn.title = getString("itempane-send");
       sendBtn.style.background = "#59c0bc";

@@ -152,6 +152,40 @@ describe("note Markdown rendering", function () {
     expect(html).not.to.contain("katex-error");
   });
 
+  it("keeps dollars inside code fences literal while rendering real math", function () {
+    const html = markdownToDisplayHtml(
+      "```\n$not math$\n```\n\nReal $E=mc^2$.",
+    );
+
+    expect(html).to.contain("$not math$");
+    expect(html).to.contain('class="katex-inline"');
+    expect(html.match(/katex-inline/g)).to.have.length(1);
+    expect(html).not.to.contain("katex-error");
+  });
+
+  it("renders multiline inline delimiters and ams environments", function () {
+    const inline = markdownToDisplayHtml("Before\n\\(\na_b = c^2\n\\)\nAfter");
+    const environment = markdownToDisplayHtml(
+      String.raw`\begin{align}a&=b\end{align}`,
+    );
+
+    expect(inline).to.contain('class="katex-inline"');
+    expect(inline).to.contain("After");
+    expect(inline).not.to.contain("katex-error");
+    expect(environment).to.contain('class="katex-display"');
+    expect(environment).not.to.contain("katex-error");
+  });
+
+  it("normalizes double-escaped math delimiters and commands", function () {
+    const delimited = markdownToDisplayHtml(String.raw`\\(a+b\\)`);
+    const command = markdownToDisplayHtml(String.raw`$$\\frac{1}{2}$$`);
+
+    expect(delimited).to.contain('class="katex-inline"');
+    expect(delimited).not.to.contain("katex-error");
+    expect(command).to.contain('class="katex-display"');
+    expect(command).not.to.contain("katex-error");
+  });
+
   it("strips XML-invalid clipboard controls before rendering (#347)", function () {
     const pastedText = ["·ccc", "\u000Bddd", "正常保留换行\t和制表符"].join(
       "\n",

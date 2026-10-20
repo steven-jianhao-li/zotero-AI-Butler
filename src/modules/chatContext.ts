@@ -104,10 +104,10 @@ export function isChatAbortError(
   error: unknown,
   signal?: LLMAbortSignal,
 ): boolean {
+  // API failures also set suppressTaskRetry. Only a real abort signal or the
+  // dedicated abort error should be labeled as a user cancel.
   return (
     signal?.aborted === true ||
-    (error as { name?: string } | undefined)?.name === "LLMRequestAbortError" ||
-    (error as { suppressTaskRetry?: boolean } | undefined)
-      ?.suppressTaskRetry === true
+    (error as { name?: string } | undefined)?.name === "LLMRequestAbortError"
   );
 }

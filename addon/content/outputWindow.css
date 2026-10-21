@@ -278,3 +278,55 @@
   opacity: 0.8 !important;
   transform: none !important;
 }
+
+/* KaTeX: do not inherit chat word-break / overflow-wrap (breaks glyphs) */
+#ai-butler-output-content .katex,
+#ai-butler-output-content .katex *,
+#ai-butler-output-content .katex-display,
+#ai-butler-output-content .katex-inline,
+#ai-butler-output-content .katex-scroll-container,
+#ai-butler-summary-view .katex,
+#ai-butler-summary-view .katex *,
+#ai-butler-summary-view .katex-display,
+#ai-butler-summary-view .katex-inline {
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  color: inherit;
+}
+
+#ai-butler-output-content .katex .base,
+#ai-butler-summary-view .katex .base {
+  white-space: nowrap !important;
+}
+
+#ai-butler-output-content .katex-display,
+#ai-butler-summary-view .katex-display {
+  display: block;
+  text-align: center;
+  white-space: normal !important;
+  margin: 0.5em 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+#ai-butler-output-content .katex-inline,
+#ai-butler-summary-view .katex-inline {
+  display: inline;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+#ai-butler-output-content .katex-scroll-container,
+#ai-butler-summary-view .katex-scroll-container {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+#ai-butler-output-content .katex-error,
+#ai-butler-summary-view .katex-error {
+  color: #e57373;
+  background: transparent;
+}

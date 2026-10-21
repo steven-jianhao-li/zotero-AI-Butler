@@ -293,6 +293,7 @@ function initializeDefaultPrefsOnStartup() {
     contextMenuItemOrder: DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF,
     sidebarModuleVisibility: DEFAULT_SIDEBAR_MODULE_VISIBILITY_PREF,
     sidebarModuleOrder: DEFAULT_SIDEBAR_MODULE_ORDER_PREF,
+    sidebarActiveTab: "chat",
     openTaskPanelOnSummon: false,
     autoScanSummaryEnabled: true,
     autoScanDeepReadEnabled: false,

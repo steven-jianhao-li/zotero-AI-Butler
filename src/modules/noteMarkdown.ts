@@ -247,42 +247,106 @@ function normalizeMarkdownBlockBoundaries(markdown: string): string {
     .replace(/\n{3,}/g, "\n\n");
 }
 
+const DISPLAY_MATH_ENVIRONMENTS =
+  "equation\\*?|align\\*?|gather\\*?|multline\\*?|eqnarray\\*?";
+
+function protectDisplayCode(markdown: string): {
+  text: string;
+  codeBlocks: string[];
+} {
+  const codeBlocks: string[] = [];
+  const protect = (match: string): string => {
+    const placeholder = `AIBUTLERCODEBLOCK${codeBlocks.length}END`;
+    codeBlocks.push(match);
+    return placeholder;
+  };
+  const text = markdown
+    .replace(/```[\s\S]*?```/g, protect)
+    .replace(/`[^`\n]+`/g, protect);
+  return { text, codeBlocks };
+}
+
+function prepareDisplayMathContent(raw: string): string {
+  const withBreaks = String(raw ?? "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/?p>/gi, "\n");
+  return normalizeLatexForKatex(withBreaks).replace(
+    /^\s*\\displaystyle\s+/,
+    "",
+  );
+}
+
+function renderKatexHtml(content: string, isBlock: boolean): string {
+  const options = {
+    throwOnError: false,
+    displayMode: isBlock,
+    output: "html" as const,
+    trust: true,
+    strict: false as const,
+  };
+  let rendered = katex.renderToString(content, options);
+  // Models sometimes double-escape commands (\\frac). Retry once unescaped.
+  if (rendered.includes("katex-error") && /\\\\[a-zA-Z]+/.test(content)) {
+    const retry = katex.renderToString(content.replace(/\\\\/g, "\\"), options);
+    if (!retry.includes("katex-error")) rendered = retry;
+  }
+  return rendered;
+}
+
 /**
  * Convert Markdown into display HTML for plugin UI surfaces, including KaTeX
  * rendering for LaTeX formulas.
+ *
+ * Math is extracted before Markdown parsing so multiline `\(...\)`, display
+ * delimiters, and ams environments are not shredded. Fenced and inline code
+ * is protected first so literal dollars inside code stay literal.
  */
 export function markdownToDisplayHtml(markdown: string): string {
   const formulas: ProtectedFormula[] = [];
-  let html = stripInvalidXmlChars(markdown);
+  const protectedCode = protectDisplayCode(
+    stripInvalidXmlChars(String(markdown ?? "")).replace(/\r\n?/g, "\n"),
+  );
+  let html = protectedCode.text;
 
   html = html.replace(/\$\$\$([\s\S]*?)\$\$\$/g, (_match, formula: string) => {
     return `$$${formula.trim()}$$`;
   });
+  // Some models emit double-escaped delimiters: \\( \\) \\[ \\]
+  html = html.replace(/\\\\([()[\]])/g, "\\$1");
 
-  html = html.replace(/\\\[([\s\S]*?)\\\]/g, (_match, formula) => {
-    const placeholder = `AI_BUTLER_FORMULA_BLOCK_${formulas.length}_END`;
-    formulas.push({ content: formula.trim(), isBlock: true });
+  const pushFormula = (content: string, isBlock: boolean): string => {
+    const placeholder = `AI_BUTLER_FORMULA_${isBlock ? "BLOCK" : "INLINE"}_${formulas.length}_END`;
+    formulas.push({ content: String(content || "").trim(), isBlock });
     return placeholder;
-  });
+  };
 
-  html = html.replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula) => {
-    const placeholder = `AI_BUTLER_FORMULA_BLOCK_${formulas.length}_END`;
-    formulas.push({ content: formula.trim(), isBlock: true });
-    return placeholder;
-  });
+  html = html.replace(/\\\[([\s\S]*?)\\\]/g, (_match, formula: string) =>
+    pushFormula(formula, true),
+  );
+  html = html.replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula: string) =>
+    pushFormula(formula, true),
+  );
+  html = html.replace(
+    new RegExp(
+      `\\\\begin\\{(${DISPLAY_MATH_ENVIRONMENTS})\\}([\\s\\S]*?)\\\\end\\{\\1\\}`,
+      "g",
+    ),
+    (match) => pushFormula(match, true),
+  );
+  html = html.replace(/\\\(([\s\S]*?)\\\)/g, (_match, formula: string) =>
+    pushFormula(formula, false),
+  );
+  html = html.replace(
+    /(^|[^$])\$(?!\$)((?:\\\$|[^$\n])+?)\$(?!\$)/g,
+    (_match, prefix: string, formula: string) =>
+      `${prefix}${pushFormula(formula, false)}`,
+  );
 
-  html = html.replace(/\\\((.*?)\\\)/g, (_match, formula) => {
-    const placeholder = `AI_BUTLER_FORMULA_INLINE_${formulas.length}_END`;
-    formulas.push({ content: formula.trim(), isBlock: false });
-    return placeholder;
-  });
-
-  // eslint-disable-next-line no-useless-escape
-  html = html.replace(/\$([^\$\n]+?)\$/g, (_match, formula) => {
-    const placeholder = `AI_BUTLER_FORMULA_INLINE_${formulas.length}_END`;
-    formulas.push({ content: formula.trim(), isBlock: false });
-    return placeholder;
-  });
+  html = html.replace(
+    /AIBUTLERCODEBLOCK(\d+)END/g,
+    (_match, index: string) =>
+      protectedCode.codeBlocks[parseInt(index, 10)] ?? _match,
+  );
 
   marked.setOptions({
     breaks: true,
@@ -296,20 +360,14 @@ export function markdownToDisplayHtml(markdown: string): string {
   }
 
   const renderFormula = (_match: string, _type: string, index: string) => {
-    const formulaData = formulas[parseInt(index)];
+    const formulaData = formulas[parseInt(index, 10)];
     if (!formulaData) return _match;
 
-    const content = normalizeLatexForKatex(formulaData.content);
+    const content = prepareDisplayMathContent(formulaData.content);
+    if (!content) return "";
     const isBlock = formulaData.isBlock || requiresDisplayMath(content);
     try {
-      const rendered = katex.renderToString(content, {
-        throwOnError: false,
-        displayMode: isBlock,
-        output: "html",
-        trust: true,
-        strict: false,
-      });
-
+      const rendered = renderKatexHtml(content, isBlock);
       if (isBlock) {
         return `<div class="katex-scroll-container">${rendered}</div>`;
       }

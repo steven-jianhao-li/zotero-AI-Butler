@@ -805,7 +805,7 @@ export class UiSettingsPage {
     try {
       const { refreshCurrentItemPaneSection } =
         await import("../../ItemPaneSection");
-      await refreshCurrentItemPaneSection();
+      await refreshCurrentItemPaneSection({ force: true });
     } catch (error) {
       ztoolkit.log("[AI-Butler] 刷新侧边栏个性化设置失败:", error);
     }

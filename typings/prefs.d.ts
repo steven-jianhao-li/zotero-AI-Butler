@@ -102,6 +102,7 @@ declare namespace _ZoteroTypes {
       "noteStrategy": string;
       "noteExportEnabled": boolean;
       "noteExportRootPath": string;
+      "noteExportFilenameTemplate": string;
       "noteExportWatchedCollections": string;
       "noteExportIncludeSubcollections": boolean;
       "noteExportFormats": string;

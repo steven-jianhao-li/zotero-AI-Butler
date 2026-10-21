@@ -6,6 +6,11 @@ import {
 } from "./noteExportConfig";
 import { noteHtmlToDocxBytes } from "./noteExportDocxConverter";
 import { noteHtmlToMarkdown } from "./noteExportMarkdown";
+import {
+  formatNoteExportFilename,
+  getNoteExportFilenameValues,
+  type NoteExportFilenameValues,
+} from "./noteExportNaming";
 import { hasIncompleteDeepReadContent } from "./deepReadEngine";
 import {
   copyFile,
@@ -56,19 +61,12 @@ type NoteArtifacts = Partial<
   Record<AiNoteKind, { html: string; note: Zotero.Item }>
 >;
 
-const NOTE_OUTPUT_META: Record<
-  AiNoteKind,
-  { labelKey: string; docxName: string; markdownName: string }
-> = {
+const NOTE_OUTPUT_META: Record<AiNoteKind, { labelKey: string }> = {
   summary: {
     labelKey: "note-export-kind-summary",
-    docxName: "summary.docx",
-    markdownName: "summary.md",
   },
   deepRead: {
     labelKey: "note-export-kind-deep-read",
-    docxName: "deep-read.docx",
-    markdownName: "deep-read.md",
   },
 };
 
@@ -177,6 +175,8 @@ export class NoteExportService {
 
     await this.exportNoteArtifacts({
       notes,
+      item,
+      collectionPath: options.collectionPath,
       directory,
       title,
       config,
@@ -244,6 +244,8 @@ export class NoteExportService {
 
   private static async exportNoteArtifacts(options: {
     notes: NoteArtifacts;
+    item: Zotero.Item;
+    collectionPath: CollectionPathInfo;
     directory: string;
     title: string;
     config: NoteExportConfig;
@@ -258,6 +260,13 @@ export class NoteExportService {
       directory,
       title,
       strategy: config.conflictStrategy,
+      filenameTemplate: config.filenameTemplate,
+      filenameValues: getNoteExportFilenameValues({
+        item: options.item,
+        collectionPath: options.collectionPath,
+        kind: "summary",
+        html: notes.summary?.html || "",
+      }),
       result,
     });
     await this.exportOneNote({
@@ -268,6 +277,13 @@ export class NoteExportService {
       directory,
       title,
       strategy: config.conflictStrategy,
+      filenameTemplate: config.filenameTemplate,
+      filenameValues: getNoteExportFilenameValues({
+        item: options.item,
+        collectionPath: options.collectionPath,
+        kind: "deepRead",
+        html: notes.deepRead?.html || "",
+      }),
       result,
     });
   }
@@ -280,6 +296,8 @@ export class NoteExportService {
     directory: string;
     title: string;
     strategy: NoteExportConflictStrategy;
+    filenameTemplate: string;
+    filenameValues: NoteExportFilenameValues;
     result: NoteExportItemResult;
   }): Promise<void> {
     const meta = NOTE_OUTPUT_META[options.kind];
@@ -297,7 +315,14 @@ export class NoteExportService {
         addWriteResult(
           options.result,
           await writeBinaryFile(
-            joinExportPath(options.directory, meta.docxName),
+            joinExportPath(
+              options.directory,
+              formatNoteExportFilename(
+                options.filenameTemplate,
+                options.filenameValues,
+                "docx",
+              ),
+            ),
             bytes,
             options.strategy,
           ),
@@ -317,7 +342,14 @@ export class NoteExportService {
         addWriteResult(
           options.result,
           await writeTextFile(
-            joinExportPath(options.directory, meta.markdownName),
+            joinExportPath(
+              options.directory,
+              formatNoteExportFilename(
+                options.filenameTemplate,
+                options.filenameValues,
+                "md",
+              ),
+            ),
             markdown,
             options.strategy,
           ),

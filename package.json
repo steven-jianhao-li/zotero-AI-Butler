@@ -36,6 +36,7 @@
     "test:llm-completion": "node ./scripts/test-llm-completion.mjs",
     "test:agent:live": "node ./scripts/test-agent-live.mjs",
     "test:mineru": "node ./scripts/test-mineru.mjs",
+    "test:note-export": "node --test test/noteExportNaming.test.mjs",
     "pretest:watch": "node ./scripts/gen-env-setup.mjs",
     "test:watch": "zotero-plugin test",
     "scaffold:provider": "node ./scripts/create-provider.mjs",

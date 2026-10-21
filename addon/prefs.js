@@ -144,6 +144,10 @@ pref("__prefsPrefix__.noteStrategy", "skip");
 // ==================== AI 笔记导出配置 ====================
 pref("__prefsPrefix__.noteExportEnabled", false);
 pref("__prefsPrefix__.noteExportRootPath", "");
+pref(
+  "__prefsPrefix__.noteExportFilenameTemplate",
+  "{collectionPath} - {title} - {noteType}",
+);
 pref("__prefsPrefix__.noteExportWatchedCollections", "[]");
 pref("__prefsPrefix__.noteExportIncludeSubcollections", true);
 pref(

@@ -11,6 +11,7 @@
 import {
   buildFollowUpChatPairNoteHtml,
   normalizeFollowUpChatNoteHtml,
+  parseFollowUpChatPairsFromNoteHtml,
   removeFollowUpChatPairFromNoteHtml,
 } from "./noteMarkdown";
 import {
@@ -173,36 +174,40 @@ export class AiNoteService {
     metadata?: LLMNoteMetadata | null;
     sourceLabel?: string;
   }): Promise<Zotero.Item> {
-    const note = await this.getOrCreateDeepReadNote(options.item);
-    const noteHtml = (note as any).getNote?.() || "";
-    const normalizedNoteHtml = normalizeFollowUpChatNoteHtml(noteHtml);
+    const parentItem =
+      (await this.resolveParentItem(options.item)) || options.item;
+    return this.withNoteWriteLock(parentItem, "deepRead", async () => {
+      const note = await this.getOrCreateDeepReadNote(parentItem);
+      const noteHtml = (note as any).getNote?.() || "";
+      const normalizedNoteHtml = normalizeFollowUpChatNoteHtml(noteHtml);
 
-    if (
-      normalizedNoteHtml.includes(
-        `AI_BUTLER_CHAT_PAIR_START id=${options.pairId}`,
-      )
-    ) {
-      if (normalizedNoteHtml !== noteHtml) {
-        (note as any).setNote(normalizedNoteHtml);
-        await (note as any).saveTx();
+      if (
+        parseFollowUpChatPairsFromNoteHtml(normalizedNoteHtml).some(
+          (pair) => pair.id === options.pairId,
+        )
+      ) {
+        if (normalizedNoteHtml !== noteHtml) {
+          (note as any).setNote(normalizedNoteHtml);
+          await (note as any).saveTx();
+        }
+        return note;
       }
+
+      const blockContent = buildFollowUpChatPairNoteHtml({
+        pairId: options.pairId,
+        userMessage: options.userMessage,
+        assistantMessage: options.assistantMessage,
+        sourceLabel: options.sourceLabel,
+      });
+      const block = options.metadata
+        ? LLMNoteMetadataService.wrapHtml(blockContent, options.metadata)
+        : blockContent;
+
+      (note as any).setNote(`${normalizedNoteHtml}${block}`);
+      this.ensureTag(note, DEEP_READ_NOTE_TAG);
+      await (note as any).saveTx();
       return note;
-    }
-
-    const blockContent = buildFollowUpChatPairNoteHtml({
-      pairId: options.pairId,
-      userMessage: options.userMessage,
-      assistantMessage: options.assistantMessage,
-      sourceLabel: options.sourceLabel,
     });
-    const block = options.metadata
-      ? LLMNoteMetadataService.wrapHtml(blockContent, options.metadata)
-      : blockContent;
-
-    (note as any).setNote(`${normalizedNoteHtml}${block}`);
-    this.ensureTag(note, DEEP_READ_NOTE_TAG);
-    await (note as any).saveTx();
-    return note;
   }
 
   public static async findLegacyChatNote(
@@ -247,23 +252,21 @@ export class AiNoteService {
     item: Zotero.Item,
   ): Promise<Zotero.Item> {
     const parentItem = (await this.resolveParentItem(item)) || item;
-    return this.withNoteWriteLock(parentItem, "deepRead", async () => {
-      const existing = await this.findNote(parentItem, "deepRead");
-      if (existing) return existing;
+    const existing = await this.findNote(parentItem, "deepRead");
+    if (existing) return existing;
 
-      const title =
-        (parentItem.getField("title") as string) ||
-        getString("common-paper-title");
-      const note = new Zotero.Item("note");
-      note.libraryID = parentItem.libraryID;
-      note.parentID = parentItem.id;
-      note.setNote(
-        `<h1>${getString("deep-read-note-title", { args: { title: escapeHtml(title) } })}</h1>`,
-      );
-      note.addTag(DEEP_READ_NOTE_TAG);
-      await note.saveTx();
-      return note;
-    });
+    const title =
+      (parentItem.getField("title") as string) ||
+      getString("common-paper-title");
+    const note = new Zotero.Item("note");
+    note.libraryID = parentItem.libraryID;
+    note.parentID = parentItem.id;
+    note.setNote(
+      `<h1>${getString("deep-read-note-title", { args: { title: escapeHtml(title) } })}</h1>`,
+    );
+    note.addTag(DEEP_READ_NOTE_TAG);
+    await note.saveTx();
+    return note;
   }
 
   private static async withNoteWriteLock<T>(

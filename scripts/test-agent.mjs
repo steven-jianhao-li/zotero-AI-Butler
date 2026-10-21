@@ -13,6 +13,9 @@ await build({
       "agentRuntime",
       "agentTransport",
       "agentLibraryTools",
+      "agentCitations",
+      "agentTranscript",
+      "agentStream",
     ]
       .map((name) => `import './test/${name}.test.ts';`)
       .join("\n"),
@@ -24,6 +27,12 @@ await build({
   platform: "node",
   format: "cjs",
   define: { __env__: '"test"' },
+  // Workflow tools import the queue and its theme singleton. Keep startup prefs local.
+  banner: {
+    js: `globalThis.Zotero = { Prefs: { get() {} } };
+globalThis.addon = { data: {} };
+globalThis.ztoolkit = { log() {} };`,
+  },
   logLevel: "silent",
 });
 const result = spawnSync(

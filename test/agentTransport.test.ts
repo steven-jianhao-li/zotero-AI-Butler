@@ -72,6 +72,64 @@ function completion(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Native Agent transport", function () {
+  it("extracts visible thinking while keeping signatures and encrypted state out of display text", function () {
+    const responses = parseAgentTurn("responses", {
+      status: "completed",
+      output: [
+        {
+          type: "reasoning",
+          encrypted_content: "opaque",
+          summary: [{ type: "summary_text", text: "Check the evidence." }],
+        },
+        { type: "message", content: [{ type: "output_text", text: "Answer" }] },
+      ],
+    });
+    expect(responses.reasoningContent).to.equal("Check the evidence.");
+    expect(responses.providerState?.parts[0]).to.have.property(
+      "encrypted_content",
+      "opaque",
+    );
+    const anthropic = parseAgentTurn("anthropic", {
+      stop_reason: "end_turn",
+      content: [
+        {
+          type: "thinking",
+          thinking: "Compare the titles.",
+          signature: "signed",
+        },
+        { type: "redacted_thinking", data: "hidden" },
+        { type: "text", text: "Answer" },
+      ],
+    });
+    expect(anthropic.reasoningContent).to.equal("Compare the titles.");
+    const gemini = parseAgentTurn("gemini", {
+      candidates: [
+        {
+          finishReason: "STOP",
+          content: {
+            parts: [
+              {
+                text: "Read the methods.",
+                thought: true,
+                thoughtSignature: "signed",
+              },
+              { text: "Answer" },
+            ],
+          },
+        },
+      ],
+    });
+    expect(gemini.reasoningContent).to.equal("Read the methods.");
+    for (const turn of [responses, anthropic, gemini])
+      expect(turn.text).to.equal("Answer");
+    expect(
+      parseAgentTurn("responses", {
+        status: "completed",
+        output: [{ type: "reasoning", encrypted_content: "opaque" }],
+      }).reasoningContent,
+    ).to.equal(undefined);
+  });
+
   it("keeps overflow classification stable when the visible error is localized", function () {
     const globals = globalThis as unknown as Record<string, unknown>;
     const previous = globals.addon;

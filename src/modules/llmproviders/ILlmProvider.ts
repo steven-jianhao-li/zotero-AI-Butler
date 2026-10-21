@@ -1,9 +1,10 @@
 import {
-  LLMOptions,
-  ProgressCb,
   ConversationMessage,
-  LLMProviderCapabilities,
   LLMModelInfo,
+  LLMOptions,
+  LLMProviderCapabilities,
+  LLMProviderResult,
+  ProgressCb,
 } from "./types";
 
 /**
@@ -28,7 +29,7 @@ export interface ILlmProvider {
     prompt: string | undefined,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string>;
+  ): Promise<LLMProviderResult>;
 
   chat(
     pdfContent: string,
@@ -36,7 +37,7 @@ export interface ILlmProvider {
     conversation: ConversationMessage[],
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string>;
+  ): Promise<LLMProviderResult>;
 
   testConnection(options: LLMOptions): Promise<string>;
 
@@ -59,5 +60,6 @@ export interface ILlmProvider {
     prompt: string,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string>;
+    history?: ConversationMessage[],
+  ): Promise<LLMProviderResult>;
 }

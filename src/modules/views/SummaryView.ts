@@ -87,9 +87,6 @@ export class SummaryView extends BaseView {
   /** 用户是否手动滚动过 */
   private userHasScrolled: boolean = false;
 
-  /** 是否启用自动滚动 */
-  private autoScrollEnabled: boolean = true;
-
   /** 上次滚动位置 */
   private lastScrollTop: number = 0;
 
@@ -865,48 +862,6 @@ export class SummaryView extends BaseView {
     return `pair_${Date.now()}_${this.pairIdCounter}`;
   }
 
-  private async findChatNote(item: Zotero.Item): Promise<Zotero.Item | null> {
-    const noteIDs = (item as any).getNotes?.() || [];
-    for (const nid of noteIDs) {
-      try {
-        const n = await Zotero.Items.getAsync(nid);
-        if (!n) continue;
-        const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-        const hasChatTag = tags.some((t) => t.tag === "AI-Butler-Chat");
-        const html: string = (n as any).getNote?.() || "";
-        const titleMatch = /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(html);
-        if (hasChatTag || titleMatch) {
-          return n as Zotero.Item;
-        }
-      } catch (e) {
-        continue;
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * 获取或创建“AI管家-后续追问-论文名”独立笔记
-   */
-  private async getOrCreateChatNote(item: Zotero.Item): Promise<Zotero.Item> {
-    const existingNote = await this.findChatNote(item);
-    if (existingNote) return existingNote;
-
-    const title =
-      (item.getField("title") as string) || getString("summary-untitled-paper");
-
-    // 创建新笔记
-    const note = new Zotero.Item("note");
-    note.libraryID = item.libraryID;
-    note.parentID = item.id;
-    const header = `<h2>${getString("summary-chat-note-title", { args: { title: this.escapeHtml(title) } })}</h2>`;
-    note.setNote(header);
-    note.addTag("AI-Butler-Chat");
-    await note.saveTx();
-    return note;
-  }
-
   /**
    * 将对话对追加到 AI 精读笔记（带可解析标记，便于恢复）
    */
@@ -1491,7 +1446,7 @@ export class SummaryView extends BaseView {
         item,
         "deepRead",
       );
-      const legacyChatNote = await this.findChatNote(item);
+      const legacyChatNote = await AiNoteService.findLegacyChatNote(item);
       const html = [
         deepReadRecord?.rawHtml || "",
         ((legacyChatNote as any)?.getNote?.() as string | undefined) || "",
@@ -1682,18 +1637,15 @@ export class SummaryView extends BaseView {
     // 应用主题
     this.applyTheme();
 
-    // 应用用户首选项: 字号与自动滚动
+    // 应用用户首选项: 字号
     try {
       const fontSize =
         parseInt(((getPref as any)("fontSize") as string) || "14", 10) || 14;
       if (this.container) {
         (this.container as HTMLElement).style.fontSize = `${fontSize}px`;
       }
-      const auto = (getPref as any)("autoScroll") as boolean;
-      this.autoScrollEnabled =
-        auto === undefined || auto === null ? true : !!auto;
     } catch (e) {
-      ztoolkit.log("[AI Butler] 应用字体或滚动首选项失败:", e);
+      ztoolkit.log("[AI Butler] 应用字体首选项失败:", e);
     }
   }
 
@@ -1780,14 +1732,22 @@ export class SummaryView extends BaseView {
    * @private
    */
   private scrollToBottom(): void {
-    if (!this.scrollArea || this.userHasScrolled || !this.autoScrollEnabled)
+    if (
+      !this.scrollArea ||
+      this.userHasScrolled ||
+      getPref("autoScroll") === false
+    )
       return;
 
     const area = this.scrollArea;
 
     // 使用 setTimeout 确保在 DOM 更新后滚动
     setTimeout(() => {
-      if (area) {
+      if (
+        this.scrollArea === area &&
+        !this.userHasScrolled &&
+        getPref("autoScroll") !== false
+      ) {
         area.scrollTop = area.scrollHeight;
       }
     }, 0);

@@ -3,6 +3,7 @@ export type NoteTag = { tag: string };
 export const LEGACY_SUMMARY_NOTE_TAG = "AI-Generated";
 export const SUMMARY_NOTE_TAG = "AI-Summary";
 export const DEEP_READ_NOTE_TAG = "AI-DeepRead";
+export const INCOMPLETE_NOTE_TAG = "AI-Incomplete";
 const TABLE_NOTE_TAG = "AI-Table";
 const CHAT_NOTE_TAG = "AI-Butler-Chat";
 const MINDMAP_NOTE_TAG = "AI-Mindmap";
@@ -49,6 +50,7 @@ export function isRegularSummaryNote(
   tags: NoteTag[],
   noteHtml: string,
 ): boolean {
+  if (hasNoteTag(tags, INCOMPLETE_NOTE_TAG)) return false;
   const isMisTaggedSummary = isMisTaggedDeepReadSummaryNote(tags, noteHtml);
   const isTableNote = hasNoteTag(tags, TABLE_NOTE_TAG);
   const isMindmapNote =
@@ -84,6 +86,7 @@ export function isRegularSummaryNote(
 }
 
 export function isDeepReadNote(tags: NoteTag[], noteHtml: string): boolean {
+  if (hasNoteTag(tags, INCOMPLETE_NOTE_TAG)) return false;
   if (isMisTaggedDeepReadSummaryNote(tags, noteHtml)) {
     return false;
   }
@@ -121,6 +124,7 @@ export function classifyAiButlerNote(
   tags: NoteTag[],
   noteHtml: string,
 ): AiButlerNoteType | null {
+  if (hasNoteTag(tags, INCOMPLETE_NOTE_TAG)) return null;
   if (isFollowUpChatNote(tags, noteHtml)) {
     return "chat";
   }

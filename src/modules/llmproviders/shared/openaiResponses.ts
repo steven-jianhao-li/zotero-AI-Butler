@@ -72,6 +72,7 @@ export function parseOpenAIResponsesAgentTurn(data: unknown): LLMAgentTurn {
   }
   const toolCalls: LLMToolCall[] = [];
   const reasoning: Record<string, unknown>[] = [];
+  const summaries: string[] = [];
   for (const item of data.output) {
     if (!isRecord(item)) throw new AgentProtocolError("responses-invalid-item");
     if (item.status && item.status !== "completed") {
@@ -90,8 +91,18 @@ export function parseOpenAIResponsesAgentTurn(data: unknown): LLMAgentTurn {
         name: item.name,
         arguments: item.arguments,
       });
-    } else if (item.type === "reasoning" && item.encrypted_content) {
-      reasoning.push(item);
+    } else if (item.type === "reasoning") {
+      if (item.encrypted_content) reasoning.push(item);
+      if (Array.isArray(item.summary)) {
+        for (const part of item.summary) {
+          if (
+            isRecord(part) &&
+            part.type === "summary_text" &&
+            typeof part.text === "string"
+          )
+            summaries.push(part.text);
+        }
+      }
     }
   }
   const usage = isRecord(data.usage) ? data.usage : {};
@@ -102,6 +113,7 @@ export function parseOpenAIResponsesAgentTurn(data: unknown): LLMAgentTurn {
   return {
     text: parseOpenAIResponsesText(data),
     toolCalls,
+    reasoningContent: summaries.join("\n\n") || undefined,
     finishReason: "completed",
     usage: {
       inputTokens: number(usage.input_tokens),

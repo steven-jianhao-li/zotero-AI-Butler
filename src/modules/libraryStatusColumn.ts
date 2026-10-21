@@ -235,12 +235,6 @@ export function isAiStatusTrackedNote(
   return isRegularSummaryNote(tags, noteHtml) || isDeepReadNote(tags, noteHtml);
 }
 
-export function shouldDeferLibraryStatusRefreshForSelection(
-  selectedItems: Array<Pick<Zotero.Item, "isNote"> | null | undefined>,
-): boolean {
-  return selectedItems.some((item) => item?.isNote?.() === true);
-}
-
 export function registerLibraryStatusColumn(): void {
   if (registeredDataKeys.length || typeof Zotero === "undefined") {
     return;
@@ -638,77 +632,41 @@ async function flushRefresh(): Promise<void> {
   const shouldRefreshAll = forceRefreshAll;
   forceRefreshAll = false;
 
-  if (shouldDeferTreeRefresh()) {
-    for (const itemID of itemIDs) {
-      pendingRefreshItemIDs.add(itemID);
-    }
-    forceRefreshAll = forceRefreshAll || shouldRefreshAll;
-    scheduleFlushRefresh(DEFAULT_REFRESH_DELAY_MS);
-    return;
-  }
+  if (!shouldRefreshAll && !itemIDs.length) return;
 
+  // Status values changed, not the column definitions. A column refresh rebuilds
+  // the tree and can reselect the open note, taking focus from its editor (#398).
+  invalidateStatusRowCaches(shouldRefreshAll ? null : itemIDs);
   try {
-    if (!shouldRefreshAll && itemIDs.length) {
-      await Zotero.Notifier.trigger("redraw", "item", itemIDs, {}, true);
-    }
-  } catch (error) {
-    logLibraryStatusColumn("[AI-Butler] AI 状态列单行刷新失败", error);
-  }
-
-  try {
-    (isLegacyHost()
-      ? legacyItemColumns
-      : Zotero.ItemTreeManager
-    ).refreshColumns();
-  } catch (error) {
-    logLibraryStatusColumn("[AI-Butler] AI 状态列刷新失败", error);
-  }
-
-  invalidateOpenItemTrees();
-}
-
-function shouldDeferTreeRefresh(): boolean {
-  try {
-    for (const pane of Zotero.getZoteroPanes?.() || []) {
-      const selectedItems = pane.getSelectedItems?.() as
-        Array<Pick<Zotero.Item, "isNote"> | null | undefined> | undefined;
-      if (selectedItems && selectedItems.length > 0) {
-        return true;
-      }
-    }
-  } catch (error) {
-    logLibraryStatusColumn(
-      "[AI-Butler] AI status column selection check failed",
-      error,
+    await Zotero.Notifier.trigger(
+      "redraw",
+      "item",
+      shouldRefreshAll ? [] : itemIDs,
+      {},
+      true,
     );
+  } catch (error) {
+    logLibraryStatusColumn("[AI-Butler] AI status row redraw failed", error);
   }
-  return false;
 }
 
-function invalidateOpenItemTrees(): void {
+function invalidateStatusRowCaches(itemIDs: number[] | null): void {
   try {
     for (const pane of Zotero.getZoteroPanes?.() || []) {
+      // Zotero 6–9 cache rendered row data. Clear only the affected rows before
+      // the redraw notification; newer hosts without this cache need no work.
       const itemsView = pane.itemsView as
-        | false
-        | {
-            invalidate?: () => void;
-            refresh?: () => void;
-            treeInstance?: { invalidate?: () => void };
-          };
-      if (!itemsView) {
-        continue;
-      }
-      if (typeof itemsView.invalidate === "function") {
-        itemsView.invalidate();
-        continue;
-      }
-      if (typeof itemsView.treeInstance?.invalidate === "function") {
-        itemsView.treeInstance.invalidate();
+        false | { _rowCache?: Record<string, unknown> };
+      if (!itemsView || !itemsView._rowCache) continue;
+      if (itemIDs) {
+        for (const itemID of itemIDs) delete itemsView._rowCache[itemID];
+      } else {
+        itemsView._rowCache = {};
       }
     }
   } catch (error) {
     logLibraryStatusColumn(
-      "[AI-Butler] AI status column item tree invalidation failed",
+      "[AI-Butler] AI status row cache invalidation failed",
       error,
     );
   }

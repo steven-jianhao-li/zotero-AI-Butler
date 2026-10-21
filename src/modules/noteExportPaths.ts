@@ -14,7 +14,7 @@ export interface CollectionPathInfo {
   depth: number;
 }
 
-const WINDOWS_RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+const WINDOWS_RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 
 export function sanitizePathSegment(
   value: string,

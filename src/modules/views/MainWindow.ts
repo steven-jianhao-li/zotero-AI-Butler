@@ -260,6 +260,8 @@ export class MainWindow {
           height: dialogSize.height,
           centerscreen: true,
           resizable: true,
+          // Use native window controls, including title-bar maximize/restore.
+          noDialogMode: true,
         });
       this.isOpen = true;
 

@@ -3,6 +3,7 @@ import type { LLMAgentRequest } from "../llmService";
 import type {
   LLMAgentMessage,
   LLMAgentTurn,
+  LLMAgentStreamUpdate,
   LLMToolCall,
   LLMToolDefinition,
 } from "../llmproviders/agentTypes";
@@ -148,16 +149,18 @@ export class AgentRunner {
     type: AgentEvent["type"],
     text: string,
     extra: Partial<AgentEvent> = {},
-  ): void {
-    session.events.push({
+  ): AgentEvent {
+    const event: AgentEvent = {
       id: agentId("event"),
       type,
       text,
       createdAt: Date.now(),
       ...extra,
-    });
+    };
+    session.events.push(event);
     session.updatedAt = Date.now();
     this.deps.changed();
+    return event;
   }
 
   private artifact(session: AgentSession, result: unknown): string {
@@ -217,6 +220,24 @@ export class AgentRunner {
         "Run interrupted; execution may have been cancelled. Consult the activity log before retrying a write.",
       );
       session.pendingApprovals = [];
+      for (const event of session.events)
+        if (event.streamState === "streaming") {
+          event.streamState = "interrupted";
+          event.endedAt = Date.now();
+        }
+      if (
+        session.status === "completed" ||
+        session.status === "cancelled" ||
+        session.status === "error"
+      )
+        this.event(
+          session,
+          "status",
+          agentText(`agent-status-${session.status}`),
+          {
+            runStatus: session.status,
+          },
+        );
       await this.deps.save(session);
       this.deps.changed();
     }
@@ -331,14 +352,49 @@ export class AgentRunner {
       await this.compact(session, messages, tools, signal);
       const estimate = contextSize(messages, tools);
       if (!child) session.context.estimatedTokens = estimate;
-      this.event(
+      const stepId = agentId("step");
+      const requestEvent = this.event(
         session,
         "status",
         agentText("agent-runtime-step", { step: step + 1, total: maxSteps }),
         {
           memberId,
+          stepId,
+          streamState: "streaming",
+          data: { kind: "model-request" },
         },
       );
+      const previews: { assistant?: AgentEvent; reasoning?: AgentEvent } = {};
+      const interruptPreview = () => {
+        for (const event of Object.values(previews))
+          if (event) {
+            event.streamState = "interrupted";
+            event.endedAt = Date.now();
+          }
+      };
+      const onUpdate = (update: LLMAgentStreamUpdate) => {
+        if (update.reset) {
+          interruptPreview();
+          previews.assistant = previews.reasoning = undefined;
+        }
+        for (const type of ["reasoning", "assistant"] as const) {
+          const text =
+            type === "reasoning" ? update.reasoningContent : update.text;
+          let event = previews[type];
+          if (!event && text) {
+            event = this.event(session, type, text, {
+              memberId,
+              stepId,
+              phase: "work",
+              streamState: "streaming",
+            });
+            previews[type] = event;
+          }
+          if (event) event.text = text;
+        }
+        session.updatedAt = Date.now();
+        this.deps.changed();
+      };
       let turn: LLMAgentTurn;
       const request = () =>
         this.deps.turn({
@@ -347,16 +403,27 @@ export class AgentRunner {
           endpointId: session.options.endpointId || session.activeEndpointId,
           generation: { maxOutputTokens: session.options.maxOutputTokens },
           transport: { abortSignal: signal, retry: true },
+          onUpdate,
         });
       try {
         turn = await request();
       } catch (error) {
         // Only retry an overflow after a measurable reduction. Never repeat tools.
-        if (!isContextOverflow(error)) throw error;
-        if (!(await this.compact(session, messages, tools, signal, true)))
-          throw error;
-        turn = await request();
+        try {
+          if (!isContextOverflow(error)) throw error;
+          if (!(await this.compact(session, messages, tools, signal, true)))
+            throw error;
+          turn = await request();
+        } catch (failure) {
+          interruptPreview();
+          requestEvent.streamState = "interrupted";
+          requestEvent.endedAt = Date.now();
+          throw failure;
+        }
       }
+      requestEvent.endedAt = Date.now();
+      requestEvent.streamState = "complete";
+      requestEvent.data = { kind: "model-request", usage: turn.usage };
       throwIfAborted(signal);
       if (turn.usage?.inputTokens)
         this.actualTokenRatio = Math.max(
@@ -372,7 +439,19 @@ export class AgentRunner {
         reasoningContent: turn.reasoningContent,
         providerState: turn.providerState,
       });
-      if (turn.text) this.event(session, "assistant", turn.text, { memberId });
+      // Final snapshots also cover non-streaming providers and canonical Responses output.
+      onUpdate({
+        text: turn.text,
+        reasoningContent: turn.reasoningContent || "",
+      });
+      for (const event of Object.values(previews))
+        if (event) {
+          event.streamState = "complete";
+          event.endedAt = Date.now();
+        }
+      if (previews.assistant)
+        previews.assistant.phase =
+          !child && !turn.toolCalls.length ? "delivery" : "work";
       if (!turn.toolCalls.length) {
         if (!turn.text.trim())
           throw new Error(agentText("agent-runtime-empty-answer"));
@@ -389,6 +468,7 @@ export class AgentRunner {
           signal,
           child,
           memberId,
+          stepId,
         );
         messages.push({ role: "tool", toolCallId: call.id, content });
         await this.deps.save(session);
@@ -405,11 +485,13 @@ export class AgentRunner {
     signal: LLMAbortSignal,
     child: boolean,
     memberId?: string,
+    stepId?: string,
   ): Promise<string> {
     this.event(session, "tool-start", call.arguments, {
       toolName: call.name,
       toolCallId: call.id,
       memberId,
+      stepId,
     });
     let result: unknown;
     let receipt:
@@ -534,6 +616,7 @@ export class AgentRunner {
       toolName: call.name,
       toolCallId: call.id,
       memberId,
+      stepId,
     });
     return content;
   }

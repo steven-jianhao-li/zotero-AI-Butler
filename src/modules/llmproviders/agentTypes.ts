@@ -35,3 +35,11 @@ export interface LLMAgentTurn {
   reasoningContent?: string;
   providerState?: LLMAgentProviderState;
 }
+
+/** Cumulative readable preview only; tool calls stay private until validation. */
+export interface LLMAgentStreamUpdate {
+  text: string;
+  reasoningContent: string;
+  /** A new HTTP attempt replaces the previous attempt's preview. */
+  reset?: boolean;
+}

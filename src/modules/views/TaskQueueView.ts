@@ -979,24 +979,7 @@ export class TaskQueueView extends BaseView {
       }
 
       if (!this.manager) this.manager = TaskQueueManager.getInstance();
-      const markedComplete =
-        await this.manager.markTaskCompletedIfArtifactReady(
-          task.id,
-          getString("task-queue-artifact-complete-fixed"),
-        );
-      if (markedComplete) {
-        this.syncFromManager();
-        await view.showSavedNoteForItem(task.itemId);
-        return;
-      }
-
-      // 注册一次性流式订阅，仅监听该 taskId
-      // 确保执行器已启动，尽快进入处理
-      try {
-        this.manager.start();
-      } catch (e) {
-        ztoolkit.log("[AI Butler] 启动任务执行器失败:", e);
-      }
+      // 查看详情只订阅事件，不启动队列或根据旧笔记修改任务状态。
       let started = false;
       this.detailStreamUnsubscribe = this.manager.onStream((taskId, event) => {
         if (taskId !== task.id) return;
@@ -1475,21 +1458,24 @@ export class TaskQueueView extends BaseView {
       }
 
       if (artifact.exists) {
-        await this.manager.markTaskCompletedIfArtifactReady(
-          task.id,
-          getString("task-detail-deep-read-artifact-fixed"),
-        );
-        this.syncFromManager();
-        new ztoolkit.ProgressWindow("AI Butler", {
-          closeOnClick: true,
-          closeTime: 3000,
-        })
-          .createLine({
-            text: getString("task-queue-deep-read-complete-no-need"),
-            type: "success",
+        const markedComplete =
+          await this.manager.markTaskCompletedIfArtifactReady(
+            task.id,
+            getString("task-detail-deep-read-artifact-fixed"),
+          );
+        if (markedComplete || task.status === TaskStatus.COMPLETED) {
+          this.syncFromManager();
+          new ztoolkit.ProgressWindow("AI Butler", {
+            closeOnClick: true,
+            closeTime: 3000,
           })
-          .show();
-        return;
+            .createLine({
+              text: getString("task-queue-deep-read-complete-no-need"),
+              type: "success",
+            })
+            .show();
+          return;
+        }
       }
 
       await this.manager.addDeepReadTask(item, true, {

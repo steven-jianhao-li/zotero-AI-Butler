@@ -1,4 +1,5 @@
 /* eslint-disable no-unused-vars -- Entry points are invoked by Zotero's addon loader. */
+/* global PathUtils, AGENT_STREAM_FIXTURE_URL */
 var hostServices =
   typeof Services === "undefined"
     ? Components.utils.import("resource://gre/modules/Services.jsm").Services
@@ -14,6 +15,8 @@ var hostFiles =
     ? Components.utils.import("resource://gre/modules/osfile.jsm").OS.File
     : IOUtils;
 var probeTimer;
+// XPCOM timers need a live JS reference while an async probe is suspended.
+var waitTimer;
 function install() {}
 function uninstall() {}
 function shutdown() {}
@@ -62,15 +65,16 @@ async function runProbe() {
     for (var attempt = 0; attempt < 200; attempt++) {
       if (predicate()) return;
       await new Promise(function (resolve) {
-        var delay = Components.classes["@mozilla.org/timer;1"].createInstance(
+        waitTimer = Components.classes["@mozilla.org/timer;1"].createInstance(
           Components.interfaces.nsITimer,
         );
-        delay.initWithCallback(
+        waitTimer.initWithCallback(
           resolve,
           100,
           Components.interfaces.nsITimer.TYPE_ONE_SHOT,
         );
       });
+      waitTimer = null;
     }
     throw new Error("Timed out: " + label);
   }
@@ -131,6 +135,79 @@ async function runProbe() {
       legacy ? !!scope.OS : scope.IOUtils === IOUtils,
       "filesystemBoundary",
     );
+    if (!legacy) {
+      var paper = new host.Item("journalArticle");
+      paper.setField("title", "AI Butler UI regression fixture");
+      await paper.saveTx();
+      var note = new host.Item("note");
+      note.parentID = paper.id;
+      note.setNote("<h1>AI summary</h1><p>Editor focus fixture.</p>");
+      note.addTag("AI-Generated");
+      await note.saveTx();
+      await main.ZoteroPane.selectItem(note.id);
+      var editor;
+      var editable;
+      await waitFor(function () {
+        editor = host.Notes._editorInstances.find(function (instance) {
+          return instance._item && instance._item.id === note.id;
+        });
+        editable =
+          editor && editor._iframeWindow.document.querySelector(".ProseMirror");
+        return editable;
+      }, "native note editor");
+      await waitForPromise(editor._initPromise, "native editor initialization");
+      stage("native editor ready");
+      editable.focus();
+      var editorDocument = editable.ownerDocument;
+      // Focus alone does not always place a caret in a freshly loaded editor.
+      var caret = editorDocument.createRange();
+      caret.selectNodeContents(editable);
+      caret.collapse(false);
+      var selection = editorDocument.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(caret);
+      var redraws = 0;
+      var columnRefreshes = 0;
+      var refreshColumns = host.ItemTreeManager.refreshColumns;
+      var redrawObserver = host.Notifier.registerObserver(
+        {
+          notify: function (event, type, ids) {
+            if (
+              event === "redraw" &&
+              type === "item" &&
+              (!ids.length || ids.indexOf(paper.id) >= 0)
+            )
+              redraws++;
+          },
+        },
+        ["item"],
+        "ai-butler-ui-focus-probe",
+      );
+      host.ItemTreeManager.refreshColumns = function () {
+        columnRefreshes++;
+        return refreshColumns.apply(this, arguments);
+      };
+      try {
+        editorDocument.execCommand("insertText", false, "Saved edit 398");
+        editorDocument.execCommand("insertParagraph", false, null);
+        await waitFor(function () {
+          return note.getNote().indexOf("Saved edit 398") >= 0;
+        }, "native note autosave");
+        await waitFor(function () {
+          return redraws > 0;
+        }, "status row redraw");
+        assert(columnRefreshes === 0, "statusRedrawWithoutColumnRebuild");
+        assert(
+          host.Notes._editorInstances.indexOf(editor) >= 0 &&
+            editorDocument.activeElement === editable &&
+            main.ZoteroPane.getSelectedItems()[0].id === note.id,
+          "nativeNoteEditorKeepsFocus",
+        );
+      } finally {
+        host.ItemTreeManager.refreshColumns = refreshColumns;
+        host.Notifier.unregisterObserver(redrawObserver);
+      }
+    }
     var tab = main.document.createXULElement
       ? main.document.createXULElement("browser")
       : main.document.createElementNS(
@@ -172,6 +249,85 @@ async function runProbe() {
       );
     }, "dashboard settings");
     assert(true, "settings");
+    if (!legacy) {
+      var chromeFlags = dashboard.docShell.treeOwner
+        .QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+        .getInterface(Components.interfaces.nsIAppWindow).chromeFlags;
+      assert(
+        !(
+          chromeFlags &
+          Components.interfaces.nsIWebBrowserChrome.CHROME_OPENAS_DIALOG
+        ),
+        "mainWindowUsesNativeWindowControls",
+      );
+      dashboard.maximize();
+      await waitFor(function () {
+        return dashboard.windowState === dashboard.STATE_MAXIMIZED;
+      }, "main window maximize");
+      assert(true, "mainWindowMaximizes");
+      dashboard.restore();
+      await waitFor(function () {
+        return dashboard.windowState === dashboard.STATE_NORMAL;
+      }, "main window restore");
+      assert(true, "mainWindowRestores");
+      // Exercise the real click handler in a chrome dialog, using only fixture items.
+      var citationScope = {
+        Zotero: host,
+        addon: host.AIButler,
+        ztoolkit: toolkit,
+        URL: main.URL,
+        PathUtils: PathUtils,
+        IOUtils: hostFiles,
+      };
+      var citationFile = Components.classes[
+        "@mozilla.org/file/local;1"
+      ].createInstance(Components.interfaces.nsIFile);
+      citationFile.initWithPath(AGENT_CITATION_PROBE_PATH);
+      hostServices.scriptloader.loadSubScript(
+        hostServices.io.newFileURI(citationFile).spec,
+        citationScope,
+      );
+      await citationScope.AgentCitationProbe.runAgentUIHostChecks(
+        dashboard.document,
+        assert,
+        AGENT_STREAM_FIXTURE_URL,
+      );
+      var citationHost = dashboard.document.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "div",
+      );
+      dashboard.document.documentElement.appendChild(citationHost);
+      var externalLaunches = 0;
+      var launchURL = host.launchURL;
+      host.launchURL = function () {
+        externalLaunches++;
+      };
+      try {
+        citationScope.AgentCitationProbe.renderAgentMarkdown(
+          citationHost,
+          "[Fixture paper](zotero://select/library/items/" + paper.key + ")",
+        );
+        citationHost.querySelector("a").click();
+        await waitFor(function () {
+          var selectedItems = main.ZoteroPane.getSelectedItems();
+          return selectedItems.length === 1 && selectedItems[0].id === paper.id;
+        }, "Agent citation selects library item");
+        assert(externalLaunches === 0, "agentCitationBypassesExternalProtocol");
+        assert(
+          citationHost.querySelector("[role=alert]").hidden,
+          "agentCitationNoError",
+        );
+        await host.Items.trashTx([paper.id]);
+        citationHost.querySelector("a").click();
+        await waitFor(function () {
+          return !citationHost.querySelector("[role=alert]").hidden;
+        }, "Agent missing citation feedback");
+        assert(externalLaunches === 0, "agentMissingCitationStaysInternal");
+      } finally {
+        host.launchURL = launchURL;
+        citationHost.remove();
+      }
+    }
     if (legacy) addon.userDisabled = true;
     else await addon.disable();
     await waitFor(function () {
@@ -215,4 +371,4 @@ async function runProbe() {
     hostServices.startup.quit(Components.interfaces.nsIAppStartup.eForceQuit);
   }
 }
-/* global Components, Services, ChromeUtils, IOUtils, REPORT_PATH, dump */
+/* global Components, Services, ChromeUtils, IOUtils, REPORT_PATH, AGENT_CITATION_PROBE_PATH, dump */

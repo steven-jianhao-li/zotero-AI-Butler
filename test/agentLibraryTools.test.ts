@@ -15,6 +15,14 @@ import { ContentExtractor } from "../src/modules/contentExtractor";
 import { PDFExtractor } from "../src/modules/pdfExtractor";
 import { MineruClient } from "../src/modules/mineruIntegration";
 import { MineruMarkdownSaver } from "../src/modules/mineruMarkdownSaver";
+import { AgentRunner } from "../src/modules/agent/AgentRunner";
+import { AgentService } from "../src/modules/agent/AgentService";
+import {
+  TaskQueueManager,
+  TaskStatus,
+  type TaskItem,
+  type TaskOptions,
+} from "../src/modules/taskQueue";
 
 type FixtureTag = { tag: string; type?: number };
 
@@ -174,6 +182,52 @@ describe("Agent library tools", function () {
     let generate: typeof LLMService.generateWithEndpoint;
     let getEndpoint: typeof LLMEndpointManager.getEndpoint;
     let acquireEndpoint: typeof LLMService.acquireChatSessionEndpoint;
+    let getQueue: typeof TaskQueueManager.getInstance;
+    let tasks: Map<string, TaskItem>;
+    let queued: {
+      itemId: number;
+      mode: string;
+      priority: boolean;
+      options?: TaskOptions;
+    }[];
+    let complete: Set<(id: string) => void>;
+    let progress: Set<(id: string) => void>;
+    let removed: Set<(id: string) => void>;
+    let noteStrategy: string;
+    let failEnqueue: boolean;
+
+    function task(mode = "summary", status = TaskStatus.PROCESSING): TaskItem {
+      return {
+        id: `${mode === "summary" ? "summary" : "deepread"}-task-1`,
+        itemId: 1,
+        title: "Paper 1",
+        taskType: mode === "summary" ? "summary" : "deepRead",
+        status,
+        progress: 30,
+        createdAt: new Date(),
+        retryCount: 0,
+        maxRetries: 3,
+      };
+    }
+
+    function subscribe(
+      set: Set<(id: string) => void>,
+      callback: (id: string) => void,
+    ) {
+      set.add(callback);
+      return () => set.delete(callback);
+    }
+
+    async function waiting() {
+      for (let i = 0; i < 20 && !complete.size; i++) await Promise.resolve();
+      expect(complete.size).to.equal(1);
+    }
+
+    function noListeners() {
+      expect([complete.size, progress.size, removed.size]).to.deep.equal([
+        0, 0, 0,
+      ]);
+    }
 
     function execute(name: string, args: Record<string, unknown>) {
       const selected = createLibraryTools().find(
@@ -193,6 +247,49 @@ describe("Agent library tools", function () {
       generate = LLMService.generateWithEndpoint;
       getEndpoint = LLMEndpointManager.getEndpoint;
       acquireEndpoint = LLMService.acquireChatSessionEndpoint;
+      getQueue = TaskQueueManager.getInstance;
+      tasks = new Map();
+      queued = [];
+      complete = new Set();
+      progress = new Set();
+      removed = new Set();
+      noteStrategy = "skip";
+      failEnqueue = false;
+      const enqueue = async (
+        item: Zotero.Item,
+        mode: string,
+        priority = false,
+        options?: TaskOptions,
+      ) => {
+        if (failEnqueue) throw new Error("no usable attachment");
+        queued.push({ itemId: item.id, mode, priority, options });
+        const entry = task(mode, TaskStatus.PENDING);
+        tasks.set(entry.id, entry);
+        return entry.id;
+      };
+      const queue: Pick<
+        TaskQueueManager,
+        | "getTask"
+        | "addTask"
+        | "addDeepReadTask"
+        | "onComplete"
+        | "onProgress"
+        | "onRemoved"
+      > = {
+        getTask: (id) => tasks.get(id),
+        addTask: (item, priority, options) =>
+          enqueue(item, "summary", priority, options),
+        addDeepReadTask: (item, priority, options) =>
+          enqueue(item, "deepRead", priority, options),
+        onComplete: (callback) =>
+          subscribe(complete, (id) =>
+            callback(id, tasks.get(id)?.status === TaskStatus.COMPLETED),
+          ),
+        onProgress: (callback) =>
+          subscribe(progress, (id) => callback(id, 50, "progress")),
+        onRemoved: (callback) => subscribe(removed, callback),
+      };
+      TaskQueueManager.getInstance = () => queue as TaskQueueManager;
       state = context();
       editable = true;
       transactionCount = 0;
@@ -282,7 +379,16 @@ describe("Agent library tools", function () {
         }
       }
       globals.Zotero = {
+        Prefs: { get: () => noteStrategy },
         Items: {
+          trash: async (ids: number[]) => {
+            for (const id of ids) {
+              const item = items.get(id)!;
+              if (item.failSave) throw new Error("fixture trash failure");
+              item.deleted = true;
+              item.onSave?.();
+            }
+          },
           getAsync: async (id: number | number[]) =>
             Array.isArray(id)
               ? id.map((value) => items.get(value))
@@ -295,7 +401,10 @@ describe("Agent library tools", function () {
               (entry) => entry.libraryID === libraryID,
             ),
         },
-        Libraries: { isEditable: () => editable },
+        Libraries: {
+          isEditable: () => editable,
+          get: (id: number) => ({ libraryID: id }),
+        },
         URI: {
           getLibraryURI: (id: number) =>
             id === 1
@@ -316,6 +425,7 @@ describe("Agent library tools", function () {
               id,
               tags: item.getTags(),
               collections: item.getCollections(),
+              deleted: item.deleted,
             }));
             try {
               return await operation();
@@ -325,6 +435,7 @@ describe("Agent library tools", function () {
                 const item = items.get(entry.id)!;
                 item.tags = entry.tags;
                 item.collections = entry.collections;
+                item.deleted = entry.deleted;
               }
               throw error;
             }
@@ -349,6 +460,7 @@ describe("Agent library tools", function () {
       LLMService.generateWithEndpoint = generate;
       LLMEndpointManager.getEndpoint = getEndpoint;
       LLMService.acquireChatSessionEndpoint = acquireEndpoint;
+      TaskQueueManager.getInstance = getQueue;
     });
 
     it("scopes metadata and note search to the chosen library and pages deterministically", async function () {
@@ -381,6 +493,375 @@ describe("Agent library tools", function () {
         }),
         "collection-unavailable",
       );
+    });
+
+    it("enqueues standard summary and deep-read workflows with saved settings and returns immediately", async function () {
+      state.session.permission = "full";
+      items.get(1)!.noteIds = [];
+      for (const mode of ["summary", "deepRead"]) {
+        const result = await execute("start_paper_workflow", {
+          itemId: 1,
+          mode,
+        });
+        expect(result).to.have.property("disposition", "submitted");
+      }
+      expect(queued).to.deep.equal([
+        {
+          itemId: 1,
+          mode: "summary",
+          priority: false,
+          options: { source: "manual", summaryMode: "single" },
+        },
+        {
+          itemId: 1,
+          mode: "deepRead",
+          priority: false,
+          options: { source: "manual", summaryMode: "deepRead" },
+        },
+      ]);
+      noListeners();
+    });
+
+    it("reuses existing notes by default even under overwrite policy and never migrates legacy tags", async function () {
+      state.session.permission = "full";
+      noteStrategy = "overwrite";
+      const result = (await execute("start_paper_workflow", {
+        itemId: 1,
+        mode: "summary",
+      })) as { after: { noteId: number; artifactReady: boolean } };
+      expect(result).to.have.property("disposition", "reused_result");
+      expect(result.after.noteId).to.equal(2);
+      expect(result.after.artifactReady).to.equal(true);
+      expect(queued).to.have.length(0);
+      expect(items.get(2)!.tags).to.deep.equal([{ tag: "AI-Generated" }]);
+      expect(items.get(2)!.mutationCount).to.equal(0);
+      expect(items.get(2)!.saveCount).to.equal(0);
+      const status = await execute("get_paper_workflow_status", {
+        taskId: "summary-task-1",
+      });
+      expect(status).to.include({
+        status: "completed",
+        noteId: 2,
+        artifactReady: true,
+      });
+    });
+
+    it("requires explicit regeneration and leaves skip/append/overwrite policy to the queue", async function () {
+      state.session.permission = "full";
+      for (const policy of ["skip", "append", "overwrite"]) {
+        noteStrategy = policy;
+        tasks.clear();
+        await execute("start_paper_workflow", {
+          itemId: 1,
+          mode: "summary",
+          regenerate: true,
+        });
+        expect(queued.at(-1)!.options).not.to.have.property("forceOverwrite");
+      }
+      expect(queued).to.have.length(3);
+    });
+
+    it("reuses queued, processing and legacy tasks without resetting or overwriting their options", async function () {
+      state.session.permission = "full";
+      for (const status of [
+        TaskStatus.PENDING,
+        TaskStatus.PRIORITY,
+        TaskStatus.PROCESSING,
+      ]) {
+        const entry = task("summary", status);
+        entry.id = "task-1";
+        entry.options = { forceOverwrite: true };
+        tasks.set(entry.id, entry);
+        const result = await execute("start_paper_workflow", {
+          itemId: 1,
+          mode: "summary",
+          regenerate: true,
+        });
+        expect(result).to.include({
+          disposition: "existing_task",
+          taskId: "task-1",
+        });
+        expect(entry.options).to.deep.equal({ forceOverwrite: true });
+      }
+      expect(queued).to.have.length(0);
+    });
+
+    it("resumes incomplete deep-reading notes and regenerates missing completed artifacts", async function () {
+      state.session.permission = "full";
+      items.get(2)!.tags = [{ tag: "AI-DeepRead" }];
+      items.get(2)!.note =
+        "<!-- zab:slot:test:pending --><p>pending</p><!-- zab:slot:test:end -->";
+      await execute("start_paper_workflow", { itemId: 1, mode: "deepRead" });
+      expect(queued[0].mode).to.equal("deepRead");
+      tasks.set("summary-task-1", task("summary", TaskStatus.COMPLETED));
+      await execute("start_paper_workflow", { itemId: 1, mode: "summary" });
+      expect(queued[1].mode).to.equal("summary");
+    });
+
+    it("enforces workflow scope, source type, write authority and strict arguments", async function () {
+      await rejects(
+        execute("start_paper_workflow", { itemId: 1, mode: "summary" }),
+        "read-only",
+      );
+      state.session.permission = "full";
+      editable = false;
+      await rejects(
+        execute("start_paper_workflow", { itemId: 1, mode: "summary" }),
+        "library-read-only",
+      );
+      editable = true;
+      for (const id of [3, 4, 999]) {
+        await rejects(
+          execute("start_paper_workflow", { itemId: id, mode: "summary" }),
+          "item-unavailable",
+        );
+        await rejects(
+          execute("get_paper_workflow_status", {
+            taskId: `summary-task-${id}`,
+          }),
+          "item-unavailable",
+        );
+      }
+      await rejects(
+        execute("start_paper_workflow", { itemId: 2, mode: "summary" }),
+        "not-paper",
+      );
+      await rejects(
+        execute("start_paper_workflow", { itemId: 1, mode: "invalid" }),
+        "enum",
+      );
+      await rejects(
+        execute("start_paper_workflow", {
+          itemId: 1,
+          mode: "summary",
+          regenerate: "true",
+        }),
+        "boolean",
+      );
+      await rejects(
+        execute("start_paper_workflow", {
+          itemId: 1,
+          mode: "summary",
+          forceOverwrite: true,
+        }),
+        "unknown-argument",
+      );
+      await rejects(
+        execute("get_paper_workflow_status", { taskId: "img-task-1" }),
+        "workflow-task",
+      );
+      await rejects(
+        execute("get_paper_workflow_status", {
+          taskId: "summary-task-1",
+          wait: "yes",
+        }),
+        "boolean",
+      );
+      expect(queued).to.have.length(0);
+    });
+
+    it("surfaces enqueue failures without claiming that a workflow started", async function () {
+      state.session.permission = "full";
+      items.get(1)!.noteIds = [];
+      failEnqueue = true;
+      await rejects(
+        execute("start_paper_workflow", { itemId: 1, mode: "summary" }),
+        "no usable attachment",
+      );
+      expect(tasks.size).to.equal(0);
+    });
+
+    it("waits on queue events through transient retries, then returns the saved note", async function () {
+      const entry = task();
+      tasks.set(entry.id, entry);
+      let settled = false;
+      const pending = execute("get_paper_workflow_status", {
+        taskId: entry.id,
+        wait: true,
+      }).then((result) => {
+        settled = true;
+        return result;
+      });
+      await waiting();
+      entry.status = TaskStatus.PENDING;
+      for (const callback of complete) callback(entry.id);
+      await Promise.resolve();
+      expect(settled).to.equal(false);
+      entry.status = TaskStatus.COMPLETED;
+      entry.progress = 100;
+      for (const callback of complete) callback(entry.id);
+      expect(await pending).to.include({
+        status: "completed",
+        noteId: 2,
+        artifactReady: true,
+        waitTimedOut: false,
+      });
+      noListeners();
+    });
+
+    it("returns final failure and removes all wait subscriptions", async function () {
+      const entry = task();
+      tasks.set(entry.id, entry);
+      const pending = execute("get_paper_workflow_status", {
+        taskId: entry.id,
+        wait: true,
+      });
+      await waiting();
+      entry.status = TaskStatus.FAILED;
+      entry.error = "provider failed";
+      for (const callback of progress) callback(entry.id);
+      expect(await pending).to.include({
+        status: "failed",
+        error: "provider failed",
+      });
+      noListeners();
+    });
+
+    it("ends waits for deleted tasks and rechecks item scope before exposing results", async function () {
+      const entry = task();
+      tasks.set(entry.id, entry);
+      const pending = execute("get_paper_workflow_status", {
+        taskId: entry.id,
+        wait: true,
+      });
+      await waiting();
+      tasks.delete(entry.id);
+      for (const callback of removed) callback(entry.id);
+      expect(await pending).to.have.property("noteId", 2);
+      noListeners();
+      tasks.set(entry.id, entry);
+      const moved = execute("get_paper_workflow_status", {
+        taskId: entry.id,
+        wait: true,
+      });
+      await waiting();
+      items.get(1)!.libraryID = 2;
+      entry.status = TaskStatus.COMPLETED;
+      for (const callback of complete) callback(entry.id);
+      await rejects(moved, "target-unavailable");
+      noListeners();
+    });
+
+    it("cancels the wait without cancelling the queued workflow", async function () {
+      const controller = new AbortController();
+      state.signal = controller.signal;
+      const entry = task();
+      tasks.set(entry.id, entry);
+      const pending = execute("get_paper_workflow_status", {
+        taskId: entry.id,
+        wait: true,
+      });
+      await waiting();
+      controller.abort();
+      await rejects(pending, "aborted");
+      expect(entry.status).to.equal(TaskStatus.PROCESSING);
+      noListeners();
+    });
+
+    it("times out without changing queue state or leaking subscriptions", async function () {
+      const originalSetTimeout = globals.setTimeout;
+      const originalClearTimeout = globals.clearTimeout;
+      let expire: (() => void) | undefined;
+      let cleared = false;
+      const entry = task();
+      tasks.set(entry.id, entry);
+      try {
+        globals.setTimeout = (callback: () => void, delay: number) => {
+          expect(delay).to.equal(30 * 60 * 1000);
+          expire = callback;
+          return 812;
+        };
+        globals.clearTimeout = (id: number) => {
+          cleared = id === 812;
+        };
+        const pending = execute("get_paper_workflow_status", {
+          taskId: entry.id,
+          wait: true,
+        });
+        await waiting();
+        expire!();
+        expect(await pending).to.include({
+          waitTimedOut: true,
+          status: "processing",
+        });
+        expect(cleared).to.equal(true);
+        noListeners();
+      } finally {
+        globals.setTimeout = originalSetTimeout;
+        globals.clearTimeout = originalClearTimeout;
+      }
+    });
+
+    it("returns immediately for already completed tasks, including missing artifacts", async function () {
+      tasks.set("summary-task-1", task("summary", TaskStatus.COMPLETED));
+      items.get(1)!.noteIds = [];
+      expect(
+        await execute("get_paper_workflow_status", {
+          taskId: "summary-task-1",
+          wait: true,
+        }),
+      ).to.include({
+        status: "completed",
+        artifactReady: false,
+        noteId: null,
+        waitTimedOut: false,
+      });
+      noListeners();
+    });
+
+    it("runs the approval -> enqueue -> completion -> read-note sequence in the Agent loop", async function () {
+      state.session.permission = "confirm";
+      items.get(1)!.noteIds = [];
+      let step = 0;
+      let approvals = 0;
+      const running = new AgentRunner({
+        tools: createLibraryTools(),
+        save: async () => {},
+        changed: () => {},
+        write: (operation) => operation(),
+        approve: async (_session, approval) => {
+          approvals++;
+          expect(approval.toolName).to.equal("start_paper_workflow");
+          expect(queued).to.have.length(0);
+          return true;
+        },
+        turn: async (request) => {
+          step++;
+          const name = [
+            "start_paper_workflow",
+            "get_paper_workflow_status",
+            "read_note",
+          ][step - 1];
+          const args = [
+            { itemId: 1, mode: "summary" },
+            { taskId: "summary-task-1", wait: true },
+            { noteId: 2 },
+          ][step - 1];
+          if (step === 3)
+            expect(request.messages.at(-1)!.content).to.contain('"noteId":2');
+          if (step === 4)
+            expect(request.messages.at(-1)!.content).to.contain(
+              "Existing AI summary",
+            );
+          return {
+            text: name ? "" : "Summary ready.",
+            toolCalls: name
+              ? [{ id: `step-${step}`, name, arguments: JSON.stringify(args) }]
+              : [],
+          };
+        },
+      }).run(state.session, state.signal);
+      for (let i = 0; i < 150 && !complete.size; i++) await Promise.resolve();
+      await waiting();
+      const entry = tasks.get("summary-task-1")!;
+      entry.status = TaskStatus.COMPLETED;
+      items.get(1)!.noteIds = [2];
+      for (const callback of complete) callback(entry.id);
+      await running;
+      expect(approvals).to.equal(1);
+      expect(state.session.status).to.equal("completed");
+      expect(state.session.mutationReceipts?.[0].status).to.equal("completed");
+      noListeners();
     });
 
     it("reads notes progressively without normalizing tags or saving notes", async function () {
@@ -599,6 +1080,148 @@ describe("Agent library tools", function () {
       expect(created.note).to.contain("<br/>Result");
       expect(created.tags).to.deep.equal([{ tag: "AI-Agent" }]);
       expect(created.parentID).to.equal(1);
+    });
+
+    it("moves only the chosen papers to Trash and records recoverable before/after state", async function () {
+      state.session.permission = "full";
+      const result = (await execute("trash_items", { itemIds: [1, 5, 1] })) as {
+        recoverable: boolean;
+        changes: {
+          before: { source: { itemId: number }; childNotes: number };
+          after: { deleted: boolean };
+        }[];
+      };
+      expect(result.recoverable).to.equal(true);
+      expect(
+        result.changes.map((change) => change.before.source.itemId),
+      ).to.deep.equal([1, 5]);
+      expect(result.changes[0].before.childNotes).to.equal(1);
+      expect(result.changes.every((change) => change.after.deleted)).to.equal(
+        true,
+      );
+      expect(items.get(2)!.parentID).to.equal(1);
+      expect(items.get(1)!.getCollections()).to.deep.equal([10]);
+      expect(items.get(3)!.deleted).to.equal(false);
+      expect(transactionCount).to.equal(1);
+    });
+
+    it("preflights the entire trash batch and enforces permissions before any change", async function () {
+      await rejects(execute("trash_items", { itemIds: [1] }), "read-only");
+      state.session.permission = "full";
+      editable = false;
+      await rejects(
+        execute("trash_items", { itemIds: [1] }),
+        "library-read-only",
+      );
+      editable = true;
+      for (const id of [3, 4, 999])
+        await rejects(
+          execute("trash_items", { itemIds: [1, id] }),
+          "item-unavailable",
+        );
+      await rejects(
+        execute("trash_items", { itemIds: [1, 2] }),
+        "trash-paper-required",
+      );
+      expect(items.get(1)!.deleted).to.equal(false);
+      expect(transactionCount).to.equal(0);
+    });
+
+    it("rolls back the whole trash batch if a later item fails", async function () {
+      state.session.permission = "full";
+      items.get(5)!.failSave = true;
+      await rejects(
+        execute("trash_items", { itemIds: [1, 5] }),
+        "trash failure",
+      );
+      expect(items.get(1)!.deleted).to.equal(false);
+      expect(items.get(5)!.deleted).to.equal(false);
+      expect(rollbackCount).to.equal(1);
+    });
+
+    it("preserves a completed trash receipt when the Agent stops during commit", async function () {
+      state.session.permission = "full";
+      items.get(1)!.onSave = () => {
+        state.assertActive = () => {
+          throw new Error("cancelled");
+        };
+      };
+      const result = await execute("trash_items", { itemIds: [1] });
+      expect(result).to.have.property("operation", "trash");
+      expect(items.get(1)!.deleted).to.equal(true);
+    });
+
+    it("applies read-only -> confirm -> full -> read-only on follow-ups in the same session", async function () {
+      const service = Object.create(AgentService.prototype) as AgentService;
+      let approvals = 0;
+      Object.assign(service, {
+        sessions: new Map([[state.session.id, state.session]]),
+        listeners: new Set(),
+        controllers: new Map(),
+        approvals: new Map(),
+        loading: Promise.resolve(),
+        writes: Promise.resolve(),
+        store: { save: async () => {} },
+        requestApproval: async () => {
+          approvals++;
+          return false;
+        },
+      });
+      const originalTurn = LLMService.agentTurn;
+      try {
+        for (const permission of [
+          "read-only",
+          "confirm",
+          "full",
+          "read-only",
+        ] as const) {
+          let turns = 0;
+          LLMService.agentTurn = async (request) => {
+            turns++;
+            expect(request.messages[0].content).to.contain(
+              `Authority=${permission}`,
+            );
+            expect(
+              request.tools.some((tool) => tool.name === "trash_items"),
+            ).to.equal(permission !== "read-only");
+            if (permission !== "read-only" && turns === 1)
+              return {
+                text: "",
+                toolCalls: [
+                  {
+                    id: `trash-${permission}`,
+                    name: "trash_items",
+                    arguments: '{"itemIds":[1]}',
+                  },
+                ],
+              };
+            if (permission === "confirm")
+              expect(items.get(1)!.deleted).to.equal(false);
+            if (permission === "full")
+              expect(request.messages.at(-1)!.content).to.contain(
+                '"operation":"trash"',
+              );
+            return { text: "Done.", toolCalls: [] };
+          };
+          await service.run(state.session.id, "Process the requested papers.", {
+            permission,
+          });
+          expect(state.session.status).to.equal("completed");
+          expect(state.session.permission).to.equal(permission);
+        }
+        expect(approvals).to.equal(1);
+        expect(items.get(1)!.deleted).to.equal(true);
+        expect(
+          state.session.events.filter(
+            (event) =>
+              event.type === "status" &&
+              event.data &&
+              "permission" in (event.data as object),
+          ),
+        ).to.have.length(3);
+      } finally {
+        LLMService.agentTurn = originalTurn;
+      }
     });
 
     it("keeps group-library source links scoped to the actual group", async function () {

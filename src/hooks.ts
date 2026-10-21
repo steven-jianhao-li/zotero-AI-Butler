@@ -42,6 +42,7 @@ import {
 import { MainWindow } from "./modules/views/MainWindow";
 import { AutoScanManager } from "./modules/autoScanManager";
 import { AutoNoteExportManager } from "./modules/autoNoteExportManager";
+import { DEFAULT_NOTE_EXPORT_FILENAME_TEMPLATE } from "./modules/noteExportNaming";
 import { AgentService } from "./modules/agent/AgentService";
 import {
   CONTEXT_MENU_ITEMS,
@@ -299,6 +300,7 @@ function initializeDefaultPrefsOnStartup() {
     autoScanDeepReadEnabled: false,
     noteExportEnabled: false,
     noteExportRootPath: "",
+    noteExportFilenameTemplate: DEFAULT_NOTE_EXPORT_FILENAME_TEMPLATE,
     noteExportWatchedCollections: "[]",
     noteExportIncludeSubcollections: true,
     noteExportFormats:

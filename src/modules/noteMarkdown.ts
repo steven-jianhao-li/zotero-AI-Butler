@@ -480,6 +480,7 @@ type HtmlElementMatch = {
 type IndexedFollowUpChatPair = {
   pair: FollowUpChatPair;
   index: number;
+  hasRawContent: boolean;
 };
 
 function findMatchingElementEnd(
@@ -572,7 +573,14 @@ function inferFollowUpChatRole(
     return explicitRole;
   }
 
-  const style = readHtmlAttribute(openingTag, "style").toLowerCase();
+  // CSS serialization can turn hex colors into rgb() after a note is edited.
+  const style = readHtmlAttribute(openingTag, "style")
+    .toLowerCase()
+    .replace(
+      /rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/g,
+      (_match, r: string, g: string, b: string) =>
+        `#${[r, g, b].map((value) => Number(value).toString(16).padStart(2, "0")).join("")}`,
+    );
   if (style.includes("#4f8fd9") || style.includes("#e3f2fd")) {
     return "user";
   }
@@ -586,7 +594,8 @@ function parsePairFromVisibleElement(
   element: HtmlElementMatch,
 ): FollowUpChatPair | null {
   const encodedPair = decodePairFromDataAttribute(element.openingTag);
-  if (encodedPair) return encodedPair;
+  if (encodedPair?.user.trim() && encodedPair.assistant.trim())
+    return encodedPair;
 
   const pairId =
     readHtmlAttribute(element.openingTag, "data-ai-butler-chat-pair-id") ||
@@ -595,11 +604,15 @@ function parsePairFromVisibleElement(
 
   let user = "";
   let assistant = "";
+  let roleEndIndex = -1;
   for (const roleElement of findElementsByOpeningTag(
     element.innerHtml,
     (openingTag, tagName) =>
       tagName === "div" && !!inferFollowUpChatRole(openingTag),
   )) {
+    // A styled code block inside an answer is content, not another message.
+    if (roleElement.startIndex < roleEndIndex) continue;
+    roleEndIndex = roleElement.endIndex;
     const role = inferFollowUpChatRole(roleElement.openingTag);
     const text = htmlToPlainText(
       roleElement.innerHtml.replace(/<strong\b[^>]*>[\s\S]*?<\/strong>/i, ""),
@@ -611,8 +624,10 @@ function parsePairFromVisibleElement(
     }
   }
 
+  user = encodedPair?.user.trim() ? encodedPair.user : user;
+  assistant = encodedPair?.assistant.trim() ? encodedPair.assistant : assistant;
   if (!user && !assistant) return null;
-  return { id: pairId, user, assistant };
+  return { id: encodedPair?.id || pairId, user, assistant };
 }
 
 function findVisibleFollowUpChatPairs(html: string): IndexedFollowUpChatPair[] {
@@ -622,6 +637,7 @@ function findVisibleFollowUpChatPairs(html: string): IndexedFollowUpChatPair[] {
     .map((element) => ({
       pair: parsePairFromVisibleElement(element),
       index: element.startIndex,
+      hasRawContent: !!decodePairFromDataAttribute(element.openingTag),
     }))
     .filter(
       (item): item is IndexedFollowUpChatPair =>
@@ -633,12 +649,12 @@ export function parseFollowUpChatPairsFromNoteHtml(
   html: string,
 ): FollowUpChatPair[] {
   const pairs: FollowUpChatPair[] = [];
-  const seenIds = new Set<string>();
+  const seenPairs = new Map<string, IndexedFollowUpChatPair>();
   const candidates: IndexedFollowUpChatPair[] = [];
   const pushCandidate = (raw: unknown, index: number) => {
     const parsed = normalizeFollowUpChatPair(raw);
     if (!parsed) return;
-    candidates.push({ pair: parsed, index });
+    candidates.push({ pair: parsed, index, hasRawContent: true });
   };
   const markerPattern = /<!--\s*AI_BUTLER_CHAT_JSON:\s*([\s\S]*?)\s*-->/g;
   let match: RegExpExecArray | null;
@@ -654,9 +670,24 @@ export function parseFollowUpChatPairsFromNoteHtml(
   candidates.push(...findVisibleFollowUpChatPairs(html));
   candidates.sort((a, b) => a.index - b.index);
 
-  for (const { pair } of candidates) {
-    if (seenIds.has(pair.id)) continue;
-    seenIds.add(pair.id);
+  for (const candidate of candidates) {
+    const { pair } = candidate;
+    const existing = seenPairs.get(pair.id);
+    if (existing) {
+      // Prefer original Markdown, but recover missing fields from visible HTML.
+      for (const role of ["user", "assistant"] as const) {
+        if (
+          pair[role].trim() &&
+          (!existing.pair[role].trim() ||
+            (candidate.hasRawContent && !existing.hasRawContent))
+        ) {
+          existing.pair[role] = pair[role];
+        }
+      }
+      existing.hasRawContent ||= candidate.hasRawContent;
+      continue;
+    }
+    seenPairs.set(pair.id, candidate);
     pairs.push(pair);
   }
 

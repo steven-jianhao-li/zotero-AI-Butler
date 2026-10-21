@@ -1,7 +1,7 @@
 {
   "name": "zotero-ai-butler",
   "type": "module",
-  "version": "5.0.0-beta.2",
+  "version": "5.1.0-beta.1",
   "description": "Your personal AI butler, automatically and meticulously reads papers and summarizes notes.",
   "config": {
     "addonName": "zotero-ai-butler",
@@ -33,8 +33,11 @@
     "test:agent": "node ./scripts/test-agent.mjs",
     "test:task-queue": "node ./scripts/test-task-queue.mjs",
     "test:headers": "node ./scripts/test-request-headers.mjs",
+    "test:llm-completion": "node ./scripts/test-llm-completion.mjs",
+    "test:llm-lifecycle": "node --test test/llmRequestLifecycle.test.mjs",
     "test:agent:live": "node ./scripts/test-agent-live.mjs",
     "test:mineru": "node ./scripts/test-mineru.mjs",
+    "test:note-export": "node --test test/noteExportNaming.test.mjs",
     "pretest:watch": "node ./scripts/gen-env-setup.mjs",
     "test:watch": "zotero-plugin test",
     "scaffold:provider": "node ./scripts/create-provider.mjs",
@@ -43,7 +46,7 @@
     "i18n:check:build": "node ./scripts/check-i18n-build.mjs",
     "test:i18n": "node ./scripts/check-i18n.mjs",
     "test:pdf": "node --test test/pdfExtractionRecovery.test.mjs",
-    "test:sidebar": "node --test test/sidebarViewport.test.mjs test/quickChatThreads.test.mjs",
+    "test:sidebar": "node --test test/sidebarViewport.test.mjs test/quickChatThreads.test.mjs test/uiRefresh.test.mjs",
     "test:onboarding": "node --test test/onboardingNavigation.test.mjs",
     "test:compat": "node --test test/compatibility.test.mjs",
     "test:compat:host": "node scripts/test-zotero-compat.mjs"

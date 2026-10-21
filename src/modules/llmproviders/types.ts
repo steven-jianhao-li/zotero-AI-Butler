@@ -32,6 +32,29 @@ export type LLMTruncationState = {
   kind: "max_tokens" | "context_window" | "other";
 };
 
+/** Timing and routing metadata only; never include credentials or model text. */
+export type LLMRequestDiagnostics = {
+  providerId: string;
+  model?: string;
+  endpointHost?: string;
+  stream: boolean;
+  requestTimeoutMs: number;
+  totalTimeoutMs: number;
+  startedAt: string;
+  elapsedMs: number;
+  firstByteMs?: number;
+  firstContentMs?: number;
+  lastActivityMs?: number;
+  receivedChars: number;
+  httpStatus?: number;
+  timeoutKind?: "first-response" | "idle" | "total";
+};
+
+export type LLMRequestActivity = {
+  kind: "receiving" | "content";
+  diagnostics: LLMRequestDiagnostics;
+};
+
 export type LLMOptions = {
   apiUrl?: string;
   apiKey?: string;
@@ -39,6 +62,9 @@ export type LLMOptions = {
   customHeaders?: Record<string, string>;
   stream?: boolean;
   requestTimeoutMs?: number;
+  /** Streaming hard limit; defaults to six times the response/idle timeout. */
+  requestTotalTimeoutMs?: number;
+  onActivity?: (event: LLMRequestActivity) => void;
   temperature?: number;
   topP?: number;
   maxTokens?: number;
@@ -72,6 +98,7 @@ export type LLMModelInfo = {
   name?: string;
   description?: string;
   contextLength?: number;
+  maxOutputTokens?: number;
   ownedBy?: string;
   created?: number;
 };
@@ -80,6 +107,20 @@ export type LLMUsage = {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+};
+
+/** A transport ending is separate from the model completing its answer. */
+export type LLMProviderResult = {
+  text: string;
+  completion: "complete" | "partial";
+  finishReason: string;
+  recovery: "none" | "continue" | "retry";
+  usage?: LLMUsage;
+  requestId?: string;
+  maxOutputTokens?: number;
+  error?: string;
+  continuationRounds?: number;
+  requestDiagnostics?: LLMRequestDiagnostics;
 };
 
 export type LLMResponse = {
@@ -94,6 +135,11 @@ export type LLMResponse = {
   finishReason?: string;
   warnings?: string[];
   rawExcerpt?: string;
+  completion?: LLMProviderResult["completion"];
+  recovery?: LLMProviderResult["recovery"];
+  continuationRounds?: number;
+  maxOutputTokens?: number;
+  requestDiagnostics?: LLMRequestDiagnostics;
 };
 
 export type LLMError = {

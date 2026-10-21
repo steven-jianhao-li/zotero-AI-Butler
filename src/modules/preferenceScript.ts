@@ -1,5 +1,6 @@
 import { getPref, setPref, clearPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
+import { DEFAULT_NOTE_EXPORT_FILENAME_TEMPLATE } from "./noteExportNaming";
 import {
   getDefaultSummaryPrompt,
   getDefaultTableTemplate,
@@ -246,6 +247,7 @@ function initializeDefaultPrefs() {
     sidebarActiveTab: "chat",
     noteExportEnabled: false,
     noteExportRootPath: "",
+    noteExportFilenameTemplate: DEFAULT_NOTE_EXPORT_FILENAME_TEMPLATE,
     noteExportWatchedCollections: "[]",
     noteExportIncludeSubcollections: true,
     noteExportFormats:

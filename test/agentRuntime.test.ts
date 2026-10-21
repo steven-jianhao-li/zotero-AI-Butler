@@ -95,6 +95,170 @@ function dependencies(
 }
 
 describe("Agent runtime authority and recovery", function () {
+  it("shows previews before completion and reuses their IDs for the validated delivery", async function () {
+    const state = session();
+    let previewId = "";
+    await new AgentRunner(
+      dependencies({
+        turn: async (request) => {
+          request.onUpdate?.({ text: "", reasoningContent: "", reset: true });
+          request.onUpdate?.({ text: "Partial", reasoningContent: "Checking" });
+          const preview = state.events.find(
+            (event) => event.type === "assistant",
+          )!;
+          previewId = preview.id;
+          expect(preview.phase).to.equal("work");
+          expect(preview.streamState).to.equal("streaming");
+          expect(
+            state.messages.filter((message) => message.role === "assistant"),
+          ).to.have.length(0);
+          return {
+            text: "Complete reply",
+            reasoningContent: "Checked",
+            toolCalls: [],
+          };
+        },
+      }),
+    ).run(state, new AbortController().signal);
+    const replies = state.events.filter((event) => event.type === "assistant");
+    expect(replies).to.have.length(1);
+    expect(replies[0]).to.include({
+      id: previewId,
+      text: "Complete reply",
+      phase: "delivery",
+      streamState: "complete",
+    });
+  });
+
+  it("retains failed attempts as interrupted work without mixing them into retried delivery", async function () {
+    const state = session();
+    await new AgentRunner(
+      dependencies({
+        turn: async (request) => {
+          request.onUpdate?.({ text: "Old attempt", reasoningContent: "" });
+          request.onUpdate?.({ text: "", reasoningContent: "", reset: true });
+          request.onUpdate?.({ text: "New attempt", reasoningContent: "" });
+          return { text: "New attempt", toolCalls: [] };
+        },
+      }),
+    ).run(state, new AbortController().signal);
+    const replies = state.events.filter((event) => event.type === "assistant");
+    expect(
+      replies.map((event) => [event.text, event.phase, event.streamState]),
+    ).to.deep.equal([
+      ["Old attempt", "work", "interrupted"],
+      ["New attempt", "delivery", "complete"],
+    ]);
+  });
+
+  it("never executes streamed tool intentions after cancellation", async function () {
+    const state = session("full");
+    const controller = new AbortController();
+    let writes = 0;
+    await new AgentRunner(
+      dependencies({
+        tools: [
+          tool("write", true, async () => {
+            writes++;
+          }),
+        ],
+        turn: async (request) => {
+          request.onUpdate?.({
+            text: "Preparing a change",
+            reasoningContent: "",
+          });
+          controller.abort("Cancelled");
+          return {
+            text: "Preparing a change",
+            toolCalls: [call("write", "write-1")],
+          };
+        },
+      }),
+    ).run(state, controller.signal);
+    expect(writes).to.equal(0);
+    expect(state.status).to.equal("cancelled");
+    expect(
+      state.events.find((event) => event.type === "assistant")?.streamState,
+    ).to.equal("interrupted");
+    expect(state.events.some((event) => event.phase === "delivery")).to.equal(
+      false,
+    );
+  });
+
+  it("records readable thinking and distinct work/delivery without exposing provider replay state", async function () {
+    const state = session();
+    let count = 0;
+    const runner = new AgentRunner(
+      dependencies({
+        tools: [tool("search", false, async () => ({ found: true }))],
+        turn: async () =>
+          ++count === 1
+            ? {
+                text: "Checking the library.",
+                reasoningContent: "Search by title.",
+                toolCalls: [call("search", "call-search")],
+                providerState: {
+                  providerId: "openai",
+                  parts: [{ encrypted_content: "opaque-replay" }],
+                },
+              }
+            : {
+                text: "Found the paper.",
+                reasoningContent: "The title matches.",
+                toolCalls: [],
+              },
+      }),
+    );
+    await runner.run(state, new AbortController().signal);
+    expect(
+      state.events
+        .filter((entry) => entry.type === "reasoning")
+        .map((entry) => entry.text),
+    ).to.deep.equal(["Search by title.", "The title matches."]);
+    expect(
+      state.events
+        .filter((entry) => entry.type === "assistant")
+        .map((entry) => entry.phase),
+    ).to.deep.equal(["work", "delivery"]);
+    expect(state.events.at(-1)?.runStatus).to.equal("completed");
+    expect(JSON.stringify(state.events)).not.to.include("opaque-replay");
+  });
+
+  it("opens the actual storage folder only after ensuring it exists", async function () {
+    const globals = globalThis as unknown as Record<string, unknown>;
+    const previous = {
+      Zotero: globals.Zotero,
+      PathUtils: globals.PathUtils,
+      IOUtils: globals.IOUtils,
+    };
+    const actions: string[] = [];
+    globals.Zotero = {
+      DataDirectory: { dir: "/custom/data" },
+      File: {
+        pathToFile: (path: string) => ({
+          launch: () => actions.push(`open:${path}`),
+        }),
+      },
+    };
+    globals.PathUtils = { join: (...parts: string[]) => parts.join("/") };
+    globals.IOUtils = {
+      makeDirectory: async (path: string) => {
+        actions.push(`mkdir:${path}`);
+      },
+    };
+    try {
+      expect(AgentStore.directory()).to.equal("/custom/data/ai-butler-agent");
+      expect(actions).to.deep.equal([]);
+      await AgentStore.openDirectory();
+      expect(actions).to.deep.equal([
+        "mkdir:/custom/data/ai-butler-agent",
+        "open:/custom/data/ai-butler-agent",
+      ]);
+    } finally {
+      Object.assign(globals, previous);
+    }
+  });
+
   it("accepts an approval during slow persistence without executing before the save completes", async function () {
     const state = session("confirm");
     const service = Object.create(AgentService.prototype) as AgentService;

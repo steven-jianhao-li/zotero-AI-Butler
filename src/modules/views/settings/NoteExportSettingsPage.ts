@@ -16,6 +16,14 @@ import {
 } from "../ui/components";
 import { getString } from "../../../utils/locale";
 import { getSelectedCollection } from "../../../utils/collectionSelection";
+import {
+  DEFAULT_NOTE_EXPORT_FILENAME_TEMPLATE,
+  NOTE_EXPORT_FILENAME_FIELDS,
+  formatNoteExportFilename,
+  isValidNoteExportFilenameTemplate,
+  type NoteExportFilenameField,
+  type NoteExportFilenameValues,
+} from "../../noteExportNaming";
 
 export class NoteExportSettingsPage {
   private container: HTMLElement;
@@ -228,6 +236,9 @@ export class NoteExportSettingsPage {
     );
     page.appendChild(basics);
 
+    const naming = createFilenameTemplatePanel(doc, config.filenameTemplate);
+    page.appendChild(naming.panel);
+
     const collections = createPanel(doc);
     collections.appendChild(
       createPanelHeader(
@@ -355,26 +366,29 @@ export class NoteExportSettingsPage {
 
     const saveCurrentSettings = (showNotice = true) => {
       setNoteExportConfig({
-        enabled: getCheckboxValue(this.container, "noteExportEnabled", false),
+        enabled: getCheckboxValue(page, "noteExportEnabled", false),
         rootPath: (pathInput as HTMLInputElement).value,
+        filenameTemplate: isValidNoteExportFilenameTemplate(naming.input.value)
+          ? naming.input.value
+          : undefined,
         includeSubcollections: getCheckboxValue(
-          this.container,
+          page,
           "noteExportIncludeSubcollections",
           true,
         ),
-        formats: readFormats(this.container),
+        formats: readFormats(page),
         conflictStrategy: getSelectValue(
           strategySelect,
           "skip",
         ) as NoteExportConflictStrategy,
         suppressDirectoryPrompt: getCheckboxValue(
-          this.container,
+          page,
           "noteExportSuppressDirectoryPrompt",
           false,
         ),
       });
       AutoNoteExportManager.getInstance().reload();
-      if (showNotice)
+      if (showNotice && isValidNoteExportFilenameTemplate(naming.input.value))
         showToast(getString("settings-note-export-saved"), "success");
     };
     const scheduleAutoSave = () => {
@@ -486,6 +500,209 @@ export class NoteExportSettingsPage {
 
     return list;
   }
+}
+
+function createFilenameTemplatePanel(
+  doc: Document,
+  template: string,
+): { panel: HTMLElement; input: HTMLInputElement } {
+  const panel = createPanel(doc);
+  panel.appendChild(
+    createPanelHeader(
+      doc,
+      getString("settings-note-export-naming-title"),
+      getString("settings-note-export-naming-description"),
+    ),
+  );
+  const input = createInput(
+    "noteExportFilenameTemplate",
+    "text",
+    template,
+    DEFAULT_NOTE_EXPORT_FILENAME_TEMPLATE,
+  );
+  input.spellcheck = false;
+  Object.assign(input.style, {
+    borderRadius: "10px",
+    fontFamily: "Consolas, Menlo, monospace",
+  });
+  const label = doc.createElement("label");
+  label.htmlFor = input.id;
+  label.textContent = getString("settings-note-export-naming-template");
+  Object.assign(label.style, {
+    display: "block",
+    fontWeight: "700",
+    marginBottom: "8px",
+  });
+  panel.appendChild(label);
+  panel.appendChild(input);
+
+  const help = doc.createElement("div");
+  help.id = "note-export-naming-help";
+  help.textContent = getString("settings-note-export-naming-help");
+  Object.assign(help.style, {
+    color: "var(--ai-text-secondary)",
+    fontSize: "12px",
+    lineHeight: "1.6",
+    marginTop: "8px",
+  });
+  panel.appendChild(help);
+  const error = doc.createElement("div");
+  error.id = "note-export-naming-error";
+  error.setAttribute("role", "status");
+  Object.assign(error.style, {
+    color: "var(--ai-error, #d93025)",
+    fontSize: "12px",
+    marginTop: "6px",
+  });
+  input.setAttribute("aria-describedby", `${help.id} ${error.id}`);
+  panel.appendChild(error);
+
+  const fieldLabels: Record<NoteExportFilenameField, string> = {
+    collectionPath: getString("settings-note-export-field-collection-path"),
+    collection: getString("settings-note-export-field-collection"),
+    title: getString("settings-note-export-field-title"),
+    firstAuthor: getString("settings-note-export-field-first-author"),
+    year: getString("settings-note-export-field-year"),
+    itemKey: getString("settings-note-export-field-item-key"),
+    model: getString("settings-note-export-field-model"),
+    noteType: getString("settings-note-export-field-note-type"),
+  };
+  const fields = doc.createElement("div");
+  Object.assign(fields.style, {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "8px",
+    marginTop: "14px",
+  });
+  const notifyInput = () => {
+    const event = doc.createEvent("Event");
+    event.initEvent("input", true, false);
+    input.dispatchEvent(event);
+  };
+  for (const field of NOTE_EXPORT_FILENAME_FIELDS) {
+    const token = `{${field}}`;
+    const button = createStyledButton("", "#59c0bc", "small");
+    button.type = "button";
+    button.textContent = `${token} · ${fieldLabels[field]}`;
+    button.title = getString("settings-note-export-naming-insert-field", {
+      args: { field: token },
+    });
+    Object.assign(button.style, {
+      borderRadius: "10px",
+      borderWidth: "1px",
+      fontWeight: "500",
+      whiteSpace: "normal",
+      textAlign: "left",
+    });
+    button.addEventListener("click", () => {
+      input.setRangeText(
+        token,
+        input.selectionStart ?? input.value.length,
+        input.selectionEnd ?? input.value.length,
+        "end",
+      );
+      input.focus();
+      notifyInput();
+    });
+    fields.appendChild(button);
+  }
+  panel.appendChild(fields);
+
+  const defaults = doc.createElement("div");
+  Object.assign(defaults.style, {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: "10px",
+    marginTop: "14px",
+  });
+  const defaultTemplate = doc.createElement("code");
+  defaultTemplate.textContent = getString(
+    "settings-note-export-naming-default",
+    {
+      args: { template: DEFAULT_NOTE_EXPORT_FILENAME_TEMPLATE },
+    },
+  );
+  Object.assign(defaultTemplate.style, {
+    color: "var(--ai-text-secondary)",
+    fontSize: "12px",
+    overflowWrap: "anywhere",
+  });
+  const reset = createStyledButton(
+    getString("settings-note-export-naming-reset"),
+    "#59c0bc",
+    "small",
+  );
+  reset.type = "button";
+  reset.style.borderRadius = "10px";
+  reset.addEventListener("click", () => {
+    input.value = DEFAULT_NOTE_EXPORT_FILENAME_TEMPLATE;
+    notifyInput();
+  });
+  defaults.appendChild(defaultTemplate);
+  defaults.appendChild(reset);
+  panel.appendChild(defaults);
+
+  const preview = doc.createElement("div");
+  Object.assign(preview.style, {
+    border: "1px solid var(--ai-border)",
+    borderRadius: "14px",
+    background: "rgba(127, 127, 127, 0.04)",
+    padding: "13px",
+    marginTop: "14px",
+    display: "grid",
+    gap: "8px",
+  });
+  const previewTitle = doc.createElement("div");
+  previewTitle.textContent = getString("settings-note-export-naming-preview");
+  previewTitle.style.fontWeight = "700";
+  const previewFiles = doc.createElement("div");
+  previewFiles.setAttribute("aria-live", "polite");
+  Object.assign(previewFiles.style, {
+    display: "grid",
+    gap: "6px",
+    fontFamily: "Consolas, Menlo, monospace",
+    fontSize: "12px",
+    overflowWrap: "anywhere",
+  });
+  const sample: NoteExportFilenameValues = {
+    collectionPath: getString(
+      "settings-note-export-naming-sample-collection-path",
+    ),
+    collection: "Transformer",
+    title: getString("settings-note-export-naming-sample-title"),
+    firstAuthor: "Vaswani",
+    year: "2017",
+    itemKey: "ABCD1234",
+    model: "example-model",
+    noteType: "summary",
+  };
+  const updatePreview = () => {
+    const valid = isValidNoteExportFilenameTemplate(input.value);
+    input.setAttribute("aria-invalid", String(!valid));
+    error.textContent = valid
+      ? ""
+      : getString("settings-note-export-naming-invalid");
+    previewFiles.innerHTML = "";
+    if (!valid) return;
+    for (const noteType of ["summary", "deep-read"]) {
+      for (const extension of ["md", "docx"] as const) {
+        const file = doc.createElement("div");
+        file.textContent = formatNoteExportFilename(
+          input.value,
+          { ...sample, noteType },
+          extension,
+        );
+        previewFiles.appendChild(file);
+      }
+    }
+  };
+  input.addEventListener("input", updatePreview);
+  updatePreview();
+  preview.appendChild(previewTitle);
+  preview.appendChild(previewFiles);
+  panel.appendChild(preview);
+  return { panel, input };
 }
 
 function createPanel(

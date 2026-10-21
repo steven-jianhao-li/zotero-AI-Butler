@@ -1,4 +1,5 @@
 import { Lexer, type MarkedToken, type Token } from "marked";
+import { getString } from "../../../utils/locale";
 import { documentOf, element } from "./dom";
 
 /** Allow source citations without permitting privileged or executable schemes. */
@@ -27,6 +28,36 @@ export function agentCitationURL(href: string): string | undefined {
     // Incomplete streamed links remain ordinary text until they are valid.
   }
   return undefined;
+}
+
+/** Resolve local citations inside Zotero instead of invoking an OS protocol handler. */
+export async function openAgentCitation(href: string): Promise<void> {
+  const url = agentCitationURL(href);
+  if (!url) throw new Error(getString("agent-citation-invalid"));
+  if (!url.startsWith("zotero://")) {
+    Zotero.launchURL(url);
+    return;
+  }
+  const match =
+    /^zotero:\/\/select\/(library|groups\/([1-9]\d*))\/items\/([A-Z0-9]{8})$/.exec(
+      url,
+    )!;
+  const libraryID =
+    match[1] === "library"
+      ? Zotero.Libraries.userLibraryID
+      : Zotero.Groups.getLibraryIDFromGroupID(Number(match[2]));
+  const item =
+    libraryID &&
+    (await Zotero.Items.getByLibraryAndKeyAsync(libraryID, match[3]));
+  if (!item || item.deleted)
+    throw new Error(getString("agent-citation-item-unavailable"));
+  const main = Zotero.getMainWindow();
+  if (!main || main.closed || !main.ZoteroPane)
+    throw new Error(getString("agent-citation-window-unavailable"));
+  const selected = await main.ZoteroPane.selectItem(item.id);
+  if (selected === false)
+    throw new Error(getString("agent-citation-item-unavailable"));
+  main.focus();
 }
 
 /** Build a small Markdown DOM vocabulary; model HTML never reaches an HTML sink. */
@@ -146,11 +177,25 @@ function appendTokens(host: HTMLElement, tokens: Token[], depth = 0): void {
         link.title = token.title || href;
         link.rel = "noopener noreferrer";
         appendTokens(link, token.tokens, depth + 1);
+        const errorHost = element(doc, "span", "agent-citation-error");
+        errorHost.setAttribute("role", "alert");
+        errorHost.hidden = true;
         link.addEventListener("click", (event) => {
           event.preventDefault();
-          Zotero.launchURL(href);
+          event.stopPropagation();
+          errorHost.hidden = true;
+          void openAgentCitation(href).catch((error: unknown) => {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            errorHost.textContent = ` (${message})`;
+            errorHost.hidden = false;
+            ztoolkit.log(
+              "[AI-Butler Agent] Citation navigation failed:",
+              error,
+            );
+          });
         });
-        host.append(link);
+        host.append(link, errorHost);
         break;
       }
       case "image":

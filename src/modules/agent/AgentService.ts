@@ -1,4 +1,5 @@
 import { agentText } from "./messages";
+import { getString } from "../../utils/locale";
 import { LLMService } from "../llmService";
 import {
   createChatAbortController,
@@ -165,6 +166,7 @@ export class AgentService {
       throw new Error(agentText("agent-runtime-library-change"));
     session.activeEndpointId =
       options.endpointId || LLMService.acquireChatSessionEndpoint().id;
+    const previousPermission = session.permission;
     session.options = options;
     session.permission = options.permission;
     session.title ||= prompt.trim().slice(0, 70);
@@ -178,6 +180,22 @@ export class AgentService {
       text: prompt.trim(),
       createdAt: Date.now(),
     });
+    if (previousPermission !== options.permission) {
+      const labels = {
+        "read-only": getString("agent-permission-read-only"),
+        confirm: getString("agent-permission-confirm"),
+        full: getString("agent-permission-full"),
+      };
+      session.events.push({
+        id: agentId("event"),
+        type: "status",
+        text: agentText("agent-runtime-permission-changed", {
+          permission: labels[options.permission],
+        }),
+        createdAt: Date.now(),
+        data: { previousPermission, permission: options.permission },
+      });
+    }
     const controller = createChatAbortController();
     this.controllers.set(id, controller);
     this.changed();

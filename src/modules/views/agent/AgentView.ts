@@ -7,9 +7,11 @@ import {
 } from "../../agent/types";
 import { LLMEndpointManager } from "../../llmEndpointManager";
 import { AgentTimeline } from "./AgentTimeline";
+import { AgentTrajectory } from "./AgentTrajectory";
 import { button, documentOf, element, t } from "./dom";
 import { AgentSelect, type AgentSelectOption } from "./AgentSelect";
-import { icon, type AgentIcon } from "./icons";
+import { agentLogo, icon, type AgentIcon } from "./icons";
+import { agentStorageInfo } from "./AgentStorageInfo";
 import type { FluentMessageId } from "../../../../typings/i10n";
 
 type SessionDraft = {
@@ -32,7 +34,8 @@ export class AgentView extends BaseView {
   private welcome!: HTMLElement;
   private timelineHost!: HTMLElement;
   private timeline!: AgentTimeline;
-  private approvalHost!: HTMLElement;
+  private trajectoryHost!: HTMLElement;
+  private trajectory!: AgentTrajectory;
   private inspector!: HTMLElement;
   private attachmentHost!: HTMLElement;
   private errorHost!: HTMLElement;
@@ -65,7 +68,6 @@ export class AgentView extends BaseView {
       : !this.layout.classList.contains("agent-rail-collapsed");
     this.railToggle.setAttribute("aria-expanded", String(open));
   };
-  private approvalSignature = "";
   private inspectorSignature = "";
 
   constructor() {
@@ -82,7 +84,7 @@ export class AgentView extends BaseView {
     rail.setAttribute("aria-label", t("agent-sessions"));
     const railHeader = element(doc, "div", "agent-rail-header");
     const brandMark = element(doc, "span", "agent-brand-mark");
-    brandMark.append(icon(doc, "book"));
+    brandMark.append(agentLogo(doc));
     railHeader.append(
       brandMark,
       element(doc, "strong", "agent-brand", t("agent-brand")),
@@ -104,10 +106,7 @@ export class AgentView extends BaseView {
     );
     this.sessionsHost = element(doc, "div", "agent-sessions");
     const railFooter = element(doc, "div", "agent-rail-footer");
-    railFooter.append(
-      icon(doc, "local"),
-      element(doc, "span", "", t("agent-session-storage")),
-    );
+    railFooter.append(agentStorageInfo(doc, (error) => this.showError(error)));
     rail.append(this.sessionsHost, railFooter);
 
     const center = element(doc, "main", "agent-center");
@@ -209,15 +208,25 @@ export class AgentView extends BaseView {
     this.timelineHost.setAttribute("aria-live", "polite");
     this.timelineHost.setAttribute("aria-relevant", "additions");
     this.timeline = new AgentTimeline(this.timelineHost);
-    conversation.append(this.welcome, this.timelineHost);
+    this.trajectoryHost = element(doc, "div", "agent-trajectory");
+    this.trajectory = new AgentTrajectory(
+      this.trajectoryHost,
+      (eventId) => {
+        this.setPanelMode("conversation");
+        this.timeline.focusEvent(eventId);
+      },
+      (approvalId, allow) => {
+        this.service.approve(this.activeId, approvalId, allow);
+        this.refresh();
+      },
+    );
+    conversation.append(this.welcome, this.timelineHost, this.trajectoryHost);
     this.setPanelMode(this.panelMode);
-    this.approvalHost = element(doc, "div", "agent-approvals");
     this.errorHost = element(doc, "div", "agent-ui-error");
     this.errorHost.setAttribute("role", "alert");
     center.append(
       header,
       conversation,
-      this.approvalHost,
       this.errorHost,
       this.renderComposer(doc),
     );
@@ -311,7 +320,6 @@ export class AgentView extends BaseView {
     this.unsubscribe = undefined;
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     this.refreshTimer = undefined;
-    this.approvalSignature = "";
     this.inspectorSignature = "";
     this.compactMedia?.removeEventListener("change", this.syncRail);
     this.compactMedia = undefined;
@@ -365,7 +373,13 @@ export class AgentView extends BaseView {
       tab.setAttribute("aria-selected", String(key === mode));
       tab.tabIndex = key === mode ? 0 : -1;
     });
-    this.timeline?.setMode(mode);
+    const session = this.service.getSession(this.activeId);
+    if (this.timelineHost)
+      this.timelineHost.hidden = mode === "activity" || !session?.events.length;
+    if (this.welcome)
+      this.welcome.hidden =
+        mode === "activity" || Boolean(session?.events.length);
+    if (this.trajectoryHost) this.trajectoryHost.hidden = mode !== "activity";
     this.timelineHost?.parentElement?.setAttribute(
       "aria-labelledby",
       `agent-tab-${mode}`,
@@ -375,7 +389,7 @@ export class AgentView extends BaseView {
   private renderWelcome(doc: Document): HTMLElement {
     const welcome = element(doc, "div", "agent-welcome");
     const mark = element(doc, "div", "agent-welcome-mark");
-    mark.append(icon(doc, "book"));
+    mark.append(agentLogo(doc));
     welcome.append(
       mark,
       element(doc, "h1", "", t("agent-welcome-title")),
@@ -695,7 +709,7 @@ export class AgentView extends BaseView {
     this.settings.open = false;
     this.updatePermissionHelp();
     this.timeline.clear();
-    this.approvalSignature = "";
+    this.trajectory.clear();
     this.inspectorSignature = "";
     this.errorHost.textContent = "";
     this.refresh();
@@ -850,9 +864,15 @@ export class AgentView extends BaseView {
     this.titleHost.title = this.titleHost.textContent;
     this.statusHost.textContent = t(`agent-status-${session.status}`);
     this.statusHost.setAttribute("data-status", session.status);
-    this.welcome.hidden = session.events.length > 0;
-    this.timelineHost.hidden = !session.events.length;
-    this.timeline.render(session.events, session.team);
+    this.welcome.hidden =
+      session.events.length > 0 || this.panelMode === "activity";
+    this.timelineHost.hidden =
+      !session.events.length || this.panelMode === "activity";
+    this.timeline.render(session, (approvalId, allow) => {
+      this.service.approve(session.id, approvalId, allow);
+      this.refresh();
+    });
+    const traceCount = this.trajectory.render(session);
     const activity = session.events.filter(
       (event) => event.type !== "user" && event.type !== "assistant",
     );
@@ -870,8 +890,8 @@ export class AgentView extends BaseView {
     this.activityLabel.title = this.activityLabel.textContent;
     const activityTab = this.panelTabs.get("activity");
     if (activityTab)
-      activityTab.textContent = activity.length
-        ? `${t("agent-tab-activity")} · ${activity.length}`
+      activityTab.textContent = traceCount
+        ? `${t("agent-tab-activity")} · ${traceCount}`
         : t("agent-tab-activity");
     this.sendButton.hidden = running;
     this.sendButton.disabled = running;
@@ -892,7 +912,6 @@ export class AgentView extends BaseView {
       tokens: session.context.estimatedTokens.toLocaleString(),
       count: session.context.compactions,
     });
-    this.renderApprovals(session);
     this.renderInspector(session);
     this.renderAttachments();
   }
@@ -965,47 +984,6 @@ export class AgentView extends BaseView {
       } else this.refresh();
     } catch (error) {
       this.showError(error);
-    }
-  }
-
-  private renderApprovals(session: AgentSession): void {
-    const signature = JSON.stringify(session.pendingApprovals);
-    if (signature === this.approvalSignature) return;
-    this.approvalSignature = signature;
-    this.approvalHost.replaceChildren();
-    const doc = documentOf(this.approvalHost);
-    for (const approval of session.pendingApprovals) {
-      const card = element(doc, "section", "agent-approval-card");
-      card.append(
-        element(doc, "strong", "", t("agent-approval-title")),
-        element(doc, "p", "", approval.description),
-      );
-      const details = element(doc, "details", "agent-approval-details");
-      details.open = true;
-      details.append(
-        element(doc, "summary", "", approval.toolName),
-        element(doc, "pre", "", JSON.stringify(approval.arguments, null, 2)),
-      );
-      const actions = element(doc, "div", "agent-approval-actions");
-      for (const allow of [false, true]) {
-        const action = button(
-          doc,
-          t(allow ? "agent-approve" : "agent-reject"),
-          () => {
-            actions
-              .querySelectorAll("button")
-              .forEach((node: HTMLButtonElement) => {
-                node.disabled = true;
-              });
-            this.service.approve(session.id, approval.id, allow);
-            this.refresh();
-          },
-          `agent-button${allow ? " agent-primary" : ""}`,
-        );
-        actions.append(action);
-      }
-      card.append(details, actions);
-      this.approvalHost.append(card);
     }
   }
 

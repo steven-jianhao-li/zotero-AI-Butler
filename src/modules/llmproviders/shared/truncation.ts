@@ -71,7 +71,7 @@ export function recordOpenAIResponsesTerminalEvent(
       source,
       event?.response?.incomplete_details?.reason ||
         event?.incomplete_details?.reason ||
-        "max_output_tokens",
+        "unknown_incomplete",
     );
     return;
   }
@@ -83,7 +83,7 @@ export function recordOpenAIResponsesTerminalEvent(
         options,
         providerId,
         source,
-        response?.incomplete_details?.reason || "max_output_tokens",
+        response?.incomplete_details?.reason || "unknown_incomplete",
       );
     } else {
       recordFinishReason(options, providerId, source, "stop");
@@ -103,7 +103,7 @@ export function recordOpenAIResponsesObject(
       options,
       providerId,
       source,
-      data?.incomplete_details?.reason || "max_output_tokens",
+      data?.incomplete_details?.reason || "unknown_incomplete",
     );
   } else if (typeof data.status === "string") {
     recordFinishReason(options, providerId, source, data.status);

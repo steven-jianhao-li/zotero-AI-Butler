@@ -1,4 +1,5 @@
 import { getPref, setPref } from "../utils/prefs";
+import { normalizeNoteExportFilenameTemplate } from "./noteExportNaming";
 
 export type NoteExportConflictStrategy = "skip" | "overwrite";
 
@@ -12,6 +13,7 @@ export interface NoteExportFormats {
 export interface NoteExportConfig {
   enabled: boolean;
   rootPath: string;
+  filenameTemplate: string;
   watchedCollectionIds: number[];
   includeSubcollections: boolean;
   formats: NoteExportFormats;
@@ -34,6 +36,9 @@ export function getNoteExportConfig(): NoteExportConfig {
   return {
     enabled: !!getPref("noteExportEnabled" as any),
     rootPath: ((getPref("noteExportRootPath" as any) as string) || "").trim(),
+    filenameTemplate: normalizeNoteExportFilenameTemplate(
+      getPref("noteExportFilenameTemplate"),
+    ),
     watchedCollectionIds: parseCollectionIds(
       getPref("noteExportWatchedCollections" as any) as string,
     ),
@@ -55,6 +60,12 @@ export function setNoteExportConfig(config: Partial<NoteExportConfig>): void {
   }
   if (typeof config.rootPath === "string") {
     setPref("noteExportRootPath" as any, config.rootPath.trim() as any);
+  }
+  if (typeof config.filenameTemplate === "string") {
+    setPref(
+      "noteExportFilenameTemplate",
+      normalizeNoteExportFilenameTemplate(config.filenameTemplate),
+    );
   }
   if (Array.isArray(config.watchedCollectionIds)) {
     setPref(

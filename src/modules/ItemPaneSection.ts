@@ -50,9 +50,7 @@ import {
 import { openQuickChatRelatedSelectorDialog } from "./quickChatRelatedSelector";
 import {
   addZoteroNoteOverflowGuards,
-  buildFollowUpChatPairNoteHtml,
   decodeMathHtmlEntities,
-  normalizeFollowUpChatNoteHtml,
   normalizeLatexForKatex,
   requiresDisplayMath,
   stripMathDelimiters,
@@ -90,7 +88,6 @@ function getSidebarNoteKindLabel(noteKind: AiNoteKind): string {
     : getString("itempane-note-kind-deep-read");
 }
 
-const SIDEBAR_HEADING_TO_BLOCKQUOTE_TEXT_THRESHOLD = 36;
 const SIDEBAR_NOTE_OVERFLOW_GUARD_CSS = `
 .ai-butler-note-section,
 .ai-butler-note-section *,
@@ -892,7 +889,7 @@ export async function refreshCurrentItemPaneSection(options?: {
   }
 
   if (!item) return;
-  renderItemPaneSection(body, item, handleOpenAIChat, options);
+  renderItemPaneSection(body, item, handleOpenAIChat, options?.force ?? true);
 }
 
 /**
@@ -938,16 +935,24 @@ function renderItemPaneSection(
   body: HTMLElement,
   item: Zotero.Item | undefined,
   handleOpenAIChat: (itemId: number) => Promise<void>,
-  options?: { force?: boolean },
+  force = false,
 ): void {
-  // Item-pane re-renders must not wipe an in-flight or already restored chat.
+  // Host notifications must not replace an active editor, chat, or input draft.
+  // Explicit refreshes and item changes can still rebuild the section.
   if (
-    !options?.force &&
-    item &&
-    item.isRegularItem() &&
-    currentChatState.itemId === item.id &&
+    !force &&
+    item?.isRegularItem() &&
+    sidebarRenderContext?.body === body &&
+    sidebarRenderContext.itemId === item.id &&
     body.childNodes.length > 0 &&
-    (currentChatState.isChatting || sidebarHasQuickChat(body))
+    (isSidebarNoteEditing(item.id) ||
+      (currentChatState.itemId === item.id &&
+        (currentChatState.isChatting ||
+          sidebarHasQuickChat(body) ||
+          currentChatState.conversationHistory.length > 0 ||
+          !!body.querySelector<HTMLTextAreaElement>(
+            "#ai-butler-inline-chat textarea",
+          )?.value)))
   ) {
     sidebarRenderContext = {
       body,
@@ -4857,7 +4862,7 @@ function renderChatArea(
   const scrollQuickChatToBottomIfPinned = (
     wasPinned = quickChatPinnedToBottom,
   ): void => {
-    if (!wasPinned) return;
+    if (!wasPinned || getPref("autoScroll") === false) return;
     messagesArea.scrollTop = messagesArea.scrollHeight;
     quickChatPinnedToBottom = true;
   };
@@ -5804,57 +5809,7 @@ async function copyQuickChatText(
   }
 }
 
-/**
- * 获取或创建"AI管家-后续追问"独立笔记
- */
-async function getOrCreateChatNote(item: Zotero.Item): Promise<Zotero.Item> {
-  const title =
-    (item.getField("title") as string) || getString("common-paper-title");
-
-  // 查找已有的聊天笔记
-  const noteIDs = (item as any).getNotes?.() || [];
-  for (const nid of noteIDs) {
-    try {
-      const n = await Zotero.Items.getAsync(nid);
-      if (!n) continue;
-      const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-      const hasChatTag = tags.some((t) => t.tag === "AI-Butler-Chat");
-      const html: string = (n as any).getNote?.() || "";
-      const titleMatch = /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(html);
-      if (hasChatTag || titleMatch) {
-        return n as Zotero.Item;
-      }
-    } catch (e) {
-      continue;
-    }
-  }
-
-  // 创建新笔记
-  const note = new Zotero.Item("note");
-  note.libraryID = item.libraryID;
-  note.parentID = item.id;
-  const header = `<h2>${getString("itempane-chat-note-title", { args: { title: escapeHtmlForNote(title) } })}</h2>`;
-  note.setNote(header);
-  note.addTag("AI-Butler-Chat");
-  await note.saveTx();
-  return note;
-}
-
-/**
- * 转义 HTML 字符（用于笔记保存）
- */
-function escapeHtmlForNote(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-/**
- * 将对话对保存到后续追问笔记
- */
+/** 保存快速追问，与完整追问共用 AI 精读笔记。 */
 async function saveChatPairToNote(
   item: Zotero.Item,
   pairId: string,
@@ -5863,35 +5818,15 @@ async function saveChatPairToNote(
   metadata?: LLMNoteMetadata | null,
   sourceLabel = getString("itempane-quick-chat-source-label"),
 ): Promise<void> {
-  const note = await getOrCreateChatNote(item);
-  let noteHtml = (note as any).getNote?.() || "";
-  const normalizedNoteHtml = normalizeFollowUpChatNoteHtml(noteHtml);
-
-  // 检查是否已存在相同 pairId 的对话对，防止重复保存
-  if (normalizedNoteHtml.includes(`AI_BUTLER_CHAT_PAIR_START id=${pairId}`)) {
-    if (normalizedNoteHtml !== noteHtml) {
-      (note as any).setNote(normalizedNoteHtml);
-      await (note as any).saveTx();
-    }
-    ztoolkit.log("[AI-Butler] 该对话对已保存过，跳过重复保存");
-    return;
-  }
-  noteHtml = normalizedNoteHtml;
-
-  const blockContent = buildFollowUpChatPairNoteHtml({
+  await AiNoteService.appendFollowUpPair({
+    item,
     pairId,
     userMessage,
     assistantMessage,
+    metadata,
     sourceLabel,
   });
-  const block = metadata
-    ? LLMNoteMetadataService.wrapHtml(blockContent, metadata)
-    : blockContent;
-
-  noteHtml += block;
-  (note as any).setNote(noteHtml);
-  await (note as any).saveTx();
-  ztoolkit.log("[AI-Butler] 快速追问对话已保存到笔记");
+  scheduleSidebarRefresh("deepRead");
 }
 
 /**
@@ -6212,49 +6147,28 @@ function normalizeHtmlFragmentForXhtml(doc: Document, html: string): string {
     .replace(new RegExp("<(?=[^a-zA-Z/?!])", "g"), "&lt;");
 }
 
-function getVisibleTextLength(text: string): number {
-  return Array.from(text.replace(/\s+/g, "").trim()).length;
-}
-
-function demoteLongSidebarHeadingsToBlockquote(
-  doc: Document,
-  html: string,
-): string {
+/** Omit the generated note title from the preview, preserving stored HTML. */
+function hideSidebarNoteTitle(doc: Document, html: string): string {
   try {
-    const mainWin: any =
-      Zotero && (Zotero as any).getMainWindow
-        ? (Zotero as any).getMainWindow()
-        : (globalThis as any);
-    const implementation: any =
-      mainWin?.document?.implementation || doc.implementation;
-    const createHTMLDocument: any = implementation?.createHTMLDocument;
-    if (typeof createHTMLDocument !== "function") return html;
-
-    const htmlDoc: Document = createHTMLDocument.call(implementation, "");
+    const htmlDoc = doc.implementation.createHTMLDocument("");
     const container = htmlDoc.createElement("div");
     container.innerHTML = html;
 
-    container.querySelectorAll("h1, h2").forEach((heading: Element) => {
-      const headingText = heading.textContent || "";
-      if (
-        getVisibleTextLength(headingText) <=
-        SIDEBAR_HEADING_TO_BLOCKQUOTE_TEXT_THRESHOLD
-      ) {
-        return;
-      }
-
-      const blockquote = htmlDoc.createElement("blockquote");
-      const paragraph = htmlDoc.createElement("p");
-      while (heading.firstChild) {
-        paragraph.appendChild(heading.firstChild);
-      }
-      blockquote.appendChild(paragraph);
-      heading.replaceWith(blockquote);
-    });
+    const heading = container.querySelector("h1, h2");
+    const headingText = (heading?.textContent || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (
+      /^AI\s*(?:(?:Butler|管家)\s*[-–—:：]\s*)?(?:Summary|Deep Reading|总结|精读)\s*[-–—:：]/i.test(
+        headingText,
+      )
+    ) {
+      heading?.remove();
+    }
 
     return container.innerHTML;
   } catch (err) {
-    ztoolkit.log("[AI-Butler] 降级侧边栏长一级标题失败:", err);
+    ztoolkit.log("[AI-Butler] 隐藏侧边栏笔记标题失败:", err);
     return html;
   }
 }
@@ -6616,6 +6530,8 @@ async function loadNoteContent(
     let aiNoteContent = "";
     const resolvedNote = await resolveSidebarSummaryNote(item, noteKind);
 
+    if (!noteContent.isConnected || isSidebarNoteEditing(item.id)) return;
+
     if (!resolvedNote) {
       hideSidebarMetadataPicker(doc, noteKind);
       noteContent.innerHTML = `
@@ -6640,6 +6556,7 @@ async function loadNoteContent(
         ztoolkit.log("[AI-Butler] 修复 AI 笔记溢出样式失败:", error);
       }
     }
+    if (!noteContent.isConnected || isSidebarNoteEditing(item.id)) return;
     const summaryBlocks = getDisplaySummaryBlocks(
       LLMNoteMetadataService.parseSummaryBlocks(rawNoteHtml),
     );
@@ -6812,6 +6729,8 @@ async function loadNoteContent(
     const themeCss = await themeManager.loadThemeCss();
     const katexCss = await themeManager.loadKatexCss();
     const adaptedCss = themeManager.adaptCssForSidebar(themeCss);
+
+    if (!noteContent.isConnected || isSidebarNoteEditing(item.id)) return;
 
     // 注入样式
     let styleEl = doc.getElementById(
@@ -7017,13 +6936,10 @@ async function loadNoteContent(
       return result;
     };
 
-    const adjustedHeadingContent = demoteLongSidebarHeadingsToBlockquote(
-      doc,
-      aiNoteContent,
-    );
+    const previewContent = hideSidebarNoteTitle(doc, aiNoteContent);
 
     // Render LaTeX first (before XML validation)
-    const latexRenderedContent = renderLatexFormulas(adjustedHeadingContent);
+    const latexRenderedContent = renderLatexFormulas(previewContent);
 
     const sanitizedContent = normalizeHtmlFragmentForXhtml(
       doc,

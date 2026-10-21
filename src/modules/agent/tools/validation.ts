@@ -81,6 +81,17 @@ export function enumArg<T extends string>(
   return value as T;
 }
 
+export function booleanArg(
+  args: Record<string, unknown>,
+  key: string,
+  defaultValue = false,
+): boolean {
+  const value = args[key] === undefined ? defaultValue : args[key];
+  if (typeof value !== "boolean")
+    throw new Error(getString("agent-tool-error-boolean", { args: { key } }));
+  return value;
+}
+
 export function idsArg(args: Record<string, unknown>, key: string): number[] {
   const value = args[key];
   if (!Array.isArray(value) || value.length < 1 || value.length > 50) {

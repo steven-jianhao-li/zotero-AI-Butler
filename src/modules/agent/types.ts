@@ -43,6 +43,7 @@ export interface AgentEvent {
   type:
     | "user"
     | "assistant"
+    | "reasoning"
     | "tool-start"
     | "tool-result"
     | "status"
@@ -55,6 +56,13 @@ export interface AgentEvent {
   toolName?: string;
   toolCallId?: string;
   memberId?: string;
+  /** Only a lead assistant's final response is a delivery. */
+  phase?: "work" | "delivery";
+  /** Persist the outcome of each run independently of the next run. */
+  runStatus?: "completed" | "cancelled" | "error";
+  stepId?: string;
+  endedAt?: number;
+  streamState?: "streaming" | "complete" | "interrupted";
   data?: unknown;
 }
 

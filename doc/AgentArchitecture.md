@@ -26,8 +26,8 @@ routing selects a coordinator once per run; a separate reader can be selected.
 ## Loop invariants
 
 - Validate complete model responses before exposing tool calls. Never execute
-  partially streamed arguments. Current Agent turns use non-streaming responses;
-  activity and completed messages update progressively in the UI.
+  partially streamed arguments. Readable SSE previews update the UI, while tool
+  calls remain unavailable until the terminal response and arguments validate.
 - Keep assistant calls and tool results paired by ID. On cancellation/restart,
   synthesize interrupted results for unfinished calls before another model turn.
 - Carry opaque provider continuation state with its assistant turn. This includes
@@ -44,10 +44,79 @@ routing selects a coordinator once per run; a separate reader can be selected.
 
 Tools: `search_library`, `get_item`, `read_note`, `list_collections`, `read_paper`,
 `edit_tags`, `create_collection`, `organize_items`, `create_note`, `update_plan`,
-`read_result`, `delegate_research`. Agent notes use `AI-Agent`, preserving existing
-summary/deep-reading classification.
+`read_result`, `delegate_research`, `trash_items`, `start_paper_workflow`,
+`get_paper_workflow_status`. `create_note` uses `AI-Agent`; standard workflows
+retain their existing summary/deep-reading note classification.
+
+`start_paper_workflow(itemId, mode, regenerate?)` is a write tool routed to
+`TaskQueueManager.addTask()` / `addDeepReadTask()`. It immediately returns the
+task ID and before/after state. Active tasks and complete notes are reused by
+default; explicit regeneration still respects the saved note strategy and never
+forces an overwrite. Prompt templates, endpoint routing, PDF settings, retries,
+and incomplete deep-read recovery stay with the existing workflow.
+
+`get_paper_workflow_status(taskId, wait?)` is read-only and returns progress,
+errors, artifact readiness, and the result note ID for `read_note`. Note discovery
+uses pure classifiers instead of migration-capable `AiNoteService.findNote()`.
+With `wait=true`, queue completion/progress/removal events resume the tool call,
+so dependent research can continue without model polling. Transient failures
+that the queue will retry do not end the wait. Subscriptions and the 30-minute
+timeout are disposed on completion, final failure, removal, cancellation, or
+timeout. Stopping the Agent cancels waiting, not the already authorized queue
+job. Restarted sessions do not automatically resume; the user can query the
+persisted task in a subsequent run.
+
+`trash_items(itemIds)` moves explicitly selected regular parent papers to Zotero
+Trash using the native API inside one transaction. All targets are preflighted
+for library scope and editability, with before/after evidence and existing write
+approval/receipt behavior. It does not erase, merge, transfer child notes, or
+empty Trash. Collection membership removal remains a separate operation.
+
+Permission changes are accepted with the next `AgentService.run()` call, which
+refreshes the system prompt and available tool catalog in the same session and
+records the new authority in the activity log. Historical assistant claims do
+not define the current authority or add capabilities absent from the catalog.
+
+Citation clicks resolve personal/group library IDs and item keys locally and
+call the main window's `ZoteroPane.selectItem()`, then focus that window. Only
+HTTP(S) citations use `Zotero.launchURL()`; Zotero links never enter the external
+protocol handler. Missing/trashed items display inline feedback. The isolated
+host smoke test exercises the actual Markdown anchor click in a chrome dialog.
 
 ## Context and evidence
+
+The conversation groups each user turn into an expandable work process and a
+separate final delivery. Completed turns default to the delivery; running,
+failed and interrupted work remains open. Tool cards pair arguments with results
+by call/member ID, and pending approval controls stay outside the fold. The
+Trajectory tab is an independent searchable ledger with input/model/tool lanes,
+equal-width or duration-weighted blocks, turn/detail folding, inline approvals,
+and navigation back to the conversation. Its interaction follows the local DSH
+`ui-trajectory` toolbar, overview and record-detail design. Explicit assistant
+phases and terminal status events preserve per-turn
+outcomes; older ledgers infer the final lead response only after tool work ends.
+
+This interaction follows the local DSH reference's `TurnProcessSpec`,
+`TurnProcessNodeView` and `ReasoningRow` pattern (under
+`reference/deepseek-harness/packages/client/ui-chat/src/client/`): final answers
+remain separate from intermediate text, reasoning and tool disclosures.
+Readable reasoning returned by providers is recorded as reasoning events;
+encrypted replay data, redacted thinking and signatures are never rendered.
+Agent transport streams Chat Completions, Responses, Anthropic and Gemini SSE;
+gateways returning JSON still work. The same preview event becomes the complete
+reply. Failed/retried/cancelled previews stay marked as interrupted work, outside
+the model's message history. Signatures and encrypted state stay in the final
+provider envelope. A local HTTP fixture withholds the final chunk until native
+Zotero acknowledges a partial reply, verifying actual XHR progress delivery.
+Existing sessions retain their recorded history; missing old
+reasoning events are not fabricated from opaque replay data.
+
+The sidebar storage disclosure shows the actual
+`Zotero.DataDirectory.dir/ai-butler-agent` path and opens that folder. Each session
+is a JSON snapshot containing conversation, evidence and approval history.
+These files are local and are not part of Zotero sync; model requests still go
+to the configured provider. Both sidebar and welcome branding use the packaged
+`icons/logo.svg` asset.
 
 The session's activity and evidence ledger is distinct from `messages`, the
 working model projection. Tool results receive recoverable `resultRef` identifiers.

@@ -1,4 +1,6 @@
 import { AgentProtocolError } from "./agentErrors";
+import { AgentStreamParser } from "./agentStream";
+import type { LLMAgentStreamUpdate } from "../agentTypes";
 import { mergeRequestHeaders } from "./requestHeaders";
 import type {
   LLMAgentMessage,
@@ -358,7 +360,7 @@ export function buildAgentHttpRequest(
         ...common,
         model,
         input,
-        stream: false,
+        stream: options.stream === true,
         store: false,
         include: ["reasoning.encrypted_content"],
         tools: tools.map((tool) => ({
@@ -396,7 +398,7 @@ export function buildAgentHttpRequest(
         ...options.vendorOptions,
         ...temperature,
         model,
-        stream: false,
+        stream: options.stream === true,
         max_tokens: options.maxTokens ?? 8192,
         system: messages
           .filter((m) => m.role === "system")
@@ -418,7 +420,8 @@ export function buildAgentHttpRequest(
     const base = url.pathname
       .replace(/\/+$/, "")
       .replace(/\/v1(?:beta)?(?:\/.*)?$/, "");
-    url.pathname = `${base}/v1beta/models/${encodeURIComponent(model.replace(/^models\//, ""))}:generateContent`;
+    url.pathname = `${base}/v1beta/models/${encodeURIComponent(model.replace(/^models\//, ""))}:${options.stream ? "streamGenerateContent" : "generateContent"}`;
+    if (options.stream) url.searchParams.set("alt", "sse");
     url.hash = "";
     return {
       protocol,
@@ -459,7 +462,7 @@ export function buildAgentHttpRequest(
       ...options.vendorOptions,
       ...common,
       model,
-      stream: false,
+      stream: options.stream === true,
       ...(options.maxTokens !== undefined
         ? { max_tokens: options.maxTokens }
         : {}),
@@ -556,6 +559,14 @@ export function parseAgentTurn(
         .filter((part) => part.type === "text")
         .map((part) => string(part.text))
         .join(""),
+      reasoningContent:
+        parts
+          .filter(
+            (part) =>
+              part.type === "thinking" && typeof part.thinking === "string",
+          )
+          .map((part) => part.thinking)
+          .join("\n\n") || undefined,
       toolCalls: parts
         .filter((part) => part.type === "tool_use")
         .map((part) => ({
@@ -583,6 +594,13 @@ export function parseAgentTurn(
       .filter((part) => typeof part.text === "string" && !part.thought)
       .map((part) => part.text)
       .join(""),
+    reasoningContent:
+      parts
+        .filter(
+          (part) => part.thought === true && typeof part.text === "string",
+        )
+        .map((part) => part.text)
+        .join("\n\n") || undefined,
     toolCalls: parts
       .filter((part) => part.functionCall)
       .map((part, index) => {
@@ -607,18 +625,34 @@ export function parseAgentTurn(
   };
 }
 
-/** Non-streaming by design: no tool may run until the response is complete. */
+/** Stream readable previews; expose tools only after a complete validated response. */
 export async function requestAgentTurn(
   providerId: string,
   messages: LLMAgentMessage[],
   tools: LLMToolDefinition[],
   options: LLMOptions,
   onProgress?: ProgressCb,
+  onUpdate?: (update: LLMAgentStreamUpdate) => void,
 ): Promise<LLMAgentTurn> {
   throwIfAborted(options.abortSignal);
   const request = buildAgentHttpRequest(providerId, messages, tools, options);
   let cleanup: (() => void) | undefined;
   let abortError: Error | undefined;
+  let streamError: unknown;
+  let cursor = 0;
+  let format: "sse" | "json" | undefined;
+  const parser = new AgentStreamParser(request.protocol, onUpdate);
+  const consume = (text: string) => {
+    if (!options.stream || streamError) return;
+    if (!format) {
+      const first = text.trimStart()[0];
+      if (!first) return;
+      format = first === "{" || first === "[" ? "json" : "sse";
+    }
+    if (format === "sse") parser.push(text.slice(cursor));
+    cursor = text.length;
+  };
+  onUpdate?.({ text: "", reasoningContent: "", reset: true });
   try {
     const response = await Zotero.HTTP.request("POST", request.url, {
       headers: request.headers,
@@ -627,29 +661,62 @@ export async function requestAgentTurn(
       timeout: options.requestTimeoutMs ?? 300000,
       errorDelayMax: 0,
       requestObserver: (xhr: XMLHttpRequest) => {
-        cleanup = bindAbortSignal(options.abortSignal, xhr, (error) => {
+        const unbind = bindAbortSignal(options.abortSignal, xhr, (error) => {
           abortError = error;
         });
+        const progress = () => {
+          if (
+            xhr.status < 200 ||
+            xhr.status >= 300 ||
+            options.abortSignal?.aborted
+          )
+            return;
+          try {
+            consume(xhr.responseText || "");
+          } catch (error) {
+            streamError = error;
+            xhr.abort();
+          }
+        };
+        xhr.addEventListener("progress", progress);
+        cleanup = () => {
+          unbind();
+          xhr.removeEventListener("progress", progress);
+        };
       },
     });
     throwIfAborted(options.abortSignal);
+    if (streamError) throw streamError;
+    consume(response.responseText || "");
+    throwIfAborted(options.abortSignal);
     let data: unknown;
-    try {
-      data = JSON.parse(response.responseText || "");
-    } catch {
-      throw new AgentProtocolError("invalid-json");
-    }
+    if (format === "sse") data = parser.finish();
+    else
+      try {
+        data = JSON.parse(response.responseText || "");
+      } catch {
+        throw new AgentProtocolError("invalid-json");
+      }
     const turn = validateAgentTurn(
       parseAgentTurn(request.protocol, data),
       tools,
       messages,
     );
+    onUpdate?.({
+      text: turn.text,
+      reasoningContent: turn.reasoningContent || "",
+    });
+    throwIfAborted(options.abortSignal);
     if (turn.text && onProgress) await onProgress(turn.text);
     return turn;
   } catch (error) {
     if (abortError || isAbortError(error, options.abortSignal)) {
       throw normalizeAbortError(abortError || error, options.abortSignal);
     }
+    if (streamError)
+      throw streamError instanceof AgentProtocolError
+        ? streamError
+        : new AgentProtocolError("request-failed");
     if (isAgentContextOverflow(error)) {
       // Expose only the safe category, not the raw provider error.
       throw new AgentProtocolError("context-overflow");

@@ -222,6 +222,7 @@ export type TaskStage =
   | "llm-preparing"
   | "llm-uploading"
   | "llm-waiting"
+  | "llm-receiving"
   | "llm-streaming"
   | "deepread-planning"
   | "deepread-round"

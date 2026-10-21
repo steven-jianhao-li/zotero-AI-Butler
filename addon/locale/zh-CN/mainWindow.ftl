@@ -480,6 +480,8 @@ progress-llm-preparing = 准备模型输入
 progress-llm-uploading = 调用大模型中（上传请求中）
 progress-llm-streaming = 调用大模型中（接收响应中）
 progress-llm-waiting = 调用大模型中（等待响应中）
+progress-llm-receiving = 调用大模型中（连接活跃，等待正文）
+progress-llm-receiving-detail = 已收到响应数据，服务可能正在发送心跳或生成答案，尚未收到正文。
 progress-llm-complete = 大模型响应完成
 progress-mineru-cache = 复用 MinerU 缓存
 progress-mineru-preparing = MinerU 准备中
@@ -728,6 +730,9 @@ provider-test-success-detail = Mode: { $mode }
     --- 原始响应 ---
     { $rawResponse }
 provider-error-timeout = Timeout: 请求超过 { $ms } ms
+provider-error-first-response-timeout = Timeout: 等待首个响应数据超过 { $ms } ms
+provider-error-idle-timeout = Timeout: 连续 { $ms } ms 未收到新的响应数据
+provider-error-total-timeout = Timeout: 请求总时长超过 { $ms } ms
 provider-error-aborted = 用户已终止任务
 provider-test-error-name = 错误名称: { $value }
 provider-test-error-message = 错误信息: { $value }

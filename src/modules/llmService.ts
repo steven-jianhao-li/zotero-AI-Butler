@@ -50,6 +50,7 @@ import type {
   LLMProviderResult,
   LLMReasoningEffortSetting,
   LLMResponse,
+  LLMRequestDiagnostics,
   ProgressCb,
 } from "./llmproviders/types";
 
@@ -141,6 +142,7 @@ export type LLMLifecycleCallback = (event: LLMLifecycleEvent) => void;
 export type LLMTransportOptions = {
   stream?: boolean;
   timeoutMs?: number;
+  totalTimeoutMs?: number;
   retry?: boolean;
   keyRotation?: boolean;
   abortSignal?: LLMAbortSignal;
@@ -205,6 +207,7 @@ export class LLMApiCallError extends Error {
   public readonly endpointName: string;
   public readonly providerId: string;
   public readonly originalError?: Error;
+  public readonly requestDiagnostics?: LLMRequestDiagnostics;
 
   constructor(endpoint: LLMEndpoint, error: Error) {
     super(error.message);
@@ -213,6 +216,11 @@ export class LLMApiCallError extends Error {
     this.endpointName = endpoint.name;
     this.providerId = endpoint.providerType;
     this.originalError = error;
+    this.requestDiagnostics = (
+      error as Error & {
+        requestDiagnostics?: LLMRequestDiagnostics;
+      }
+    ).requestDiagnostics;
     this.stack = error.stack || this.stack;
   }
 }
@@ -224,6 +232,7 @@ export class LLMApiExhaustedError extends Error {
   public readonly endpointId?: string;
   public readonly endpointName?: string;
   public readonly providerId?: string;
+  public readonly requestDiagnostics?: LLMRequestDiagnostics;
 
   constructor(attempts: number, lastError?: Error) {
     super(lastError?.message || getString("llm-error-all-endpoints-failed"));
@@ -235,11 +244,13 @@ export class LLMApiExhaustedError extends Error {
           endpointId?: string;
           endpointName?: string;
           providerId?: string;
+          requestDiagnostics?: LLMRequestDiagnostics;
         }
       | undefined;
     this.endpointId = apiError?.endpointId;
     this.endpointName = apiError?.endpointName;
     this.providerId = apiError?.providerId;
+    this.requestDiagnostics = apiError?.requestDiagnostics;
     this.stack = lastError?.stack || this.stack;
   }
 }
@@ -346,9 +357,30 @@ export class LLMService {
     const common: LLMOptions = {
       stream: transport?.stream ?? getPref("stream") ?? true,
       requestTimeoutMs: transport?.timeoutMs ?? this.getRequestTimeout(),
+      requestTotalTimeoutMs: transport?.totalTimeoutMs,
       abortSignal: transport?.abortSignal,
       enablePromptCache:
         (getPref("enablePromptCacheOptimization" as any) as boolean) === true,
+      onActivity: transport?.onStatus
+        ? ({ kind, diagnostics }) => {
+            const content = kind === "content";
+            transport.onStatus?.({
+              stage: content ? "llm-streaming" : "llm-receiving",
+              label: content
+                ? getString("progress-llm-streaming")
+                : getString("progress-llm-receiving"),
+              message: content
+                ? getString("progress-llm-streaming-message")
+                : getString("progress-llm-receiving"),
+              detail: content
+                ? getString("progress-llm-first-chunk-detail")
+                : getString("progress-llm-receiving-detail"),
+              progress: content ? 50 : 47,
+              endpointName: endpoint?.name,
+              model: diagnostics.model,
+            });
+          }
+        : undefined,
     };
 
     if (enableTemperature) {
@@ -972,24 +1004,7 @@ export class LLMService {
         },
       }),
     });
-    let sawFirstChunk = false;
-    const progressProxy: ProgressCb | undefined = request.onProgress
-      ? async (chunk: string) => {
-          if (!sawFirstChunk) {
-            sawFirstChunk = true;
-            request.transport?.onStatus?.({
-              stage: "llm-streaming",
-              label: getString("progress-llm-streaming"),
-              message: getString("progress-llm-streaming-message"),
-              progress: 50,
-              endpointName: endpoint.name,
-              model: options.model || endpoint.model,
-              detail: getString("progress-llm-first-chunk-detail"),
-            });
-          }
-          await request.onProgress?.(chunk);
-        }
-      : undefined;
+    const progressProxy = request.onProgress;
     request.transport?.onStatus?.({
       stage: "llm-waiting",
       label: getString("progress-llm-waiting"),
@@ -1210,24 +1225,7 @@ export class LLMService {
         },
       }),
     });
-    let sawFirstChunk = false;
-    const progressProxy: ProgressCb | undefined = request.onProgress
-      ? async (chunk: string) => {
-          if (!sawFirstChunk) {
-            sawFirstChunk = true;
-            request.transport?.onStatus?.({
-              stage: "llm-streaming",
-              label: getString("progress-llm-streaming"),
-              message: getString("progress-llm-streaming-message"),
-              progress: 50,
-              endpointName: endpoint.name,
-              model: options.model || endpoint.model,
-              detail: getString("progress-llm-first-chunk-detail"),
-            });
-          }
-          await request.onProgress?.(chunk);
-        }
-      : undefined;
+    const progressProxy = request.onProgress;
     request.transport?.onStatus?.({
       stage: "llm-waiting",
       label: getString("progress-llm-waiting"),
@@ -1386,6 +1384,7 @@ export class LLMService {
       requestId: result.requestId,
       maxOutputTokens: result.maxOutputTokens,
       continuationRounds: result.continuationRounds,
+      requestDiagnostics: result.requestDiagnostics,
       providerId,
       endpointId: endpoint?.id,
       providerName:

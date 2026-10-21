@@ -480,6 +480,8 @@ progress-llm-preparing = Preparing model input
 progress-llm-uploading = Calling LLM (uploading request)
 progress-llm-streaming = Calling LLM (receiving response)
 progress-llm-waiting = Calling LLM (waiting for response)
+progress-llm-receiving = Calling LLM (connection active, waiting for answer text)
+progress-llm-receiving-detail = Response data received. The service may be sending heartbeats or generating the answer; no answer text has arrived yet.
 progress-llm-complete = LLM response complete
 progress-mineru-cache = Reusing MinerU cache
 progress-mineru-preparing = Preparing MinerU
@@ -728,6 +730,9 @@ provider-test-success-detail = Mode: { $mode }
     --- Raw response ---
     { $rawResponse }
 provider-error-timeout = Timeout: request exceeded { $ms } ms
+provider-error-first-response-timeout = Timeout: no response data received within { $ms } ms
+provider-error-idle-timeout = Timeout: no new response data for { $ms } ms
+provider-error-total-timeout = Timeout: total request duration exceeded { $ms } ms
 provider-error-aborted = The user aborted the task
 provider-test-error-name = Error name: { $value }
 provider-test-error-message = Error message: { $value }

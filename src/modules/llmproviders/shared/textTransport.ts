@@ -15,7 +15,7 @@ import {
   normalizeAbortError,
   throwIfAborted,
 } from "./requestAbort";
-import { getRequestTimeoutMs } from "./llmutils";
+import { LLMRequestMonitor, LLMTransportError } from "./requestMonitor";
 import {
   providerHttpRequestFailed,
   providerRequestFailed,
@@ -297,8 +297,13 @@ export async function requestLLMText(args: {
       : args.url;
   const payload =
     protocol === "gemini" ? args.payload : { ...args.payload, stream };
+  let activeRequest: XMLHttpRequest | undefined;
+  const monitor = new LLMRequestMonitor(provider, url, options, () => {
+    activeRequest?.abort();
+  });
   let delivery = Promise.resolve();
   const parser = new TextResponseParser(protocol, (text) => {
+    monitor.content();
     if (onProgress)
       delivery = delivery
         .then(() => onProgress(text))
@@ -312,6 +317,7 @@ export async function requestLLMText(args: {
   const feed = (value: unknown) => {
     if (typeof value !== "string") return;
     raw = value;
+    monitor.received(value.length, activeRequest?.status);
     if (stream && value.length > processed) {
       parser.feed(value.slice(processed));
       processed = value.length;
@@ -319,19 +325,26 @@ export async function requestLLMText(args: {
   };
   let transportError: string | undefined;
   try {
-    const response = await Zotero.HTTP.request("POST", url, {
-      headers,
-      body: JSON.stringify(payload),
-      responseType: "text",
-      timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-      errorDelayMax: 0,
-      requestObserver: (xhr: XMLHttpRequest) => {
-        cleanup = bindAbortSignal(options.abortSignal, xhr);
-        xhr.onprogress = () => {
-          if (xhr.status < 400) feed(xhr.response);
-        };
-      },
-    });
+    monitor.start();
+    const response = await Promise.race([
+      Zotero.HTTP.request("POST", url, {
+        headers,
+        body: JSON.stringify(payload),
+        responseType: "text",
+        // Our response/idle deadline resets on bytes; native XHR timeout does not.
+        timeout: 0,
+        errorDelayMax: 0,
+        requestObserver: (xhr: XMLHttpRequest) => {
+          activeRequest = xhr;
+          cleanup = bindAbortSignal(options.abortSignal, xhr);
+          xhr.onprogress = () => {
+            if (xhr.status < 400) feed(xhr.response);
+          };
+        },
+      }),
+      monitor.deadline,
+    ]);
+    monitor.snapshot(response.status);
     if (response.status >= 400)
       throw new Error(providerHttpRequestFailed(response.status));
     feed(response.response);
@@ -339,9 +352,11 @@ export async function requestLLMText(args: {
     if (isAbortError(error, options.abortSignal))
       throw normalizeAbortError(error, options.abortSignal);
     const xhr = object(object(error).xmlhttp);
-    const status = number(xhr.status);
+    const status = number(object(error).status) ?? number(xhr.status);
+    monitor.snapshot(status);
+    // Zotero HTTP exceptions may originate in a different window/JS realm.
     let message =
-      error instanceof Error ? error.message : providerRequestFailed(provider);
+      string(object(error).message) || providerRequestFailed(provider);
     const responseBody = xhr.response ?? xhr.responseText;
     if (typeof responseBody === "string" && responseBody.trim()) {
       try {
@@ -354,12 +369,16 @@ export async function requestLLMText(args: {
     transportError = status ? `HTTP ${status}: ${message}` : message;
   } finally {
     cleanup?.();
+    if (activeRequest) activeRequest.onprogress = null;
+    monitor.finish();
   }
   throwIfAborted(options.abortSignal);
   const result = parser.finish(stream ? undefined : raw, transportError);
+  result.requestDiagnostics = monitor.snapshot();
   await delivery;
   throwIfAborted(options.abortSignal);
-  if (!result.text && result.error) throw new Error(result.error);
+  if (!result.text && result.error)
+    throw new LLMTransportError(result.error, result.requestDiagnostics);
   result.maxOutputTokens = number(
     payload.max_tokens ??
       payload.max_output_tokens ??

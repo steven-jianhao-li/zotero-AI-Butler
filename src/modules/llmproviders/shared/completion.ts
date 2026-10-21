@@ -26,6 +26,9 @@ export function completionForReason(
 /** Preserve the draft, but do not restart an already partially generated task. */
 export class LLMIncompleteError extends Error {
   readonly suppressTaskRetry = true;
+  get requestDiagnostics() {
+    return this.response.requestDiagnostics;
+  }
   constructor(public readonly response: LLMResponse) {
     super(
       getString("llm-error-incomplete-output", {

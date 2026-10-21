@@ -13,6 +13,7 @@ const compiled = await build({
   stdin: {
     contents: `
       export { requestLLMText } from './src/modules/llmproviders/shared/textTransport';
+      export { LLMTransportError } from './src/modules/llmproviders/shared/requestMonitor';
       export { LLMService, LLMApiExhaustedError } from './src/modules/llmService';
       export { LLMEndpointManager } from './src/modules/llmEndpointManager';
       export { TaskQueueManager, TaskStatus } from './src/modules/taskQueue';
@@ -86,6 +87,244 @@ function host(t) {
   vm.runInNewContext(compiled.outputFiles[0].text, globals);
   return { ...module.exports, globals, prefs };
 }
+
+const frame = (value) => `data: ${JSON.stringify(value)}\n\n`;
+const answer = frame({ choices: [{ delta: { content: "answer" } }] });
+const done =
+  frame({ choices: [{ delta: {}, finish_reason: "stop" }] }) +
+  "data: [DONE]\n\n";
+
+function connection(h) {
+  let resolve;
+  let reject;
+  let aborts = 0;
+  let sentOptions;
+  const pending = new Promise((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  const xhr = {
+    status: 200,
+    response: "",
+    onprogress: null,
+    abort() {
+      aborts++;
+      reject(new Error("host request aborted"));
+    },
+  };
+  h.globals.Zotero.HTTP = {
+    request(_method, _url, options) {
+      sentOptions = options;
+      options.requestObserver(xhr);
+      return pending;
+    },
+  };
+  return {
+    get aborts() {
+      return aborts;
+    },
+    get sentOptions() {
+      return sentOptions;
+    },
+    send(text) {
+      xhr.response += text;
+      xhr.onprogress?.();
+    },
+    progress() {
+      xhr.onprogress?.();
+    },
+    finish(text = "") {
+      xhr.response += text;
+      resolve(xhr);
+    },
+  };
+}
+
+function request(h, options = {}) {
+  return h.requestLLMText({
+    protocol: "chat",
+    provider: "openai-compat",
+    url: "https://user:secret@fixture.invalid/v1/chat/completions?key=secret",
+    headers: { Authorization: "Bearer secret" },
+    payload: { model: "fixture", messages: [] },
+    options: {
+      model: "fixture",
+      stream: true,
+      requestTimeoutMs: 100,
+      ...options,
+    },
+  });
+}
+
+test("heartbeats keep streaming alive beyond the response timeout without a UI callback", async (t) => {
+  const h = host(t);
+  const c = connection(h);
+  const activity = [];
+  const pending = request(h, {
+    onActivity: (event) => activity.push(event.kind),
+  });
+  t.mock.timers.tick(80);
+  c.send(": heartbeat\n\n");
+  t.mock.timers.tick(80);
+  c.send(frame({ choices: [{ delta: { reasoning_content: "thinking" } }] }));
+  assert.deepEqual(activity, ["receiving"]);
+  t.mock.timers.tick(80);
+  c.send(answer + done);
+  c.finish();
+  const result = await pending;
+  assert.equal(result.completion, "complete");
+  assert.equal(result.text, "answer");
+  assert.deepEqual(activity, ["receiving", "content"]);
+  assert.equal(result.requestDiagnostics.firstByteMs, 80);
+  assert.equal(result.requestDiagnostics.firstContentMs, 240);
+  assert.equal(result.requestDiagnostics.totalTimeoutMs, 600);
+  assert.equal(result.requestDiagnostics.endpointHost, "fixture.invalid");
+  assert.ok(!JSON.stringify(result.requestDiagnostics).includes("secret"));
+  assert.equal(c.sentOptions.timeout, 0);
+  t.mock.timers.tick(2000);
+  assert.equal(c.aborts, 0);
+});
+
+test("no response data times out and cancels the request", async (t) => {
+  const h = host(t);
+  const c = connection(h);
+  const checked = assert.rejects(request(h), (error) => {
+    assert.equal(error.requestDiagnostics.timeoutKind, "first-response");
+    assert.equal(error.requestDiagnostics.receivedChars, 0);
+    return true;
+  });
+  t.mock.timers.tick(100);
+  await checked;
+  t.mock.timers.tick(1000);
+  assert.equal(c.aborts, 1);
+});
+
+test("progress notifications without new data do not reset the idle timeout", async (t) => {
+  const h = host(t);
+  const c = connection(h);
+  const checked = assert.rejects(request(h), (error) => {
+    assert.equal(error.requestDiagnostics.timeoutKind, "idle");
+    assert.equal(error.requestDiagnostics.firstByteMs, 10);
+    assert.equal(error.requestDiagnostics.lastActivityMs, 10);
+    return true;
+  });
+  t.mock.timers.tick(10);
+  c.send(": heartbeat\n\n");
+  t.mock.timers.tick(80);
+  c.progress();
+  t.mock.timers.tick(20);
+  await checked;
+});
+
+test("continuous heartbeats still obey the finite total deadline", async (t) => {
+  const h = host(t);
+  const c = connection(h);
+  const checked = assert.rejects(request(h), (error) => {
+    assert.equal(error.requestDiagnostics.timeoutKind, "total");
+    assert.equal(error.requestDiagnostics.elapsedMs, 600);
+    return true;
+  });
+  for (let i = 0; i < 7; i++) {
+    t.mock.timers.tick(80);
+    c.send(": heartbeat\n\n");
+  }
+  t.mock.timers.tick(40);
+  await checked;
+  assert.equal(c.aborts, 1);
+});
+
+test("an idle timeout preserves partial text without declaring success", async (t) => {
+  const h = host(t);
+  const c = connection(h);
+  const pending = request(h);
+  c.send(answer);
+  t.mock.timers.tick(100);
+  const result = await pending;
+  assert.equal(result.completion, "partial");
+  assert.equal(result.text, "answer");
+  assert.equal(result.requestDiagnostics.timeoutKind, "idle");
+});
+
+test("non-streaming retains a total timeout even when data arrives", async (t) => {
+  const h = host(t);
+  const c = connection(h);
+  const checked = assert.rejects(request(h, { stream: false }), (error) => {
+    assert.equal(error.requestDiagnostics.timeoutKind, "total");
+    assert.equal(error.requestDiagnostics.totalTimeoutMs, 100);
+    return true;
+  });
+  t.mock.timers.tick(80);
+  c.send("{");
+  t.mock.timers.tick(20);
+  await checked;
+});
+
+test("final bytes are read without progress events and non-streaming content is timed", async (t) => {
+  const h = host(t);
+  const c = connection(h);
+  const pending = request(h, { stream: false });
+  t.mock.timers.tick(70);
+  c.finish(
+    JSON.stringify({
+      choices: [{ message: { content: "answer" }, finish_reason: "stop" }],
+    }),
+  );
+  const result = await pending;
+  assert.equal(result.completion, "complete");
+  assert.equal(result.requestDiagnostics.firstContentMs, 70);
+});
+
+test("user cancellation clears deadlines and is not reported as a timeout", async (t) => {
+  const h = host(t);
+  const c = connection(h);
+  const controller = new AbortController();
+  const checked = assert.rejects(
+    request(h, { abortSignal: controller.signal }),
+    { name: "LLMRequestAbortError" },
+  );
+  controller.abort();
+  await checked;
+  t.mock.timers.tick(1000);
+  assert.equal(c.aborts, 1);
+});
+
+function endpoint(h, id = "one") {
+  return {
+    id,
+    name: id,
+    providerType: "openai-compat",
+    apiUrl: "https://fixture.invalid",
+    apiKey: "secret",
+    model: "fixture",
+    enabled: true,
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+test("service exposes connection activity before any answer text, without onProgress", async (t) => {
+  const h = host(t);
+  h.LLMEndpointManager.saveEndpoints([endpoint(h)]);
+  const c = connection(h);
+  const statuses = [];
+  const pending = h.LLMService.generate({
+    task: "summary",
+    prompt: "summarize",
+    content: { kind: "text", text: "paper" },
+    transport: {
+      retry: false,
+      onStatus: (event) => statuses.push(event.stage),
+    },
+  });
+  await flush();
+  c.send(": heartbeat\n\n");
+  assert.equal(statuses.at(-1), "llm-receiving");
+  assert.ok(!statuses.includes("llm-streaming"));
+  c.send(answer + done);
+  c.finish();
+  assert.equal((await pending).completion, "complete");
+  assert.ok(statuses.includes("llm-streaming"));
+});
 
 function queue(h, status = "processing") {
   const task = {

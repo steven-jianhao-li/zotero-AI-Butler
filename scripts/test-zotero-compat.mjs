@@ -8,6 +8,7 @@ import {
 import path from "node:path";
 import { spawn } from "node:child_process";
 import AdmZip from "adm-zip";
+import { build } from "esbuild";
 
 const executable = process.argv[2];
 if (!executable)
@@ -74,10 +75,23 @@ await writeFile(
   JSON.stringify(probeManifest),
 );
 const reportPath = path.join(directory, "report.json");
+const citationProbe = path.join(probe, "agent-citations.js");
+await build({
+  entryPoints: ["src/modules/views/agent/AgentMarkdown.ts"],
+  outfile: citationProbe,
+  bundle: true,
+  format: "iife",
+  globalName: "AgentCitationProbe",
+  target: "es2018",
+  define: { __env__: '"test"' },
+  logLevel: "silent",
+});
 await writeFile(
   path.join(probe, "bootstrap.js"),
   "var REPORT_PATH = " +
     JSON.stringify(reportPath) +
+    ";\nvar AGENT_CITATION_PROBE_PATH = " +
+    JSON.stringify(citationProbe) +
     ";\n" +
     (await readFile("test/host-smoke.js", "utf8")),
 );

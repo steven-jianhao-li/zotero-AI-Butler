@@ -13,6 +13,7 @@ await build({
       "agentRuntime",
       "agentTransport",
       "agentLibraryTools",
+      "agentCitations",
     ]
       .map((name) => `import './test/${name}.test.ts';`)
       .join("\n"),

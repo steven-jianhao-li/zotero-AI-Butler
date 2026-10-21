@@ -2,6 +2,8 @@ import { getString } from "../../utils/locale";
 
 // English fallbacks are used only before locale initialization (including Node tests).
 const defaults = {
+  "agent-runtime-permission-changed":
+    "Library permission for this run: {permission}.",
   "agent-runtime-result-limit":
     "Tool result exceeded the evidence storage limit.",
   "agent-runtime-session-limit":

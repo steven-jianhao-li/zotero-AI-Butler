@@ -520,6 +520,47 @@ export function createLibraryTools(): AgentTool[] {
       true,
     ),
     tool(
+      "trash_items",
+      "Move explicitly requested regular paper items to Zotero's trash (up to 50). Requires write permission. This removes papers from the active library, not just a collection; their child notes and attachments stay attached and are hidden with them. Read get_item first and use the exact item IDs the user chose. Never decide to delete suspected duplicates without the user's instruction. Items remain recoverable from Zotero Trash; this does not permanently erase items, merge them, transfer notes, or empty Trash. Returns verified before/after state.",
+      { itemIds: itemIdsSchema },
+      ["itemIds"],
+      async (args, context) => {
+        const ids = idsArg(args, "itemIds");
+        const items = await Promise.all(
+          ids.map((id) => scopedItem(id, context)),
+        );
+        if (
+          items.some((item) => !item.isRegularItem() || Boolean(item.parentID))
+        )
+          throw new Error(getString("agent-tool-error-trash-paper-required"));
+        const changes = await Zotero.DB.executeTransaction(async () => {
+          assertWritable(context);
+          const before = items.map((item) => {
+            assertObjectScope(item, context);
+            return {
+              source: source(item),
+              title: textField(item, "title", 320),
+              deleted: item.deleted,
+              collections: item.getCollections(),
+              childNotes: item.getNotes().length,
+              childAttachments: item.getAttachments().length,
+            };
+          });
+          const changes = before.map((entry) => ({
+            before: entry,
+            after: { source: entry.source, deleted: true },
+          }));
+          assertAuditSize(changes);
+          await Zotero.Items.trash(ids);
+          if (items.some((item) => !item.deleted))
+            throw new Error(getString("agent-tool-error-trash-incomplete"));
+          return changes;
+        });
+        return { operation: "trash", recoverable: true, changes };
+      },
+      true,
+    ),
+    tool(
       "create_note",
       "Create a child note containing literal plain text. Requires write permission. HTML is escaped; source item links can be written as text. Agent notes use the AI-Agent tag.",
       {

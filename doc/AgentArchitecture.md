@@ -44,7 +44,7 @@ routing selects a coordinator once per run; a separate reader can be selected.
 
 Tools: `search_library`, `get_item`, `read_note`, `list_collections`, `read_paper`,
 `edit_tags`, `create_collection`, `organize_items`, `create_note`, `update_plan`,
-`read_result`, `delegate_research`, `start_paper_workflow`,
+`read_result`, `delegate_research`, `trash_items`, `start_paper_workflow`,
 `get_paper_workflow_status`. `create_note` uses `AI-Agent`; standard workflows
 retain their existing summary/deep-reading note classification.
 
@@ -65,6 +65,23 @@ timeout are disposed on completion, final failure, removal, cancellation, or
 timeout. Stopping the Agent cancels waiting, not the already authorized queue
 job. Restarted sessions do not automatically resume; the user can query the
 persisted task in a subsequent run.
+
+`trash_items(itemIds)` moves explicitly selected regular parent papers to Zotero
+Trash using the native API inside one transaction. All targets are preflighted
+for library scope and editability, with before/after evidence and existing write
+approval/receipt behavior. It does not erase, merge, transfer child notes, or
+empty Trash. Collection membership removal remains a separate operation.
+
+Permission changes are accepted with the next `AgentService.run()` call, which
+refreshes the system prompt and available tool catalog in the same session and
+records the new authority in the activity log. Historical assistant claims do
+not define the current authority or add capabilities absent from the catalog.
+
+Citation clicks resolve personal/group library IDs and item keys locally and
+call the main window's `ZoteroPane.selectItem()`, then focus that window. Only
+HTTP(S) citations use `Zotero.launchURL()`; Zotero links never enter the external
+protocol handler. Missing/trashed items display inline feedback. The isolated
+host smoke test exercises the actual Markdown anchor click in a chrome dialog.
 
 ## Context and evidence
 

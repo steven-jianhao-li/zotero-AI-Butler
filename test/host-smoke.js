@@ -237,6 +237,58 @@ async function runProbe() {
       );
     }, "dashboard settings");
     assert(true, "settings");
+    if (!legacy) {
+      // Exercise the real click handler in a chrome dialog, using only fixture items.
+      var citationScope = {
+        Zotero: host,
+        addon: host.AIButler,
+        ztoolkit: toolkit,
+        URL: main.URL,
+      };
+      var citationFile = Components.classes[
+        "@mozilla.org/file/local;1"
+      ].createInstance(Components.interfaces.nsIFile);
+      citationFile.initWithPath(AGENT_CITATION_PROBE_PATH);
+      hostServices.scriptloader.loadSubScript(
+        hostServices.io.newFileURI(citationFile).spec,
+        citationScope,
+      );
+      var citationHost = dashboard.document.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "div",
+      );
+      dashboard.document.documentElement.appendChild(citationHost);
+      var externalLaunches = 0;
+      var launchURL = host.launchURL;
+      host.launchURL = function () {
+        externalLaunches++;
+      };
+      try {
+        citationScope.AgentCitationProbe.renderAgentMarkdown(
+          citationHost,
+          "[Fixture paper](zotero://select/library/items/" + paper.key + ")",
+        );
+        citationHost.querySelector("a").click();
+        await waitFor(function () {
+          var selectedItems = main.ZoteroPane.getSelectedItems();
+          return selectedItems.length === 1 && selectedItems[0].id === paper.id;
+        }, "Agent citation selects library item");
+        assert(externalLaunches === 0, "agentCitationBypassesExternalProtocol");
+        assert(
+          citationHost.querySelector("[role=alert]").hidden,
+          "agentCitationNoError",
+        );
+        await host.Items.trashTx([paper.id]);
+        citationHost.querySelector("a").click();
+        await waitFor(function () {
+          return !citationHost.querySelector("[role=alert]").hidden;
+        }, "Agent missing citation feedback");
+        assert(externalLaunches === 0, "agentMissingCitationStaysInternal");
+      } finally {
+        host.launchURL = launchURL;
+        citationHost.remove();
+      }
+    }
     if (legacy) addon.userDisabled = true;
     else await addon.disable();
     await waitFor(function () {
@@ -280,4 +332,4 @@ async function runProbe() {
     hostServices.startup.quit(Components.interfaces.nsIAppStartup.eForceQuit);
   }
 }
-/* global Components, Services, ChromeUtils, IOUtils, REPORT_PATH, dump */
+/* global Components, Services, ChromeUtils, IOUtils, REPORT_PATH, AGENT_CITATION_PROBE_PATH, dump */

@@ -16,6 +16,7 @@ import { PDFExtractor } from "../src/modules/pdfExtractor";
 import { MineruClient } from "../src/modules/mineruIntegration";
 import { MineruMarkdownSaver } from "../src/modules/mineruMarkdownSaver";
 import { AgentRunner } from "../src/modules/agent/AgentRunner";
+import { AgentService } from "../src/modules/agent/AgentService";
 import {
   TaskQueueManager,
   TaskStatus,
@@ -380,6 +381,14 @@ describe("Agent library tools", function () {
       globals.Zotero = {
         Prefs: { get: () => noteStrategy },
         Items: {
+          trash: async (ids: number[]) => {
+            for (const id of ids) {
+              const item = items.get(id)!;
+              if (item.failSave) throw new Error("fixture trash failure");
+              item.deleted = true;
+              item.onSave?.();
+            }
+          },
           getAsync: async (id: number | number[]) =>
             Array.isArray(id)
               ? id.map((value) => items.get(value))
@@ -392,7 +401,10 @@ describe("Agent library tools", function () {
               (entry) => entry.libraryID === libraryID,
             ),
         },
-        Libraries: { isEditable: () => editable },
+        Libraries: {
+          isEditable: () => editable,
+          get: (id: number) => ({ libraryID: id }),
+        },
         URI: {
           getLibraryURI: (id: number) =>
             id === 1
@@ -413,6 +425,7 @@ describe("Agent library tools", function () {
               id,
               tags: item.getTags(),
               collections: item.getCollections(),
+              deleted: item.deleted,
             }));
             try {
               return await operation();
@@ -422,6 +435,7 @@ describe("Agent library tools", function () {
                 const item = items.get(entry.id)!;
                 item.tags = entry.tags;
                 item.collections = entry.collections;
+                item.deleted = entry.deleted;
               }
               throw error;
             }
@@ -1066,6 +1080,148 @@ describe("Agent library tools", function () {
       expect(created.note).to.contain("<br/>Result");
       expect(created.tags).to.deep.equal([{ tag: "AI-Agent" }]);
       expect(created.parentID).to.equal(1);
+    });
+
+    it("moves only the chosen papers to Trash and records recoverable before/after state", async function () {
+      state.session.permission = "full";
+      const result = (await execute("trash_items", { itemIds: [1, 5, 1] })) as {
+        recoverable: boolean;
+        changes: {
+          before: { source: { itemId: number }; childNotes: number };
+          after: { deleted: boolean };
+        }[];
+      };
+      expect(result.recoverable).to.equal(true);
+      expect(
+        result.changes.map((change) => change.before.source.itemId),
+      ).to.deep.equal([1, 5]);
+      expect(result.changes[0].before.childNotes).to.equal(1);
+      expect(result.changes.every((change) => change.after.deleted)).to.equal(
+        true,
+      );
+      expect(items.get(2)!.parentID).to.equal(1);
+      expect(items.get(1)!.getCollections()).to.deep.equal([10]);
+      expect(items.get(3)!.deleted).to.equal(false);
+      expect(transactionCount).to.equal(1);
+    });
+
+    it("preflights the entire trash batch and enforces permissions before any change", async function () {
+      await rejects(execute("trash_items", { itemIds: [1] }), "read-only");
+      state.session.permission = "full";
+      editable = false;
+      await rejects(
+        execute("trash_items", { itemIds: [1] }),
+        "library-read-only",
+      );
+      editable = true;
+      for (const id of [3, 4, 999])
+        await rejects(
+          execute("trash_items", { itemIds: [1, id] }),
+          "item-unavailable",
+        );
+      await rejects(
+        execute("trash_items", { itemIds: [1, 2] }),
+        "trash-paper-required",
+      );
+      expect(items.get(1)!.deleted).to.equal(false);
+      expect(transactionCount).to.equal(0);
+    });
+
+    it("rolls back the whole trash batch if a later item fails", async function () {
+      state.session.permission = "full";
+      items.get(5)!.failSave = true;
+      await rejects(
+        execute("trash_items", { itemIds: [1, 5] }),
+        "trash failure",
+      );
+      expect(items.get(1)!.deleted).to.equal(false);
+      expect(items.get(5)!.deleted).to.equal(false);
+      expect(rollbackCount).to.equal(1);
+    });
+
+    it("preserves a completed trash receipt when the Agent stops during commit", async function () {
+      state.session.permission = "full";
+      items.get(1)!.onSave = () => {
+        state.assertActive = () => {
+          throw new Error("cancelled");
+        };
+      };
+      const result = await execute("trash_items", { itemIds: [1] });
+      expect(result).to.have.property("operation", "trash");
+      expect(items.get(1)!.deleted).to.equal(true);
+    });
+
+    it("applies read-only -> confirm -> full -> read-only on follow-ups in the same session", async function () {
+      const service = Object.create(AgentService.prototype) as AgentService;
+      let approvals = 0;
+      Object.assign(service, {
+        sessions: new Map([[state.session.id, state.session]]),
+        listeners: new Set(),
+        controllers: new Map(),
+        approvals: new Map(),
+        loading: Promise.resolve(),
+        writes: Promise.resolve(),
+        store: { save: async () => {} },
+        requestApproval: async () => {
+          approvals++;
+          return false;
+        },
+      });
+      const originalTurn = LLMService.agentTurn;
+      try {
+        for (const permission of [
+          "read-only",
+          "confirm",
+          "full",
+          "read-only",
+        ] as const) {
+          let turns = 0;
+          LLMService.agentTurn = async (request) => {
+            turns++;
+            expect(request.messages[0].content).to.contain(
+              `Authority=${permission}`,
+            );
+            expect(
+              request.tools.some((tool) => tool.name === "trash_items"),
+            ).to.equal(permission !== "read-only");
+            if (permission !== "read-only" && turns === 1)
+              return {
+                text: "",
+                toolCalls: [
+                  {
+                    id: `trash-${permission}`,
+                    name: "trash_items",
+                    arguments: '{"itemIds":[1]}',
+                  },
+                ],
+              };
+            if (permission === "confirm")
+              expect(items.get(1)!.deleted).to.equal(false);
+            if (permission === "full")
+              expect(request.messages.at(-1)!.content).to.contain(
+                '"operation":"trash"',
+              );
+            return { text: "Done.", toolCalls: [] };
+          };
+          await service.run(state.session.id, "Process the requested papers.", {
+            permission,
+          });
+          expect(state.session.status).to.equal("completed");
+          expect(state.session.permission).to.equal(permission);
+        }
+        expect(approvals).to.equal(1);
+        expect(items.get(1)!.deleted).to.equal(true);
+        expect(
+          state.session.events.filter(
+            (event) =>
+              event.type === "status" &&
+              event.data &&
+              "permission" in (event.data as object),
+          ),
+        ).to.have.length(3);
+      } finally {
+        LLMService.agentTurn = originalTurn;
+      }
     });
 
     it("keeps group-library source links scoped to the actual group", async function () {

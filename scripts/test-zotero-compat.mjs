@@ -80,6 +80,32 @@ await writeFile(
   JSON.stringify(probeManifest),
 );
 const reportPath = path.join(directory, "report.json");
+const epubProbe = path.join(probe, "epub-probe.js");
+await build({
+  entryPoints: ["test/epubHost.ts"],
+  outfile: epubProbe,
+  bundle: true,
+  format: "iife",
+  globalName: "EPUBProbe",
+  target: "firefox60",
+  logLevel: "silent",
+});
+const epubFixture = path.join(directory, "fixture.epub");
+const epubZip = new AdmZip();
+for (const [name, content] of Object.entries({
+  mimetype: "application/epub+zip",
+  "META-INF/container.xml":
+    '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
+  "OEBPS/content.opf":
+    '<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="fixture"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>EPUB regression fixture</dc:title><dc:identifier id="fixture">fixture</dc:identifier><dc:language>zh</dc:language></metadata><manifest><item id="second" href="a-second.xhtml" media-type="application/xhtml+xml"/><item id="first" href="z-first.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="first"/><itemref idref="second"/></spine></package>',
+  "OEBPS/z-first.xhtml":
+    '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Fixture</title></head><body><h1>第一章</h1><p>FIRST_SECTION</p><style>HIDDEN_STYLE</style><script>HIDDEN_SCRIPT</script></body></html>',
+  "OEBPS/a-second.xhtml":
+    '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Fixture</title></head><body><h1>第二章</h1><p>SECOND_SECTION</p></body></html>',
+})) {
+  epubZip.addFile(name, Buffer.from(content));
+}
+epubZip.writeZip(epubFixture);
 const citationProbe = path.join(probe, "agent-citations.js");
 await build({
   stdin: {
@@ -132,14 +158,26 @@ const streamFixture = createServer((request, response) => {
 await new Promise((resolve) => streamFixture.listen(0, "127.0.0.1", resolve));
 streamFixture.unref();
 const streamFixtureUrl = `http://127.0.0.1:${streamFixture.address().port}`;
+// Legacy bootstrap loaders may interpret source bytes as Latin-1. Keep paths
+// ASCII in generated JavaScript so workspaces with Chinese names remain valid.
+const jsString = (value) =>
+  JSON.stringify(value).replace(
+    /[\u0080-\uffff]/g,
+    (character) =>
+      "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0"),
+  );
 await writeFile(
   path.join(probe, "bootstrap.js"),
   "var REPORT_PATH = " +
-    JSON.stringify(reportPath) +
+    jsString(reportPath) +
+    ";\nvar EPUB_PROBE_PATH = " +
+    jsString(epubProbe) +
+    ";\nvar EPUB_FIXTURE_PATH = " +
+    jsString(epubFixture) +
     ";\nvar AGENT_CITATION_PROBE_PATH = " +
-    JSON.stringify(citationProbe) +
+    jsString(citationProbe) +
     ";\nvar AGENT_STREAM_FIXTURE_URL = " +
-    JSON.stringify(streamFixtureUrl) +
+    jsString(streamFixtureUrl) +
     ";\n" +
     (await readFile("test/host-smoke.js", "utf8")),
 );
@@ -213,6 +251,7 @@ const required = [
   "hostSpecificSidebar",
   "columns",
   "filesystemBoundary",
+  "epubCompatibility",
   "mindmap",
   "settings",
   "cleanup",

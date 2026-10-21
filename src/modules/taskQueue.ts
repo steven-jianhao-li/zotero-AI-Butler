@@ -730,7 +730,9 @@ export class TaskQueueManager {
     options?: TaskOptions,
   ): Promise<string> {
     if (!(await this.hasUsableTaskSource(item))) {
-      throw new Error(getString("content-error-no-usable-attachment"));
+      throw new Error(
+        await ContentExtractor.getUnavailableAttachmentMessage([item]),
+      );
     }
     return this.enqueueTask(item, priority, options);
   }
@@ -856,7 +858,9 @@ export class TaskQueueManager {
     options?: TaskOptions,
   ): Promise<string> {
     if (!(await this.hasUsableTaskSource(item))) {
-      throw new Error(getString("content-error-no-usable-attachment"));
+      throw new Error(
+        await ContentExtractor.getUnavailableAttachmentMessage([item]),
+      );
     }
     return this.enqueueDeepReadTask(item, priority, options);
   }

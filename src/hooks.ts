@@ -23,6 +23,7 @@
  */
 
 import { getString, initLocale, getLocaleID } from "./utils/locale";
+import { ContentExtractor } from "./modules/contentExtractor";
 import { getSelectedCollection } from "./utils/collectionSelection";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
@@ -1789,7 +1790,7 @@ async function handleGenerateSummary() {
     if (taskIds.length === 0) {
       progressWin
         .createLine({
-          text: getString("content-error-no-usable-attachment"),
+          text: await ContentExtractor.getUnavailableAttachmentMessage(items),
           type: "default",
         })
         .show();
@@ -2811,7 +2812,7 @@ async function handleMultiRoundSummary() {
     if (taskIds.length === 0) {
       progressWin
         .createLine({
-          text: getString("content-error-no-usable-attachment"),
+          text: await ContentExtractor.getUnavailableAttachmentMessage(items),
           type: "default",
         })
         .show();

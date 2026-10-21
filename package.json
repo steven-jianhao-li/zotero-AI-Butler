@@ -46,6 +46,7 @@
     "i18n:check:build": "node ./scripts/check-i18n-build.mjs",
     "test:i18n": "node ./scripts/check-i18n.mjs",
     "test:pdf": "node --test test/pdfExtractionRecovery.test.mjs",
+    "test:epub": "node --test test/epubExtraction.test.mjs",
     "test:sidebar": "node --test test/sidebarViewport.test.mjs test/quickChatThreads.test.mjs test/uiRefresh.test.mjs",
     "test:onboarding": "node --test test/onboardingNavigation.test.mjs",
     "test:compat": "node --test test/compatibility.test.mjs",

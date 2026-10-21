@@ -1681,7 +1681,9 @@ export class LibraryScannerView extends BaseView {
       if (taskIds.length === 0) {
         new ztoolkit.ProgressWindow(getString("app-name"))
           .createLine({
-            text: getString("content-error-no-usable-attachment"),
+            text: await ContentExtractor.getUnavailableAttachmentMessage(
+              selectedItems,
+            ),
             type: "default",
           })
           .show();

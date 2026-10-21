@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars -- Entry points are invoked by Zotero's addon loader. */
-/* global PathUtils, AGENT_STREAM_FIXTURE_URL */
+/* global PathUtils, AGENT_STREAM_FIXTURE_URL, EPUB_PROBE_PATH, EPUB_FIXTURE_PATH */
 var hostServices =
   typeof Services === "undefined"
     ? Components.utils.import("resource://gre/modules/Services.jsm").Services
@@ -135,6 +135,22 @@ async function runProbe() {
       legacy ? !!scope.OS : scope.IOUtils === IOUtils,
       "filesystemBoundary",
     );
+    var epubScope = {
+      Zotero: host,
+      addon: host.AIButler,
+      ztoolkit: toolkit,
+      ChromeUtils: scope.ChromeUtils,
+      IOUtils: scope.IOUtils,
+    };
+    var epubProbeFile = Components.classes[
+      "@mozilla.org/file/local;1"
+    ].createInstance(Components.interfaces.nsIFile);
+    epubProbeFile.initWithPath(EPUB_PROBE_PATH);
+    hostServices.scriptloader.loadSubScript(
+      hostServices.io.newFileURI(epubProbeFile).spec,
+      epubScope,
+    );
+    await epubScope.EPUBProbe.runEpubHostChecks(EPUB_FIXTURE_PATH, assert);
     if (!legacy) {
       var paper = new host.Item("journalArticle");
       paper.setField("title", "AI Butler UI regression fixture");

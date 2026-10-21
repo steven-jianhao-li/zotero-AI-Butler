@@ -257,6 +257,10 @@ function routingHost() {
       "../utils/prefs": { getPref: () => undefined },
       "./llmEndpointManager": { LLMEndpointManager: endpoints },
       "./pdfExtractor": host,
+      "./epubExtractor": loadSource("modules/epubExtractor.ts", {
+        "../utils/locale": locale,
+        "./llmproviders/shared/requestAbort": host.abort,
+      }),
       "./llmproviders/shared/requestAbort": host.abort,
       "./llmproviders/shared/retry": {
         getApiRetryDelay: () => 0,

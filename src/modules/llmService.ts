@@ -17,6 +17,7 @@ import {
   type LLMPdfProcessMode,
 } from "./llmEndpointManager";
 import { ContentExtractor } from "./contentExtractor";
+import { EPUBExtractionError } from "./epubExtractor";
 import { PDFExtractor, PDFTextExtractionError } from "./pdfExtractor";
 import type { TaskProgressMeta } from "./taskQueue";
 import { ProviderRegistry } from "./llmproviders/ProviderRegistry";
@@ -996,6 +997,7 @@ export class LLMService {
         }
         const extractionError = PDFTextExtractionError.find(error);
         if (extractionError) throw extractionError;
+        if (error instanceof EPUBExtractionError) throw error;
         if (markAttempted)
           LLMEndpointManager.markEndpointAttempted(endpoint.id);
         lastError = this.toApiCallError(endpoint, error);
@@ -1550,7 +1552,7 @@ export class LLMService {
     const hasPdf = pdfAttachments.length > 0;
 
     if (!hasPdf) {
-      const snapshotContent =
+      const textContent =
         await ContentExtractor.extractAnalyzableContentFromItem(
           input.item,
           false,
@@ -1558,12 +1560,14 @@ export class LLMService {
           statusCallback,
           { persist: input.persistExtractedContent, abortSignal },
         );
-      if (snapshotContent.kind === "web-snapshot") {
+      if (textContent.kind === "web-snapshot") {
         warnings.push(getString("llm-warning-web-snapshot-used"));
+      } else if (textContent.kind === "epub") {
+        warnings.push(getString("llm-warning-epub-used"));
       }
       return {
         mode: "single",
-        content: this.normalizeText(snapshotContent.content),
+        content: this.normalizeText(textContent.content),
         isBase64: false,
         warnings,
       };
@@ -1719,6 +1723,7 @@ export class LLMService {
 
     const text = await ContentExtractor.extractTextFromAnalyzableAttachment(
       input.attachment,
+      abortSignal,
     );
     return {
       mode: "single",

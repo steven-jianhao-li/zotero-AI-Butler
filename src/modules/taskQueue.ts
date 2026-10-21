@@ -31,7 +31,11 @@ import { getPref } from "../utils/prefs";
 import { NoteGenerator } from "./noteGenerator";
 import { ContentExtractor } from "./contentExtractor";
 import { PDFExtractor, PDFTextExtractionError } from "./pdfExtractor";
-import type { LLMAbortSignal } from "./llmproviders/types";
+import type {
+  LLMAbortSignal,
+  LLMRequestDiagnostics,
+} from "./llmproviders/types";
+import type { LLMApiAttemptDiagnostic } from "./llmService";
 import { isAbortError } from "./llmproviders/shared/requestAbort";
 import { TaskArtifacts, type FixedTaskArtifactType } from "./taskArtifacts";
 import { isTableFeatureEnabled } from "./uiCustomization";
@@ -1169,12 +1173,12 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, true);
     } catch (error: any) {
       // 任务失败
+      const failedAtStage = task.workflowStage;
       task.error = this.getTaskErrorMessage(error);
-      task.errorDetails = this.buildTaskErrorDetails(task, error);
       task.workflowStage = getString("progress-failed");
       const suppressTaskRetry = this.shouldSuppressTaskRetry(error, task);
 
-      task.retryCount++;
+      if (!suppressTaskRetry) task.retryCount++;
       if (!suppressTaskRetry && task.retryCount < task.maxRetries) {
         task.status = TaskStatus.PENDING;
         task.progress = 0;
@@ -1187,6 +1191,11 @@ export class TaskQueueManager {
         logTaskQueue(`一图总结任务最终失败: ${task.title} - ${task.error}`);
       }
 
+      task.errorDetails = this.buildTaskErrorDetails(
+        task,
+        error,
+        failedAtStage,
+      );
       this.updateTaskProgress(
         task,
         task.progress,
@@ -1354,12 +1363,12 @@ export class TaskQueueManager {
       this.notifyComplete(taskId, true);
     } catch (error: any) {
       // 任务失败
+      const failedAtStage = task.workflowStage;
       task.error = this.getTaskErrorMessage(error);
-      task.errorDetails = this.buildTaskErrorDetails(task, error);
       task.workflowStage = getString("progress-failed");
       const suppressTaskRetry = this.shouldSuppressTaskRetry(error, task);
 
-      task.retryCount++;
+      if (!suppressTaskRetry) task.retryCount++;
       if (!suppressTaskRetry && task.retryCount < task.maxRetries) {
         task.status = TaskStatus.PENDING;
         task.progress = 0;
@@ -1372,6 +1381,11 @@ export class TaskQueueManager {
         logTaskQueue(`思维导图任务最终失败: ${task.title} - ${task.error}`);
       }
 
+      task.errorDetails = this.buildTaskErrorDetails(
+        task,
+        error,
+        failedAtStage,
+      );
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
@@ -1555,11 +1569,11 @@ export class TaskQueueManager {
       logTaskQueue(`填表任务完成: ${task.title} (耗时${task.duration}秒)`);
       this.notifyComplete(taskId, true);
     } catch (error: any) {
+      const failedAtStage = task.workflowStage;
       task.error = this.getTaskErrorMessage(error);
-      task.errorDetails = this.buildTaskErrorDetails(task, error);
       task.workflowStage = getString("progress-failed");
       const suppressTaskRetry = this.shouldSuppressTaskRetry(error, task);
-      task.retryCount++;
+      if (!suppressTaskRetry) task.retryCount++;
       if (!suppressTaskRetry && task.retryCount < task.maxRetries) {
         task.status = TaskStatus.PENDING;
         task.progress = 0;
@@ -1567,6 +1581,11 @@ export class TaskQueueManager {
         task.status = TaskStatus.FAILED;
         task.completedAt = new Date();
       }
+      task.errorDetails = this.buildTaskErrorDetails(
+        task,
+        error,
+        failedAtStage,
+      );
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
@@ -1714,11 +1733,16 @@ export class TaskQueueManager {
       logTaskQueue(`综述任务完成: ${task.title} (耗时${task.duration}秒)`);
       this.notifyComplete(taskId, true);
     } catch (error: any) {
+      const failedAtStage = task.workflowStage;
       task.error = this.getTaskErrorMessage(error);
-      task.errorDetails = this.buildTaskErrorDetails(task, error);
       task.workflowStage = getString("progress-failed");
       task.status = TaskStatus.FAILED;
       task.completedAt = new Date();
+      task.errorDetails = this.buildTaskErrorDetails(
+        task,
+        error,
+        failedAtStage,
+      );
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
@@ -1885,11 +1909,16 @@ export class TaskQueueManager {
       );
       this.notifyComplete(taskId, true);
     } catch (error: any) {
+      const failedAtStage = task.workflowStage;
       task.error = this.getTaskErrorMessage(error);
-      task.errorDetails = this.buildTaskErrorDetails(task, error);
       task.workflowStage = getString("progress-failed");
       task.status = TaskStatus.FAILED;
       task.completedAt = new Date();
+      task.errorDetails = this.buildTaskErrorDetails(
+        task,
+        error,
+        failedAtStage,
+      );
       this.notifyComplete(taskId, false, task.error);
     } finally {
       this.processingTasks.delete(taskId);
@@ -2759,12 +2788,10 @@ export class TaskQueueManager {
         this.abortingTasks.has(taskId) ||
         abortController.signal.aborted ||
         isAbortError(error, abortController.signal);
+      const failedAtStage = task.workflowStage;
       task.error = isTaskAborted
         ? getString("provider-error-aborted")
         : this.getTaskErrorMessage(error);
-      task.errorDetails = isTaskAborted
-        ? getTaskAbortDetail()
-        : this.buildTaskErrorDetails(task, error);
       const suppressTaskRetry = this.shouldSuppressTaskRetry(error, task);
 
       // 无 PDF 附件错误直接标记失败，不重试（用户需要手动添加 PDF）
@@ -2799,6 +2826,12 @@ export class TaskQueueManager {
         }
       }
 
+      task.workflowStage = isTaskAborted
+        ? getString("progress-aborted")
+        : getString("progress-failed");
+      task.errorDetails = isTaskAborted
+        ? getTaskAbortDetail()
+        : this.buildTaskErrorDetails(task, error, failedAtStage);
       this.updateTaskProgress(
         task,
         task.progress,
@@ -2899,7 +2932,11 @@ export class TaskQueueManager {
     );
   }
 
-  private buildTaskErrorDetails(task: TaskItem, error: unknown): string {
+  private buildTaskErrorDetails(
+    task: TaskItem,
+    error: unknown,
+    failedAtStage = task.workflowStage,
+  ): string {
     const extractionError = PDFTextExtractionError.find(error);
     const errorInfo = error as
       | {
@@ -2913,6 +2950,8 @@ export class TaskQueueManager {
           endpointName?: string;
           providerId?: string;
           suppressTaskRetry?: boolean;
+          requestDiagnostics?: LLMRequestDiagnostics;
+          attemptDiagnostics?: LLMApiAttemptDiagnostic[];
         }
       | undefined;
     const runtime = this.getRuntimeDebugInfo();
@@ -2929,6 +2968,7 @@ export class TaskQueueManager {
       `retryCount: ${task.retryCount}`,
       `maxRetries: ${task.maxRetries}`,
       `workflowStage: ${task.workflowStage || noneValue}`,
+      `failedAtStage: ${failedAtStage || noneValue}`,
       `zoteroVersion: ${runtime.zoteroVersion || unknownValue}`,
       `platform: ${runtime.platform || unknownValue}`,
       `userAgent: ${runtime.userAgent || unknownValue}`,
@@ -2940,11 +2980,27 @@ export class TaskQueueManager {
 
     if (errorInfo?.attempts !== undefined) {
       lines.push(`apiAttempts: ${errorInfo.attempts}`);
+      lines.push(`queueRetryCount: ${task.retryCount}`);
     }
     if (errorInfo?.endpointName || errorInfo?.endpointId) {
       lines.push(`endpointName: ${errorInfo.endpointName || unknownValue}`);
       lines.push(`endpointId: ${errorInfo.endpointId || unknownValue}`);
       lines.push(`providerId: ${errorInfo.providerId || unknownValue}`);
+    }
+
+    if (errorInfo?.requestDiagnostics) {
+      lines.push(
+        "",
+        "--- request diagnostics ---",
+        this.stringifyDebugValue(errorInfo.requestDiagnostics),
+      );
+    }
+    if (errorInfo?.attemptDiagnostics?.length) {
+      lines.push(
+        "",
+        "--- API attempts ---",
+        this.stringifyDebugValue(errorInfo.attemptDiagnostics),
+      );
     }
 
     const diagnosticText =

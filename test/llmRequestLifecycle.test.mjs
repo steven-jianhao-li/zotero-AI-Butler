@@ -468,3 +468,29 @@ test("artifact reconciliation honors regeneration policy while preserving idle s
   assert.equal(await q.markTaskCompletedIfArtifactReady(task.id), true);
   assert.equal(task.status, "completed");
 });
+
+test("queue failure diagnostics contain final status, previous stage and API attempts", async (t) => {
+  const h = host(t);
+  const { q, task } = queue(h, "pending");
+  h.ContentExtractor.hasAnalyzableAttachment = async () => true;
+  h.NoteGenerator.generateNoteForItem = async (_item, _view, progress) => {
+    progress("waiting for response", 45, { stage: "llm-waiting" });
+    throw new h.LLMApiExhaustedError(3, new Error("Request timed out"), [
+      {
+        attempt: 3,
+        endpointId: "one",
+        endpointName: "one",
+        providerId: "openai-compat",
+        elapsedMs: 100,
+        error: "timeout",
+      },
+    ]);
+  };
+  await q.executeTask(task.id);
+  assert.equal(task.status, "failed");
+  assert.match(task.errorDetails, /status: failed/);
+  assert.match(task.errorDetails, /failedAtStage: waiting for response/);
+  assert.match(task.errorDetails, /apiAttempts: 3/);
+  assert.match(task.errorDetails, /queueRetryCount: 0/);
+  assert.ok(task.errorDetails.includes("--- API attempts ---"));
+});

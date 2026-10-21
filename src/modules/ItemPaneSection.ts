@@ -25,12 +25,18 @@ import {
   type LLMNoteMetadata,
 } from "./llmNoteMetadata";
 import {
-  appendQuickChatTurn,
   buildQuickChatConversation,
   createChatAbortController,
   isChatAbortError,
   type ChatAbortControllerLike,
 } from "./chatContext";
+import {
+  chatPersist,
+  cloneChatContext,
+  normalizeChatMessages,
+  type ChatPersistMessage,
+  type ChatPersistThread,
+} from "./chatPersist";
 import {
   buildQuickChatQuestionWithRelatedContext,
   createQuickChatRelatedContextSignature,
@@ -60,16 +66,14 @@ import katex from "katex";
 // 侧边栏聊天状态类型
 interface ChatState {
   itemId: number | null;
+  threadId: string | null;
   pdfContent: string;
   isBase64: boolean;
   relatedItems: QuickChatRelatedItemRef[];
   relatedMode: QuickChatRelatedMode;
   relatedContextSignature: string;
   relatedContextIncludedCount: number;
-  conversationHistory: Array<{
-    role: "system" | "user" | "assistant";
-    content: string;
-  }>;
+  conversationHistory: ChatPersistMessage[];
   isChatting: boolean;
   abortController: ChatAbortControllerLike | null;
   savedPairIds: Set<string>; // 已保存的对话对 ID，防止重复保存
@@ -201,6 +205,7 @@ const SIDEBAR_NOTE_OVERFLOW_GUARD_CSS = `
 // 当前聊天状态
 let currentChatState: ChatState = {
   itemId: null,
+  threadId: null,
   pdfContent: "",
   isBase64: false,
   relatedItems: [],
@@ -258,7 +263,7 @@ const sidebarWorkspaceResizeObservers = new WeakMap<
 const sidebarWorkspaceMenuCleanups = new WeakMap<HTMLElement, () => void>();
 const SIDEBAR_SUMMARY_SELECTION_PREF = "sidebarSelectedSummaryBlockIds" as any;
 
-type SidebarTabId = "summary" | "chat" | "deepRead" | "quickRead";
+type SidebarTabId = "summary" | "chat" | "deepRead" | "mindmap" | "quickRead";
 
 type SidebarTabDefinition = {
   id: SidebarTabId;
@@ -268,12 +273,6 @@ type SidebarTabDefinition = {
 };
 
 const SIDEBAR_TAB_DEFINITIONS: SidebarTabDefinition[] = [
-  {
-    id: "summary",
-    labelKey: "itempane-tab-summary",
-    icon: "✦",
-    isAvailable: () => isSidebarModuleEnabled("note"),
-  },
   {
     id: "chat",
     labelKey: "itempane-tab-chat",
@@ -289,13 +288,23 @@ const SIDEBAR_TAB_DEFINITIONS: SidebarTabDefinition[] = [
     isAvailable: () => isSidebarModuleEnabled("deepRead"),
   },
   {
+    id: "summary",
+    labelKey: "itempane-tab-summary",
+    icon: "✦",
+    isAvailable: () => isSidebarModuleEnabled("note"),
+  },
+  {
+    id: "mindmap",
+    labelKey: "itempane-tab-mindmap",
+    icon: "🧠",
+    isAvailable: () => isSidebarModuleEnabled("mindmap"),
+  },
+  {
     id: "quickRead",
     labelKey: "itempane-tab-quick-read",
     icon: "⌁",
     isAvailable: () =>
-      isSidebarModuleEnabled("table") ||
-      isSidebarModuleEnabled("mindmap") ||
-      isSidebarModuleEnabled("imageSummary"),
+      isSidebarModuleEnabled("table") || isSidebarModuleEnabled("imageSummary"),
   },
 ];
 
@@ -846,7 +855,9 @@ export function registerItemPaneSection(
  *
  * 设置页保存侧边栏显示/排序后调用，避免用户需要重新选择文献才能看到变化。
  */
-export async function refreshCurrentItemPaneSection(): Promise<void> {
+export async function refreshCurrentItemPaneSection(options?: {
+  force?: boolean;
+}): Promise<void> {
   if (!sidebarRenderContext) return;
   if (sidebarNoteEditState) {
     const doc = sidebarRenderContext.body.ownerDocument;
@@ -878,12 +889,48 @@ export async function refreshCurrentItemPaneSection(): Promise<void> {
   }
 
   if (!item) return;
-  renderItemPaneSection(body, item, handleOpenAIChat, true);
+  renderItemPaneSection(body, item, handleOpenAIChat, options?.force ?? true);
 }
 
 /**
  * 渲染条目面板侧边栏内容
  */
+function sidebarHasQuickChat(body: HTMLElement): boolean {
+  return !!body.querySelector("#ai-butler-inline-chat");
+}
+
+function persistActiveQuickChatThread(): void {
+  try {
+    if (currentChatState.itemId != null && currentChatState.threadId) {
+      chatPersist.saveMessages(
+        currentChatState.itemId,
+        currentChatState.threadId,
+        currentChatState.conversationHistory,
+        currentChatState,
+      );
+    }
+  } catch (err) {
+    ztoolkit.log("[AI-Butler] ChatPersist save failed:", err);
+  }
+}
+
+function resetQuickChatState(itemId: number | null): void {
+  currentChatState = {
+    itemId,
+    threadId: null,
+    pdfContent: "",
+    isBase64: false,
+    relatedItems: [],
+    relatedMode: "summary",
+    relatedContextSignature: "",
+    relatedContextIncludedCount: 0,
+    conversationHistory: [],
+    isChatting: false,
+    abortController: null,
+    savedPairIds: new Set(),
+  };
+}
+
 function renderItemPaneSection(
   body: HTMLElement,
   item: Zotero.Item | undefined,
@@ -897,16 +944,25 @@ function renderItemPaneSection(
     item?.isRegularItem() &&
     sidebarRenderContext?.body === body &&
     sidebarRenderContext.itemId === item.id &&
+    body.childNodes.length > 0 &&
     (isSidebarNoteEditing(item.id) ||
       (currentChatState.itemId === item.id &&
         (currentChatState.isChatting ||
+          sidebarHasQuickChat(body) ||
           currentChatState.conversationHistory.length > 0 ||
           !!body.querySelector<HTMLTextAreaElement>(
             "#ai-butler-inline-chat textarea",
           )?.value)))
   ) {
+    sidebarRenderContext = {
+      body,
+      item,
+      itemId: item.id,
+      handleOpenAIChat,
+    };
     return;
   }
+
   cleanupSidebarWorkspace(body);
   body.innerHTML = "";
   const doc = body.ownerDocument;
@@ -935,6 +991,13 @@ function renderItemPaneSection(
 
   // 检查是否有有效的文献条目
   if (!item || !item.isRegularItem()) {
+    if (currentChatState.itemId != null) {
+      persistActiveQuickChatThread();
+      currentChatState.abortController?.abort(
+        getString("itempane-quick-chat-abort-item-switched"),
+      );
+      resetQuickChatState(null);
+    }
     setSidebarContext(doc, null);
     sidebarRenderContext = null;
     sidebarNoteEditState = null;
@@ -957,24 +1020,13 @@ function renderItemPaneSection(
     sidebarNoteEditState = null;
   }
 
-  // 重置聊天状态（如果切换了条目）
+  // 切换条目时先落盘上一篇的对话，再终止进行中的请求。
   if (currentChatState.itemId !== item.id) {
+    persistActiveQuickChatThread();
     currentChatState.abortController?.abort(
       getString("itempane-quick-chat-abort-item-switched"),
     );
-    currentChatState = {
-      itemId: item.id,
-      pdfContent: "",
-      isBase64: false,
-      relatedItems: [],
-      relatedMode: "summary",
-      relatedContextSignature: "",
-      relatedContextIncludedCount: 0,
-      conversationHistory: [],
-      isChatting: false,
-      abortController: null,
-      savedPairIds: new Set(),
-    };
+    resetQuickChatState(item.id);
   }
 
   const tabs = getAvailableSidebarTabs();
@@ -1017,7 +1069,7 @@ function renderItemPaneSection(
     refreshBtn.textContent = "…";
     refreshBtn.disabled = true;
     try {
-      await refreshCurrentItemPaneSection();
+      await refreshCurrentItemPaneSection({ force: true });
     } catch (err: any) {
       ztoolkit.log("[AI-Butler] 重新渲染侧边栏失败:", err);
     } finally {
@@ -1059,7 +1111,7 @@ function renderItemPaneSection(
   content.className = "ai-butler-sidebar-content";
 
   const preferredActiveTab = String(
-    (getPref("sidebarActiveTab" as any) as string) || "",
+    getPref("sidebarActiveTab") || "chat",
   ) as SidebarTabId;
   let activeTab = tabs.some((tab) => tab.id === preferredActiveTab)
     ? preferredActiveTab
@@ -1068,7 +1120,7 @@ function renderItemPaneSection(
   const activateTab = (tabId: SidebarTabId): void => {
     if (!panels.has(tabId)) return;
     activeTab = tabId;
-    setPref("sidebarActiveTab" as any, activeTab as any);
+    setPref("sidebarActiveTab", activeTab);
 
     for (const tab of tabs) {
       const isActive = tab.id === activeTab;
@@ -1533,10 +1585,19 @@ function ensureSidebarWorkspaceStyles(doc: Document): void {
     }
 
     .ai-butler-sidebar-tab-panel[data-tab-id="chat"],
+    .ai-butler-sidebar-tab-panel[data-tab-id="mindmap"] {
+      overflow: hidden;
+      overscroll-behavior: contain;
+    }
+
     .ai-butler-sidebar-tab-panel[data-tab-id="quickRead"] {
       overflow-y: auto;
       overflow-x: hidden;
       overscroll-behavior: contain;
+    }
+
+    .ai-butler-sidebar-tab-panel[data-tab-id="quickRead"] > * {
+      flex-shrink: 0;
     }
 
     .ai-butler-sidebar-tab-panel[data-tab-id="summary"],
@@ -1661,10 +1722,11 @@ function applySidebarTabOverflow(
 
   moreWrap.style.display = "block";
   const hidePriority: SidebarTabId[] = [
-    "deepRead",
-    "chat",
-    "summary",
     "quickRead",
+    "summary",
+    "deepRead",
+    "mindmap",
+    "chat",
   ];
   const orderedTabs = hidePriority
     .map((id) => tabs.find((tab) => tab.id === id))
@@ -1673,7 +1735,6 @@ function applySidebarTabOverflow(
   for (const tab of orderedTabs) {
     if (fits()) break;
     if (tab.id === activeTab && visibleTabs.size > 1) continue;
-    if (tab.id === "quickRead" && visibleTabs.size > 2) continue;
     const button = tabButtons.get(tab.id);
     const menuItem = overflowMenuItems.get(tab.id);
     if (!button || !menuItem) continue;
@@ -1721,12 +1782,12 @@ function renderSidebarTabPanel(
     case "deepRead":
       renderNoteSection(panel, doc, item, "deepRead", { mode: "page" });
       break;
+    case "mindmap":
+      renderMindmapSection(panel, doc, item, { mode: "page" });
+      break;
     case "quickRead":
       if (isSidebarModuleEnabled("table")) {
         renderTableSection(panel, doc, item);
-      }
-      if (isSidebarModuleEnabled("mindmap")) {
-        renderMindmapSection(panel, doc, item);
       }
       if (isSidebarModuleEnabled("imageSummary")) {
         renderImageSummarySection(panel, doc, item);
@@ -1957,7 +2018,7 @@ function renderActionButtons(
     refreshBtn.textContent = "⏳";
     refreshBtn.style.pointerEvents = "none";
     try {
-      await refreshCurrentItemPaneSection();
+      await refreshCurrentItemPaneSection({ force: true });
     } catch (err: any) {
       ztoolkit.log("[AI-Butler] 重新渲染侧边栏失败:", err);
     } finally {
@@ -2737,7 +2798,7 @@ function renderTableSection(
   doc: Document,
   item: Zotero.Item,
 ): void {
-  if (!isTableFeatureEnabled()) return;
+  const canGenerateTable = isTableFeatureEnabled();
 
   const tableSection = doc.createElement("div");
   tableSection.className = "ai-butler-table-section";
@@ -2828,30 +2889,38 @@ function renderTableSection(
   // 重新填表按钮
   const refillBtn = doc.createElement("button");
   refillBtn.textContent = getString("itempane-regenerate");
-  refillBtn.title = getString("itempane-regenerate-table");
+  refillBtn.disabled = !canGenerateTable;
+  refillBtn.title = getString(
+    canGenerateTable
+      ? "itempane-regenerate-table"
+      : "itempane-table-generation-disabled",
+  );
   refillBtn.style.cssText = `
     padding: 2px 8px;
     border: 1px solid currentColor;
     border-radius: 3px;
     background: transparent;
-    cursor: pointer;
+    cursor: ${canGenerateTable ? "pointer" : "not-allowed"};
     font-size: 11px;
     color: inherit;
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0.7;
+    opacity: ${canGenerateTable ? "0.7" : "0.4"};
     white-space: nowrap;
   `;
   refillBtn.addEventListener("mouseenter", () => {
+    if (refillBtn.disabled) return;
     refillBtn.style.opacity = "1";
     refillBtn.style.background = "rgba(128, 128, 128, 0.2)";
   });
   refillBtn.addEventListener("mouseleave", () => {
+    if (refillBtn.disabled) return;
     refillBtn.style.opacity = "0.7";
     refillBtn.style.background = "transparent";
   });
   refillBtn.addEventListener("click", async () => {
+    if (!isTableFeatureEnabled()) return;
     refillBtn.textContent = getString("itempane-generating");
     refillBtn.style.pointerEvents = "none";
     try {
@@ -3003,6 +3072,12 @@ function renderTableSection(
   });
 
   tableSection.appendChild(tableHeader);
+  if (!canGenerateTable) {
+    const hint = doc.createElement("div");
+    hint.textContent = getString("itempane-table-generation-disabled");
+    hint.style.cssText = "padding: 8px 10px; font-size: 12px; opacity: 0.7;";
+    tableSection.appendChild(hint);
+  }
   tableSection.appendChild(tableContentWrapper);
   tableSection.appendChild(tableResizeHandle);
   body.appendChild(tableSection);
@@ -3136,10 +3211,27 @@ function renderMindmapSection(
   body: HTMLElement,
   doc: Document,
   item: Zotero.Item,
+  options: { mode?: "card" | "page" } = {},
 ): void {
+  const isPageMode = options.mode === "page";
   const mindmapSection = doc.createElement("div");
   mindmapSection.className = "ai-butler-mindmap-section";
-  mindmapSection.style.cssText = `
+  mindmapSection.style.cssText = isPageMode
+    ? `
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    overflow: hidden;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  `
+    : `
     margin-bottom: 12px;
     margin-top: 12px;
     border: 1px solid #e0e0e0;
@@ -3189,7 +3281,24 @@ function renderMindmapSection(
   // 思维导图容器
   const mindmapContainer = doc.createElement("div");
   mindmapContainer.id = "ai-butler-mindmap-container";
-  mindmapContainer.style.cssText = `
+  mindmapContainer.style.cssText = isPageMode
+    ? `
+    padding: 10px;
+    text-align: center;
+    background: transparent;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  `
+    : `
     padding: 10px;
     text-align: center;
     background: transparent;
@@ -3231,7 +3340,7 @@ function renderMindmapSection(
   body.appendChild(mindmapSection);
 
   // 异步加载思维导图
-  loadMindmapContent(doc, item, mindmapContainer);
+  void loadMindmapContent(doc, item, mindmapContainer, options);
 }
 
 /**
@@ -3241,7 +3350,9 @@ async function loadMindmapContent(
   doc: Document,
   item: Zotero.Item,
   container: HTMLElement,
+  options: { mode?: "card" | "page" } = {},
 ): Promise<void> {
+  const isPageMode = options.mode === "page";
   try {
     // Avoid accumulating message listeners across re-renders/refreshes
     const mindmapWin: any = doc.defaultView;
@@ -3426,7 +3537,18 @@ async function loadMindmapContent(
       // 创建 iframe 容器
       const iframeWrapper = doc.createElement("div");
       iframeWrapper.id = "ai-butler-mindmap-wrapper";
-      iframeWrapper.style.cssText = `
+      iframeWrapper.style.cssText = isPageMode
+        ? `
+        width: 100%;
+        height: 100%;
+        flex: 1 1 auto;
+        min-height: 0;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #fafafa;
+      `
+        : `
         width: 100%;
         height: ${savedMindmapHeight}px;
         min-height: 100px;
@@ -3628,13 +3750,15 @@ async function loadMindmapContent(
       iframeWrapper.appendChild(iframe);
       container.appendChild(iframeWrapper);
 
-      // 创建高度调整手柄
-      const resizeHandle = createResizeHandle(
-        doc,
-        iframeWrapper,
-        "sidebarMindmapHeight",
-      );
-      container.appendChild(resizeHandle);
+      // Page mode fills the tab. The card keeps a draggable height.
+      if (!isPageMode) {
+        const resizeHandle = createResizeHandle(
+          doc,
+          iframeWrapper,
+          "sidebarMindmapHeight",
+        );
+        container.appendChild(resizeHandle);
+      }
 
       ztoolkit.log("[AI-Butler] 思维导图 iframe 创建成功");
     } catch (renderError: any) {
@@ -3861,6 +3985,72 @@ async function ensureQuickChatKatexCss(doc: Document): Promise<void> {
   }
 }
 
+function createQuickChatPairActions(
+  doc: Document,
+  item: Zotero.Item,
+  pairId: string,
+  question: string,
+  answer: ChatPersistMessage,
+  onSaved: () => void,
+): HTMLElement {
+  const actions = doc.createElement("div");
+  actions.className = "ai-butler-quick-chat-actions";
+  actions.style.cssText =
+    "display: flex; justify-content: flex-end; margin-top: 4px; gap: 6px;";
+  const copyBtn = doc.createElement("button");
+  copyBtn.textContent = getString("itempane-copy-answer");
+  copyBtn.style.cssText =
+    "padding: 4px 10px; background: #59c0bc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;";
+  copyBtn.addEventListener("click", async () => {
+    const copied = await copyQuickChatText(doc, answer.content);
+    copyBtn.textContent = getString(
+      copied ? "itempane-copied" : "itempane-copy-failed",
+    );
+    copyBtn.style.background = copied ? "#4caf50" : "#f44336";
+    setTimeout(() => {
+      copyBtn.textContent = getString("itempane-copy-answer");
+      copyBtn.style.background = "#59c0bc";
+    }, 1500);
+  });
+
+  const saveBtn = doc.createElement("button");
+  saveBtn.textContent = getString(
+    answer.savedToNote ? "itempane-saved" : "itempane-save-note",
+  );
+  saveBtn.disabled = answer.savedToNote === true;
+  saveBtn.style.cssText =
+    "padding: 4px 10px; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;";
+  saveBtn.style.background = answer.savedToNote ? "#4caf50" : "#667eea";
+  saveBtn.addEventListener("click", async () => {
+    if (saveBtn.disabled || answer.savedToNote) return;
+    saveBtn.disabled = true;
+    saveBtn.textContent = getString("itempane-saving");
+    saveBtn.style.background = "#9e9e9e";
+    try {
+      await saveChatPairToNote(
+        item,
+        pairId,
+        question,
+        answer.content,
+        answer.noteMetadata,
+        answer.sourceLabel,
+      );
+      answer.savedToNote = true;
+      onSaved();
+      saveBtn.textContent = getString("itempane-saved");
+      saveBtn.style.background = "#4caf50";
+    } catch (error) {
+      ztoolkit.log("[AI-Butler] 保存快速追问对话失败:", error);
+      saveBtn.textContent = getString("itempane-save-failed");
+      saveBtn.style.background = "#f44336";
+      saveBtn.disabled = false;
+    }
+  });
+  actions.appendChild(copyBtn);
+  actions.appendChild(saveBtn);
+  return actions;
+}
+
 function renderChatArea(
   body: HTMLElement,
   doc: Document,
@@ -3869,17 +4059,35 @@ function renderChatArea(
   options: { mode?: "card" | "page" } = {},
 ): void {
   const isPageMode = options.mode === "page";
-  currentChatState.abortController?.abort(
-    getString("itempane-quick-chat-abort-refreshed"),
-  );
-  currentChatState.conversationHistory = [];
-  currentChatState.relatedItems = [];
-  currentChatState.relatedMode = "summary";
-  currentChatState.relatedContextSignature = "";
-  currentChatState.relatedContextIncludedCount = 0;
-  currentChatState.isChatting = false;
-  currentChatState.abortController = null;
-  currentChatState.savedPairIds = new Set();
+  const existingChat = body.querySelector("#ai-butler-inline-chat");
+  if (
+    currentChatState.isChatting &&
+    currentChatState.itemId === item.id &&
+    existingChat
+  ) {
+    return;
+  }
+  // Rebuilding the DOM while a reply is in flight is a real abort. A plain
+  // re-render keeps the saved thread instead of clearing it.
+  if (currentChatState.isChatting) {
+    currentChatState.abortController?.abort(
+      getString("itempane-quick-chat-abort-refreshed"),
+    );
+    currentChatState.isChatting = false;
+    currentChatState.abortController = null;
+  }
+  if (currentChatState.itemId !== item.id) {
+    currentChatState.itemId = item.id;
+    currentChatState.threadId = null;
+    currentChatState.conversationHistory = [];
+    currentChatState.pdfContent = "";
+    currentChatState.isBase64 = false;
+    currentChatState.relatedItems = [];
+    currentChatState.relatedMode = "summary";
+    currentChatState.relatedContextSignature = "";
+    currentChatState.relatedContextIncludedCount = 0;
+    currentChatState.savedPairIds = new Set();
+  }
   void ensureQuickChatKatexCss(doc);
 
   const chatArea = doc.createElement("div");
@@ -3893,7 +4101,7 @@ function renderChatArea(
     max-inline-size: 100%;
     min-width: 0;
     min-inline-size: 0;
-    ${isPageMode ? "height: 100%; min-height: 0; flex: 1 1 auto;" : ""}
+    ${isPageMode ? "min-height: 0; flex: 1 1 auto;" : ""}
     contain: inline-size;
     border: 1px solid rgba(89, 192, 188, 0.22);
     border-radius: 10px;
@@ -3994,6 +4202,34 @@ function renderChatArea(
     return button;
   };
 
+  const threadSelect = doc.createElement("select");
+  threadSelect.id = "ai-butler-chat-thread-select";
+  threadSelect.title = getString("itempane-quick-chat-thread-switch");
+  threadSelect.style.cssText = `
+    max-width: 120px;
+    height: 20px;
+    font-size: 10px;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    background: transparent;
+    color: inherit;
+    opacity: 0.85;
+  `;
+  const newThreadBtn = createQuickControlButton(
+    getString("itempane-quick-chat-thread-new"),
+    getString("itempane-quick-chat-thread-new-title"),
+  );
+  newThreadBtn.style.width = "auto";
+  newThreadBtn.style.padding = "0 4px";
+  newThreadBtn.style.fontSize = "10px";
+  const deleteThreadBtn = createQuickControlButton(
+    getString("itempane-quick-chat-thread-delete"),
+    getString("itempane-quick-chat-thread-delete-title"),
+  );
+  deleteThreadBtn.id = "ai-butler-chat-thread-delete";
+  deleteThreadBtn.style.width = "auto";
+  deleteThreadBtn.style.padding = "0 4px";
+  deleteThreadBtn.style.fontSize = "10px";
   const newConversationBtn = createQuickControlButton(
     "🧹",
     getString("itempane-quick-chat-new-conversation"),
@@ -4006,6 +4242,9 @@ function renderChatArea(
     "A+",
     getString("itempane-quick-chat-increase-font"),
   );
+  chatControls.appendChild(threadSelect);
+  chatControls.appendChild(newThreadBtn);
+  chatControls.appendChild(deleteThreadBtn);
   chatControls.appendChild(newConversationBtn);
   chatControls.appendChild(decreaseFontBtn);
   chatControls.appendChild(quickFontLabel);
@@ -4035,6 +4274,261 @@ function renderChatArea(
     user-select: text;
     cursor: text;
   `;
+
+  let quickChatBindGeneration = 0;
+
+  const syncQuickChatThreadControls = (): void => {
+    const busy = currentChatState.isChatting;
+    deleteThreadBtn.disabled = busy;
+    newThreadBtn.disabled = busy;
+    threadSelect.disabled = busy;
+    deleteThreadBtn.style.opacity = busy ? "0.45" : "0.75";
+    newThreadBtn.style.opacity = busy ? "0.45" : "0.75";
+  };
+
+  const appendPairActions = (
+    pairWrapper: HTMLElement,
+    pairId: string,
+    question: string,
+    answer: ChatPersistMessage,
+  ): void => {
+    const threadId = currentChatState.threadId;
+    pairWrapper.appendChild(
+      createQuickChatPairActions(doc, item, pairId, question, answer, () => {
+        if (threadId) chatPersist.markPairSaved(item.id, threadId, pairId);
+        if (
+          currentChatState.itemId === item.id &&
+          currentChatState.threadId === threadId
+        ) {
+          currentChatState.savedPairIds.add(pairId);
+          const message = currentChatState.conversationHistory.find(
+            (message) =>
+              message.role === "assistant" && message.pairId === pairId,
+          );
+          if (message) message.savedToNote = true;
+        }
+      }),
+    );
+  };
+
+  const renderPersistedMessages = (messages: ChatPersistMessage[]): void => {
+    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+      return;
+    }
+    messagesArea.innerHTML = "";
+    const list = Array.isArray(messages) ? messages : [];
+    if (list.length === 0) {
+      messagesArea.innerHTML = `<div style="color: #777; text-align: center; padding: 10px;">${escapeHtmlForChat(getString("itempane-quick-chat-thread-empty"))}</div>`;
+      return;
+    }
+    let index = 0;
+    while (index < list.length) {
+      const message = list[index];
+      if (message.role !== "user") {
+        index += 1;
+        continue;
+      }
+      const question = message.displayContent ?? message.content ?? "";
+      let answer: ChatPersistMessage | undefined;
+      if (index + 1 < list.length && list[index + 1].role === "assistant") {
+        answer = list[index + 1];
+        answer.pairId ||= `${currentChatState.threadId}_legacy_${index + 1}`;
+        index += 2;
+      } else {
+        index += 1;
+      }
+      const pairWrapper = doc.createElement("div");
+      pairWrapper.className = "ai-butler-quick-chat-pair";
+      const pairId = answer?.pairId || `restored_${index}`;
+      pairWrapper.setAttribute("data-pair-id", pairId);
+      pairWrapper.style.cssText = `
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        margin-bottom: 12px;
+        padding: 8px;
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        border-radius: 8px;
+        background: transparent;
+        user-select: text;
+        cursor: text;
+      `;
+      const userMsgDiv = doc.createElement("div");
+      userMsgDiv.className = "ai-butler-quick-chat-user";
+      userMsgDiv.style.cssText = `
+        margin-bottom: 8px;
+        padding: 8px;
+        background: rgba(89, 192, 188, 0.1);
+        border-radius: 6px;
+        border-left: 3px solid #59c0bc;
+        user-select: text;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      `;
+      userMsgDiv.innerHTML = `<strong>${getString("itempane-user-label")}</strong> ${escapeHtmlForChat(question)}`;
+      pairWrapper.appendChild(userMsgDiv);
+      if (answer) {
+        const aiMsgDiv = doc.createElement("div");
+        aiMsgDiv.className = "ai-butler-quick-chat-assistant";
+        aiMsgDiv.style.cssText = `
+          margin-bottom: 8px;
+          padding: 8px;
+          background: rgba(128, 128, 128, 0.05);
+          border-radius: 6px;
+          border-left: 3px solid #667eea;
+          width: 100%;
+          max-width: 100%;
+          min-width: 0;
+          overflow-x: hidden;
+          user-select: text;
+        `;
+        updateQuickChatAssistantMessage(aiMsgDiv, answer.content);
+        pairWrapper.appendChild(aiMsgDiv);
+        appendPairActions(pairWrapper, pairId, question, answer);
+      }
+      messagesArea.appendChild(pairWrapper);
+    }
+    messagesArea.scrollTop = messagesArea.scrollHeight;
+  };
+
+  const refreshThreadSelect = (): void => {
+    const threads = chatPersist.listThreads(item.id);
+    const selectedId = currentChatState.threadId;
+    threadSelect.innerHTML = "";
+    if (threads.length === 0) {
+      const option = doc.createElement("option");
+      option.value = "";
+      option.textContent = getString("itempane-quick-chat-thread-untitled");
+      threadSelect.appendChild(option);
+      return;
+    }
+    for (const thread of threads) {
+      const option = doc.createElement("option");
+      option.value = thread.id;
+      option.textContent =
+        thread.title || getString("itempane-quick-chat-thread-untitled");
+      if (thread.id === selectedId) option.selected = true;
+      threadSelect.appendChild(option);
+    }
+  };
+
+  const bindThreadToState = (thread: ChatPersistThread): void => {
+    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+      return;
+    }
+    currentChatState.itemId = item.id;
+    currentChatState.threadId = thread.id;
+    currentChatState.conversationHistory = normalizeChatMessages(
+      thread.messages,
+    );
+    Object.assign(currentChatState, cloneChatContext(thread.context));
+    currentChatState.savedPairIds = new Set(
+      currentChatState.conversationHistory
+        .filter((message) => message.savedToNote && message.pairId)
+        .map((message) => message.pairId!),
+    );
+    renderRelatedControls();
+    renderPersistedMessages(currentChatState.conversationHistory);
+    refreshThreadSelect();
+    syncQuickChatThreadControls();
+  };
+
+  const ensureActiveThreadLoaded = async (): Promise<void> => {
+    const generation = quickChatBindGeneration;
+    const requestItemId = item.id;
+    await chatPersist.ensureLoaded();
+    if (
+      generation !== quickChatBindGeneration ||
+      !messagesArea.isConnected ||
+      currentChatState.itemId !== requestItemId ||
+      currentChatState.isChatting
+    ) {
+      return;
+    }
+    if (currentChatState.threadId) {
+      const existing = chatPersist.getThread(
+        item.id,
+        currentChatState.threadId,
+      );
+      if (existing) {
+        if (
+          currentChatState.conversationHistory.length === 0 &&
+          existing.messages.length > 0
+        ) {
+          bindThreadToState(existing);
+          return;
+        }
+        renderPersistedMessages(currentChatState.conversationHistory);
+        refreshThreadSelect();
+        return;
+      }
+    }
+    bindThreadToState(chatPersist.getOrCreateActiveThread(item.id));
+  };
+
+  newThreadBtn.addEventListener("click", async () => {
+    if (currentChatState.isChatting) return;
+    quickChatBindGeneration += 1;
+    await chatPersist.ensureLoaded();
+    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+      return;
+    }
+    persistActiveQuickChatThread();
+    bindThreadToState(chatPersist.createThread(item.id));
+    if (!currentChatState.pdfContent) {
+      void loadPdfContentIfNeeded();
+    }
+  });
+
+  deleteThreadBtn.addEventListener("click", async () => {
+    if (currentChatState.isChatting) return;
+    const targetId = threadSelect.value || currentChatState.threadId;
+    if (!targetId) return;
+    let confirmed = true;
+    try {
+      const win = doc.defaultView;
+      if (win && typeof win.confirm === "function") {
+        confirmed = win.confirm(
+          getString("itempane-quick-chat-thread-delete-confirm"),
+        );
+      }
+    } catch {
+      confirmed = true;
+    }
+    if (!confirmed) return;
+    quickChatBindGeneration += 1;
+    await chatPersist.ensureLoaded();
+    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+      return;
+    }
+    const next = chatPersist.deleteThread(item.id, targetId);
+    if (next) {
+      bindThreadToState(next);
+    } else {
+      currentChatState.threadId = null;
+      currentChatState.conversationHistory = [];
+      currentChatState.savedPairIds = new Set();
+      renderPersistedMessages([]);
+      refreshThreadSelect();
+    }
+  });
+
+  threadSelect.addEventListener("change", async () => {
+    if (currentChatState.isChatting) {
+      refreshThreadSelect();
+      return;
+    }
+    quickChatBindGeneration += 1;
+    const nextId = threadSelect.value;
+    if (!nextId || nextId === currentChatState.threadId) return;
+    await chatPersist.ensureLoaded();
+    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+      return;
+    }
+    persistActiveQuickChatThread();
+    const thread = chatPersist.setActiveThread(item.id, nextId);
+    if (thread) bindThreadToState(thread);
+  });
 
   const getRelatedModeLabel = (mode = currentChatState.relatedMode): string =>
     mode === "summary"
@@ -4243,8 +4737,17 @@ function renderChatArea(
     currentChatState.isChatting = false;
     currentChatState.abortController = null;
     currentChatState.savedPairIds = new Set();
+    persistActiveQuickChatThread();
+    refreshThreadSelect();
     messagesArea.innerHTML = `<div style="color: #777; text-align: center; padding: 10px;">${escapeHtmlForChat(message)}</div>`;
     quickChatPinnedToBottom = true;
+    syncQuickChatThreadControls();
+    sendBtn.textContent = "↑";
+    sendBtn.title = getString("itempane-send");
+    sendBtn.style.background = "#59c0bc";
+    sendBtn.disabled = false;
+    stopBtn.style.display = "none";
+    stopBtn.disabled = false;
   }
 
   function showRelatedLimitMessage(mode = currentChatState.relatedMode): void {
@@ -4489,7 +4992,8 @@ function renderChatArea(
     composer.style.boxShadow = "inset 0 1px 0 rgba(255, 255, 255, 0.06)";
   });
 
-  const startNewQuickChatConversation = (): void => {
+  const startNewQuickChatConversation = async (): Promise<void> => {
+    quickChatBindGeneration += 1;
     currentChatState.abortController?.abort(
       getString("itempane-quick-chat-new-conversation-abort"),
     );
@@ -4499,6 +5003,26 @@ function renderChatArea(
     currentChatState.isChatting = false;
     currentChatState.abortController = null;
     currentChatState.savedPairIds = new Set();
+    syncQuickChatThreadControls();
+    await chatPersist.ensureLoaded();
+    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+      return;
+    }
+    if (currentChatState.itemId != null) {
+      if (!currentChatState.threadId) {
+        const thread = chatPersist.getOrCreateActiveThread(
+          currentChatState.itemId,
+        );
+        currentChatState.threadId = thread.id;
+      }
+      chatPersist.saveMessages(
+        currentChatState.itemId,
+        currentChatState.threadId,
+        [],
+        currentChatState,
+      );
+      refreshThreadSelect();
+    }
 
     messagesArea.innerHTML = `<div style="color: #777; text-align: center; padding: 10px;">${escapeHtmlForChat(getString("itempane-quick-chat-new-conversation-created"))}</div>`;
     inputBox.value = "";
@@ -4521,7 +5045,7 @@ function renderChatArea(
       currentChatState.savedPairIds.size > 0 ||
       messagesArea.querySelector("[data-pair-id]") !== null;
     if (!hasConversationContent) {
-      startNewQuickChatConversation();
+      void startNewQuickChatConversation();
       return;
     }
 
@@ -4536,7 +5060,7 @@ function renderChatArea(
       }
     }
 
-    startNewQuickChatConversation();
+    void startNewQuickChatConversation();
   });
 
   composerTools.appendChild(openPickerBtn);
@@ -4570,10 +5094,24 @@ function renderChatArea(
     quickChatBtn.style.borderColor = active ? "#4db6ac" : "#59c0bc";
   };
 
+  const quickChatHasVisibleMessages = (): boolean =>
+    currentChatState.conversationHistory.length > 0 ||
+    !!messagesArea.querySelector(
+      ".ai-butler-quick-chat-assistant, [data-pair-id]",
+    );
+
+  const showPdfStatus = (html: string): void => {
+    if (!messagesArea.isConnected || quickChatHasVisibleMessages()) return;
+    messagesArea.innerHTML = html;
+  };
+
   const loadPdfContentIfNeeded = async (): Promise<void> => {
+    const requestState = currentChatState;
     if (currentChatState.pdfContent) {
       if (!messagesArea.textContent?.trim()) {
-        messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-loaded")}</div>`;
+        showPdfStatus(
+          `<div style="color: #4caf50; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-loaded")}</div>`,
+        );
       }
       return;
     }
@@ -4585,7 +5123,9 @@ function renderChatArea(
         const { default: LLMService } = await import("./llmService");
         const pdfMode = LLMService.getEffectivePdfProcessMode();
 
-        messagesArea.innerHTML = `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-chat-loading-pdf")}</div>`;
+        showPdfStatus(
+          `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-chat-loading-pdf")}</div>`,
+        );
 
         const { content: pdfContent, isBase64 } =
           await ContentExtractor.extractAnalyzableContentFromItem(
@@ -4594,16 +5134,29 @@ function renderChatArea(
             pdfMode,
           );
 
+        if (
+          currentChatState !== requestState ||
+          currentChatState.itemId !== item.id ||
+          !messagesArea.isConnected
+        )
+          return;
+
         if (pdfContent) {
           currentChatState.pdfContent = pdfContent;
           currentChatState.isBase64 = isBase64;
-          messagesArea.innerHTML = `<div style="color: #4caf50; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-loaded")}</div>`;
+          showPdfStatus(
+            `<div style="color: #4caf50; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-loaded")}</div>`,
+          );
         } else {
-          messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-load-unavailable")}</div>`;
+          showPdfStatus(
+            `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-load-unavailable")}</div>`,
+          );
         }
       } catch (err: any) {
         ztoolkit.log("[AI-Butler] 快速追问加载 PDF 失败:", err);
-        messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-load-failed", { args: { message: escapeHtmlForChat(err?.message || getString("common-unknown-error")) } })}</div>`;
+        showPdfStatus(
+          `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-load-failed", { args: { message: escapeHtmlForChat(err?.message || getString("common-unknown-error")) } })}</div>`,
+        );
       }
     }
   };
@@ -4644,6 +5197,9 @@ function renderChatArea(
   body.addEventListener("ai-butler-toggle-inline-chat", toggleListener);
   quickChatToggleListeners.set(body, toggleListener);
 
+  void ensureActiveThreadLoaded();
+  syncQuickChatThreadControls();
+
   if (initiallyVisible) {
     void loadPdfContentIfNeeded();
   }
@@ -4655,15 +5211,36 @@ function renderChatArea(
 
     if (!question) return;
 
+    const generation = quickChatBindGeneration;
+    await ensureActiveThreadLoaded();
+    if (
+      generation !== quickChatBindGeneration ||
+      !messagesArea.isConnected ||
+      currentChatState.itemId !== item.id ||
+      !currentChatState.threadId ||
+      currentChatState.isChatting
+    )
+      return;
+
     // 检查是否有 PDF 内容
     if (!currentChatState.pdfContent) {
-      messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-wait-pdf-loaded")}</div>`;
+      if (!quickChatHasVisibleMessages()) {
+        messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-wait-pdf-loaded")}</div>`;
+      }
       return;
     }
 
     // 设置为正在聊天状态
     currentChatState.isChatting = true;
+    syncQuickChatThreadControls();
     currentChatState.abortController = createChatAbortController();
+    const requestState = currentChatState;
+    const requestController = currentChatState.abortController;
+    const requestThreadId = currentChatState.threadId;
+    const isCurrentRequest = (): boolean =>
+      currentChatState === requestState &&
+      currentChatState.threadId === requestThreadId &&
+      currentChatState.abortController === requestController;
     sendBtn.textContent = "…";
     sendBtn.title = getString("itempane-generating-status");
     sendBtn.style.background = "#9e9e9e";
@@ -4750,53 +5327,6 @@ function renderChatArea(
     aiMsgDiv.innerHTML = `<strong>${getString("itempane-assistant-label")}</strong> <em style="color: #999;">${getString("itempane-thinking")}</em>`;
     pairWrapper.appendChild(aiMsgDiv);
 
-    // 创建保存按钮区域（初始隐藏）
-    const saveArea = doc.createElement("div");
-    saveArea.style.cssText = `
-      display: none;
-      justify-content: flex-end;
-      margin-top: 4px;
-    `;
-    const saveBtn = doc.createElement("button");
-    saveBtn.textContent = getString("itempane-save-note");
-    saveBtn.style.cssText = `
-      padding: 4px 10px;
-      background: #667eea;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 11px;
-    `;
-    const copyBtn = doc.createElement("button");
-    copyBtn.textContent = getString("itempane-copy-answer");
-    copyBtn.style.cssText = `
-      padding: 4px 10px;
-      background: #59c0bc;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 11px;
-      margin-right: 6px;
-    `;
-    copyBtn.addEventListener("click", async () => {
-      const copied = await copyQuickChatText(doc, fullResponse || "");
-      const originalText =
-        copyBtn.textContent || getString("itempane-copy-answer");
-      copyBtn.textContent = copied
-        ? getString("itempane-copied")
-        : getString("itempane-copy-failed");
-      copyBtn.style.background = copied ? "#4caf50" : "#f44336";
-      setTimeout(() => {
-        copyBtn.textContent = originalText;
-        copyBtn.style.background = "#59c0bc";
-      }, 1500);
-    });
-    saveArea.appendChild(copyBtn);
-    saveArea.appendChild(saveBtn);
-    pairWrapper.appendChild(saveArea);
-
     const shouldFollowNewPair = quickChatPinnedToBottom;
     messagesArea.appendChild(pairWrapper);
     scrollQuickChatToBottomIfPinned(shouldFollowNewPair);
@@ -4808,6 +5338,7 @@ function renderChatArea(
 
     try {
       const { default: LLMService } = await import("./llmService");
+      if (!isCurrentRequest()) return;
 
       let relatedContextResult: QuickChatRelatedContextResult | null = null;
       let conversationQuestion = question;
@@ -4830,6 +5361,7 @@ function renderChatArea(
             currentChatState.relatedItems,
             currentChatState.relatedMode,
           );
+          if (!isCurrentRequest()) return;
           currentChatState.relatedContextSignature =
             relatedContextResult.signature;
           currentChatState.relatedContextIncludedCount =
@@ -4886,9 +5418,10 @@ function renderChatArea(
         },
         conversation: conversationHistory,
         transport: {
-          abortSignal: currentChatState.abortController?.signal,
+          abortSignal: requestController.signal,
         },
         onProgress: (chunk: string) => {
+          if (!isCurrentRequest()) return;
           fullResponse += chunk;
           const shouldFollowStream = quickChatPinnedToBottom;
           // Update streaming AI response
@@ -4896,55 +5429,34 @@ function renderChatArea(
           scrollQuickChatToBottomIfPinned(shouldFollowStream);
         },
       });
+      if (!isCurrentRequest()) return;
       fullResponse = response.text;
       responseMetadata = LLMNoteMetadataService.fromResponse("chat", response);
 
       // 完成后最终更新
       updateQuickChatAssistantMessage(aiMsgDiv, fullResponse);
 
-      currentChatState.conversationHistory = appendQuickChatTurn(
-        currentChatState.conversationHistory,
-        conversationQuestion,
-        fullResponse,
+      const answer: ChatPersistMessage = {
+        role: "assistant",
+        content: fullResponse,
+        pairId,
+        noteMetadata: responseMetadata,
+        sourceLabel,
+      };
+      currentChatState.conversationHistory.push(
+        {
+          role: "user",
+          content: conversationQuestion,
+          displayContent: question,
+        },
+        answer,
       );
-
-      // 显示保存按钮
-      saveArea.style.display = "flex";
-
-      // 保存按钮点击事件
-      saveBtn.addEventListener("click", async () => {
-        // 检查是否已保存过
-        if (currentChatState.savedPairIds.has(pairId)) {
-          saveBtn.textContent = getString("itempane-saved");
-          return;
-        }
-
-        // 标记正在保存
-        saveBtn.textContent = getString("itempane-saving");
-        saveBtn.style.background = "#9e9e9e";
-        (saveBtn as HTMLButtonElement).disabled = true;
-
-        try {
-          await saveChatPairToNote(
-            item,
-            pairId,
-            question,
-            fullResponse,
-            responseMetadata,
-            sourceLabel,
-          );
-          currentChatState.savedPairIds.add(pairId);
-          saveBtn.textContent = getString("itempane-saved");
-          saveBtn.style.background = "#4caf50";
-        } catch (err: any) {
-          ztoolkit.log("[AI-Butler] 保存快速追问对话失败:", err);
-          saveBtn.textContent = getString("itempane-save-failed");
-          saveBtn.style.background = "#f44336";
-          (saveBtn as HTMLButtonElement).disabled = false;
-        }
-      });
+      persistActiveQuickChatThread();
+      refreshThreadSelect();
+      appendPairActions(pairWrapper, pairId, question, answer);
     } catch (err: any) {
-      if (isChatAbortError(err, currentChatState.abortController?.signal)) {
+      if (!isCurrentRequest()) return;
+      if (isChatAbortError(err, requestController.signal)) {
         if (fullResponse) {
           updateQuickChatAssistantMessage(
             aiMsgDiv,
@@ -4960,16 +5472,19 @@ function renderChatArea(
       aiMsgDiv.innerHTML = `<strong>${getString("itempane-assistant-label")}</strong> <span style="color: #f44336;">${getString("itempane-error", { args: { error: err?.message || getString("itempane-send-failed") } })}</span>`;
     } finally {
       // 恢复状态
-      currentChatState.isChatting = false;
-      currentChatState.abortController = null;
-      sendBtn.textContent = "↑";
-      sendBtn.title = getString("itempane-send");
-      sendBtn.style.background = "#59c0bc";
-      (sendBtn as HTMLButtonElement).disabled = false;
-      stopBtn.style.display = "none";
-      (stopBtn as HTMLButtonElement).disabled = false;
-      (inputBox as HTMLTextAreaElement).disabled = false;
-      inputBox.focus();
+      if (isCurrentRequest()) {
+        currentChatState.isChatting = false;
+        currentChatState.abortController = null;
+        syncQuickChatThreadControls();
+        sendBtn.textContent = "↑";
+        sendBtn.title = getString("itempane-send");
+        sendBtn.style.background = "#59c0bc";
+        (sendBtn as HTMLButtonElement).disabled = false;
+        stopBtn.style.display = "none";
+        (stopBtn as HTMLButtonElement).disabled = false;
+        (inputBox as HTMLTextAreaElement).disabled = false;
+        inputBox.focus();
+      }
     }
   });
 

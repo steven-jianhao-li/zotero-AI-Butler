@@ -244,6 +244,7 @@ function initializeDefaultPrefs() {
     contextMenuItemOrder: DEFAULT_CONTEXT_MENU_ITEM_ORDER_PREF,
     sidebarModuleVisibility: DEFAULT_SIDEBAR_MODULE_VISIBILITY_PREF,
     sidebarModuleOrder: DEFAULT_SIDEBAR_MODULE_ORDER_PREF,
+    sidebarActiveTab: "chat",
     noteExportEnabled: false,
     noteExportRootPath: "",
     noteExportFilenameTemplate: DEFAULT_NOTE_EXPORT_FILENAME_TEMPLATE,

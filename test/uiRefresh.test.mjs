@@ -161,7 +161,13 @@ export function setFixture(body, item) {
 }`,
   );
   // A destructive render clears innerHTML before looking for the document.
-  const body = { innerHTML: "unsaved draft", querySelector: () => null };
+  const body = {
+    innerHTML: "unsaved draft",
+    get childNodes() {
+      return this.innerHTML ? [{}] : [];
+    },
+    querySelector: () => null,
+  };
   const item = { id: 42, isRegularItem: () => true };
   sidebar.setFixture(body, item);
   return { sidebar, body, item };
@@ -176,6 +182,24 @@ test("host re-renders preserve an active sidebar editor and chat", () => {
     sidebar.renderItemPaneSection(body, item, async () => {});
     assert.equal(body.innerHTML, "unsaved draft");
   }
+});
+
+test("host re-renders preserve quick chat while persisted history is loading (#428)", () => {
+  const { sidebar, body, item } = sidebarFixture(false);
+  body.querySelector = (selector) =>
+    selector === "#ai-butler-inline-chat" ? {} : null;
+  sidebar.renderItemPaneSection(body, item, async () => {});
+  assert.equal(body.innerHTML, "unsaved draft");
+});
+
+test("host re-renders preserve an unsent question before any reply (#428)", () => {
+  const { sidebar, body, item } = sidebarFixture(false);
+  body.querySelector = (selector) =>
+    selector === "#ai-butler-inline-chat textarea"
+      ? { value: "unfinished question" }
+      : null;
+  sidebar.renderItemPaneSection(body, item, async () => {});
+  assert.equal(body.innerHTML, "unsaved draft");
 });
 
 test("switching papers still replaces the previous sidebar", () => {

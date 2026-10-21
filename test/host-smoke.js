@@ -159,6 +159,13 @@ async function runProbe() {
       stage("native editor ready");
       editable.focus();
       var editorDocument = editable.ownerDocument;
+      // Focus alone does not always place a caret in a freshly loaded editor.
+      var caret = editorDocument.createRange();
+      caret.selectNodeContents(editable);
+      caret.collapse(false);
+      var selection = editorDocument.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(caret);
       var redraws = 0;
       var columnRefreshes = 0;
       var refreshColumns = host.ItemTreeManager.refreshColumns;
@@ -243,6 +250,26 @@ async function runProbe() {
     }, "dashboard settings");
     assert(true, "settings");
     if (!legacy) {
+      var chromeFlags = dashboard.docShell.treeOwner
+        .QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+        .getInterface(Components.interfaces.nsIAppWindow).chromeFlags;
+      assert(
+        !(
+          chromeFlags &
+          Components.interfaces.nsIWebBrowserChrome.CHROME_OPENAS_DIALOG
+        ),
+        "mainWindowUsesNativeWindowControls",
+      );
+      dashboard.maximize();
+      await waitFor(function () {
+        return dashboard.windowState === dashboard.STATE_MAXIMIZED;
+      }, "main window maximize");
+      assert(true, "mainWindowMaximizes");
+      dashboard.restore();
+      await waitFor(function () {
+        return dashboard.windowState === dashboard.STATE_NORMAL;
+      }, "main window restore");
+      assert(true, "mainWindowRestores");
       // Exercise the real click handler in a chrome dialog, using only fixture items.
       var citationScope = {
         Zotero: host,

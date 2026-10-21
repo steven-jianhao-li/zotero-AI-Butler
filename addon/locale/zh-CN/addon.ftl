@@ -32,6 +32,7 @@ itempane-table-badge-filled = 已填表
 itempane-table-badge-reviewed = 已综述
 itempane-regenerate = 🔄 重新生成
 itempane-regenerate-table = 重新填表
+itempane-table-generation-disabled = 表格生成已关闭。若需生成或重新生成，请在「界面设置」中勾选「启用表格功能」。
 itempane-generating = ⏳ 生成中...
 itempane-image-title = 一图总结
 itempane-mindmap-title = 思维导图

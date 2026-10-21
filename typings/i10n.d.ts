@@ -669,6 +669,7 @@ export type FluentMessageId =
   | 'itempane-table-badge-filled'
   | 'itempane-table-badge-reviewed'
   | 'itempane-table-empty'
+  | 'itempane-table-generation-disabled'
   | 'itempane-table-title'
   | 'itempane-thinking'
   | 'itempane-user-label'

@@ -32,6 +32,7 @@ itempane-table-badge-filled = Table filled
 itempane-table-badge-reviewed = Reviewed
 itempane-regenerate = 🔄 Regenerate
 itempane-regenerate-table = Regenerate table
+itempane-table-generation-disabled = Table generation is off. To generate or regenerate a table, turn on "Enable table feature" in Interface Settings.
 itempane-generating = ⏳ Generating...
 itempane-image-title = One-image Summary
 itempane-mindmap-title = Mind Map

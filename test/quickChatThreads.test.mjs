@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { setImmediate } from "node:timers";
 import { URL } from "node:url";
 import vm from "node:vm";
 import { transformSync } from "esbuild";
+import { marked } from "marked";
 
 const sidebarSource = readFileSync(
   new URL("../src/modules/ItemPaneSection.ts", import.meta.url),
@@ -11,6 +13,10 @@ const sidebarSource = readFileSync(
 );
 const persistSource = readFileSync(
   new URL("../src/modules/chatPersist.ts", import.meta.url),
+  "utf8",
+);
+const customizationSource = readFileSync(
+  new URL("../src/modules/uiCustomization.ts", import.meta.url),
   "utf8",
 );
 const locale = { getString: (id) => id };
@@ -52,6 +58,14 @@ class Element {
     this.children.push(child);
   }
 
+  get childElementCount() {
+    return this.children.length;
+  }
+
+  querySelectorAll() {
+    return [];
+  }
+
   setAttribute(name, value) {
     this[name] = value;
   }
@@ -70,13 +84,16 @@ class Element {
   }
 }
 
-const doc = { createElement: (tag) => new Element(tag) };
+const doc = {
+  createElement: (tag) => new Element(tag),
+  addEventListener() {},
+  getElementById: () => null,
+};
 
 function sidebar(imports = {}, globals = {}) {
   return load(
     `${sidebarSource}
 export { getAvailableSidebarTabs, renderSidebarTabPanel, createQuickChatPairActions };
-renderTableSection = (...args) => __renderTable(...args);
 renderImageSummarySection = (...args) => __renderImage(...args);
 copyQuickChatText = (...args) => __copy(...args);
 saveChatPairToNote = (...args) => __save(...args);`,
@@ -85,21 +102,122 @@ saveChatPairToNote = (...args) => __save(...args);`,
   );
 }
 
-test("an enabled table remains accessible with image summaries disabled (#427)", () => {
-  const rendered = [];
+function tableFixture({ generationEnabled, tableVisible = true, content }) {
+  const preferences = {
+    enableTableFeature: generationEnabled,
+    sidebarModuleVisibility: JSON.stringify({
+      actionButtons: false,
+      quickChat: false,
+      note: false,
+      deepRead: false,
+      mindmap: false,
+      imageSummary: false,
+      table: tableVisible,
+    }),
+  };
+  const prefs = {
+    getPref: (key) => preferences[key],
+  };
+  const generated = [];
+  const customization = load(customizationSource, { "../utils/prefs": prefs });
   const ui = sidebar(
-    { "./uiCustomization": { isSidebarModuleEnabled: (id) => id === "table" } },
-    { __renderTable: () => rendered.push("table") },
+    {
+      "../utils/prefs": prefs,
+      "./uiCustomization": customization,
+      "./literatureReviewService": {
+        LiteratureReviewService: {
+          findTableNote: async () => content,
+          fillTableForSinglePDF: async (item) => {
+            generated.push(item.id);
+            return "Generated table";
+          },
+          saveTableNote: async () => {},
+        },
+      },
+      "../utils/prompts": {
+        getConfiguredTableTemplate: () => "Template",
+        getConfiguredTableFillPrompt: () => "Prompt",
+      },
+      marked: { marked },
+    },
+    {
+      Zotero: {
+        Items: { getAsync: async () => ({ isPDFAttachment: () => true }) },
+      },
+    },
   );
-  const tabs = ui.getAvailableSidebarTabs();
+  const panel = new Element("div");
+  const item = { id: 7, getNotes: () => [], getAttachments: () => [8] };
+  return { preferences, ui, panel, item, generated };
+}
+
+test("saved tables remain readable when generation and image summaries are disabled (#427)", async () => {
+  const { ui, panel } = tableFixture({
+    generationEnabled: false,
+    content: "| Paper | Result |\n| --- | --- |\n| Example | Preserved |",
+  });
   assert.deepEqual(
-    Array.from(tabs, (tab) => tab.id),
+    Array.from(ui.getAvailableSidebarTabs(), (tab) => tab.id),
     ["quickRead"],
   );
-  ui.renderSidebarTabPanel("quickRead", { childElementCount: 1 }, doc, {
-    id: 7,
+  ui.renderSidebarTabPanel("quickRead", panel, doc, { id: 7 });
+  await new Promise(setImmediate);
+  const section = panel.children[0];
+  assert.equal(section.className, "ai-butler-table-section");
+  const button = section.children[0].children[1].children[0];
+  assert.equal(button.disabled, true);
+  assert.equal(button.title, "itempane-table-generation-disabled");
+  assert.ok(
+    section.children.some(
+      (child) => child.textContent === "itempane-table-generation-disabled",
+    ),
+  );
+  const tableContent = section.children
+    .flatMap((child) => child.children)
+    .find((child) => child.id === "ai-butler-table-content");
+  assert.match(tableContent.html, /<td>Preserved<\/td>/);
+});
+
+test("a paper without a table still shows the disabled-generation explanation (#427)", async () => {
+  const { ui, panel } = tableFixture({ generationEnabled: false, content: "" });
+  ui.renderSidebarTabPanel("quickRead", panel, doc, { id: 7 });
+  await new Promise(setImmediate);
+  const section = panel.children[0];
+  assert.ok(section, "The checked table section must not disappear");
+  assert.ok(
+    section.children.some(
+      (child) => child.textContent === "itempane-table-generation-disabled",
+    ),
+  );
+  const tableContent = section.children
+    .flatMap((child) => child.children)
+    .find((child) => child.id === "ai-butler-table-content");
+  assert.match(tableContent.html, /itempane-table-empty/);
+});
+
+test("table visibility and generation remain separate controls (#427)", async () => {
+  const { ui, panel, preferences, item, generated } = tableFixture({
+    generationEnabled: true,
   });
-  assert.deepEqual(rendered, ["table"]);
+  ui.renderSidebarTabPanel("quickRead", panel, doc, item);
+  const section = panel.children[0];
+  assert.equal(section.children[0].children[1].children[0].disabled, false);
+  assert.equal(
+    section.children.some(
+      (child) => child.textContent === "itempane-table-generation-disabled",
+    ),
+    false,
+  );
+  const button = section.children[0].children[1].children[0];
+  await button.click();
+  assert.deepEqual(generated, [7]);
+  preferences.enableTableFeature = false;
+  // A stale button must not start a generation after the global toggle changes.
+  await button.click();
+  assert.deepEqual(generated, [7]);
+
+  const hidden = tableFixture({ generationEnabled: true, tableVisible: false });
+  assert.equal(hidden.ui.getAvailableSidebarTabs().length, 0);
 });
 
 function closure(start, end) {

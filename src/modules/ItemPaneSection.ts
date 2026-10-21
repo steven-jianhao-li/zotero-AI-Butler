@@ -285,12 +285,6 @@ const SIDEBAR_TAB_DEFINITIONS: SidebarTabDefinition[] = [
       isSidebarModuleEnabled("quickChat"),
   },
   {
-    id: "mindmap",
-    labelKey: "itempane-tab-mindmap",
-    icon: "🧠",
-    isAvailable: () => isSidebarModuleEnabled("mindmap"),
-  },
-  {
     id: "deepRead",
     labelKey: "itempane-tab-deep-read",
     icon: "◇",
@@ -301,6 +295,12 @@ const SIDEBAR_TAB_DEFINITIONS: SidebarTabDefinition[] = [
     labelKey: "itempane-tab-summary",
     icon: "✦",
     isAvailable: () => isSidebarModuleEnabled("note"),
+  },
+  {
+    id: "mindmap",
+    labelKey: "itempane-tab-mindmap",
+    icon: "🧠",
+    isAvailable: () => isSidebarModuleEnabled("mindmap"),
   },
   {
     id: "quickRead",
@@ -1591,6 +1591,10 @@ function ensureSidebarWorkspaceStyles(doc: Document): void {
       overscroll-behavior: contain;
     }
 
+    .ai-butler-sidebar-tab-panel[data-tab-id="quickRead"] > * {
+      flex-shrink: 0;
+    }
+
     .ai-butler-sidebar-tab-panel[data-tab-id="summary"],
     .ai-butler-sidebar-tab-panel[data-tab-id="deepRead"] {
       padding: 0;
@@ -2789,7 +2793,7 @@ function renderTableSection(
   doc: Document,
   item: Zotero.Item,
 ): void {
-  if (!isTableFeatureEnabled()) return;
+  const canGenerateTable = isTableFeatureEnabled();
 
   const tableSection = doc.createElement("div");
   tableSection.className = "ai-butler-table-section";
@@ -2880,30 +2884,38 @@ function renderTableSection(
   // 重新填表按钮
   const refillBtn = doc.createElement("button");
   refillBtn.textContent = getString("itempane-regenerate");
-  refillBtn.title = getString("itempane-regenerate-table");
+  refillBtn.disabled = !canGenerateTable;
+  refillBtn.title = getString(
+    canGenerateTable
+      ? "itempane-regenerate-table"
+      : "itempane-table-generation-disabled",
+  );
   refillBtn.style.cssText = `
     padding: 2px 8px;
     border: 1px solid currentColor;
     border-radius: 3px;
     background: transparent;
-    cursor: pointer;
+    cursor: ${canGenerateTable ? "pointer" : "not-allowed"};
     font-size: 11px;
     color: inherit;
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0.7;
+    opacity: ${canGenerateTable ? "0.7" : "0.4"};
     white-space: nowrap;
   `;
   refillBtn.addEventListener("mouseenter", () => {
+    if (refillBtn.disabled) return;
     refillBtn.style.opacity = "1";
     refillBtn.style.background = "rgba(128, 128, 128, 0.2)";
   });
   refillBtn.addEventListener("mouseleave", () => {
+    if (refillBtn.disabled) return;
     refillBtn.style.opacity = "0.7";
     refillBtn.style.background = "transparent";
   });
   refillBtn.addEventListener("click", async () => {
+    if (!isTableFeatureEnabled()) return;
     refillBtn.textContent = getString("itempane-generating");
     refillBtn.style.pointerEvents = "none";
     try {
@@ -3055,6 +3067,12 @@ function renderTableSection(
   });
 
   tableSection.appendChild(tableHeader);
+  if (!canGenerateTable) {
+    const hint = doc.createElement("div");
+    hint.textContent = getString("itempane-table-generation-disabled");
+    hint.style.cssText = "padding: 8px 10px; font-size: 12px; opacity: 0.7;";
+    tableSection.appendChild(hint);
+  }
   tableSection.appendChild(tableContentWrapper);
   tableSection.appendChild(tableResizeHandle);
   body.appendChild(tableSection);

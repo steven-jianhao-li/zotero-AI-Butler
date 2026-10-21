@@ -312,7 +312,7 @@ export function getSidebarModuleVisibility(): SidebarModuleVisibility {
 }
 
 export function isSidebarModuleEnabled(id: SidebarModuleId): boolean {
-  if (id === "table" && !isTableFeatureEnabled()) return false;
+  // Sidebar visibility also controls access to existing results when generation is off.
   return getSidebarModuleVisibility()[id];
 }
 

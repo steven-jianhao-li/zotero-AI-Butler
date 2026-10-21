@@ -14,6 +14,15 @@ const locale = {
 };
 function loadSource(name, imports, globals = {}) {
   const module = { exports: {} };
+  if (name !== "modules/llmproviders/shared/completion.ts") {
+    imports = {
+      "./llmproviders/shared/completion": loadSource(
+        "modules/llmproviders/shared/completion.ts",
+        { "../../../utils/locale": locale },
+      ),
+      ...imports,
+    };
+  }
   const compiled = transformSync(source(name), {
     loader: "ts",
     format: "cjs",

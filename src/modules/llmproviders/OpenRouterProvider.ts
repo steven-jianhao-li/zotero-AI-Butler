@@ -1,31 +1,9 @@
-import { mergeRequestHeaders } from "./shared/requestHeaders";
+import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { ILlmProvider } from "./ILlmProvider";
 import {
-  ConversationMessage,
-  LLMOptions,
-  LLMModelInfo,
-  LLMProviderCapabilities,
-  ProgressCb,
-} from "./types";
-import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
-import { getRequestTimeoutMs } from "./shared/llmutils";
-import {
-  getConnectionTestInput,
   formatConnectionTestSuccess,
-  formatProviderTimeout,
+  getConnectionTestInput,
 } from "./shared/connectionTest";
-import {
-  deriveVersionedModelsUrl,
-  parseModelListResponse,
-  requestModelListJson,
-} from "./shared/modelList";
-import {
-  bindAbortSignal,
-  isAbortError,
-  normalizeAbortError,
-  throwIfAborted,
-} from "./shared/requestAbort";
-import { recordFinishReason } from "./shared/truncation";
 import {
   providerHttpRequestFailed,
   providerMissingApiKey,
@@ -33,12 +11,23 @@ import {
   providerNoPdfFiles,
   providerNoPdfProcessed,
   providerRequestFailed,
-  providerStreamMissingDone,
-  providerStreamParseFailed,
-  providerStreamTruncated,
-  providerStreamUnexpectedEnd,
 } from "./shared/localizedErrors";
+import {
+  deriveVersionedModelsUrl,
+  parseModelListResponse,
+  requestModelListJson,
+} from "./shared/modelList";
 import { resolveOpenRouterReasoningEffort } from "./shared/reasoning";
+import { mergeRequestHeaders } from "./shared/requestHeaders";
+import { requestLLMText } from "./shared/textTransport";
+import type { LLMProviderResult } from "./types";
+import {
+  ConversationMessage,
+  LLMModelInfo,
+  LLMOptions,
+  LLMProviderCapabilities,
+  ProgressCb,
+} from "./types";
 
 /**
  * OpenRouter Provider
@@ -115,7 +104,7 @@ export class OpenRouterProvider implements ILlmProvider {
     prompt: string | undefined,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+  ): Promise<LLMProviderResult> {
     const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
     const model = (options.model || "google/gemma-3-27b-it").trim();
     const streamEnabled = options.stream ?? true;
@@ -181,7 +170,7 @@ export class OpenRouterProvider implements ILlmProvider {
     conversation: ConversationMessage[],
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+  ): Promise<LLMProviderResult> {
     const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
     const model = (options.model || "google/gemma-3-27b-it").trim();
 
@@ -393,136 +382,16 @@ export class OpenRouterProvider implements ILlmProvider {
     payload: any,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
-    throwIfAborted(options.abortSignal);
-    const payloadWithStream = { ...payload, stream: true };
-    const chunks: string[] = [];
-    let delivered = 0;
-    let processedLength = 0;
-    let partialLine = "";
-    let gotAnyDelta = false;
-    let abortError: Error | null = null;
-    let cleanupAbortSignal: (() => void) | undefined;
-
-    try {
-      await Zotero.HTTP.request("POST", apiUrl, {
-        headers: this.buildHeaders(apiKey, options.customHeaders),
-        body: JSON.stringify(payloadWithStream),
-        responseType: "text",
-        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-        errorDelayMax: 0,
-        requestObserver: (xmlhttp: XMLHttpRequest) => {
-          cleanupAbortSignal = bindAbortSignal(
-            options.abortSignal,
-            xmlhttp,
-            (error) => {
-              abortError = error;
-            },
-          );
-          xmlhttp.onprogress = (e: any) => {
-            const status = e.target.status;
-            if (status >= 400) {
-              // ... Error handling similar to others ...
-              try {
-                const errorResponse = e.target.response;
-                const parsed = errorResponse ? JSON.parse(errorResponse) : null;
-                const err = parsed?.error || parsed || {};
-                const code = err?.code || `HTTP ${status}`;
-                const msg = err?.message || providerHttpRequestFailed(status);
-                abortError = new Error(`${code}: ${msg}`);
-                xmlhttp.abort();
-              } catch {
-                abortError = new Error(providerHttpRequestFailed(status));
-                xmlhttp.abort();
-              }
-              return;
-            }
-
-            try {
-              const resp: string = e.target.response || "";
-              if (resp.length > processedLength) {
-                const slice = partialLine + resp.slice(processedLength);
-                processedLength = resp.length;
-                const parts = slice.split(/\r?\n/);
-                partialLine =
-                  parts[parts.length - 1].indexOf("data:") === 0 &&
-                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                    ? ""
-                    : parts.pop() || "";
-
-                for (const raw of parts) {
-                  if (raw.indexOf("data:") !== 0) continue;
-                  const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                  if (!jsonStr || jsonStr === "[DONE]") continue;
-                  if (jsonStr === ": OPENROUTER PROCESSING") continue; // OpenRouter specific keep-alive
-
-                  try {
-                    const evt = JSON.parse(jsonStr);
-                    recordFinishReason(
-                      options,
-                      "openrouter",
-                      "choices.finish_reason",
-                      evt?.choices?.[0]?.finish_reason,
-                    );
-                    const delta = evt?.choices?.[0]?.delta?.content;
-                    if (typeof delta === "string" && delta.length > 0) {
-                      gotAnyDelta = true;
-                      chunks.push(delta);
-                      const current = chunks.join("");
-                      if (onProgress && current.length > delivered) {
-                        const newChunk = current.slice(delivered);
-                        delivered = current.length;
-                        Promise.resolve(onProgress(newChunk)).catch((err) =>
-                          ztoolkit.log(
-                            "[AI-Butler] onProgress error (OpenRouter SSE):",
-                            err,
-                          ),
-                        );
-                      }
-                    }
-                  } catch {
-                    /* ignore */
-                  }
-                }
-              }
-            } catch (err) {
-              ztoolkit.log("[AI-Butler] OpenRouter SSE parse error:", err);
-            }
-          };
-          xmlhttp.onerror = () => {
-            if (!abortError)
-              abortError = new Error("NetworkError: XHR onerror");
-          };
-          xmlhttp.ontimeout = () => {
-            if (!abortError)
-              abortError = new Error(
-                formatProviderTimeout(
-                  options.requestTimeoutMs ?? getRequestTimeoutMs(),
-                ),
-              );
-          };
-        },
-      });
-    } catch (error: any) {
-      if (abortError) {
-        if (isAbortError(abortError, options.abortSignal)) {
-          throw normalizeAbortError(abortError, options.abortSignal);
-        }
-        if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-        throw abortError;
-      }
-      if (isAbortError(error, options.abortSignal)) {
-        throw normalizeAbortError(error, options.abortSignal);
-      }
-      const errorMessage =
-        error?.message || providerRequestFailed("OpenRouter");
-      // ... Error parsing ...
-      if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-      throw new Error(errorMessage, { cause: error });
-    } finally {
-      cleanupAbortSignal?.();
-    }
-    return chunks.join("");
+  ): Promise<LLMProviderResult> {
+    return requestLLMText({
+      protocol: "chat",
+      provider: this.id,
+      url: apiUrl,
+      headers: this.buildHeaders(apiKey, options.customHeaders),
+      payload,
+      options,
+      onProgress,
+    });
   }
 
   private async nonStreamRequest(
@@ -531,49 +400,16 @@ export class OpenRouterProvider implements ILlmProvider {
     payload: any,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
-    throwIfAborted(options.abortSignal);
-    let abortError: Error | null = null;
-    let cleanupAbortSignal: (() => void) | undefined;
-    try {
-      const res = await Zotero.HTTP.request("POST", apiUrl, {
-        headers: this.buildHeaders(apiKey, options.customHeaders),
-        body: JSON.stringify(payload),
-        responseType: "json",
-        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-        errorDelayMax: 0,
-        requestObserver: (xmlhttp: XMLHttpRequest) => {
-          cleanupAbortSignal = bindAbortSignal(
-            options.abortSignal,
-            xmlhttp,
-            (error) => {
-              abortError = error;
-            },
-          );
-        },
-      });
-      throwIfAborted(options.abortSignal);
-      const data = res.response || res;
-      recordFinishReason(
-        options,
-        "openrouter",
-        "choices.finish_reason",
-        data?.choices?.[0]?.finish_reason,
-      );
-      const text = data?.choices?.[0]?.message?.content || "";
-      const result = typeof text === "string" ? text : JSON.stringify(text);
-      if (onProgress && result) await onProgress(result);
-      return result;
-    } catch (e: any) {
-      if (abortError || isAbortError(e, options.abortSignal)) {
-        throw normalizeAbortError(abortError || e, options.abortSignal);
-      }
-      // ... Error handling ...
-      const msg = e?.message || providerRequestFailed("OpenRouter");
-      throw new Error(msg, { cause: e });
-    } finally {
-      cleanupAbortSignal?.();
-    }
+  ): Promise<LLMProviderResult> {
+    return requestLLMText({
+      protocol: "chat",
+      provider: this.id,
+      url: apiUrl,
+      headers: this.buildHeaders(apiKey, options.customHeaders),
+      payload,
+      options,
+      onProgress,
+    });
   }
 
   /**
@@ -589,7 +425,8 @@ export class OpenRouterProvider implements ILlmProvider {
     prompt: string,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+    history: ConversationMessage[] = [],
+  ): Promise<LLMProviderResult> {
     const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
     const model = (options.model || "google/gemma-3-27b-it").trim();
 
@@ -642,6 +479,7 @@ export class OpenRouterProvider implements ILlmProvider {
       ...this.buildGenParams(options),
     } as any;
 
+    payload.messages.push(...history);
     return this.streamRequest(apiUrl, apiKey, payload, options, onProgress);
   }
 }

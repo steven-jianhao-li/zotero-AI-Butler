@@ -1,43 +1,33 @@
-import { mergeRequestHeaders } from "./shared/requestHeaders";
+import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { ILlmProvider } from "./ILlmProvider";
 import {
-  ConversationMessage,
-  LLMOptions,
-  LLMModelInfo,
-  LLMProviderCapabilities,
-  ProgressCb,
-} from "./types";
-import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
-import { getRequestTimeoutMs, logPromptCacheUsage } from "./shared/llmutils";
-import {
-  getConnectionTestInput,
   formatConnectionTestSuccess,
-  formatProviderTimeout,
+  getConnectionTestInput,
 } from "./shared/connectionTest";
 import {
-  deriveAnthropicModelsUrl,
-  parseModelListResponse,
-  requestModelListJson,
-} from "./shared/modelList";
-import {
-  bindAbortSignal,
-  isAbortError,
-  normalizeAbortError,
-  throwIfAborted,
-} from "./shared/requestAbort";
-import { recordFinishReason } from "./shared/truncation";
-import {
-  providerHttpRequestFailed,
   providerMissingApiKey,
   providerMissingApiUrl,
   providerNoPdfFiles,
   providerNoPdfProcessed,
   providerRequestFailed,
-  providerStreamMissingDone,
-  providerStreamParseFailed,
-  providerStreamTruncated,
-  providerStreamUnexpectedEnd,
 } from "./shared/localizedErrors";
+import {
+  deriveAnthropicModelsUrl,
+  parseModelListResponse,
+  requestModelListJson,
+} from "./shared/modelList";
+import { getAnthropicMaxTokens } from "./shared/outputTokens";
+import { throwIfAborted } from "./shared/requestAbort";
+import { mergeRequestHeaders } from "./shared/requestHeaders";
+import { requestLLMText } from "./shared/textTransport";
+import type { LLMProviderResult } from "./types";
+import {
+  ConversationMessage,
+  LLMModelInfo,
+  LLMOptions,
+  LLMProviderCapabilities,
+  ProgressCb,
+} from "./types";
 
 export function shouldOmitAnthropicTemperature(model: string): boolean {
   const normalized = model.trim().toLowerCase();
@@ -50,11 +40,10 @@ export function shouldOmitAnthropicTemperature(model: string): boolean {
   return Number(opus4Minor[1]) >= 7;
 }
 
-export const DEFAULT_ANTHROPIC_MAX_TOKENS = 100000;
-
-export function resolveAnthropicMaxTokens(options: LLMOptions): number {
-  return options.maxTokens ?? DEFAULT_ANTHROPIC_MAX_TOKENS;
-}
+export {
+  DEFAULT_ANTHROPIC_MAX_TOKENS,
+  resolveAnthropicMaxTokens,
+} from "./shared/outputTokens";
 
 function buildAnthropicTemperatureParam(
   model: string,
@@ -82,14 +71,14 @@ export class AnthropicProvider implements ILlmProvider {
     prompt: string | undefined,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+  ): Promise<LLMProviderResult> {
     const baseUrl = (options.apiUrl || "https://api.anthropic.com").replace(
       /\/$/,
       "",
     );
     const apiKey = (options.apiKey || "").trim();
     const model = (options.model || "claude-3-5-sonnet-20241022").trim();
-    const maxTokens = resolveAnthropicMaxTokens(options);
+    const maxTokens = await getAnthropicMaxTokens(options);
 
     if (!baseUrl) throw new Error(providerMissingApiUrl("Anthropic"));
     if (!apiKey) throw new Error(providerMissingApiKey("Anthropic"));
@@ -136,139 +125,22 @@ export class AnthropicProvider implements ILlmProvider {
       };
     }
 
-    const chunks: string[] = [];
-    let delivered = 0;
-    let processedLength = 0;
-    let partialLine = "";
-    let gotAnyDelta = false;
-    let abortError: Error | null = null;
-    let cleanupAbortSignal: (() => void) | undefined;
-
-    try {
-      await Zotero.HTTP.request("POST", endpoint, {
-        headers: mergeRequestHeaders(
-          {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-          },
-          options.customHeaders,
-        ),
-        body: JSON.stringify(payload),
-        responseType: "text",
-        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-        errorDelayMax: 0,
-        requestObserver: (xmlhttp: XMLHttpRequest) => {
-          cleanupAbortSignal = bindAbortSignal(
-            options.abortSignal,
-            xmlhttp,
-            (error) => {
-              abortError = error;
-            },
-          );
-          xmlhttp.onprogress = (e: any) => {
-            const status = e.target.status;
-            if (status >= 400) {
-              try {
-                const errorResponse = e.target.response;
-                const parsed = errorResponse ? JSON.parse(errorResponse) : null;
-                const err = parsed?.error || parsed || {};
-                const code = err?.type || `HTTP ${status}`;
-                const msg = err?.message || providerRequestFailed("API");
-                const errorMessage = `${code}: ${msg}`;
-                xmlhttp.abort();
-                throw new Error(errorMessage);
-              } catch {
-                xmlhttp.abort();
-                throw new Error(providerHttpRequestFailed(status));
-              }
-            }
-
-            try {
-              const resp: string = e.target.response || "";
-              if (resp.length > processedLength) {
-                const slice = partialLine + resp.slice(processedLength);
-                processedLength = resp.length;
-                const parts = slice.split(/\r?\n/);
-                partialLine =
-                  parts[parts.length - 1].indexOf("data:") === 0 &&
-                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                    ? ""
-                    : parts.pop() || "";
-
-                for (const raw of parts) {
-                  if (raw.indexOf("data:") !== 0) continue;
-                  const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                  if (!jsonStr) continue;
-                  try {
-                    const json = JSON.parse(jsonStr);
-                    if (json.type === "message_delta") {
-                      recordFinishReason(
-                        options,
-                        "anthropic",
-                        "message_delta",
-                        json?.delta?.stop_reason,
-                      );
-                    }
-                    if (json.type === "content_block_delta") {
-                      const text = json?.delta?.text;
-                      if (text) {
-                        gotAnyDelta = true;
-                        chunks.push(text);
-                        const current = chunks.join("");
-                        if (onProgress && current.length > delivered) {
-                          const newChunk = current.slice(delivered);
-                          delivered = current.length;
-                          Promise.resolve(onProgress(newChunk)).catch((err) => {
-                            ztoolkit.log(
-                              "[AI-Butler] onProgress callback error:",
-                              err,
-                            );
-                          });
-                        }
-                      }
-                    }
-                  } catch {
-                    /* ignore */
-                  }
-                }
-              }
-            } catch (err) {
-              ztoolkit.log("[AI-Butler] Anthropic stream parse error:", err);
-            }
-          };
+    return requestLLMText({
+      protocol: "anthropic",
+      provider: this.id,
+      url: endpoint,
+      headers: mergeRequestHeaders(
+        {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
         },
-      });
-    } catch (error: any) {
-      if (abortError || isAbortError(error, options.abortSignal)) {
-        throw normalizeAbortError(abortError || error, options.abortSignal);
-      }
-      let errorMessage = error?.message || providerRequestFailed("Anthropic");
-      try {
-        const responseText =
-          error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-        if (responseText) {
-          const parsed =
-            typeof responseText === "string"
-              ? JSON.parse(responseText)
-              : responseText;
-          const err = parsed?.error || parsed;
-          const code = err?.type || "Error";
-          const msg = err?.message || error?.message || String(error);
-          errorMessage = `${code}: ${msg}`;
-        }
-      } catch {
-        /* ignore */
-      }
-      if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-      throw new Error(errorMessage, { cause: error });
-    } finally {
-      cleanupAbortSignal?.();
-    }
-
-    const streamed = chunks.join("");
-    if (gotAnyDelta && streamed) return streamed;
-    return "";
+        options.customHeaders,
+      ),
+      payload: payload,
+      options,
+      onProgress,
+    });
   }
 
   async chat(
@@ -277,14 +149,14 @@ export class AnthropicProvider implements ILlmProvider {
     conversation: ConversationMessage[],
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+  ): Promise<LLMProviderResult> {
     const baseUrl = (options.apiUrl || "https://api.anthropic.com").replace(
       /\/$/,
       "",
     );
     const apiKey = (options.apiKey || "").trim();
     const model = (options.model || "claude-3-5-sonnet-20241022").trim();
-    const maxTokens = resolveAnthropicMaxTokens(options);
+    const maxTokens = await getAnthropicMaxTokens(options);
 
     if (!baseUrl) throw new Error(providerMissingApiUrl("Anthropic"));
     if (!apiKey) throw new Error(providerMissingApiKey("Anthropic"));
@@ -351,160 +223,22 @@ export class AnthropicProvider implements ILlmProvider {
       stream: true,
     };
 
-    const chunks: string[] = [];
-    let delivered = 0;
-    let processedLength = 0;
-    let partialLine = "";
-    let lastUsage: any;
-    let abortError: Error | null = null;
-    let cleanupAbortSignal: (() => void) | undefined;
-
-    try {
-      await Zotero.HTTP.request("POST", endpoint, {
-        headers: mergeRequestHeaders(
-          {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-          },
-          options.customHeaders,
-        ),
-        body: JSON.stringify(payload),
-        responseType: "text",
-        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-        errorDelayMax: 0,
-        requestObserver: (xmlhttp: XMLHttpRequest) => {
-          cleanupAbortSignal = bindAbortSignal(
-            options.abortSignal,
-            xmlhttp,
-            (error) => {
-              abortError = error;
-            },
-          );
-          xmlhttp.onprogress = (e: any) => {
-            const status = e.target.status;
-            if (status >= 400) {
-              try {
-                const errorResponse = e.target.response;
-                const parsed = errorResponse ? JSON.parse(errorResponse) : null;
-                const err = parsed?.error || parsed || {};
-                const code = err?.type || `HTTP ${status}`;
-                const msg = err?.message || providerRequestFailed("API");
-                const errorMessage = `${code}: ${msg}`;
-                abortError = new Error(errorMessage);
-                ztoolkit.log("[AI-Butler] Anthropic HTTP error:", {
-                  status,
-                  code,
-                  msg,
-                  response: errorResponse,
-                });
-                xmlhttp.abort();
-              } catch (parseErr) {
-                const errorMessage = providerHttpRequestFailed(status);
-                abortError = new Error(errorMessage);
-                ztoolkit.log("[AI-Butler] Anthropic HTTP error:", {
-                  status,
-                  parseErr,
-                });
-                xmlhttp.abort();
-              }
-              return;
-            }
-
-            try {
-              const resp: string = e.target.response || "";
-              if (resp.length > processedLength) {
-                const slice = partialLine + resp.slice(processedLength);
-                processedLength = resp.length;
-                const parts = slice.split(/\r?\n/);
-                partialLine =
-                  parts[parts.length - 1].indexOf("data:") === 0 &&
-                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                    ? ""
-                    : parts.pop() || "";
-
-                for (const raw of parts) {
-                  if (raw.indexOf("data:") !== 0) continue;
-                  const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                  if (!jsonStr) continue;
-
-                  try {
-                    const json = JSON.parse(jsonStr);
-                    if (json.type === "message_delta") {
-                      recordFinishReason(
-                        options,
-                        "anthropic",
-                        "message_delta",
-                        json?.delta?.stop_reason,
-                      );
-                    }
-                    if (
-                      options.enablePromptCache &&
-                      json.type === "message_start" &&
-                      json?.message?.usage
-                    ) {
-                      lastUsage = json.message.usage;
-                    }
-                    if (json.type === "content_block_delta") {
-                      const text = json?.delta?.text;
-                      if (text) {
-                        chunks.push(text);
-                        const current = chunks.join("");
-                        if (onProgress && current.length > delivered) {
-                          const newChunk = current.slice(delivered);
-                          delivered = current.length;
-                          Promise.resolve(onProgress(newChunk)).catch((err) => {
-                            ztoolkit.log("[AI-Butler] onProgress error:", err);
-                          });
-                        }
-                      }
-                    }
-                  } catch {
-                    /* ignore */
-                  }
-                }
-              }
-            } catch (err) {
-              ztoolkit.log("[AI-Butler] Anthropic stream parse error:", err);
-            }
-          };
+    return requestLLMText({
+      protocol: "anthropic",
+      provider: this.id,
+      url: endpoint,
+      headers: mergeRequestHeaders(
+        {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
         },
-      });
-    } catch (error: any) {
-      if (abortError || isAbortError(error, options.abortSignal)) {
-        throw normalizeAbortError(abortError || error, options.abortSignal);
-      }
-      let errorMessage = error?.message || providerRequestFailed("Anthropic");
-      try {
-        const responseText =
-          error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-        if (responseText) {
-          const parsed =
-            typeof responseText === "string"
-              ? JSON.parse(responseText)
-              : responseText;
-          const err = parsed?.error || parsed;
-          const code = err?.type || "Error";
-          const msg = err?.message || error?.message || String(error);
-          errorMessage = `${code}: ${msg}`;
-        }
-      } catch {
-        /* ignore */
-      }
-      ztoolkit.log("[AI-Butler] Anthropic request error:", {
-        status: error?.xmlhttp?.status,
-        statusText: error?.xmlhttp?.statusText,
-        message: errorMessage,
-      });
-      throw new Error(errorMessage, { cause: error });
-    } finally {
-      cleanupAbortSignal?.();
-    }
-
-    if (options.enablePromptCache) {
-      logPromptCacheUsage("Anthropic chat", lastUsage);
-    }
-    return chunks.join("");
+        options.customHeaders,
+      ),
+      payload: payload,
+      options,
+      onProgress,
+    });
   }
 
   /**
@@ -703,14 +437,15 @@ export class AnthropicProvider implements ILlmProvider {
     prompt: string,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+    history: ConversationMessage[] = [],
+  ): Promise<LLMProviderResult> {
     const baseUrl = (options.apiUrl || "https://api.anthropic.com").replace(
       /\/$/,
       "",
     );
     const apiKey = (options.apiKey || "").trim();
     const model = (options.model || "claude-3-5-sonnet-20241022").trim();
-    const maxTokens = resolveAnthropicMaxTokens(options);
+    const maxTokens = await getAnthropicMaxTokens(options);
 
     if (!baseUrl) throw new Error(providerMissingApiUrl("Anthropic"));
     if (!apiKey) throw new Error(providerMissingApiKey("Anthropic"));
@@ -764,161 +499,28 @@ export class AnthropicProvider implements ILlmProvider {
       stream: true,
     };
 
-    const chunks: string[] = [];
-    let delivered = 0;
-    let processedLength = 0;
-    let partialLine = "";
-    let gotAnyDelta = false;
-    let abortError: Error | null = null;
-    let cleanupAbortSignal: (() => void) | undefined;
-
-    try {
-      await Zotero.HTTP.request("POST", endpoint, {
-        headers: mergeRequestHeaders(
-          {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-          },
-          options.customHeaders,
-        ),
-        body: JSON.stringify(payload),
-        responseType: "text",
-        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-        errorDelayMax: 0,
-        requestObserver: (xmlhttp: XMLHttpRequest) => {
-          cleanupAbortSignal = bindAbortSignal(
-            options.abortSignal,
-            xmlhttp,
-            (error) => {
-              abortError = error;
-            },
-          );
-          xmlhttp.onprogress = (e: any) => {
-            const status = e.target.status;
-            if (status >= 400) {
-              try {
-                const errorResponse = e.target.response;
-                const parsed = errorResponse ? JSON.parse(errorResponse) : null;
-                const err = parsed?.error || parsed || {};
-                const code = err?.type || `HTTP ${status}`;
-                const msg = err?.message || providerRequestFailed("API");
-                abortError = new Error(`${code}: ${msg}`);
-                xmlhttp.abort();
-              } catch {
-                abortError = new Error(providerHttpRequestFailed(status));
-                xmlhttp.abort();
-              }
-              return;
-            }
-
-            try {
-              const resp: string = e.target.response || "";
-              if (resp.length > processedLength) {
-                const slice = partialLine + resp.slice(processedLength);
-                processedLength = resp.length;
-                const parts = slice.split(/\r?\n/);
-                partialLine =
-                  parts[parts.length - 1].indexOf("data:") === 0 &&
-                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                    ? ""
-                    : parts.pop() || "";
-
-                for (const raw of parts) {
-                  if (raw.indexOf("data:") !== 0) continue;
-                  const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                  if (!jsonStr) continue;
-                  try {
-                    const json = JSON.parse(jsonStr);
-                    if (json.type === "message_delta") {
-                      recordFinishReason(
-                        options,
-                        "anthropic",
-                        "message_delta",
-                        json?.delta?.stop_reason,
-                      );
-                    }
-                    if (json.type === "content_block_delta") {
-                      const text = json?.delta?.text;
-                      if (text) {
-                        gotAnyDelta = true;
-                        chunks.push(text);
-                        const current = chunks.join("");
-                        if (onProgress && current.length > delivered) {
-                          const newChunk = current.slice(delivered);
-                          delivered = current.length;
-                          Promise.resolve(onProgress(newChunk)).catch((err) => {
-                            ztoolkit.log(
-                              "[AI-Butler] onProgress error (Anthropic multi-PDF):",
-                              err,
-                            );
-                          });
-                        }
-                      }
-                    }
-                  } catch {
-                    /* ignore */
-                  }
-                }
-              }
-            } catch (err) {
-              ztoolkit.log(
-                "[AI-Butler] Anthropic multi-PDF stream parse error:",
-                err,
-              );
-            }
-          };
-          xmlhttp.onerror = () => {
-            if (!abortError)
-              abortError = new Error("NetworkError: XHR onerror");
-          };
-          xmlhttp.ontimeout = () => {
-            if (!abortError)
-              abortError = new Error(
-                formatProviderTimeout(
-                  options.requestTimeoutMs ?? getRequestTimeoutMs(),
-                ),
-              );
-          };
+    payload.messages.push(
+      ...history.map((message) => ({
+        role: message.role,
+        content: [{ type: "text", text: message.content }],
+      })),
+    );
+    return requestLLMText({
+      protocol: "anthropic",
+      provider: this.id,
+      url: endpoint,
+      headers: mergeRequestHeaders(
+        {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
         },
-      });
-    } catch (error: any) {
-      if (abortError) {
-        if (isAbortError(abortError, options.abortSignal)) {
-          throw normalizeAbortError(abortError, options.abortSignal);
-        }
-        if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-        throw abortError;
-      }
-      if (isAbortError(error, options.abortSignal)) {
-        throw normalizeAbortError(error, options.abortSignal);
-      }
-      let errorMessage = error?.message || providerRequestFailed("Anthropic");
-      try {
-        const responseText =
-          error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-        if (responseText) {
-          const parsed =
-            typeof responseText === "string"
-              ? JSON.parse(responseText)
-              : responseText;
-          const err = parsed?.error || parsed;
-          const code = err?.type || "Error";
-          const msg = err?.message || error?.message || String(error);
-          errorMessage = `${code}: ${msg}`;
-        }
-      } catch {
-        /* ignore */
-      }
-      if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-      throw new Error(errorMessage, { cause: error });
-    } finally {
-      cleanupAbortSignal?.();
-    }
-
-    const streamed = chunks.join("");
-    if (gotAnyDelta && streamed) return streamed;
-    return "";
+        options.customHeaders,
+      ),
+      payload: payload,
+      options,
+      onProgress,
+    });
   }
 }
 

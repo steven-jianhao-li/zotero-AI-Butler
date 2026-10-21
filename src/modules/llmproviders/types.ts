@@ -72,6 +72,7 @@ export type LLMModelInfo = {
   name?: string;
   description?: string;
   contextLength?: number;
+  maxOutputTokens?: number;
   ownedBy?: string;
   created?: number;
 };
@@ -80,6 +81,19 @@ export type LLMUsage = {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+};
+
+/** A transport ending is separate from the model completing its answer. */
+export type LLMProviderResult = {
+  text: string;
+  completion: "complete" | "partial";
+  finishReason: string;
+  recovery: "none" | "continue" | "retry";
+  usage?: LLMUsage;
+  requestId?: string;
+  maxOutputTokens?: number;
+  error?: string;
+  continuationRounds?: number;
 };
 
 export type LLMResponse = {
@@ -94,6 +108,10 @@ export type LLMResponse = {
   finishReason?: string;
   warnings?: string[];
   rawExcerpt?: string;
+  completion?: LLMProviderResult["completion"];
+  recovery?: LLMProviderResult["recovery"];
+  continuationRounds?: number;
+  maxOutputTokens?: number;
 };
 
 export type LLMError = {

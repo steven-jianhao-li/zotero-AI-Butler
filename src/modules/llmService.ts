@@ -35,10 +35,7 @@ import type {
   LLMAgentTurn,
   LLMToolDefinition,
 } from "./llmproviders/agentTypes";
-import {
-  isAutoContinuableTruncation,
-  resetTruncationState,
-} from "./llmproviders/shared/truncation";
+import { LLMIncompleteError } from "./llmproviders/shared/completion";
 import {
   isAbortError,
   normalizeAbortError,
@@ -50,6 +47,7 @@ import type {
   LLMOptions,
   LLMModelInfo,
   LLMProviderCapabilities,
+  LLMProviderResult,
   LLMReasoningEffortSetting,
   LLMResponse,
   ProgressCb,
@@ -249,7 +247,6 @@ export class LLMApiExhaustedError extends Error {
 export class LLMService {
   private static readonly DEFAULT_AUTO_CONTINUATION_ROUNDS = 2;
   private static readonly MAX_AUTO_CONTINUATION_ROUNDS = 10;
-  private static readonly CONTINUATION_TAIL_CHARS = 12000;
   private static readonly CONTINUATION_DEDUPE_LOOKBACK_CHARS = 4000;
   private static readonly CONTINUATION_MIN_OVERLAP_CHARS = 16;
 
@@ -367,7 +364,7 @@ export class LLMService {
     if (enableMaxTokens || generation?.maxOutputTokens !== undefined) {
       common.maxTokens =
         generation?.maxOutputTokens ??
-        (parseInt((getPref("maxTokens") as string) || "81920", 10) || 81920);
+        Number((getPref("maxTokens") as string) || "81920");
     }
     const reasoningEffort = resolveReasoningEffort(
       normalizeReasoningEffortSetting(
@@ -562,6 +559,7 @@ export class LLMService {
           request.onProgress,
         );
       } catch (error: unknown) {
+        if (error instanceof LLMIncompleteError) throw error;
         if (isAbortError(error, request.transport?.abortSignal)) {
           throw normalizeAbortError(error, request.transport?.abortSignal);
         }
@@ -694,41 +692,23 @@ export class LLMService {
       .join("\n");
   }
 
-  private static tailForContinuation(text: string): string {
-    if (text.length <= this.CONTINUATION_TAIL_CHARS) return text;
-    return text.slice(-this.CONTINUATION_TAIL_CHARS);
-  }
-
   private static appendAutoContinuationWarning(
     warnings: string[],
     rounds: number,
-    stillTruncated: boolean,
+    result: LLMProviderResult,
   ): void {
-    if (rounds > 0) {
+    if (rounds > 0)
       warnings.push(
         getString("llm-warning-auto-continuation-used", {
           args: { count: rounds },
         }),
       );
-    }
-    if (stillTruncated) {
+    if (result.completion !== "complete")
       warnings.push(
-        rounds > 0
-          ? getString("llm-warning-auto-continuation-still-truncated", {
-              args: { count: rounds },
-            })
-          : getString("llm-warning-auto-continuation-disabled"),
+        getString("llm-error-incomplete-output", {
+          args: { reason: result.finishReason },
+        }),
       );
-    }
-  }
-
-  private static async callProviderAndTrackTruncation(
-    options: LLMOptions,
-    call: () => Promise<string>,
-  ): Promise<string> {
-    resetTruncationState(options);
-    const text = await call();
-    return text;
   }
 
   private static removeContinuationOverlap(
@@ -752,55 +732,80 @@ export class LLMService {
     return continuation;
   }
 
-  private static async autoContinueSingleContent(
-    provider: ILlmProvider,
-    pdfContent: string,
-    isBase64: boolean,
-    initialConversation: ConversationMessage[],
-    initialText: string,
+  private static async continueResult(
+    initial: LLMProviderResult,
     options: LLMOptions,
+    call: (text: string) => Promise<LLMProviderResult>,
     onProgress?: ProgressCb,
-  ): Promise<{ text: string; rounds: number; stillTruncated: boolean }> {
-    let text = "";
+  ): Promise<{
+    result: LLMProviderResult;
+    rounds: number;
+  }> {
+    let result = initial;
     let rounds = 0;
-    const maxRounds = this.getAutoContinuationRounds();
     while (
-      rounds < maxRounds &&
-      isAutoContinuableTruncation(options.truncation)
+      rounds < this.getAutoContinuationRounds() &&
+      result.recovery === "continue"
     ) {
       throwIfAborted(options.abortSignal);
-      rounds += 1;
-      const conversation: ConversationMessage[] = [
-        ...initialConversation,
-        {
-          role: "assistant",
-          content: this.tailForContinuation(initialText + text),
-        },
-        {
-          role: "user",
-          content: this.buildContinuationPrompt(
-            initialConversation[0]?.content || "",
-          ),
-        },
-      ];
-      const continuation = await this.callProviderAndTrackTruncation(
-        options,
-        () =>
-          provider.chat(
-            pdfContent,
-            isBase64,
-            conversation,
-            options,
-            onProgress,
-          ),
-      );
-      text += this.removeContinuationOverlap(initialText + text, continuation);
+      rounds++;
+      let next: LLMProviderResult;
+      try {
+        next = await call(result.text);
+      } catch (error) {
+        if (isAbortError(error, options.abortSignal))
+          throw normalizeAbortError(error, options.abortSignal);
+        result = {
+          ...result,
+          completion: "partial",
+          recovery: "retry",
+          finishReason: "continuation_failed",
+          error: error instanceof Error ? error.message : String(error),
+        };
+        break;
+      }
+      const added = this.removeContinuationOverlap(result.text, next.text);
+      const sumKnown = (a?: number, b?: number) =>
+        a !== undefined && b !== undefined ? a + b : undefined;
+      const usage = {
+        inputTokens: sumKnown(
+          result.usage?.inputTokens,
+          next.usage?.inputTokens,
+        ),
+        outputTokens: sumKnown(
+          result.usage?.outputTokens,
+          next.usage?.outputTokens,
+        ),
+        totalTokens: sumKnown(
+          result.usage?.totalTokens,
+          next.usage?.totalTokens,
+        ),
+      };
+      // A duplicate/empty continuation is not evidence that the missing answer was completed.
+      if (!added.trim() || result.text.includes(next.text.trim())) {
+        result = {
+          ...next,
+          text: result.text,
+          usage,
+          completion: "partial",
+          recovery: "none",
+          finishReason:
+            next.completion === "partial" && next.recovery !== "continue"
+              ? next.finishReason
+              : "continuation_no_progress",
+        };
+        break;
+      }
+      result = { ...next, usage, text: result.text + added };
+      // Deliver only the reconciled addition, so the preview matches the saved result.
+      try {
+        await onProgress?.(added);
+      } catch (error) {
+        ztoolkit.log("[AI-Butler] Continuation callback failed:", error);
+      }
     }
-    return {
-      text,
-      rounds,
-      stillTruncated: isAutoContinuableTruncation(options.truncation),
-    };
+    result.continuationRounds = rounds;
+    return { result, rounds };
   }
 
   private static async autoContinueSummaryText(
@@ -808,27 +813,19 @@ export class LLMService {
     pdfContent: string,
     isBase64: boolean,
     prompt: string,
-    initialText: string,
+    initial: LLMProviderResult,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<{ text: string; rounds: number; stillTruncated: boolean }> {
-    const initialConversation: ConversationMessage[] = [
-      { role: "user", content: prompt || "" },
-    ];
-    const continued = await this.autoContinueSingleContent(
+  ) {
+    return this.autoContinueChatText(
       provider,
       pdfContent,
       isBase64,
-      initialConversation,
-      initialText,
+      [{ role: "user", content: prompt }],
+      initial,
       options,
       onProgress,
     );
-    return {
-      text: initialText + continued.text,
-      rounds: continued.rounds,
-      stillTruncated: continued.stillTruncated,
-    };
   }
 
   private static async autoContinueChatText(
@@ -836,72 +833,49 @@ export class LLMService {
     pdfContent: string,
     isBase64: boolean,
     conversation: ConversationMessage[],
-    initialText: string,
+    initial: LLMProviderResult,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<{ text: string; rounds: number; stillTruncated: boolean }> {
-    const baseConversation =
-      conversation && conversation.length > 0
-        ? conversation
-        : [{ role: "user", content: "" } as ConversationMessage];
-    const continued = await this.autoContinueSingleContent(
-      provider,
-      pdfContent,
-      isBase64,
-      baseConversation,
-      initialText,
+  ) {
+    const task =
+      [...conversation].reverse().find((message) => message.role === "user")
+        ?.content || "";
+    return this.continueResult(
+      initial,
       options,
+      (text) =>
+        provider.chat(
+          pdfContent,
+          isBase64,
+          [
+            ...conversation,
+            { role: "assistant", content: text },
+            { role: "user", content: this.buildContinuationPrompt(task) },
+          ],
+          options,
+        ),
       onProgress,
     );
-    return {
-      text: initialText + continued.text,
-      rounds: continued.rounds,
-      stillTruncated: continued.stillTruncated,
-    };
   }
 
   private static async autoContinueMultiFileSummary(
     provider: ILlmProvider,
     files: PdfFileInfo[],
     prompt: string,
-    initialText: string,
+    initial: LLMProviderResult,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<{ text: string; rounds: number; stillTruncated: boolean }> {
-    if (typeof provider.generateMultiFileSummary !== "function") {
-      return {
-        text: initialText,
-        rounds: 0,
-        stillTruncated: isAutoContinuableTruncation(options.truncation),
-      };
-    }
-    let text = initialText;
-    let rounds = 0;
-    const maxRounds = this.getAutoContinuationRounds();
-    while (
-      rounds < maxRounds &&
-      isAutoContinuableTruncation(options.truncation)
-    ) {
-      throwIfAborted(options.abortSignal);
-      rounds += 1;
-      const continuationPrompt = `${this.buildContinuationPrompt(prompt)}\n\nPrevious response tail:\n${this.tailForContinuation(text)}`;
-      const continuation = await this.callProviderAndTrackTruncation(
-        options,
-        () =>
-          provider.generateMultiFileSummary!(
-            files,
-            continuationPrompt,
-            options,
-            onProgress,
-          ),
-      );
-      text += this.removeContinuationOverlap(text, continuation);
-    }
-    return {
-      text,
-      rounds,
-      stillTruncated: isAutoContinuableTruncation(options.truncation),
-    };
+  ) {
+    return this.continueResult(
+      initial,
+      options,
+      (text) =>
+        provider.generateMultiFileSummary!(files, prompt, options, undefined, [
+          { role: "assistant", content: text },
+          { role: "user", content: this.buildContinuationPrompt(prompt) },
+        ]),
+      onProgress,
+    );
   }
 
   private static async runGenerateWithEndpointRouting(
@@ -925,6 +899,7 @@ export class LLMService {
         LLMEndpointManager.markEndpointAttempted(endpoint.id);
         return response;
       } catch (error: unknown) {
+        if (error instanceof LLMIncompleteError) throw error;
         if (isAbortError(error, request.transport?.abortSignal)) {
           throw normalizeAbortError(error, request.transport?.abortSignal);
         }
@@ -1024,7 +999,7 @@ export class LLMService {
       model: options.model || endpoint.model,
       detail: getString("progress-llm-waiting-detail"),
     });
-    let text: string;
+    let result: LLMProviderResult;
     if (resolved.mode === "multi-file") {
       if (typeof provider.generateMultiFileSummary !== "function") {
         throw new Error(
@@ -1034,29 +1009,28 @@ export class LLMService {
         );
       }
       try {
-        text = await this.callProviderAndTrackTruncation(options, () =>
-          provider.generateMultiFileSummary!(
-            resolved.files,
-            prompt,
-            options,
-            progressProxy,
-          ),
+        result = await provider.generateMultiFileSummary!(
+          resolved.files,
+          prompt,
+          options,
+          progressProxy,
         );
         const continued = await this.autoContinueMultiFileSummary(
           provider,
           resolved.files,
           prompt,
-          text,
+          result,
           options,
           progressProxy,
         );
-        text = continued.text;
+        result = continued.result;
         this.appendAutoContinuationWarning(
           warnings,
           continued.rounds,
-          continued.stillTruncated,
+          continued.result,
         );
       } catch (error: unknown) {
+        if (error instanceof LLMIncompleteError) throw error;
         if (isAbortError(error, options.abortSignal)) {
           throw normalizeAbortError(error, options.abortSignal);
         }
@@ -1064,37 +1038,37 @@ export class LLMService {
       }
     } else {
       try {
-        text = await this.callProviderAndTrackTruncation(options, () =>
-          provider.generateSummary(
-            resolved.content,
-            resolved.isBase64,
-            prompt,
-            options,
-            progressProxy,
-          ),
+        result = await provider.generateSummary(
+          resolved.content,
+          resolved.isBase64,
+          prompt,
+          options,
+          progressProxy,
         );
         const continued = await this.autoContinueSummaryText(
           provider,
           resolved.content,
           resolved.isBase64,
           prompt,
-          text,
+          result,
           options,
           progressProxy,
         );
-        text = continued.text;
+        result = continued.result;
         this.appendAutoContinuationWarning(
           warnings,
           continued.rounds,
-          continued.stillTruncated,
+          continued.result,
         );
       } catch (error: unknown) {
+        if (error instanceof LLMIncompleteError) throw error;
         if (isAbortError(error, options.abortSignal)) {
           throw normalizeAbortError(error, options.abortSignal);
         }
         throw this.toApiCallError(endpoint, error);
       }
     }
+    this.assertCompleteResult(result, endpoint, options, warnings);
     request.transport?.onStatus?.({
       stage: "llm-streaming",
       label: getString("progress-llm-complete"),
@@ -1103,11 +1077,11 @@ export class LLMService {
       endpointName: endpoint.name,
       model: options.model || endpoint.model,
       detail: getString("progress-llm-complete-detail", {
-        args: { count: text.length },
+        args: { count: result.text.length },
       }),
     });
     return this.toResponse(
-      text,
+      result,
       endpoint.providerType,
       endpoint,
       options,
@@ -1129,6 +1103,7 @@ export class LLMService {
       try {
         return await this.generateOnceWithEndpoint(endpoint, request, prompt);
       } catch (error: unknown) {
+        if (error instanceof LLMIncompleteError) throw error;
         if (isAbortError(error, request.transport?.abortSignal)) {
           throw normalizeAbortError(error, request.transport?.abortSignal);
         }
@@ -1160,6 +1135,7 @@ export class LLMService {
         LLMEndpointManager.markEndpointAttempted(endpoint.id);
         return response;
       } catch (error: unknown) {
+        if (error instanceof LLMIncompleteError) throw error;
         if (isAbortError(error, request.transport?.abortSignal)) {
           throw normalizeAbortError(error, request.transport?.abortSignal);
         }
@@ -1261,38 +1237,38 @@ export class LLMService {
       model: options.model || endpoint.model,
       detail: getString("progress-llm-waiting-detail"),
     });
-    let text: string;
+    let result: LLMProviderResult;
     try {
-      text = await this.callProviderAndTrackTruncation(options, () =>
-        provider.chat(
-          resolved.content,
-          resolved.isBase64,
-          request.conversation,
-          options,
-          progressProxy,
-        ),
+      result = await provider.chat(
+        resolved.content,
+        resolved.isBase64,
+        request.conversation,
+        options,
+        progressProxy,
       );
       const continued = await this.autoContinueChatText(
         provider,
         resolved.content,
         resolved.isBase64,
         request.conversation,
-        text,
+        result,
         options,
         progressProxy,
       );
-      text = continued.text;
+      result = continued.result;
       this.appendAutoContinuationWarning(
         warnings,
         continued.rounds,
-        continued.stillTruncated,
+        continued.result,
       );
     } catch (error: unknown) {
+      if (error instanceof LLMIncompleteError) throw error;
       if (isAbortError(error, options.abortSignal)) {
         throw normalizeAbortError(error, options.abortSignal);
       }
       throw this.toApiCallError(endpoint, error);
     }
+    this.assertCompleteResult(result, endpoint, options, warnings);
     request.transport?.onStatus?.({
       stage: "llm-streaming",
       label: getString("progress-llm-complete"),
@@ -1301,11 +1277,11 @@ export class LLMService {
       endpointName: endpoint.name,
       model: options.model || endpoint.model,
       detail: getString("progress-llm-complete-detail", {
-        args: { count: text.length },
+        args: { count: result.text.length },
       }),
     });
     return this.toResponse(
-      text,
+      result,
       endpoint.providerType,
       endpoint,
       options,
@@ -1326,6 +1302,7 @@ export class LLMService {
       try {
         return await this.chatOnceWithEndpoint(endpoint, request);
       } catch (error: unknown) {
+        if (error instanceof LLMIncompleteError) throw error;
         if (isAbortError(error, request.transport?.abortSignal)) {
           throw normalizeAbortError(error, request.transport?.abortSignal);
         }
@@ -1351,73 +1328,35 @@ export class LLMService {
     );
   }
 
-  private static async runWithRetry(
-    providerId: string,
-    provider: ILlmProvider,
-    request: LLMGenerateRequest,
-    resolved: ResolvedContent,
-    prompt: string,
+  private static assertCompleteResult(
+    result: LLMProviderResult,
+    endpoint: LLMEndpoint,
+    options: LLMOptions,
     warnings: string[],
-  ): Promise<LLMResponse> {
-    const keyManagerId = this.mapToKeyManagerId(providerId);
-    const useRetry = request.transport?.retry ?? true;
-    const useKeyRotation = request.transport?.keyRotation ?? true;
-    const maxRetries = useRetry ? ApiKeyManager.getMaxSwitchCount() : 1;
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      throwIfAborted(request.transport?.abortSignal);
-      try {
-        const options = this.buildOptions(
-          providerId,
-          request.generation,
-          request.transport,
-        );
-        let text: string;
-        if (resolved.mode === "multi-file") {
-          if (typeof provider.generateMultiFileSummary !== "function") {
-            throw new Error(
-              getString("llm-error-multifile-unsupported", {
-                args: { provider: providerId },
-              }),
-            );
-          }
-          text = await provider.generateMultiFileSummary(
-            resolved.files,
-            prompt,
-            options,
-            request.onProgress,
-          );
-        } else {
-          text = await provider.generateSummary(
-            resolved.content,
-            resolved.isBase64,
-            prompt,
-            options,
-            request.onProgress,
-          );
-        }
-        if (useKeyRotation) ApiKeyManager.advanceToNextKey(keyManagerId);
-        return this.toResponse(text, providerId, options, warnings);
-      } catch (error: unknown) {
-        if (isAbortError(error, request.transport?.abortSignal)) {
-          throw normalizeAbortError(error, request.transport?.abortSignal);
-        }
-        lastError = error instanceof Error ? error : new Error(String(error));
-        ztoolkit.log(
-          `[LLMService] API 调用失败 (尝试 ${attempt + 1}/${maxRetries}): ${lastError.message}`,
-        );
-        if (!useKeyRotation) break;
-        const rotated = ApiKeyManager.rotateToNextKey(keyManagerId);
-        if (!rotated) break;
-      }
+  ): void {
+    if (
+      result.completion === "complete" &&
+      !sanitizeLLMOutputText(result.text).trim()
+    ) {
+      result.completion = "partial";
+      result.recovery = "none";
+      result.finishReason = "empty_output";
     }
-
-    throw lastError || new Error(getString("llm-error-api-keys-exhausted"));
+    if (result.completion !== "complete") {
+      throw new LLMIncompleteError(
+        this.toResponse(
+          result,
+          endpoint.providerType,
+          endpoint,
+          options,
+          warnings,
+        ),
+      );
+    }
   }
 
   private static toResponse(
-    text: string,
+    result: LLMProviderResult,
     providerId: string,
     endpointOrOptions: LLMEndpoint | LLMOptions,
     optionsOrWarnings: LLMOptions | string[],
@@ -1431,6 +1370,7 @@ export class LLMService {
     const warnings = endpoint
       ? maybeWarnings || []
       : (optionsOrWarnings as string[]);
+    const text = result.text;
     const sanitizedText = sanitizeLLMOutputText(text);
     if (sanitizedText !== text) {
       ztoolkit.log(
@@ -1439,6 +1379,13 @@ export class LLMService {
     }
     return {
       text: sanitizedText,
+      completion: result.completion,
+      recovery: result.recovery,
+      finishReason: result.finishReason,
+      usage: result.usage,
+      requestId: result.requestId,
+      maxOutputTokens: result.maxOutputTokens,
+      continuationRounds: result.continuationRounds,
       providerId,
       endpointId: endpoint?.id,
       providerName:

@@ -1,46 +1,32 @@
-import { mergeRequestHeaders } from "./shared/requestHeaders";
+import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { ILlmProvider, PdfFileInfo } from "./ILlmProvider";
 import {
-  ConversationMessage,
-  LLMOptions,
-  LLMModelInfo,
-  LLMProviderCapabilities,
-  ProgressCb,
-} from "./types";
-import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
-import { getRequestTimeoutMs } from "./shared/llmutils";
-import {
-  getConnectionTestInput,
   formatConnectionTestSuccess,
-  formatProviderTimeout,
+  getConnectionTestInput,
 } from "./shared/connectionTest";
 import {
-  deriveVersionedModelsUrl,
-  parseModelListResponse,
-  requestModelListJson,
-} from "./shared/modelList";
-import {
-  bindAbortSignal,
-  isAbortError,
-  normalizeAbortError,
-  throwIfAborted,
-} from "./shared/requestAbort";
-import {
-  recordFinishReason,
-  recordOpenAIResponsesTerminalEvent,
-} from "./shared/truncation";
-import {
-  providerHttpRequestFailed,
   providerMissingApiKey,
   providerMissingApiUrl,
   providerNoPdfFiles,
   providerNoPdfProcessed,
   providerRequestFailed,
-  providerStreamMissingDone,
-  providerStreamParseFailed,
-  providerStreamTruncated,
-  providerStreamUnexpectedEnd,
 } from "./shared/localizedErrors";
+import {
+  deriveVersionedModelsUrl,
+  parseModelListResponse,
+  requestModelListJson,
+} from "./shared/modelList";
+import { throwIfAborted } from "./shared/requestAbort";
+import { mergeRequestHeaders } from "./shared/requestHeaders";
+import { requestLLMText } from "./shared/textTransport";
+import type { LLMProviderResult } from "./types";
+import {
+  ConversationMessage,
+  LLMModelInfo,
+  LLMOptions,
+  LLMProviderCapabilities,
+  ProgressCb,
+} from "./types";
 
 /**
  * 火山引擎 Ark Provider
@@ -64,14 +50,14 @@ export class VolcanoArkProvider implements ILlmProvider {
     prompt: string | undefined,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+  ): Promise<LLMProviderResult> {
     const baseUrl = (
       options.apiUrl || "https://ark.cn-beijing.volces.com/api/v3/responses"
     ).replace(/\/$/, "");
     const apiKey = (options.apiKey || "").trim();
     const model = (options.model || "doubao-seed-1-6-251015").trim();
     const temperature = options.temperature ?? 0.7;
-    const maxTokens = options.maxTokens ?? 4096;
+    const maxTokens = options.maxTokens;
 
     if (!baseUrl) throw new Error(providerMissingApiUrl("Volcano Ark"));
     if (!apiKey) throw new Error(providerMissingApiKey("Volcano Ark"));
@@ -132,140 +118,21 @@ export class VolcanoArkProvider implements ILlmProvider {
       };
     }
 
-    const chunks: string[] = [];
-    let delivered = 0;
-    let processedLength = 0;
-    let partialLine = "";
-    let gotAnyDelta = false;
-    let abortError: Error | null = null;
-    let cleanupAbortSignal: (() => void) | undefined;
-
-    try {
-      await Zotero.HTTP.request("POST", endpoint, {
-        headers: mergeRequestHeaders(
-          {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          options.customHeaders,
-        ),
-        body: JSON.stringify(payload),
-        responseType: "text",
-        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-        errorDelayMax: 0,
-        requestObserver: (xmlhttp: XMLHttpRequest) => {
-          cleanupAbortSignal = bindAbortSignal(
-            options.abortSignal,
-            xmlhttp,
-            (error) => {
-              abortError = error;
-            },
-          );
-          xmlhttp.onprogress = (e: any) => {
-            const status = e.target.status;
-            if (status >= 400) {
-              try {
-                const errorResponse = e.target.response;
-                const parsed = errorResponse ? JSON.parse(errorResponse) : null;
-                const err = parsed?.error || parsed || {};
-                const code = err?.code || `HTTP ${status}`;
-                const msg = err?.message || providerRequestFailed("API");
-                const errorMessage = `${code}: ${msg}`;
-                xmlhttp.abort();
-                throw new Error(errorMessage);
-              } catch {
-                xmlhttp.abort();
-                throw new Error(providerHttpRequestFailed(status));
-              }
-            }
-
-            try {
-              const resp: string = e.target.response || "";
-              if (resp.length > processedLength) {
-                const slice = partialLine + resp.slice(processedLength);
-                processedLength = resp.length;
-                const parts = slice.split(/\r?\n/);
-                partialLine =
-                  parts[parts.length - 1].indexOf("data:") === 0 &&
-                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                    ? ""
-                    : parts.pop() || "";
-
-                for (const raw of parts) {
-                  if (raw.indexOf("data:") !== 0) continue;
-                  const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                  if (!jsonStr || jsonStr === "[DONE]") continue;
-                  try {
-                    const json = JSON.parse(jsonStr);
-                    recordOpenAIResponsesTerminalEvent(
-                      options,
-                      "volcanoark",
-                      "responses.event",
-                      json,
-                    );
-                    recordFinishReason(
-                      options,
-                      "volcanoark",
-                      "choices.finish_reason",
-                      json?.choices?.[0]?.finish_reason,
-                    );
-                    const text = this.extractVolcanoText(json);
-                    if (text) {
-                      gotAnyDelta = true;
-                      chunks.push(text);
-                      const current = chunks.join("");
-                      if (onProgress && current.length > delivered) {
-                        const newChunk = current.slice(delivered);
-                        delivered = current.length;
-                        Promise.resolve(onProgress(newChunk)).catch((err) => {
-                          ztoolkit.log(
-                            "[AI-Butler] onProgress callback error:",
-                            err,
-                          );
-                        });
-                      }
-                    }
-                  } catch {
-                    /* ignore */
-                  }
-                }
-              }
-            } catch (err) {
-              ztoolkit.log("[AI-Butler] VolcanoArk stream parse error:", err);
-            }
-          };
+    return requestLLMText({
+      protocol: "responses",
+      provider: this.id,
+      url: endpoint,
+      headers: mergeRequestHeaders(
+        {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
         },
-      });
-    } catch (error: any) {
-      if (abortError || isAbortError(error, options.abortSignal)) {
-        throw normalizeAbortError(abortError || error, options.abortSignal);
-      }
-      let errorMessage = error?.message || providerRequestFailed("Volcano Ark");
-      try {
-        const responseText =
-          error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-        if (responseText) {
-          const parsed =
-            typeof responseText === "string"
-              ? JSON.parse(responseText)
-              : responseText;
-          const err = parsed?.error || parsed;
-          const code = err?.code || "Error";
-          const msg = err?.message || error?.message || String(error);
-          errorMessage = `${code}: ${msg}`;
-        }
-      } catch {
-        /* ignore */
-      }
-      if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-      throw new Error(errorMessage, { cause: error });
-    } finally {
-      cleanupAbortSignal?.();
-    }
-
-    const streamed = chunks.join("");
-    if (gotAnyDelta && streamed) return streamed;
-    return "";
+        options.customHeaders,
+      ),
+      payload: payload,
+      options,
+      onProgress,
+    });
   }
 
   async chat(
@@ -274,7 +141,7 @@ export class VolcanoArkProvider implements ILlmProvider {
     conversation: ConversationMessage[],
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+  ): Promise<LLMProviderResult> {
     const baseUrl = (
       options.apiUrl || "https://ark.cn-beijing.volces.com/api/v3/responses"
     ).replace(/\/$/, "");
@@ -346,176 +213,24 @@ export class VolcanoArkProvider implements ILlmProvider {
       stream: true,
       temperature,
       input: inputMessages,
+      max_output_tokens: options.maxTokens,
     };
 
-    const chunks: string[] = [];
-    let delivered = 0;
-    let processedLength = 0;
-    let partialLine = "";
-    let abortError: Error | null = null;
-    let gotAnyDelta = false;
-    let cleanupAbortSignal: (() => void) | undefined;
-
-    try {
-      await Zotero.HTTP.request("POST", endpoint, {
-        headers: mergeRequestHeaders(
-          {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          options.customHeaders,
-        ),
-        body: JSON.stringify(payload),
-        responseType: "text",
-        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-        errorDelayMax: 0,
-        requestObserver: (xmlhttp: XMLHttpRequest) => {
-          cleanupAbortSignal = bindAbortSignal(
-            options.abortSignal,
-            xmlhttp,
-            (error) => {
-              abortError = error;
-            },
-          );
-          xmlhttp.onprogress = (e: any) => {
-            const status = e.target.status;
-            if (status >= 400) {
-              try {
-                const errorResponse = e.target.response;
-                const parsed = errorResponse ? JSON.parse(errorResponse) : null;
-                const err = parsed?.error || parsed || {};
-                const code = err?.code || `HTTP ${status}`;
-                const msg = err?.message || providerRequestFailed("API");
-                const errorMessage = `${code}: ${msg}`;
-                abortError = new Error(errorMessage);
-                ztoolkit.log("[AI-Butler] VolcanoArk HTTP error:", {
-                  status,
-                  code,
-                  msg,
-                  response: errorResponse,
-                });
-                xmlhttp.abort();
-              } catch (parseErr) {
-                const errorMessage = providerHttpRequestFailed(status);
-                abortError = new Error(errorMessage);
-                ztoolkit.log("[AI-Butler] VolcanoArk HTTP error:", {
-                  status,
-                  parseErr,
-                });
-                xmlhttp.abort();
-              }
-              return;
-            }
-
-            try {
-              const resp: string = e.target.response || "";
-              if (resp.length > processedLength) {
-                const slice = partialLine + resp.slice(processedLength);
-                processedLength = resp.length;
-                const parts = slice.split(/\r?\n/);
-                partialLine =
-                  parts[parts.length - 1].indexOf("data:") === 0 &&
-                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                    ? ""
-                    : parts.pop() || "";
-
-                for (const raw of parts) {
-                  if (raw.indexOf("data:") !== 0) continue;
-                  const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                  if (!jsonStr || jsonStr === "[DONE]") continue;
-
-                  try {
-                    const json = JSON.parse(jsonStr);
-                    recordOpenAIResponsesTerminalEvent(
-                      options,
-                      "volcanoark",
-                      "responses.event",
-                      json,
-                    );
-                    recordFinishReason(
-                      options,
-                      "volcanoark",
-                      "choices.finish_reason",
-                      json?.choices?.[0]?.finish_reason,
-                    );
-                    const text = this.extractVolcanoText(json);
-                    if (text) {
-                      gotAnyDelta = true;
-                      chunks.push(text);
-                      const current = chunks.join("");
-                      if (onProgress && current.length > delivered) {
-                        const newChunk = current.slice(delivered);
-                        delivered = current.length;
-                        Promise.resolve(onProgress(newChunk)).catch((err) => {
-                          ztoolkit.log("[AI-Butler] onProgress error:", err);
-                        });
-                      }
-                    }
-                  } catch {
-                    /* ignore */
-                  }
-                }
-              }
-            } catch (err) {
-              ztoolkit.log("[AI-Butler] VolcanoArk stream parse error:", err);
-            }
-          };
-          xmlhttp.onerror = () => {
-            if (!abortError)
-              abortError = new Error("NetworkError: XHR onerror");
-          };
-          xmlhttp.ontimeout = () => {
-            if (!abortError)
-              abortError = new Error(
-                formatProviderTimeout(
-                  options.requestTimeoutMs ?? getRequestTimeoutMs(),
-                ),
-              );
-          };
+    return requestLLMText({
+      protocol: "responses",
+      provider: this.id,
+      url: endpoint,
+      headers: mergeRequestHeaders(
+        {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
         },
-      });
-    } catch (error: any) {
-      if (abortError) {
-        if (isAbortError(abortError, options.abortSignal)) {
-          throw normalizeAbortError(abortError, options.abortSignal);
-        }
-        if (gotAnyDelta && chunks.length > 0) {
-          return chunks.join("");
-        }
-        throw abortError;
-      }
-      if (isAbortError(error, options.abortSignal)) {
-        throw normalizeAbortError(error, options.abortSignal);
-      }
-      let errorMessage = error?.message || providerRequestFailed("Volcano Ark");
-      try {
-        const responseText =
-          error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-        if (responseText) {
-          const parsed =
-            typeof responseText === "string"
-              ? JSON.parse(responseText)
-              : responseText;
-          const err = parsed?.error || parsed;
-          const code = err?.code || "Error";
-          const msg = err?.message || error?.message || String(error);
-          errorMessage = `${code}: ${msg}`;
-        }
-      } catch {
-        /* ignore */
-      }
-      ztoolkit.log("[AI-Butler] VolcanoArk request error:", {
-        status: error?.xmlhttp?.status,
-        statusText: error?.xmlhttp?.statusText,
-        message: errorMessage,
-      });
-      if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-      throw new Error(errorMessage, { cause: error });
-    } finally {
-      cleanupAbortSignal?.();
-    }
-
-    return chunks.join("");
+        options.customHeaders,
+      ),
+      payload: payload,
+      options,
+      onProgress,
+    });
   }
 
   async testConnection(options: LLMOptions): Promise<string> {
@@ -694,55 +409,6 @@ export class VolcanoArkProvider implements ILlmProvider {
   }
 
   /**
-   * 从火山引擎 Response API 流式响应中提取文本
-   * 流式响应格式: {"type":"response.output_text.delta","delta":"文本内容",...}
-   *
-   * 注意：此方法仅用于流式响应的增量解析，只提取 delta 事件中的内容。
-   * 不处理 response.completed 等完整响应事件，因为这些事件包含的是已累加的完整内容，
-   * 会导致内容重复输出。
-   *
-   * 火山引擎（豆包模型）流式响应事件顺序：
-   * 1. response.output_text.delta - 实际输出的增量文本（我们需要提取的）
-   * 2. response.output_text.done - 输出完成标记（包含完整文本，不提取以避免重复）
-   * 3. response.output_item.done - 输出项完成标记
-   * 4. response.completed - 响应完成标记（包含完整文本，不提取以避免重复）
-   *
-   * 另外，豆包模型的思考过程会通过 response.reasoning_summary_text.delta 发送，
-   * 我们不提取这些内容，只提取最终的输出文本。
-   */
-  private extractVolcanoText(json: any): string {
-    try {
-      // 只处理 response.output_text.delta 格式（流式响应的增量输出）
-      // 格式: {"type":"response.output_text.delta","delta":"text",...}
-      // 这是我们唯一需要提取的事件类型，其他事件要么是控制事件，要么包含重复的完整内容
-      if (json?.type === "response.output_text.delta" && json?.delta) {
-        return json.delta;
-      }
-
-      // 兼容 OpenAI Chat Completions 格式的增量输出（delta.content）
-      // 某些火山引擎配置可能返回这种格式
-      const choices = json?.choices;
-      if (Array.isArray(choices) && choices.length > 0) {
-        const choice = choices[0];
-        // 只处理流式增量内容（delta.content），不处理完整消息（message.content）
-        if (choice?.delta?.content) {
-          return choice.delta.content;
-        }
-      }
-
-      // 不处理以下事件类型以避免重复输出：
-      // - response.output_text.done: 包含完整的输出文本
-      // - response.output_item.done: 输出项完成标记
-      // - response.completed: 包含完整的响应输出
-      // - response.reasoning_summary_text.delta: 模型的思考过程（非最终输出）
-
-      return "";
-    } catch {
-      return "";
-    }
-  }
-
-  /**
    * 从火山引擎 Response API 完整响应中提取文本
    */
   private extractVolcanoTextFromFull(json: any): string {
@@ -801,14 +467,15 @@ export class VolcanoArkProvider implements ILlmProvider {
     prompt: string,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+    history: ConversationMessage[] = [],
+  ): Promise<LLMProviderResult> {
     const baseUrl = (
       options.apiUrl || "https://ark.cn-beijing.volces.com/api/v3/responses"
     ).replace(/\/$/, "");
     const apiKey = (options.apiKey || "").trim();
     const model = (options.model || "doubao-seed-1-6-251015").trim();
     const temperature = options.temperature ?? 0.7;
-    const maxTokens = options.maxTokens ?? 8192;
+    const maxTokens = options.maxTokens;
 
     if (!baseUrl) throw new Error(providerMissingApiUrl("Volcano Ark"));
     if (!apiKey) throw new Error(providerMissingApiKey("Volcano Ark"));
@@ -874,139 +541,22 @@ export class VolcanoArkProvider implements ILlmProvider {
     };
 
     // 发送请求并处理流式响应
-    const chunks: string[] = [];
-    let delivered = 0;
-    let processedLength = 0;
-    let partialLine = "";
-    let gotAnyDelta = false;
-    let abortError: Error | null = null;
-    let cleanupAbortSignal: (() => void) | undefined;
-
-    try {
-      await Zotero.HTTP.request("POST", endpoint, {
-        headers: mergeRequestHeaders(
-          {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          options.customHeaders,
-        ),
-        body: JSON.stringify(payload),
-        responseType: "text",
-        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-        errorDelayMax: 0,
-        requestObserver: (xmlhttp: XMLHttpRequest) => {
-          cleanupAbortSignal = bindAbortSignal(
-            options.abortSignal,
-            xmlhttp,
-            (error) => {
-              abortError = error;
-            },
-          );
-          xmlhttp.onprogress = (e: any) => {
-            const status = e.target.status;
-            if (status >= 400) {
-              try {
-                const errorResponse = e.target.response;
-                const parsed = errorResponse ? JSON.parse(errorResponse) : null;
-                const err = parsed?.error || parsed || {};
-                const code = err?.code || `HTTP ${status}`;
-                const msg = err?.message || providerRequestFailed("API");
-                xmlhttp.abort();
-                throw new Error(`${code}: ${msg}`);
-              } catch {
-                xmlhttp.abort();
-                throw new Error(providerHttpRequestFailed(status));
-              }
-            }
-
-            try {
-              const resp: string = e.target.response || "";
-              if (resp.length > processedLength) {
-                const slice = partialLine + resp.slice(processedLength);
-                processedLength = resp.length;
-                const parts = slice.split(/\r?\n/);
-                partialLine =
-                  parts[parts.length - 1].indexOf("data:") === 0 &&
-                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                    ? ""
-                    : parts.pop() || "";
-
-                for (const raw of parts) {
-                  if (raw.indexOf("data:") !== 0) continue;
-                  const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                  if (!jsonStr || jsonStr === "[DONE]") continue;
-                  try {
-                    const json = JSON.parse(jsonStr);
-                    recordOpenAIResponsesTerminalEvent(
-                      options,
-                      "volcanoark",
-                      "responses.event",
-                      json,
-                    );
-                    recordFinishReason(
-                      options,
-                      "volcanoark",
-                      "choices.finish_reason",
-                      json?.choices?.[0]?.finish_reason,
-                    );
-                    const text = this.extractVolcanoText(json);
-                    if (text) {
-                      gotAnyDelta = true;
-                      chunks.push(text);
-                      const current = chunks.join("");
-                      if (onProgress && current.length > delivered) {
-                        const newChunk = current.slice(delivered);
-                        delivered = current.length;
-                        Promise.resolve(onProgress(newChunk)).catch((err) => {
-                          ztoolkit.log(
-                            "[AI-Butler] onProgress callback error:",
-                            err,
-                          );
-                        });
-                      }
-                    }
-                  } catch {
-                    /* ignore */
-                  }
-                }
-              }
-            } catch (err) {
-              ztoolkit.log("[AI-Butler] VolcanoArk stream parse error:", err);
-            }
-          };
+    payload.input.push(...history);
+    return requestLLMText({
+      protocol: "responses",
+      provider: this.id,
+      url: endpoint,
+      headers: mergeRequestHeaders(
+        {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
         },
-      });
-    } catch (error: any) {
-      if (abortError || isAbortError(error, options.abortSignal)) {
-        throw normalizeAbortError(abortError || error, options.abortSignal);
-      }
-      let errorMessage = error?.message || providerRequestFailed("Volcano Ark");
-      try {
-        const responseText =
-          error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-        if (responseText) {
-          const parsed =
-            typeof responseText === "string"
-              ? JSON.parse(responseText)
-              : responseText;
-          const err = parsed?.error || parsed;
-          const code = err?.code || "Error";
-          const msg = err?.message || error?.message || String(error);
-          errorMessage = `${code}: ${msg}`;
-        }
-      } catch {
-        /* ignore */
-      }
-      if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-      throw new Error(errorMessage, { cause: error });
-    } finally {
-      cleanupAbortSignal?.();
-    }
-
-    const streamed = chunks.join("");
-    if (gotAnyDelta && streamed) return streamed;
-    return "";
+        options.customHeaders,
+      ),
+      payload: payload,
+      options,
+      onProgress,
+    });
   }
 }
 

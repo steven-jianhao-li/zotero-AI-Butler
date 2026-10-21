@@ -1,53 +1,42 @@
-import { mergeRequestHeaders } from "./shared/requestHeaders";
+import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { ILlmProvider } from "./ILlmProvider";
 import {
-  ConversationMessage,
-  LLMOptions,
-  LLMModelInfo,
-  LLMProviderCapabilities,
-  ProgressCb,
-} from "./types";
-import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
-import { getString } from "../../utils/locale";
-import { getRequestTimeoutMs } from "./shared/llmutils";
-import {
-  getConnectionTestInput,
   formatConnectionTestSuccess,
-  formatProviderTimeout,
+  getConnectionTestInput,
 } from "./shared/connectionTest";
 import {
-  deriveVersionedModelsUrl,
-  parseModelListResponse,
-  requestModelListJson,
-} from "./shared/modelList";
-import {
-  parseOpenAIResponsesDelta,
-  parseOpenAIResponsesText,
-} from "./shared/openaiResponses";
-import { resolveOpenAIReasoningEffort } from "./shared/reasoning";
-import {
-  bindAbortSignal,
-  isAbortError,
-  normalizeAbortError,
-  throwIfAborted,
-} from "./shared/requestAbort";
-import {
-  recordFinishReason,
-  recordOpenAIResponsesObject,
-  recordOpenAIResponsesTerminalEvent,
-} from "./shared/truncation";
-import {
-  providerHttpRequestFailed,
   providerMissingApiKey,
   providerMissingApiUrl,
   providerNoPdfFiles,
   providerNoPdfProcessed,
   providerRequestFailed,
-  providerStreamMissingDone,
-  providerStreamParseFailed,
-  providerStreamTruncated,
-  providerStreamUnexpectedEnd,
 } from "./shared/localizedErrors";
+import {
+  deriveVersionedModelsUrl,
+  parseModelListResponse,
+  requestModelListJson,
+} from "./shared/modelList";
+import { parseOpenAIResponsesText } from "./shared/openaiResponses";
+import { resolveOpenAIReasoningEffort } from "./shared/reasoning";
+import { throwIfAborted } from "./shared/requestAbort";
+import { mergeRequestHeaders } from "./shared/requestHeaders";
+import { requestLLMText } from "./shared/textTransport";
+import type { LLMProviderResult } from "./types";
+import {
+  ConversationMessage,
+  LLMModelInfo,
+  LLMOptions,
+  LLMProviderCapabilities,
+  ProgressCb,
+} from "./types";
+
+function getResponsesUrl(apiUrl: string): string {
+  const base = apiUrl.replace(/\/+$/, "");
+  if (/\/responses$/i.test(base)) return base;
+  if (/\/v1(?:\/.*)?$/i.test(base))
+    return base.replace(/\/v1(?:\/.*)?$/i, "/v1/responses");
+  return `${base}/v1/responses`;
+}
 
 export class OpenAIProvider implements ILlmProvider {
   readonly id = "openai";
@@ -72,478 +61,11 @@ export class OpenAIProvider implements ILlmProvider {
     prompt: string | undefined,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
-    const apiKey = (options.apiKey || "").trim();
-    const apiUrl = (options.apiUrl || "").trim();
-    const model = (options.model || "gpt-3.5-turbo").trim();
-    const temperature = options.temperature ?? 0.7;
-    const streamEnabled = options.stream ?? true;
-
-    if (!apiUrl) throw new Error(providerMissingApiUrl());
-    if (!apiKey) throw new Error(providerMissingApiKey());
-    throwIfAborted(options.abortSignal);
-
-    const useResponsesApi =
-      isBase64 || /\/v1\/responses\/?$/i.test(apiUrl.trim());
-
-    // OpenAI 官方 Provider 使用 Responses API；OpenAI-compatible 另有独立 Provider。
-    if (useResponsesApi) {
-      const responsesUrl = /\/v1\/.+$/i.test(apiUrl)
-        ? apiUrl.replace(/\/v1\/.+$/i, "/v1/responses")
-        : apiUrl.endsWith("/v1/responses")
-          ? apiUrl
-          : apiUrl.replace(/\/?$/, "/v1/responses");
-
-      const input: any[] = [
-        {
-          role: "developer",
-          content: [{ type: "input_text", text: SYSTEM_ROLE_PROMPT }],
-        },
-        {
-          role: "user",
-          content: isBase64
-            ? [
-                { type: "input_text", text: prompt || "" },
-                {
-                  type: "input_file",
-                  filename: "paper.pdf",
-                  file_data: `data:application/pdf;base64,${content}`,
-                },
-              ]
-            : [
-                {
-                  type: "input_text",
-                  text: buildUserMessage(prompt || "", content),
-                },
-              ],
-        },
-      ];
-
-      const basePayload: any = { model, input };
-      if (options.temperature !== undefined)
-        basePayload.temperature = Number(temperature);
-      if (options.topP !== undefined) basePayload.top_p = Number(options.topP);
-      if (options.maxTokens !== undefined)
-        basePayload.max_output_tokens = Number(options.maxTokens);
-      this.applyResponsesReasoning(basePayload, model, options);
-
-      if (streamEnabled && onProgress) {
-        const payload = { ...basePayload, stream: true } as any;
-        const chunks: string[] = [];
-        let delivered = 0;
-        let processedLength = 0;
-        let partialLine = "";
-        let gotAnyDelta = false;
-        let abortError: Error | null = null;
-        let cleanupAbortSignal: (() => void) | undefined;
-
-        try {
-          await Zotero.HTTP.request("POST", responsesUrl, {
-            headers: mergeRequestHeaders(
-              {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${apiKey}`,
-              },
-              options.customHeaders,
-            ),
-            body: JSON.stringify(payload),
-            responseType: "text",
-            timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-            errorDelayMax: 0,
-            requestObserver: (xmlhttp: XMLHttpRequest) => {
-              cleanupAbortSignal = bindAbortSignal(
-                options.abortSignal,
-                xmlhttp,
-                (error) => {
-                  abortError = error;
-                },
-              );
-              xmlhttp.onprogress = (e: any) => {
-                const status = e.target.status;
-                if (status >= 400) {
-                  try {
-                    const errorResponse = e.target.response;
-                    const parsed = errorResponse
-                      ? JSON.parse(errorResponse)
-                      : null;
-                    const err = parsed?.error || parsed || {};
-                    const code = err?.code || `HTTP ${status}`;
-                    const msg = err?.message || providerRequestFailed("API");
-                    abortError = new Error(`${code}: ${msg}`);
-                    xmlhttp.abort();
-                  } catch {
-                    abortError = new Error(providerHttpRequestFailed(status));
-                    xmlhttp.abort();
-                  }
-                  return;
-                }
-
-                try {
-                  const resp: string = e.target.response || "";
-                  if (resp.length > processedLength) {
-                    const slice = partialLine + resp.slice(processedLength);
-                    processedLength = resp.length;
-                    const parts = slice.split(/\r?\n/);
-                    partialLine =
-                      parts[parts.length - 1].indexOf("data:") === 0 &&
-                      slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                        ? ""
-                        : parts.pop() || "";
-
-                    for (const raw of parts) {
-                      if (raw.indexOf("data:") !== 0) continue;
-                      const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                      if (!jsonStr || jsonStr === "[DONE]") continue;
-                      try {
-                        const evt = JSON.parse(jsonStr);
-                        recordOpenAIResponsesTerminalEvent(
-                          options,
-                          "openai",
-                          "responses.event",
-                          evt,
-                        );
-                        const delta = parseOpenAIResponsesDelta(evt);
-                        if (delta) {
-                          gotAnyDelta = true;
-                          chunks.push(delta);
-                          const current = chunks.join("");
-                          if (onProgress && current.length > delivered) {
-                            const newChunk = current.slice(delivered);
-                            delivered = current.length;
-                            Promise.resolve(onProgress(newChunk)).catch((err) =>
-                              ztoolkit.log(
-                                "[AI-Butler] onProgress error (OpenAI Responses SSE):",
-                                err,
-                              ),
-                            );
-                          }
-                        }
-                      } catch {
-                        /* ignore */
-                      }
-                    }
-                  }
-                } catch (err) {
-                  ztoolkit.log(
-                    "[AI-Butler] OpenAI Responses SSE parse error:",
-                    err,
-                  );
-                }
-              };
-              xmlhttp.onerror = () => {
-                if (!abortError)
-                  abortError = new Error("NetworkError: XHR onerror");
-              };
-              xmlhttp.ontimeout = () => {
-                if (!abortError)
-                  abortError = new Error(
-                    formatProviderTimeout(
-                      options.requestTimeoutMs ?? getRequestTimeoutMs(),
-                    ),
-                  );
-              };
-            },
-          });
-        } catch (error: any) {
-          const currentAbortError = abortError as Error | null;
-          if (currentAbortError) {
-            if (isAbortError(currentAbortError, options.abortSignal)) {
-              throw normalizeAbortError(currentAbortError, options.abortSignal);
-            }
-            if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-            throw currentAbortError;
-          }
-          if (isAbortError(error, options.abortSignal)) {
-            throw normalizeAbortError(error, options.abortSignal);
-          }
-          let errorMessage =
-            error?.message || providerRequestFailed("OpenAI Responses");
-          try {
-            const responseText =
-              error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-            if (responseText) {
-              const parsed =
-                typeof responseText === "string"
-                  ? JSON.parse(responseText)
-                  : responseText;
-              const err = parsed?.error || parsed;
-              const code = err?.code || "Error";
-              const msg = err?.message || error?.message || String(error);
-              errorMessage = `${code}: ${msg}`;
-            }
-          } catch {
-            /* ignore */
-          }
-          if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-          throw new Error(errorMessage, { cause: error });
-        } finally {
-          cleanupAbortSignal?.();
-        }
-
-        return chunks.join("");
-      }
-
-      // 非流式
-      let abortError: Error | null = null;
-      let cleanupAbortSignal: (() => void) | undefined;
-      try {
-        const res = await Zotero.HTTP.request("POST", responsesUrl, {
-          headers: mergeRequestHeaders(
-            {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
-            },
-            options.customHeaders,
-          ),
-          body: JSON.stringify(basePayload),
-          responseType: "json",
-          timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-          errorDelayMax: 0,
-          requestObserver: (xmlhttp: XMLHttpRequest) => {
-            cleanupAbortSignal = bindAbortSignal(
-              options.abortSignal,
-              xmlhttp,
-              (error) => {
-                abortError = error;
-              },
-            );
-          },
-        });
-        throwIfAborted(options.abortSignal);
-        const data = res.response || res;
-        recordOpenAIResponsesObject(
-          options,
-          "openai",
-          "responses.object",
-          data,
-        );
-        const text = parseOpenAIResponsesText(data);
-        if (onProgress && text) await onProgress(text);
-        return text;
-      } catch (e: any) {
-        if (abortError || isAbortError(e, options.abortSignal)) {
-          throw normalizeAbortError(abortError || e, options.abortSignal);
-        }
-        let errorMessage =
-          e?.message || providerRequestFailed("OpenAI Responses");
-        try {
-          const responseText = e?.xmlhttp?.response || e?.xmlhttp?.responseText;
-          if (responseText) {
-            const parsed =
-              typeof responseText === "string"
-                ? JSON.parse(responseText)
-                : responseText;
-            const err = parsed?.error || parsed;
-            const code = err?.code || "Error";
-            const msg = err?.message || e?.message || String(e);
-            errorMessage = `${code}: ${msg}`;
-          }
-        } catch {
-          /* ignore */
-        }
-        throw new Error(errorMessage, { cause: e });
-      } finally {
-        cleanupAbortSignal?.();
-      }
-    }
-
-    // 文本 Chat Completions
-    const input: any[] = [
-      { role: "developer", content: SYSTEM_ROLE_PROMPT },
-      { role: "user", content: buildUserMessage(prompt || "", content) },
-    ];
-
-    const basePayload: any = {
-      model,
-      input,
-    };
-    if (options.temperature !== undefined)
-      basePayload.temperature = Number(temperature);
-    this.applyChatReasoning(basePayload, model, options);
-
-    if (streamEnabled && onProgress) {
-      const body = JSON.stringify({ ...basePayload, stream: true });
-      const chunks: string[] = [];
-      let delivered = 0;
-      let gotAnyDelta = false;
-      let processedLength = 0;
-      let partialLine = "";
-      let streamComplete = false;
-      let abortedDueToError = false;
-      let errorFromProgress: Error | null = null;
-      let cleanupAbortSignal: (() => void) | undefined;
-
-      try {
-        await Zotero.HTTP.request("POST", apiUrl, {
-          headers: mergeRequestHeaders(
-            {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
-            },
-            options.customHeaders,
-          ),
-          body,
-          responseType: "text",
-          timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-          errorDelayMax: 0,
-          requestObserver: (xmlhttp: XMLHttpRequest) => {
-            cleanupAbortSignal = bindAbortSignal(
-              options.abortSignal,
-              xmlhttp,
-              (error) => {
-                abortedDueToError = true;
-                errorFromProgress = error;
-              },
-            );
-            xmlhttp.onprogress = (e: any) => {
-              const status = e.target.status;
-              if (status >= 400) {
-                try {
-                  const errorResponse = e.target.response;
-                  if (errorResponse) {
-                    const parsed = JSON.parse(errorResponse);
-                    const err = parsed?.error || parsed;
-                    const code = err?.code || `HTTP ${status}`;
-                    const msg = err?.message || providerRequestFailed("API");
-                    const errorMessage = `${code}: ${msg}`;
-                    abortedDueToError = true;
-                    errorFromProgress = new Error(errorMessage);
-                    xmlhttp.abort();
-                  }
-                } catch {
-                  const errorMessage = providerHttpRequestFailed(status);
-                  abortedDueToError = true;
-                  errorFromProgress = new Error(errorMessage);
-                  xmlhttp.abort();
-                }
-                return;
-              }
-
-              try {
-                const resp: string = e.target.response || "";
-                if (resp.length > processedLength) {
-                  const slice = partialLine + resp.slice(processedLength);
-                  processedLength = resp.length;
-                  const parts = slice.split(/\r?\n/);
-                  partialLine =
-                    parts[parts.length - 1].indexOf("data: ") === 0 &&
-                    slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                      ? ""
-                      : parts.pop() || "";
-
-                  for (const raw of parts) {
-                    if (raw.indexOf("data: ") !== 0) continue;
-                    const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                    if (jsonStr === "[DONE]") {
-                      streamComplete = true;
-                      return;
-                    }
-                    try {
-                      const json = JSON.parse(jsonStr);
-                      recordFinishReason(
-                        options,
-                        "openai",
-                        "choices.finish_reason",
-                        json?.choices?.[0]?.finish_reason,
-                      );
-                      const delta = json?.choices?.[0]?.delta?.content;
-                      if (typeof delta === "string" && delta.length > 0) {
-                        gotAnyDelta = true;
-                        chunks.push(delta);
-                        const current = chunks.join("");
-                        if (onProgress && current.length > delivered) {
-                          const newChunk = current.slice(delivered);
-                          delivered = current.length;
-                          Promise.resolve(onProgress(newChunk)).catch((err) =>
-                            ztoolkit.log(
-                              "[AI-Butler] onProgress callback error:",
-                              err,
-                            ),
-                          );
-                        }
-                      }
-                    } catch {
-                      /* ignore */
-                    }
-                  }
-                }
-              } catch (err) {
-                ztoolkit.log("[AI-Butler] stream parse error:", err);
-              }
-            };
-            xmlhttp.onerror = () => {
-              abortedDueToError = true;
-              errorFromProgress = new Error("NetworkError: XHR onerror");
-              try {
-                xmlhttp.abort();
-              } catch {
-                /* ignore */
-              }
-            };
-            xmlhttp.ontimeout = () => {
-              abortedDueToError = true;
-              errorFromProgress = new Error(
-                formatProviderTimeout(
-                  options.requestTimeoutMs ?? getRequestTimeoutMs(),
-                ),
-              );
-              try {
-                xmlhttp.abort();
-              } catch {
-                /* ignore */
-              }
-            };
-          },
-        });
-      } catch (error: any) {
-        if (isAbortError(errorFromProgress || error, options.abortSignal)) {
-          throw normalizeAbortError(
-            errorFromProgress || error,
-            options.abortSignal,
-          );
-        }
-        if (abortedDueToError && errorFromProgress) throw errorFromProgress;
-        if (streamComplete && gotAnyDelta) return chunks.join("");
-        if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-        let errorMessage: string;
-        try {
-          const responseText =
-            error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-          if (responseText) {
-            const parsed = JSON.parse(responseText);
-            const err = parsed?.error || parsed;
-            const code = err?.code || "Error";
-            const msg = err?.message || error?.message || String(error);
-            errorMessage = `${code}: ${msg}`;
-          } else {
-            errorMessage = error?.message || String(error);
-          }
-        } catch {
-          errorMessage =
-            error?.message || error?.xmlhttp?.statusText || String(error);
-        }
-        throw new Error(errorMessage, { cause: error });
-      } finally {
-        cleanupAbortSignal?.();
-      }
-
-      const streamed = chunks.join("");
-      if (gotAnyDelta && streamed) return streamed;
-
-      // 回退非流式
-      return await this.nonStreamCompletion(
-        apiUrl,
-        apiKey,
-        basePayload,
-        options,
-        onProgress,
-      );
-    }
-
-    return await this.nonStreamCompletion(
-      apiUrl,
-      apiKey,
-      basePayload,
+  ): Promise<LLMProviderResult> {
+    return this.chat(
+      content,
+      isBase64,
+      [{ role: "user", content: prompt || "" }],
       options,
       onProgress,
     );
@@ -555,482 +77,59 @@ export class OpenAIProvider implements ILlmProvider {
     conversation: ConversationMessage[],
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+  ): Promise<LLMProviderResult> {
     const apiKey = (options.apiKey || "").trim();
     const apiUrl = (options.apiUrl || "").trim();
-    const model = (options.model || "gpt-3.5-turbo").trim();
-    const temperature = options.temperature ?? 0.7;
-    const streamEnabled = options.stream ?? true;
-
+    const model = (options.model || "gpt-4o").trim();
     if (!apiUrl) throw new Error(providerMissingApiUrl());
     if (!apiKey) throw new Error(providerMissingApiKey());
-    throwIfAborted(options.abortSignal);
-
-    if (isBase64 || /\/v1\/responses\/?$/i.test(apiUrl.trim())) {
-      const responsesUrl = /\/v1\/.+$/i.test(apiUrl)
-        ? apiUrl.replace(/\/v1\/.+$/i, "/v1/responses")
-        : apiUrl.endsWith("/v1/responses")
-          ? apiUrl
-          : apiUrl.replace(/\/?$/, "/v1/responses");
-
-      const inputs: any[] = [
-        {
-          role: "developer",
-          content: [{ type: "input_text", text: SYSTEM_ROLE_PROMPT }],
-        },
-      ];
-
-      if (conversation && conversation.length > 0) {
-        const firstUser = conversation[0];
-        const extraHistoryText = conversation
-          .slice(1)
-          .map(
-            (m) => `${m.role === "assistant" ? "助手" : "用户"}: ${m.content}`,
-          )
-          .join("\n\n");
-        const userParts: any[] = [
-          {
-            type: "input_text",
-            text: isBase64
-              ? firstUser.content
-              : buildUserMessage(firstUser.content, pdfContent || ""),
-          },
-        ];
-        if (isBase64) {
-          userParts.push({
-            type: "input_file",
-            filename: "paper.pdf",
-            file_data: `data:application/pdf;base64,${pdfContent}`,
-          });
-        }
-        if (extraHistoryText)
-          userParts.push({
-            type: "input_text",
-            text: `以下为过往对话供参考：\n${extraHistoryText}`,
-          });
-        inputs.push({ role: "user", content: userParts });
-      }
-
-      const basePayload: any = { model, input: inputs };
-      if (options.temperature !== undefined)
-        basePayload.temperature = Number(temperature);
-      if (options.topP !== undefined) basePayload.top_p = Number(options.topP);
-      if (options.maxTokens !== undefined)
-        basePayload.max_output_tokens = Number(options.maxTokens);
-      this.applyResponsesReasoning(basePayload, model, options);
-
-      if (!streamEnabled || !onProgress) {
-        let abortError: Error | null = null;
-        let cleanupAbortSignal: (() => void) | undefined;
-        try {
-          const res = await Zotero.HTTP.request("POST", responsesUrl, {
-            headers: mergeRequestHeaders(
-              {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${apiKey}`,
-              },
-              options.customHeaders,
-            ),
-            body: JSON.stringify(basePayload),
-            responseType: "json",
-            timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-            errorDelayMax: 0,
-            requestObserver: (xmlhttp: XMLHttpRequest) => {
-              cleanupAbortSignal = bindAbortSignal(
-                options.abortSignal,
-                xmlhttp,
-                (error) => {
-                  abortError = error;
+    const responses = isBase64 || /\/responses\/?$/i.test(apiUrl);
+    const messages: Array<Record<string, unknown>> = [
+      { role: "developer", content: SYSTEM_ROLE_PROMPT },
+    ];
+    conversation.forEach((message, index) => {
+      if (index === 0 && message.role === "user") {
+        messages.push({
+          role: "user",
+          content: isBase64
+            ? [
+                { type: "input_text", text: message.content },
+                {
+                  type: "input_file",
+                  filename: "paper.pdf",
+                  file_data: `data:application/pdf;base64,${pdfContent}`,
                 },
-              );
-            },
-          });
-          throwIfAborted(options.abortSignal);
-          const data = res.response || res;
-          recordOpenAIResponsesObject(
-            options,
-            "openai",
-            "responses.object",
-            data,
-          );
-          const text = parseOpenAIResponsesText(data);
-          if (onProgress && text) await onProgress(text);
-          return text;
-        } catch (error: any) {
-          if (abortError || isAbortError(error, options.abortSignal)) {
-            throw normalizeAbortError(abortError || error, options.abortSignal);
-          }
-          let errorMessage =
-            error?.message || providerRequestFailed("OpenAI Responses");
-          try {
-            const responseText =
-              error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-            if (responseText) {
-              const parsed =
-                typeof responseText === "string"
-                  ? JSON.parse(responseText)
-                  : responseText;
-              const err = parsed?.error || parsed;
-              const code = err?.code || "Error";
-              const msg = err?.message || error?.message || String(error);
-              errorMessage = `${code}: ${msg}`;
-            }
-          } catch {
-            /* ignore */
-          }
-          throw new Error(errorMessage, { cause: error });
-        } finally {
-          cleanupAbortSignal?.();
-        }
-      }
-
-      const payload: any = { ...basePayload, stream: true };
-
-      const chunks: string[] = [];
-      let delivered = 0;
-      let processedLength = 0;
-      let partialLine = "";
-      let gotAnyDelta = false;
-      let abortError: Error | null = null;
-      let cleanupAbortSignal: (() => void) | undefined;
-
-      try {
-        await Zotero.HTTP.request("POST", responsesUrl, {
-          headers: mergeRequestHeaders(
-            {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
-            },
-            options.customHeaders,
-          ),
-          body: JSON.stringify(payload),
-          responseType: "text",
-          timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-          errorDelayMax: 0,
-          requestObserver: (xmlhttp: XMLHttpRequest) => {
-            cleanupAbortSignal = bindAbortSignal(
-              options.abortSignal,
-              xmlhttp,
-              (error) => {
-                abortError = error;
-              },
-            );
-            xmlhttp.onprogress = (e: any) => {
-              const status = e.target.status;
-              if (status >= 400) {
-                try {
-                  const errorResponse = e.target.response;
-                  const parsed = errorResponse
-                    ? JSON.parse(errorResponse)
-                    : null;
-                  const err = parsed?.error || parsed || {};
-                  const code = err?.code || `HTTP ${status}`;
-                  const msg = err?.message || providerRequestFailed("API");
-                  abortError = new Error(`${code}: ${msg}`);
-                  xmlhttp.abort();
-                } catch {
-                  abortError = new Error(providerHttpRequestFailed(status));
-                  xmlhttp.abort();
-                }
-                return;
-              }
-
-              try {
-                const resp: string = e.target.response || "";
-                if (resp.length > processedLength) {
-                  const slice = partialLine + resp.slice(processedLength);
-                  processedLength = resp.length;
-                  const parts = slice.split(/\r?\n/);
-                  partialLine =
-                    parts[parts.length - 1].indexOf("data:") === 0 &&
-                    slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                      ? ""
-                      : parts.pop() || "";
-
-                  for (const raw of parts) {
-                    if (raw.indexOf("data:") !== 0) continue;
-                    const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                    if (!jsonStr || jsonStr === "[DONE]") continue;
-                    try {
-                      const evt = JSON.parse(jsonStr);
-                      recordOpenAIResponsesTerminalEvent(
-                        options,
-                        "openai",
-                        "responses.event",
-                        evt,
-                      );
-                      const delta = parseOpenAIResponsesDelta(evt);
-                      if (delta) {
-                        gotAnyDelta = true;
-                        chunks.push(delta);
-                        const current = chunks.join("");
-                        if (onProgress && current.length > delivered) {
-                          const newChunk = current.slice(delivered);
-                          delivered = current.length;
-                          Promise.resolve(onProgress(newChunk)).catch((err) =>
-                            ztoolkit.log(
-                              "[AI-Butler] onProgress error (OpenAI Responses chat SSE):",
-                              err,
-                            ),
-                          );
-                        }
-                      }
-                    } catch {
-                      /* ignore */
-                    }
-                  }
-                }
-              } catch (err) {
-                ztoolkit.log(
-                  "[AI-Butler] OpenAI Responses chat SSE parse error:",
-                  err,
-                );
-              }
-            };
-            xmlhttp.onerror = () => {
-              if (!abortError)
-                abortError = new Error("NetworkError: XHR onerror");
-            };
-            xmlhttp.ontimeout = () => {
-              if (!abortError)
-                abortError = new Error(
-                  formatProviderTimeout(
-                    options.requestTimeoutMs ?? getRequestTimeoutMs(),
-                  ),
-                );
-            };
-          },
+              ]
+            : buildUserMessage(message.content, pdfContent),
         });
-      } catch (error: any) {
-        if (abortError) {
-          if (isAbortError(abortError, options.abortSignal)) {
-            throw normalizeAbortError(abortError, options.abortSignal);
-          }
-          if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-          throw abortError;
-        }
-        if (isAbortError(error, options.abortSignal)) {
-          throw normalizeAbortError(error, options.abortSignal);
-        }
-        let errorMessage =
-          error?.message || providerRequestFailed("OpenAI Responses");
-        try {
-          const responseText =
-            error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-          if (responseText) {
-            const parsed =
-              typeof responseText === "string"
-                ? JSON.parse(responseText)
-                : responseText;
-            const err = parsed?.error || parsed;
-            const code = err?.code || "Error";
-            const msg = err?.message || error?.message || String(error);
-            errorMessage = `${code}: ${msg}`;
-          }
-        } catch {
-          /* ignore */
-        }
-        if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-        throw new Error(errorMessage, { cause: error });
-      } finally {
-        cleanupAbortSignal?.();
-      }
-
-      return chunks.join("");
-    }
-
-    // 文本模式
-    const input: any[] = [{ role: "developer", content: SYSTEM_ROLE_PROMPT }];
-    if (conversation && conversation.length > 0) {
-      const firstUserMsg = conversation[0];
-      if (isBase64) {
-        input.push({
-          role: "user",
-          content: [
-            { type: "text", text: firstUserMsg.content },
-            {
-              type: "image_url",
-              image_url: { url: `data:application/pdf;base64,${pdfContent}` },
-            },
-          ],
-        });
-      } else {
-        input.push({
-          role: "user",
-          content: buildUserMessage(firstUserMsg.content, pdfContent || ""),
-        });
-      }
-      if (conversation.length > 1) {
-        input.push({ role: "assistant", content: conversation[1].content });
-      }
-      for (let i = 2; i < conversation.length; i++) {
-        const msg = conversation[i];
-        input.push({
-          role: msg.role === "user" ? "user" : "assistant",
-          content: msg.content,
-        });
-      }
-    }
-
-    const payload = { model, input, temperature, stream: true } as any;
-    this.applyChatReasoning(payload, model, options);
-
-    const chunks: string[] = [];
-    let delivered = 0;
-    let processedLength = 0;
-    let partialLine = "";
-    let abortError: Error | null = null;
-    let gotAnyDelta = false;
-    let cleanupAbortSignal: (() => void) | undefined;
-
-    try {
-      await Zotero.HTTP.request("POST", apiUrl, {
-        headers: mergeRequestHeaders(
-          {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          options.customHeaders,
-        ),
-        body: JSON.stringify(payload),
-        responseType: "text",
-        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-        errorDelayMax: 0,
-        requestObserver: (xmlhttp: XMLHttpRequest) => {
-          cleanupAbortSignal = bindAbortSignal(
-            options.abortSignal,
-            xmlhttp,
-            (error) => {
-              abortError = error;
-            },
-          );
-          xmlhttp.onprogress = (e: any) => {
-            const status = e.target.status;
-            if (status >= 400) {
-              try {
-                const errorResponse = e.target.response;
-                const parsed = errorResponse ? JSON.parse(errorResponse) : null;
-                const err = parsed?.error || parsed || {};
-                const code = err?.code || `HTTP ${status}`;
-                const msg = err?.message || providerRequestFailed("API");
-                const errorMessage = `${code}: ${msg}`;
-                abortError = new Error(errorMessage);
-                ztoolkit.log("[AI-Butler] OpenAI HTTP error:", {
-                  status,
-                  code,
-                  msg,
-                  response: errorResponse,
-                });
-                xmlhttp.abort();
-              } catch (parseErr) {
-                const errorMessage = providerHttpRequestFailed(status);
-                abortError = new Error(errorMessage);
-                ztoolkit.log("[AI-Butler] OpenAI HTTP error:", {
-                  status,
-                  parseErr,
-                });
-                xmlhttp.abort();
-              }
-              return;
-            }
-
-            try {
-              const resp: string = e.target.response || "";
-              if (resp.length > processedLength) {
-                const slice = partialLine + resp.slice(processedLength);
-                processedLength = resp.length;
-                const parts = slice.split(/\r?\n/);
-                partialLine =
-                  parts[parts.length - 1].indexOf("data:") === 0 &&
-                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                    ? ""
-                    : parts.pop() || "";
-
-                for (const raw of parts) {
-                  if (raw.indexOf("data:") !== 0) continue;
-                  const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                  if (jsonStr === "[DONE]") continue;
-                  if (!jsonStr) continue;
-                  try {
-                    const json = JSON.parse(jsonStr);
-                    const delta = json?.choices?.[0]?.delta?.content;
-                    if (delta) {
-                      gotAnyDelta = true;
-                      chunks.push(delta);
-                      const current = chunks.join("");
-                      if (onProgress && current.length > delivered) {
-                        const newChunk = current.slice(delivered);
-                        delivered = current.length;
-                        Promise.resolve(onProgress(newChunk)).catch((err) => {
-                          ztoolkit.log("[AI-Butler] onProgress error:", err);
-                        });
-                      }
-                    }
-                  } catch {
-                    /* ignore */
-                  }
-                }
-              }
-            } catch (err) {
-              ztoolkit.log("[AI-Butler] OpenAI stream parse error:", err);
-            }
-          };
-          xmlhttp.onerror = () => {
-            if (!abortError)
-              abortError = new Error("NetworkError: XHR onerror");
-          };
-          xmlhttp.ontimeout = () => {
-            if (!abortError)
-              abortError = new Error(
-                formatProviderTimeout(
-                  options.requestTimeoutMs ?? getRequestTimeoutMs(),
-                ),
-              );
-          };
+      } else messages.push({ role: message.role, content: message.content });
+    });
+    const payload: Record<string, unknown> = responses
+      ? { model, input: messages }
+      : { model, messages };
+    if (options.temperature !== undefined)
+      payload.temperature = options.temperature;
+    if (options.topP !== undefined) payload.top_p = options.topP;
+    if (options.maxTokens !== undefined)
+      payload[responses ? "max_output_tokens" : "max_tokens"] =
+        options.maxTokens;
+    if (responses) this.applyResponsesReasoning(payload, model, options);
+    else this.applyChatReasoning(payload, model, options);
+    return requestLLMText({
+      protocol: responses ? "responses" : "chat",
+      provider: this.id,
+      url: responses ? getResponsesUrl(apiUrl) : apiUrl,
+      headers: mergeRequestHeaders(
+        {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
         },
-      });
-    } catch (error: any) {
-      if (abortError) {
-        if (isAbortError(abortError, options.abortSignal)) {
-          throw normalizeAbortError(abortError, options.abortSignal);
-        }
-        if (gotAnyDelta && chunks.length > 0) {
-          return chunks.join("");
-        }
-        throw abortError;
-      }
-      if (isAbortError(error, options.abortSignal)) {
-        throw normalizeAbortError(error, options.abortSignal);
-      }
-      let errorMessage = error?.message || providerRequestFailed("OpenAI");
-      try {
-        const responseText =
-          error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-        if (responseText) {
-          const parsed =
-            typeof responseText === "string"
-              ? JSON.parse(responseText)
-              : responseText;
-          const err = parsed?.error || parsed;
-          const code = err?.code || "Error";
-          const msg = err?.message || error?.message || String(error);
-          errorMessage = `${code}: ${msg}`;
-        }
-      } catch {
-        /* ignore */
-      }
-      ztoolkit.log("[AI-Butler] OpenAI request error:", {
-        status: error?.xmlhttp?.status,
-        statusText: error?.xmlhttp?.statusText,
-        message: errorMessage,
-      });
-      if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-      throw new Error(errorMessage, { cause: error });
-    } finally {
-      cleanupAbortSignal?.();
-    }
-
-    return chunks.join("");
+        options.customHeaders,
+      ),
+      payload,
+      options,
+      onProgress,
+    });
   }
 
   async listModels(options: LLMOptions): Promise<LLMModelInfo[]> {
@@ -1061,11 +160,7 @@ export class OpenAIProvider implements ILlmProvider {
     if (!apiUrl) throw new Error(providerMissingApiUrl());
     if (!apiKey) throw new Error(providerMissingApiKey());
 
-    const responsesUrl = /\/v1\/.+$/i.test(apiUrl)
-      ? apiUrl.replace(/\/v1\/.+$/i, "/v1/responses")
-      : apiUrl.endsWith("/v1/responses")
-        ? apiUrl
-        : apiUrl.replace(/\/?$/, "/v1/responses");
+    const responsesUrl = getResponsesUrl(apiUrl);
     const testInput = getConnectionTestInput(options);
     const userContent = testInput.isBase64
       ? [
@@ -1219,7 +314,8 @@ export class OpenAIProvider implements ILlmProvider {
     prompt: string,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+    history: ConversationMessage[] = [],
+  ): Promise<LLMProviderResult> {
     const apiKey = (options.apiKey || "").trim();
     const apiUrl = (options.apiUrl || "").trim();
     const model = (options.model || "gpt-4o").trim();
@@ -1230,11 +326,7 @@ export class OpenAIProvider implements ILlmProvider {
     throwIfAborted(options.abortSignal);
 
     // 使用 Responses API
-    const responsesUrl = /\/v1\/.+$/i.test(apiUrl)
-      ? apiUrl.replace(/\/v1\/.+$/i, "/v1/responses")
-      : apiUrl.endsWith("/v1/responses")
-        ? apiUrl
-        : apiUrl.replace(/\/?$/, "/v1/responses");
+    const responsesUrl = getResponsesUrl(apiUrl);
 
     // 构建 input_file 部分
     const fileParts: any[] = [];
@@ -1278,159 +370,27 @@ export class OpenAIProvider implements ILlmProvider {
     const payload = { model, input, stream: true } as any;
     this.applyResponsesReasoning(payload, model, options);
 
-    const chunks: string[] = [];
-    let delivered = 0;
-    let processedLength = 0;
-    let partialLine = "";
-    let gotAnyDelta = false;
-    let abortError: Error | null = null;
-    let cleanupAbortSignal: (() => void) | undefined;
-
-    try {
-      await Zotero.HTTP.request("POST", responsesUrl, {
-        headers: mergeRequestHeaders(
-          {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          options.customHeaders,
-        ),
-        body: JSON.stringify(payload),
-        responseType: "text",
-        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-        errorDelayMax: 0,
-        requestObserver: (xmlhttp: XMLHttpRequest) => {
-          cleanupAbortSignal = bindAbortSignal(
-            options.abortSignal,
-            xmlhttp,
-            (error) => {
-              abortError = error;
-            },
-          );
-          xmlhttp.onprogress = (e: any) => {
-            const status = e.target.status;
-            if (status >= 400) {
-              try {
-                const errorResponse = e.target.response;
-                const parsed = errorResponse ? JSON.parse(errorResponse) : null;
-                const err = parsed?.error || parsed || {};
-                const code = err?.code || `HTTP ${status}`;
-                const msg = err?.message || providerRequestFailed("API");
-                abortError = new Error(`${code}: ${msg}`);
-                xmlhttp.abort();
-              } catch {
-                abortError = new Error(providerHttpRequestFailed(status));
-                xmlhttp.abort();
-              }
-              return;
-            }
-
-            try {
-              const resp: string = e.target.response || "";
-              if (resp.length > processedLength) {
-                const slice = partialLine + resp.slice(processedLength);
-                processedLength = resp.length;
-                const parts = slice.split(/\r?\n/);
-                partialLine =
-                  parts[parts.length - 1].indexOf("data:") === 0 &&
-                  slice.indexOf("\n", slice.length - 1) === slice.length - 1
-                    ? ""
-                    : parts.pop() || "";
-
-                for (const raw of parts) {
-                  if (raw.indexOf("data:") !== 0) continue;
-                  const jsonStr = raw.replace(/^data:\s*/, "").trim();
-                  if (!jsonStr || jsonStr === "[DONE]") continue;
-                  try {
-                    const evt = JSON.parse(jsonStr);
-                    recordOpenAIResponsesTerminalEvent(
-                      options,
-                      "openai",
-                      "responses.event",
-                      evt,
-                    );
-                    const t = evt?.type as string;
-                    if (
-                      t === "response.output_text.delta" &&
-                      typeof evt.delta === "string"
-                    ) {
-                      gotAnyDelta = true;
-                      chunks.push(evt.delta);
-                      const current = chunks.join("");
-                      if (onProgress && current.length > delivered) {
-                        const newChunk = current.slice(delivered);
-                        delivered = current.length;
-                        Promise.resolve(onProgress(newChunk)).catch((err) =>
-                          ztoolkit.log(
-                            "[AI-Butler] onProgress error (OpenAI multi-PDF):",
-                            err,
-                          ),
-                        );
-                      }
-                    }
-                  } catch {
-                    /* ignore */
-                  }
-                }
-              }
-            } catch (err) {
-              ztoolkit.log(
-                "[AI-Butler] OpenAI multi-PDF SSE parse error:",
-                err,
-              );
-            }
-          };
-          xmlhttp.onerror = () => {
-            if (!abortError)
-              abortError = new Error("NetworkError: XHR onerror");
-          };
-          xmlhttp.ontimeout = () => {
-            if (!abortError)
-              abortError = new Error(
-                formatProviderTimeout(
-                  options.requestTimeoutMs ?? getRequestTimeoutMs(),
-                ),
-              );
-          };
+    if (options.temperature !== undefined)
+      payload.temperature = options.temperature;
+    if (options.topP !== undefined) payload.top_p = options.topP;
+    if (options.maxTokens !== undefined)
+      payload.max_output_tokens = options.maxTokens;
+    payload.input.push(...history);
+    return requestLLMText({
+      protocol: "responses",
+      provider: this.id,
+      url: responsesUrl,
+      headers: mergeRequestHeaders(
+        {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
         },
-      });
-    } catch (error: any) {
-      if (abortError) {
-        if (isAbortError(abortError, options.abortSignal)) {
-          throw normalizeAbortError(abortError, options.abortSignal);
-        }
-        if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-        throw abortError;
-      }
-      if (isAbortError(error, options.abortSignal)) {
-        throw normalizeAbortError(error, options.abortSignal);
-      }
-      let errorMessage = error?.message || providerRequestFailed("OpenAI");
-      try {
-        const responseText =
-          error?.xmlhttp?.response || error?.xmlhttp?.responseText;
-        if (responseText) {
-          const parsed =
-            typeof responseText === "string"
-              ? JSON.parse(responseText)
-              : responseText;
-          const err = parsed?.error || parsed;
-          const code = err?.code || "Error";
-          const msg = err?.message || error?.message || String(error);
-          errorMessage = `${code}: ${msg}`;
-        }
-      } catch {
-        /* ignore */
-      }
-      if (gotAnyDelta && chunks.length > 0) return chunks.join("");
-      throw new Error(errorMessage, { cause: error });
-    } finally {
-      cleanupAbortSignal?.();
-    }
-
-    const streamed = chunks.join("");
-    if (gotAnyDelta && streamed) return streamed;
-    return "";
+        options.customHeaders,
+      ),
+      payload,
+      options,
+      onProgress,
+    });
   }
 
   private applyResponsesReasoning(
@@ -1452,61 +412,6 @@ export class OpenAIProvider implements ILlmProvider {
     const effort = resolveOpenAIReasoningEffort(model, options.reasoningEffort);
     if (effort) {
       payload.reasoning_effort = effort;
-    }
-  }
-
-  private async nonStreamCompletion(
-    apiUrl: string,
-    apiKey: string,
-    payload: any,
-    options: LLMOptions,
-    onProgress?: ProgressCb,
-  ): Promise<string> {
-    throwIfAborted(options.abortSignal);
-    let abortError: Error | null = null;
-    let cleanupAbortSignal: (() => void) | undefined;
-    try {
-      const res = await Zotero.HTTP.request("POST", apiUrl, {
-        headers: mergeRequestHeaders(
-          {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          options.customHeaders,
-        ),
-        body: JSON.stringify(payload),
-        responseType: "json",
-        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-        errorDelayMax: 0,
-        requestObserver: (xmlhttp: XMLHttpRequest) => {
-          cleanupAbortSignal = bindAbortSignal(
-            options.abortSignal,
-            xmlhttp,
-            (error) => {
-              abortError = error;
-            },
-          );
-        },
-      });
-      throwIfAborted(options.abortSignal);
-      const data = res.response || res;
-      recordFinishReason(
-        options,
-        "openai",
-        "choices.finish_reason",
-        data?.choices?.[0]?.finish_reason,
-      );
-      const text = data?.choices?.[0]?.message?.content || "";
-      const result = typeof text === "string" ? text : JSON.stringify(text);
-      if (onProgress && result) await onProgress(result);
-      return result;
-    } catch (error) {
-      if (abortError || isAbortError(error, options.abortSignal)) {
-        throw normalizeAbortError(abortError || error, options.abortSignal);
-      }
-      throw error;
-    } finally {
-      cleanupAbortSignal?.();
     }
   }
 }

@@ -45,7 +45,7 @@ function appendEnvPlaceholders(vendorId) {
 
 const tmpl = `import { ProviderRegistry } from './ProviderRegistry';
 import type { ILlmProvider } from './ILlmProvider';
-import type { LLMOptions, ProgressCb, ConversationMessage } from './types';
+import type { LLMOptions, LLMProviderResult, ProgressCb, ConversationMessage } from './types';
 
 export class ${className} implements ILlmProvider {
   readonly id = '${vendorId}';
@@ -56,12 +56,12 @@ export class ${className} implements ILlmProvider {
     prompt: string | undefined,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+  ): Promise<LLMProviderResult> {
     // TODO: map options to vendor API, handle stream/non-stream
     // For now, just echo
     const text = isBase64 ? '[base64 content omitted]' : content.slice(0, 80);
     if (onProgress) onProgress(text);
-    return text;
+    return { text, completion: "complete", finishReason: "stop", recovery: "none" };
   }
 
   async chat(
@@ -70,10 +70,10 @@ export class ${className} implements ILlmProvider {
     conversation: ConversationMessage[],
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+  ): Promise<LLMProviderResult> {
     const text = (conversation[conversation.length - 1]?.content || '').slice(0, 80);
     if (onProgress) onProgress(text);
-    return text;
+    return { text, completion: "complete", finishReason: "stop", recovery: "none" };
   }
 
   async testConnection(options: LLMOptions): Promise<string> {

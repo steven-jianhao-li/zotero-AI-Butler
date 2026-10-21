@@ -1239,3 +1239,6 @@ llm-warning-attachment-as-text = 当前附件将按文本内容进行分析。
 llm-warning-auto-continuation-used = 检测到输出被截断，已自动续写 { $count } 轮。
 llm-warning-auto-continuation-still-truncated = 自动续写 { $count } 轮后输出仍被截断。建议调高 Max Tokens，或使用非推理模型/降低推理强度。
 llm-warning-auto-continuation-disabled = 检测到输出被截断，但自动续写轮数为 0，未继续调用 API。
+
+llm-error-incomplete-output = 输出未完成（{ $reason }），任务未标记为完成。请调整输出长度或上下文后重试。
+llm-error-invalid-output-tokens = 输出 token 数 { $value } 无效；已知模型上限为 { $limit }。

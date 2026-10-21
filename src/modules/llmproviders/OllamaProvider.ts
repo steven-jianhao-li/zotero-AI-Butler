@@ -1,5 +1,22 @@
-import { mergeRequestHeaders } from "./shared/requestHeaders";
+import { getString } from "../../utils/locale";
+import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
 import { ILlmProvider } from "./ILlmProvider";
+import {
+  formatConnectionTestSuccess,
+  getConnectionTestInput,
+} from "./shared/connectionTest";
+import {
+  providerMissingApiUrl,
+  providerRequestFailed,
+} from "./shared/localizedErrors";
+import {
+  parseModelListResponse,
+  requestModelListJson,
+} from "./shared/modelList";
+import { mergeRequestHeaders } from "./shared/requestHeaders";
+import { requestLLMText } from "./shared/textTransport";
+import { recordFinishReason } from "./shared/truncation";
+import type { LLMProviderResult } from "./types";
 import {
   APITestError,
   ConversationMessage,
@@ -8,37 +25,6 @@ import {
   LLMProviderCapabilities,
   ProgressCb,
 } from "./types";
-import { SYSTEM_ROLE_PROMPT, buildUserMessage } from "../../utils/prompts";
-import { getString } from "../../utils/locale";
-import { getRequestTimeoutMs } from "./shared/llmutils";
-import {
-  getConnectionTestInput,
-  formatConnectionTestSuccess,
-  formatProviderTimeout,
-} from "./shared/connectionTest";
-import {
-  parseModelListResponse,
-  requestModelListJson,
-} from "./shared/modelList";
-import {
-  bindAbortSignal,
-  isAbortError,
-  normalizeAbortError,
-  throwIfAborted,
-} from "./shared/requestAbort";
-import { recordFinishReason } from "./shared/truncation";
-import {
-  providerHttpRequestFailed,
-  providerMissingApiKey,
-  providerMissingApiUrl,
-  providerNoPdfFiles,
-  providerNoPdfProcessed,
-  providerRequestFailed,
-  providerStreamMissingDone,
-  providerStreamParseFailed,
-  providerStreamTruncated,
-  providerStreamUnexpectedEnd,
-} from "./shared/localizedErrors";
 
 type OllamaChatMessage = {
   role: "system" | "user" | "assistant";
@@ -181,7 +167,7 @@ export class OllamaProvider implements ILlmProvider {
     prompt: string | undefined,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+  ): Promise<LLMProviderResult> {
     if (isBase64) this.rejectPdfBase64();
 
     const { chatUrl, apiKey } = this.ensureConfig(options);
@@ -205,7 +191,7 @@ export class OllamaProvider implements ILlmProvider {
     conversation: ConversationMessage[],
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
+  ): Promise<LLMProviderResult> {
     if (isBase64) this.rejectPdfBase64();
 
     const { chatUrl, apiKey } = this.ensureConfig(options);
@@ -326,43 +312,16 @@ export class OllamaProvider implements ILlmProvider {
     payload: Record<string, unknown>,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
-    throwIfAborted(options.abortSignal);
-    let abortError: Error | null = null;
-    let cleanupAbortSignal: (() => void) | undefined;
-    try {
-      const response = await Zotero.HTTP.request("POST", chatUrl, {
-        headers: this.buildHeaders(apiKey, options.customHeaders),
-        body: JSON.stringify({ ...payload, stream: false }),
-        responseType: "text",
-        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-        errorDelayMax: 0,
-        requestObserver: (xmlhttp: XMLHttpRequest) => {
-          cleanupAbortSignal = bindAbortSignal(
-            options.abortSignal,
-            xmlhttp,
-            (error) => {
-              abortError = error;
-            },
-          );
-        },
-      });
-      throwIfAborted(options.abortSignal);
-      const text = this.extractTextFromRawResponse(
-        response.response || "",
-        options,
-      );
-      if (!text) throw new Error(providerRequestFailed("Ollama"));
-      if (onProgress) await onProgress(text);
-      return text;
-    } catch (error: any) {
-      if (abortError || isAbortError(error, options.abortSignal)) {
-        throw normalizeAbortError(abortError || error, options.abortSignal);
-      }
-      throw this.toRequestError(error, providerRequestFailed("Ollama"));
-    } finally {
-      cleanupAbortSignal?.();
-    }
+  ): Promise<LLMProviderResult> {
+    return requestLLMText({
+      protocol: "ollama",
+      provider: this.id,
+      url: chatUrl,
+      headers: this.buildHeaders(apiKey, options.customHeaders),
+      payload,
+      options,
+      onProgress,
+    });
   }
 
   private async streamRequest(
@@ -371,117 +330,16 @@ export class OllamaProvider implements ILlmProvider {
     payload: Record<string, unknown>,
     options: LLMOptions,
     onProgress?: ProgressCb,
-  ): Promise<string> {
-    throwIfAborted(options.abortSignal);
-    const chunks: string[] = [];
-    let processedLength = 0;
-    let pending = "";
-    let abortError: Error | null = null;
-    let cleanupAbortSignal: (() => void) | undefined;
-
-    const deliver = (chunk: string) => {
-      if (!chunk) return;
-      chunks.push(chunk);
-      if (!onProgress) return;
-      Promise.resolve(onProgress(chunk)).catch((err) =>
-        ztoolkit.log("[AI-Butler] onProgress error (Ollama stream):", err),
-      );
-    };
-
-    const processLines = (text: string, final = false) => {
-      const combined = pending + text;
-      const lines = combined.split(/\r?\n/);
-      if (final) {
-        pending = "";
-        if (lines[lines.length - 1] === "") lines.pop();
-      } else {
-        pending = lines.pop() || "";
-      }
-
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line) continue;
-        const chunk = this.extractTextFromStreamLine(line, options);
-        if (chunk) deliver(chunk);
-      }
-    };
-
-    let response: any;
-    try {
-      response = await Zotero.HTTP.request("POST", chatUrl, {
-        headers: this.buildHeaders(apiKey, options.customHeaders),
-        body: JSON.stringify({ ...payload, stream: true }),
-        responseType: "text",
-        timeout: options.requestTimeoutMs ?? getRequestTimeoutMs(),
-        errorDelayMax: 0,
-        requestObserver: (xmlhttp: XMLHttpRequest) => {
-          cleanupAbortSignal = bindAbortSignal(
-            options.abortSignal,
-            xmlhttp,
-            (error) => {
-              abortError = error;
-            },
-          );
-          xmlhttp.onprogress = (event: any) => {
-            const status = event.target.status;
-            if (status >= 400) {
-              abortError = this.toRequestError(
-                { xmlhttp: event.target },
-                providerHttpRequestFailed(status),
-              );
-              xmlhttp.abort();
-              return;
-            }
-
-            const responseText: string = event.target.response || "";
-            if (responseText.length <= processedLength) return;
-            processLines(responseText.slice(processedLength));
-            processedLength = responseText.length;
-          };
-          xmlhttp.onerror = () => {
-            if (!abortError)
-              abortError = new Error("NetworkError: XHR onerror");
-          };
-          xmlhttp.ontimeout = () => {
-            if (!abortError) {
-              abortError = new Error(
-                formatProviderTimeout(
-                  options.requestTimeoutMs ?? getRequestTimeoutMs(),
-                ),
-              );
-            }
-          };
-        },
-      });
-    } catch (error: any) {
-      if (abortError && isAbortError(abortError, options.abortSignal)) {
-        throw normalizeAbortError(abortError, options.abortSignal);
-      }
-      if (isAbortError(error, options.abortSignal)) {
-        throw normalizeAbortError(error, options.abortSignal);
-      }
-      if (abortError && chunks.length === 0) throw abortError;
-      if (chunks.length > 0) return chunks.join("");
-      throw this.toRequestError(
-        error,
-        providerRequestFailed("Ollama streaming"),
-      );
-    } finally {
-      cleanupAbortSignal?.();
-    }
-
-    throwIfAborted(options.abortSignal);
-    const rawResponse = response?.response || "";
-    if (rawResponse.length > processedLength) {
-      processLines(rawResponse.slice(processedLength));
-    }
-    processLines("", true);
-
-    const text = chunks.join("");
-    if (!text) {
-      throw new Error(providerRequestFailed("Ollama"));
-    }
-    return text;
+  ): Promise<LLMProviderResult> {
+    return requestLLMText({
+      protocol: "ollama",
+      provider: this.id,
+      url: chatUrl,
+      headers: this.buildHeaders(apiKey, options.customHeaders),
+      payload,
+      options,
+      onProgress,
+    });
   }
 
   private extractTextFromStreamLine(

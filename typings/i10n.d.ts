@@ -808,6 +808,8 @@ export type FluentMessageId =
   | 'llm-error-chat-multi-file-unsupported'
   | 'llm-error-endpoint-disabled'
   | 'llm-error-endpoint-not-found'
+  | 'llm-error-incomplete-output'
+  | 'llm-error-invalid-output-tokens'
   | 'llm-error-missing-text-or-pdf'
   | 'llm-error-missing-uploadable-pdf'
   | 'llm-error-model-list-unsupported'

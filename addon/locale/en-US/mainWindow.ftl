@@ -1239,3 +1239,6 @@ llm-warning-attachment-as-text = This attachment will be analyzed as text conten
 llm-warning-auto-continuation-used = Output was truncated and automatically continued { $count } round(s).
 llm-warning-auto-continuation-still-truncated = Output is still truncated after { $count } automatic continuation round(s). Consider increasing Max Tokens, or using a non-reasoning model / lower reasoning effort.
 llm-warning-auto-continuation-disabled = Output was truncated, but auto-continuation rounds is set to 0, so no extra API call was made.
+
+llm-error-incomplete-output = Output is incomplete ({ $reason }). The task was not marked complete. Adjust the output budget or context, then retry.
+llm-error-invalid-output-tokens = Invalid output token budget { $value }; the known model limit is { $limit }.

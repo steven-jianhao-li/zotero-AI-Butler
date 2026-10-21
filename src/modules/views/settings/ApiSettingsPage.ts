@@ -2041,6 +2041,12 @@ export class ApiSettingsPage {
     if (model.contextLength) {
       parts.push(`${model.contextLength.toLocaleString()} ctx`);
     }
+    if (model.maxOutputTokens)
+      parts.push(
+        getString("settings-api-model-output-limit", {
+          args: { count: model.maxOutputTokens.toLocaleString() },
+        }),
+      );
     return parts.join(" · ");
   }
 

@@ -146,10 +146,17 @@ function normalizeModelInfo(
     description:
       typeof model.description === "string" ? model.description : undefined,
     contextLength: pickNumber(
+      model.max_input_tokens,
       model.context_length,
       model.contextLength,
       model.inputTokenLimit,
       model.input_token_limit,
+    ),
+    maxOutputTokens: pickNumber(
+      model.max_tokens,
+      model.max_output_tokens,
+      model.outputTokenLimit,
+      model.top_provider?.max_completion_tokens,
     ),
     ownedBy:
       typeof model.owned_by === "string"

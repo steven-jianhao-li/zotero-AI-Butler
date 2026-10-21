@@ -1433,6 +1433,7 @@ export type FluentMessageId =
   | 'settings-api-mineru-sync-external-help'
   | 'settings-api-mineru-sync-external-label'
   | 'settings-api-model-list-title'
+  | 'settings-api-model-output-limit'
   | 'settings-api-model-required'
   | 'settings-api-model-select-tooltip'
   | 'settings-api-models-fetched'

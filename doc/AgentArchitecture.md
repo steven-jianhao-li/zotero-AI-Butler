@@ -26,8 +26,8 @@ routing selects a coordinator once per run; a separate reader can be selected.
 ## Loop invariants
 
 - Validate complete model responses before exposing tool calls. Never execute
-  partially streamed arguments. Current Agent turns use non-streaming responses;
-  activity and completed messages update progressively in the UI.
+  partially streamed arguments. Readable SSE previews update the UI, while tool
+  calls remain unavailable until the terminal response and arguments validate.
 - Keep assistant calls and tool results paired by ID. On cancellation/restart,
   synthesize interrupted results for unfinished calls before another model turn.
 - Carry opaque provider continuation state with its assistant turn. This includes
@@ -89,8 +89,11 @@ The conversation groups each user turn into an expandable work process and a
 separate final delivery. Completed turns default to the delivery; running,
 failed and interrupted work remains open. Tool cards pair arguments with results
 by call/member ID, and pending approval controls stay outside the fold. The
-Activity tab opens work for all turns while retaining the conversation's fold
-state. Explicit assistant phases and terminal status events preserve per-turn
+Trajectory tab is an independent searchable ledger with input/model/tool lanes,
+equal-width or duration-weighted blocks, turn/detail folding, inline approvals,
+and navigation back to the conversation. Its interaction follows the local DSH
+`ui-trajectory` toolbar, overview and record-detail design. Explicit assistant
+phases and terminal status events preserve per-turn
 outcomes; older ledgers infer the final lead response only after tool work ends.
 
 This interaction follows the local DSH reference's `TurnProcessSpec`,
@@ -99,8 +102,13 @@ This interaction follows the local DSH reference's `TurnProcessSpec`,
 remain separate from intermediate text, reasoning and tool disclosures.
 Readable reasoning returned by providers is recorded as reasoning events;
 encrypted replay data, redacted thinking and signatures are never rendered.
-Agent transport remains non-streaming, so reasoning appears after each complete
-model response. Existing sessions retain their recorded history; missing old
+Agent transport streams Chat Completions, Responses, Anthropic and Gemini SSE;
+gateways returning JSON still work. The same preview event becomes the complete
+reply. Failed/retried/cancelled previews stay marked as interrupted work, outside
+the model's message history. Signatures and encrypted state stay in the final
+provider envelope. A local HTTP fixture withholds the final chunk until native
+Zotero acknowledges a partial reply, verifying actual XHR progress delivery.
+Existing sessions retain their recorded history; missing old
 reasoning events are not fabricated from opaque replay data.
 
 The sidebar storage disclosure shows the actual

@@ -60,6 +60,9 @@ export interface AgentEvent {
   phase?: "work" | "delivery";
   /** Persist the outcome of each run independently of the next run. */
   runStatus?: "completed" | "cancelled" | "error";
+  stepId?: string;
+  endedAt?: number;
+  streamState?: "streaming" | "complete" | "interrupted";
   data?: unknown;
 }
 

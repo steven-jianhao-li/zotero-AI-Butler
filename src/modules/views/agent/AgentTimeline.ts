@@ -20,7 +20,6 @@ type TurnRow = {
   delivery: HTMLElement;
   errors: HTMLElement;
   status: string;
-  conversationOpen: boolean;
 };
 
 /** A turn's working record is expandable; its final delivery stays outside it. */
@@ -28,8 +27,6 @@ export class AgentTimeline {
   private rows = new Map<string, EventRow>();
   private turns = new Map<string, TurnRow>();
   private approvalRows = new Map<string, HTMLElement>();
-  private mode: "conversation" | "activity" = "conversation";
-  private scrollPositions = new Map<string, number>();
 
   constructor(private host: HTMLElement) {}
 
@@ -37,21 +34,21 @@ export class AgentTimeline {
     this.rows.clear();
     this.turns.clear();
     this.approvalRows.clear();
-    this.scrollPositions.clear();
     this.host.replaceChildren();
   }
 
-  setMode(mode: "conversation" | "activity"): void {
-    if (mode === this.mode) return;
-    this.scrollPositions.set(this.mode, this.host.scrollTop);
-    for (const row of this.turns.values()) {
-      if (this.mode === "conversation") row.conversationOpen = row.work.open;
-      row.work.open = mode === "activity" || row.conversationOpen;
+  focusEvent(id: string): void {
+    const row = this.rows.get(id);
+    if (!row) return;
+    let parent: Element | null = row.root;
+    while (parent && parent !== this.host) {
+      if (parent.localName === "details")
+        (parent as HTMLDetailsElement).open = true;
+      parent = parent.parentElement;
     }
-    this.mode = mode;
-    this.host.dataset.mode = mode;
-    this.host.scrollTop =
-      this.scrollPositions.get(mode) ?? this.host.scrollHeight;
+    row.root.tabIndex = -1;
+    row.root.scrollIntoView({ block: "center" });
+    row.root.focus({ preventScroll: true });
   }
 
   render(
@@ -195,7 +192,6 @@ export class AgentTimeline {
         delivery,
         errors,
         status: "",
-        conversationOpen: false,
       };
       this.turns.set(turn.id, row);
       this.host.append(root);
@@ -207,8 +203,7 @@ export class AgentTimeline {
       (row.status !== turn.status && !(running && wasRunning))
     ) {
       // Default to the delivery when work finishes; later refreshes preserve the reader's choice.
-      row.conversationOpen = turn.status !== "completed" || !turn.delivery;
-      row.work.open = this.mode === "activity" || row.conversationOpen;
+      row.work.open = turn.status !== "completed" || !turn.delivery;
     }
     row.status = turn.status;
     row.reasoningHint.hidden =
@@ -266,13 +261,21 @@ export class AgentTimeline {
     const signature = JSON.stringify([
       event.text,
       event.data,
+      event.phase,
+      event.streamState,
       member,
       result?.text,
       event.type === "tool-start" && !result ? status : undefined,
     ]);
     if (row.signature === signature) return row.root;
     row.signature = signature;
-    let state = "";
+    let state =
+      event.streamState === "streaming"
+        ? t("agent-stream-live")
+        : event.streamState === "interrupted"
+          ? t("agent-stream-interrupted")
+          : "";
+    row.root.dataset.streamState = event.streamState || "";
     if (event.type === "tool-start") {
       let failed = false;
       if (result) {
@@ -310,7 +313,13 @@ export class AgentTimeline {
     ]
       .filter(Boolean)
       .join(" · ");
-    if (event.type === "assistant" || event.type === "reasoning")
+    if (
+      event.streamState === "streaming" &&
+      (event.type === "assistant" || event.type === "reasoning")
+    ) {
+      row.body.classList.remove("agent-markdown");
+      row.body.textContent = event.text;
+    } else if (event.type === "assistant" || event.type === "reasoning")
       renderAgentMarkdown(row.body, event.text);
     else if (event.type === "tool-start") {
       row.body.replaceChildren(

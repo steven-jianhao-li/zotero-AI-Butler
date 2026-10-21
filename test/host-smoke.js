@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars -- Entry points are invoked by Zotero's addon loader. */
-/* global PathUtils */
+/* global PathUtils, AGENT_STREAM_FIXTURE_URL */
 var hostServices =
   typeof Services === "undefined"
     ? Components.utils.import("resource://gre/modules/Services.jsm").Services
@@ -15,6 +15,8 @@ var hostFiles =
     ? Components.utils.import("resource://gre/modules/osfile.jsm").OS.File
     : IOUtils;
 var probeTimer;
+// XPCOM timers need a live JS reference while an async probe is suspended.
+var waitTimer;
 function install() {}
 function uninstall() {}
 function shutdown() {}
@@ -63,15 +65,16 @@ async function runProbe() {
     for (var attempt = 0; attempt < 200; attempt++) {
       if (predicate()) return;
       await new Promise(function (resolve) {
-        var delay = Components.classes["@mozilla.org/timer;1"].createInstance(
+        waitTimer = Components.classes["@mozilla.org/timer;1"].createInstance(
           Components.interfaces.nsITimer,
         );
-        delay.initWithCallback(
+        waitTimer.initWithCallback(
           resolve,
           100,
           Components.interfaces.nsITimer.TYPE_ONE_SHOT,
         );
       });
+      waitTimer = null;
     }
     throw new Error("Timed out: " + label);
   }
@@ -152,7 +155,8 @@ async function runProbe() {
           editor && editor._iframeWindow.document.querySelector(".ProseMirror");
         return editable;
       }, "native note editor");
-      await editor._initPromise;
+      await waitForPromise(editor._initPromise, "native editor initialization");
+      stage("native editor ready");
       editable.focus();
       var editorDocument = editable.ownerDocument;
       var redraws = 0;
@@ -259,6 +263,7 @@ async function runProbe() {
       await citationScope.AgentCitationProbe.runAgentUIHostChecks(
         dashboard.document,
         assert,
+        AGENT_STREAM_FIXTURE_URL,
       );
       var citationHost = dashboard.document.createElementNS(
         "http://www.w3.org/1999/xhtml",

@@ -95,6 +95,96 @@ function dependencies(
 }
 
 describe("Agent runtime authority and recovery", function () {
+  it("shows previews before completion and reuses their IDs for the validated delivery", async function () {
+    const state = session();
+    let previewId = "";
+    await new AgentRunner(
+      dependencies({
+        turn: async (request) => {
+          request.onUpdate?.({ text: "", reasoningContent: "", reset: true });
+          request.onUpdate?.({ text: "Partial", reasoningContent: "Checking" });
+          const preview = state.events.find(
+            (event) => event.type === "assistant",
+          )!;
+          previewId = preview.id;
+          expect(preview.phase).to.equal("work");
+          expect(preview.streamState).to.equal("streaming");
+          expect(
+            state.messages.filter((message) => message.role === "assistant"),
+          ).to.have.length(0);
+          return {
+            text: "Complete reply",
+            reasoningContent: "Checked",
+            toolCalls: [],
+          };
+        },
+      }),
+    ).run(state, new AbortController().signal);
+    const replies = state.events.filter((event) => event.type === "assistant");
+    expect(replies).to.have.length(1);
+    expect(replies[0]).to.include({
+      id: previewId,
+      text: "Complete reply",
+      phase: "delivery",
+      streamState: "complete",
+    });
+  });
+
+  it("retains failed attempts as interrupted work without mixing them into retried delivery", async function () {
+    const state = session();
+    await new AgentRunner(
+      dependencies({
+        turn: async (request) => {
+          request.onUpdate?.({ text: "Old attempt", reasoningContent: "" });
+          request.onUpdate?.({ text: "", reasoningContent: "", reset: true });
+          request.onUpdate?.({ text: "New attempt", reasoningContent: "" });
+          return { text: "New attempt", toolCalls: [] };
+        },
+      }),
+    ).run(state, new AbortController().signal);
+    const replies = state.events.filter((event) => event.type === "assistant");
+    expect(
+      replies.map((event) => [event.text, event.phase, event.streamState]),
+    ).to.deep.equal([
+      ["Old attempt", "work", "interrupted"],
+      ["New attempt", "delivery", "complete"],
+    ]);
+  });
+
+  it("never executes streamed tool intentions after cancellation", async function () {
+    const state = session("full");
+    const controller = new AbortController();
+    let writes = 0;
+    await new AgentRunner(
+      dependencies({
+        tools: [
+          tool("write", true, async () => {
+            writes++;
+          }),
+        ],
+        turn: async (request) => {
+          request.onUpdate?.({
+            text: "Preparing a change",
+            reasoningContent: "",
+          });
+          controller.abort("Cancelled");
+          return {
+            text: "Preparing a change",
+            toolCalls: [call("write", "write-1")],
+          };
+        },
+      }),
+    ).run(state, controller.signal);
+    expect(writes).to.equal(0);
+    expect(state.status).to.equal("cancelled");
+    expect(
+      state.events.find((event) => event.type === "assistant")?.streamState,
+    ).to.equal("interrupted");
+    expect(state.events.some((event) => event.phase === "delivery")).to.equal(
+      false,
+    );
+  });
+
   it("records readable thinking and distinct work/delivery without exposing provider replay state", async function () {
     const state = session();
     let count = 0;

@@ -7,6 +7,7 @@ import {
 } from "../../agent/types";
 import { LLMEndpointManager } from "../../llmEndpointManager";
 import { AgentTimeline } from "./AgentTimeline";
+import { AgentTrajectory } from "./AgentTrajectory";
 import { button, documentOf, element, t } from "./dom";
 import { AgentSelect, type AgentSelectOption } from "./AgentSelect";
 import { agentLogo, icon, type AgentIcon } from "./icons";
@@ -33,6 +34,8 @@ export class AgentView extends BaseView {
   private welcome!: HTMLElement;
   private timelineHost!: HTMLElement;
   private timeline!: AgentTimeline;
+  private trajectoryHost!: HTMLElement;
+  private trajectory!: AgentTrajectory;
   private inspector!: HTMLElement;
   private attachmentHost!: HTMLElement;
   private errorHost!: HTMLElement;
@@ -205,7 +208,19 @@ export class AgentView extends BaseView {
     this.timelineHost.setAttribute("aria-live", "polite");
     this.timelineHost.setAttribute("aria-relevant", "additions");
     this.timeline = new AgentTimeline(this.timelineHost);
-    conversation.append(this.welcome, this.timelineHost);
+    this.trajectoryHost = element(doc, "div", "agent-trajectory");
+    this.trajectory = new AgentTrajectory(
+      this.trajectoryHost,
+      (eventId) => {
+        this.setPanelMode("conversation");
+        this.timeline.focusEvent(eventId);
+      },
+      (approvalId, allow) => {
+        this.service.approve(this.activeId, approvalId, allow);
+        this.refresh();
+      },
+    );
+    conversation.append(this.welcome, this.timelineHost, this.trajectoryHost);
     this.setPanelMode(this.panelMode);
     this.errorHost = element(doc, "div", "agent-ui-error");
     this.errorHost.setAttribute("role", "alert");
@@ -358,7 +373,13 @@ export class AgentView extends BaseView {
       tab.setAttribute("aria-selected", String(key === mode));
       tab.tabIndex = key === mode ? 0 : -1;
     });
-    this.timeline?.setMode(mode);
+    const session = this.service.getSession(this.activeId);
+    if (this.timelineHost)
+      this.timelineHost.hidden = mode === "activity" || !session?.events.length;
+    if (this.welcome)
+      this.welcome.hidden =
+        mode === "activity" || Boolean(session?.events.length);
+    if (this.trajectoryHost) this.trajectoryHost.hidden = mode !== "activity";
     this.timelineHost?.parentElement?.setAttribute(
       "aria-labelledby",
       `agent-tab-${mode}`,
@@ -688,6 +709,7 @@ export class AgentView extends BaseView {
     this.settings.open = false;
     this.updatePermissionHelp();
     this.timeline.clear();
+    this.trajectory.clear();
     this.inspectorSignature = "";
     this.errorHost.textContent = "";
     this.refresh();
@@ -842,12 +864,15 @@ export class AgentView extends BaseView {
     this.titleHost.title = this.titleHost.textContent;
     this.statusHost.textContent = t(`agent-status-${session.status}`);
     this.statusHost.setAttribute("data-status", session.status);
-    this.welcome.hidden = session.events.length > 0;
-    this.timelineHost.hidden = !session.events.length;
+    this.welcome.hidden =
+      session.events.length > 0 || this.panelMode === "activity";
+    this.timelineHost.hidden =
+      !session.events.length || this.panelMode === "activity";
     this.timeline.render(session, (approvalId, allow) => {
       this.service.approve(session.id, approvalId, allow);
       this.refresh();
     });
+    const traceCount = this.trajectory.render(session);
     const activity = session.events.filter(
       (event) => event.type !== "user" && event.type !== "assistant",
     );
@@ -865,8 +890,8 @@ export class AgentView extends BaseView {
     this.activityLabel.title = this.activityLabel.textContent;
     const activityTab = this.panelTabs.get("activity");
     if (activityTab)
-      activityTab.textContent = activity.length
-        ? `${t("agent-tab-activity")} · ${activity.length}`
+      activityTab.textContent = traceCount
+        ? `${t("agent-tab-activity")} · ${traceCount}`
         : t("agent-tab-activity");
     this.sendButton.hidden = running;
     this.sendButton.disabled = running;

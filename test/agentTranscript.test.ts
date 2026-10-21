@@ -1,5 +1,13 @@
 import { expect } from "chai";
 import { agentTurns } from "../src/modules/views/agent/transcript";
+import {
+  agentTraceRecords,
+  agentTraceSegments,
+} from "../src/modules/views/agent/trajectory";
+import {
+  defaultAgentOptions,
+  type AgentSession,
+} from "../src/modules/agent/types";
 import type { AgentEvent, AgentStatus } from "../src/modules/agent/types";
 
 function event(
@@ -14,6 +22,66 @@ function project(events: AgentEvent[], status: AgentStatus = "completed") {
 }
 
 describe("Agent work and delivery projection", function () {
+  it("groups model previews and tool results into searchable timed trace records", function () {
+    const state: AgentSession = {
+      id: "fixture",
+      title: "",
+      createdAt: 0,
+      updatedAt: 0,
+      status: "completed",
+      permission: "read-only",
+      options: defaultAgentOptions(),
+      messages: [],
+      plan: [],
+      team: [],
+      pendingApprovals: [],
+      artifacts: { r1: "full result searchable" },
+      context: {
+        estimatedTokens: 0,
+        compactions: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+      },
+      events: [
+        event("u", "user"),
+        event("request", "status", {
+          stepId: "s1",
+          data: { kind: "model-request" },
+          endedAt: 4000,
+        }),
+        event("reason", "reasoning", { stepId: "s1" }),
+        event("reply", "assistant", { stepId: "s1" }),
+        event("call", "tool-start", { toolCallId: "c1", createdAt: 4000 }),
+        event("result", "tool-result", {
+          toolCallId: "c1",
+          createdAt: 5000,
+          text: '{"resultRef":"r1"}',
+        }),
+      ],
+    };
+    const records = agentTraceRecords(state);
+    expect(records.map((record) => record.kind)).to.deep.equal([
+      "input",
+      "model",
+      "tool",
+    ]);
+    expect(records[1].events.map((event) => event.id)).to.deep.equal([
+      "request",
+      "reason",
+      "reply",
+    ]);
+    expect(records[2].searchText).to.include("full result searchable");
+    expect(records[2].endedAt).to.equal(5000);
+    const equal = agentTraceSegments(records, false, 6000);
+    expect(equal[0].width).to.equal(equal[1].width);
+    const timed = agentTraceSegments(records, true, 6000);
+    expect(timed[1].width).to.be.greaterThan(timed[2].width);
+    expect(timed.reduce((sum, part) => sum + part.width, 0)).to.be.closeTo(
+      100,
+      0.001,
+    );
+  });
+
   it("separates reasoning, intermediate replies, teammates and tools from the final delivery", function () {
     const [turn] = project([
       event("user", "user"),

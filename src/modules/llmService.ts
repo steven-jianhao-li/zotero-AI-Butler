@@ -33,6 +33,7 @@ import { parseCustomRequestHeaders } from "./llmproviders/shared/requestHeaders"
 import type {
   LLMAgentMessage,
   LLMAgentTurn,
+  LLMAgentStreamUpdate,
   LLMToolDefinition,
 } from "./llmproviders/agentTypes";
 import { LLMIncompleteError } from "./llmproviders/shared/completion";
@@ -179,6 +180,7 @@ export type LLMAgentRequest = {
   generation?: LLMGenerationOptions;
   transport?: LLMTransportOptions;
   onProgress?: ProgressCb;
+  onUpdate?: (update: LLMAgentStreamUpdate) => void;
 };
 
 type ResolvedSingleContent = {
@@ -587,7 +589,7 @@ export class LLMService {
           request.generation,
           request.transport,
           {
-            stream: false,
+            stream: request.transport?.stream ?? Boolean(request.onUpdate),
             // Explicit Agent budgets apply even when ordinary generation uses defaults.
             ...(request.generation?.maxOutputTokens !== undefined
               ? { maxTokens: request.generation.maxOutputTokens }
@@ -612,6 +614,7 @@ export class LLMService {
           request.tools,
           options,
           request.onProgress,
+          request.onUpdate,
         );
       } catch (error: unknown) {
         if (error instanceof LLMIncompleteError) throw error;

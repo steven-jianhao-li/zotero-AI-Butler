@@ -1,4 +1,6 @@
 import { AgentTimeline } from "../src/modules/views/agent/AgentTimeline";
+import { AgentTrajectory } from "../src/modules/views/agent/AgentTrajectory";
+import { requestAgentTurn } from "../src/modules/llmproviders/shared/agentTransport";
 import { agentStorageInfo } from "../src/modules/views/agent/AgentStorageInfo";
 import { agentLogo } from "../src/modules/views/agent/icons";
 import { AgentStore } from "../src/modules/agent/AgentStore";
@@ -12,6 +14,7 @@ import {
 export async function runAgentUIHostChecks(
   doc: Document,
   assert: (value: boolean, name: string) => void,
+  streamFixtureUrl: string,
 ): Promise<void> {
   const element = (className: string) => {
     const node = doc.createElementNS(
@@ -73,6 +76,31 @@ export async function runAgentUIHostChecks(
     timeline.render(state, (id, allow) => decisions.push(`${id}:${allow}`));
   const openDirectory = AgentStore.openDirectory;
   try {
+    let acknowledged: Promise<unknown> | undefined;
+    const streamed = await requestAgentTurn(
+      "openai-compat",
+      [{ role: "user", content: "Fixture request" }],
+      [],
+      {
+        apiUrl: streamFixtureUrl,
+        apiKey: "fixture",
+        model: "fixture",
+        stream: true,
+        requestTimeoutMs: 15000,
+      },
+      undefined,
+      (update) => {
+        if (update.text === "Live" && !acknowledged)
+          acknowledged = Zotero.HTTP.request("GET", `${streamFixtureUrl}/ack`);
+      },
+    );
+    await acknowledged;
+    assert(
+      Boolean(acknowledged) &&
+        streamed.text === "Live reply" &&
+        streamed.reasoningContent === "Checking.",
+      "agentNativeXHRStreamsBeforeCompletion",
+    );
     render();
     const work = host.querySelector<HTMLDetailsElement>(".agent-work")!;
     const thinking = host.querySelector<HTMLDetailsElement>(
@@ -123,10 +151,8 @@ export async function runAgentUIHostChecks(
     render();
     assert(work.open && thinking.open, "agentManualExpansionSurvivesRefresh");
     work.open = false;
-    timeline.setMode("activity");
-    assert(work.open, "agentActivityExpandsWork");
-    timeline.setMode("conversation");
-    assert(!work.open, "agentConversationRestoresFold");
+    timeline.focusEvent("call");
+    assert(work.open && tool.open, "agentNavigationOpensContainingWork");
     timeline.clear();
     render();
     assert(
@@ -176,6 +202,77 @@ export async function runAgentUIHostChecks(
       !host.querySelector(".agent-delivery .agent-event--reasoning"),
       "agentThinkingExcludedFromDelivery",
     );
+    const traceHost = element("agent-trajectory");
+    host.hidden = true;
+    root.append(traceHost);
+    let navigated = "";
+    const trajectory = new AgentTrajectory(
+      traceHost,
+      (id) => {
+        navigated = id;
+      },
+      (id, allow) => decisions.push(`${id}:${allow}`),
+    );
+    state.pendingApprovals = [approval];
+    trajectory.render(state);
+    const search = traceHost.querySelector<HTMLInputElement>("input")!;
+    search.value = "complete result";
+    const input = doc.createEvent("Event");
+    input.initEvent("input", true, true);
+    search.dispatchEvent(input);
+    assert(
+      traceHost.querySelectorAll(".agent-trace-row:not([hidden])").length === 1,
+      "agentTrajectorySearchesFullResults",
+    );
+    const bar = traceHost.querySelector<HTMLButtonElement>(
+      '.agent-trace-bar[data-kind="input"]',
+    )!;
+    bar.click();
+    await frame();
+    assert(
+      search.value === "" &&
+        !!traceHost.querySelector(".agent-trace-row.is-selected[open]"),
+      "agentTrajectoryOverviewNavigates",
+    );
+    traceHost
+      .querySelector<HTMLButtonElement>(
+        ".agent-trace-row.is-selected .agent-trace-actions button",
+      )!
+      .click();
+    assert(navigated === "u1", "agentTrajectoryReturnsToConversation");
+    const toolbar = traceHost.querySelectorAll<HTMLButtonElement>(
+      ".agent-trace-toolbar button",
+    );
+    toolbar[0].click();
+    assert(
+      toolbar[0].getAttribute("aria-pressed") === "true",
+      "agentTrajectoryDurationToggle",
+    );
+    toolbar[1].click();
+    assert(
+      !traceHost.querySelector(".agent-trace-turn[open]"),
+      "agentTrajectoryFoldsTurns",
+    );
+    toolbar[1].click();
+    toolbar[2].click();
+    assert(
+      !traceHost.querySelector(".agent-trace-row:not([open])"),
+      "agentTrajectoryExpandsDetails",
+    );
+    traceHost
+      .querySelector<HTMLButtonElement>(".agent-trace-approval")!
+      .click();
+    assert(
+      decisions.at(-1) === "approve-fixture:false",
+      "agentTrajectoryApprovalAction",
+    );
+    trajectory.clear();
+    assert(
+      !traceHost.querySelector(".agent-trace-row"),
+      "agentTrajectoryClearsSession",
+    );
+    traceHost.remove();
+    host.hidden = false;
     const logo = agentLogo(doc);
     logo.style.cssText = "width:32px;height:32px";
     root.prepend(logo);

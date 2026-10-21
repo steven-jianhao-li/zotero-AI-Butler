@@ -57,6 +57,11 @@ export class AgentStore {
         session.permission = "read-only";
         session.options.permission = "read-only";
         session.artifacts ||= {};
+        for (const event of session.events)
+          if (event.streamState === "streaming") {
+            event.streamState = "interrupted";
+            event.endedAt = session.updatedAt;
+          }
         session.plan ||= [];
         session.team ||= [];
         for (const member of session.team) {

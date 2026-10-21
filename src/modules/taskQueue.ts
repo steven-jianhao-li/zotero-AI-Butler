@@ -2100,6 +2100,13 @@ export class TaskQueueManager {
       if (getEffectiveTaskType(task) !== taskType) continue;
       if (task.status === TaskStatus.COMPLETED) continue;
       if (task.status === TaskStatus.PROCESSING) continue;
+      if (
+        this.processingTasks.has(task.id) ||
+        this.taskAbortControllers.has(task.id)
+      )
+        continue;
+      if (this.shouldRegenerateWhenArtifactExists(taskType, task.options))
+        continue;
 
       task.status = TaskStatus.COMPLETED;
       task.progress = 100;
@@ -2136,11 +2143,27 @@ export class TaskQueueManager {
     const taskType = getEffectiveTaskType(task);
     if (taskType !== "summary" && taskType !== "deepRead") return false;
 
+    const initialStatus = task.status;
+    const createdAt = task.createdAt;
+    const startedAt = task.startedAt;
+    const canReconcile = () =>
+      this.tasks.get(taskId) === task &&
+      task.status === initialStatus &&
+      task.createdAt === createdAt &&
+      task.startedAt === startedAt &&
+      task.status !== TaskStatus.PROCESSING &&
+      !this.processingTasks.has(taskId) &&
+      !this.taskAbortControllers.has(taskId) &&
+      !this.shouldRegenerateWhenArtifactExists(taskType, task.options);
+    if (!canReconcile()) return false;
+
     const item = await Zotero.Items.getAsync(task.itemId);
     if (!item) return false;
 
     const artifact = await TaskArtifacts.probe(taskType, item as Zotero.Item);
-    if (artifact.probeFailed || !artifact.exists) return false;
+    // The queue can start, replace or remove the task during either await.
+    if (artifact.probeFailed || !artifact.exists || !canReconcile())
+      return false;
 
     task.status = TaskStatus.COMPLETED;
     task.progress = 100;

@@ -44,9 +44,7 @@ import {
 import { openQuickChatRelatedSelectorDialog } from "./quickChatRelatedSelector";
 import {
   addZoteroNoteOverflowGuards,
-  buildFollowUpChatPairNoteHtml,
   decodeMathHtmlEntities,
-  normalizeFollowUpChatNoteHtml,
   normalizeLatexForKatex,
   requiresDisplayMath,
   stripMathDelimiters,
@@ -5279,57 +5277,7 @@ async function copyQuickChatText(
   }
 }
 
-/**
- * 获取或创建"AI管家-后续追问"独立笔记
- */
-async function getOrCreateChatNote(item: Zotero.Item): Promise<Zotero.Item> {
-  const title =
-    (item.getField("title") as string) || getString("common-paper-title");
-
-  // 查找已有的聊天笔记
-  const noteIDs = (item as any).getNotes?.() || [];
-  for (const nid of noteIDs) {
-    try {
-      const n = await Zotero.Items.getAsync(nid);
-      if (!n) continue;
-      const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-      const hasChatTag = tags.some((t) => t.tag === "AI-Butler-Chat");
-      const html: string = (n as any).getNote?.() || "";
-      const titleMatch = /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(html);
-      if (hasChatTag || titleMatch) {
-        return n as Zotero.Item;
-      }
-    } catch (e) {
-      continue;
-    }
-  }
-
-  // 创建新笔记
-  const note = new Zotero.Item("note");
-  note.libraryID = item.libraryID;
-  note.parentID = item.id;
-  const header = `<h2>${getString("itempane-chat-note-title", { args: { title: escapeHtmlForNote(title) } })}</h2>`;
-  note.setNote(header);
-  note.addTag("AI-Butler-Chat");
-  await note.saveTx();
-  return note;
-}
-
-/**
- * 转义 HTML 字符（用于笔记保存）
- */
-function escapeHtmlForNote(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-/**
- * 将对话对保存到后续追问笔记
- */
+/** 保存快速追问，与完整追问共用 AI 精读笔记。 */
 async function saveChatPairToNote(
   item: Zotero.Item,
   pairId: string,
@@ -5338,35 +5286,15 @@ async function saveChatPairToNote(
   metadata?: LLMNoteMetadata | null,
   sourceLabel = getString("itempane-quick-chat-source-label"),
 ): Promise<void> {
-  const note = await getOrCreateChatNote(item);
-  let noteHtml = (note as any).getNote?.() || "";
-  const normalizedNoteHtml = normalizeFollowUpChatNoteHtml(noteHtml);
-
-  // 检查是否已存在相同 pairId 的对话对，防止重复保存
-  if (normalizedNoteHtml.includes(`AI_BUTLER_CHAT_PAIR_START id=${pairId}`)) {
-    if (normalizedNoteHtml !== noteHtml) {
-      (note as any).setNote(normalizedNoteHtml);
-      await (note as any).saveTx();
-    }
-    ztoolkit.log("[AI-Butler] 该对话对已保存过，跳过重复保存");
-    return;
-  }
-  noteHtml = normalizedNoteHtml;
-
-  const blockContent = buildFollowUpChatPairNoteHtml({
+  await AiNoteService.appendFollowUpPair({
+    item,
     pairId,
     userMessage,
     assistantMessage,
+    metadata,
     sourceLabel,
   });
-  const block = metadata
-    ? LLMNoteMetadataService.wrapHtml(blockContent, metadata)
-    : blockContent;
-
-  noteHtml += block;
-  (note as any).setNote(noteHtml);
-  await (note as any).saveTx();
-  ztoolkit.log("[AI-Butler] 快速追问对话已保存到笔记");
+  scheduleSidebarRefresh("deepRead");
 }
 
 /**

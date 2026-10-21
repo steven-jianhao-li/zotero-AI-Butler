@@ -6,8 +6,12 @@
 
 回归测试：`test:sidebar`。测试覆盖取消/边界与现有行为，使用隔离 fixture，不读取个人库或调用真实 AI。实机测试范围以 PR 描述列出的结果为准。
 
+追问历史回归：`node --test test/followUpChatHistory.test.mjs`。覆盖快速追问保存后在完整追问中恢复问答、旧笔记格式、重复保存和并发保存。
+
 ## English
 
 Size the sidebar from its owning document viewport, offset, and bottom inset rather than the taller top window or a 320px minimum. Native wheel candidates must use auto/scroll overflow so clipped containers cannot consume scrolling.
 
 Regression command: `npm run test:sidebar`. Tests exercise boundaries and existing behavior with isolated fixtures, without personal libraries or live AI requests. Refer to the PR description for the actual native-host validation scope.
+
+Chat history: `node --test test/followUpChatHistory.test.mjs`. These fixtures cover saved quick-to-full chat history, legacy notes, and duplicate and concurrent saves.

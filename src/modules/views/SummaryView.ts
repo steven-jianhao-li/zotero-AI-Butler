@@ -865,48 +865,6 @@ export class SummaryView extends BaseView {
     return `pair_${Date.now()}_${this.pairIdCounter}`;
   }
 
-  private async findChatNote(item: Zotero.Item): Promise<Zotero.Item | null> {
-    const noteIDs = (item as any).getNotes?.() || [];
-    for (const nid of noteIDs) {
-      try {
-        const n = await Zotero.Items.getAsync(nid);
-        if (!n) continue;
-        const tags: Array<{ tag: string }> = (n as any).getTags?.() || [];
-        const hasChatTag = tags.some((t) => t.tag === "AI-Butler-Chat");
-        const html: string = (n as any).getNote?.() || "";
-        const titleMatch = /<h2>\s*AI 管家\s*-\s*后续追问\s*-/.test(html);
-        if (hasChatTag || titleMatch) {
-          return n as Zotero.Item;
-        }
-      } catch (e) {
-        continue;
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * 获取或创建“AI管家-后续追问-论文名”独立笔记
-   */
-  private async getOrCreateChatNote(item: Zotero.Item): Promise<Zotero.Item> {
-    const existingNote = await this.findChatNote(item);
-    if (existingNote) return existingNote;
-
-    const title =
-      (item.getField("title") as string) || getString("summary-untitled-paper");
-
-    // 创建新笔记
-    const note = new Zotero.Item("note");
-    note.libraryID = item.libraryID;
-    note.parentID = item.id;
-    const header = `<h2>${getString("summary-chat-note-title", { args: { title: this.escapeHtml(title) } })}</h2>`;
-    note.setNote(header);
-    note.addTag("AI-Butler-Chat");
-    await note.saveTx();
-    return note;
-  }
-
   /**
    * 将对话对追加到 AI 精读笔记（带可解析标记，便于恢复）
    */
@@ -1491,7 +1449,7 @@ export class SummaryView extends BaseView {
         item,
         "deepRead",
       );
-      const legacyChatNote = await this.findChatNote(item);
+      const legacyChatNote = await AiNoteService.findLegacyChatNote(item);
       const html = [
         deepReadRecord?.rawHtml || "",
         ((legacyChatNote as any)?.getNote?.() as string | undefined) || "",

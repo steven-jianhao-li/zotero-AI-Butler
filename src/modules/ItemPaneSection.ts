@@ -5188,8 +5188,10 @@ function renderChatArea(
 
     if (!question) return;
 
+    const generation = quickChatBindGeneration;
     await ensureActiveThreadLoaded();
     if (
+      generation !== quickChatBindGeneration ||
       !messagesArea.isConnected ||
       currentChatState.itemId !== item.id ||
       !currentChatState.threadId ||

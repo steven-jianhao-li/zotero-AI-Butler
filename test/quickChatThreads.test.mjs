@@ -341,6 +341,7 @@ test("a late reply from another paper cannot overwrite or unlock the active chat
     item: { id: 7 },
     messagesArea: new Element("div"),
     quickChatPairIdCounter: 0,
+    quickChatBindGeneration: 0,
     quickChatPinnedToBottom: true,
     getString: locale.getString,
     escapeHtmlForChat: (text) => text,
@@ -452,4 +453,38 @@ test("a late PDF extraction does not replace another paper's content (#427)", as
   extracted.resolve({ content: "Paper A", isBase64: false });
   await loading;
   assert.equal(context.currentChatState.pdfContent, "Paper B");
+});
+
+test("sending while history loads cannot submit a question to a different thread (#427)", async () => {
+  const loaded = deferred();
+  const sendBtn = new Element("button");
+  const state = { itemId: 7, threadId: "a", isChatting: false };
+  const context = vm.createContext({
+    currentChatState: state,
+    sendBtn,
+    inputBox: { value: "Question for A" },
+    item: { id: 7 },
+    messagesArea: new Element("div"),
+    quickChatBindGeneration: 0,
+    ensureActiveThreadLoaded: () => loaded.promise,
+  });
+  const first = sidebarSource.indexOf(
+    '  sendBtn.addEventListener("click", async () => {',
+  );
+  const last = sidebarSource.indexOf("  // Enter 发送", first);
+  vm.runInContext(
+    transformSync(sidebarSource.slice(first, last), {
+      loader: "ts",
+      format: "cjs",
+      target: "es2018",
+      supported: { "dynamic-import": false },
+    }).code,
+    context,
+  );
+  const sending = sendBtn.click();
+  context.quickChatBindGeneration++;
+  state.threadId = "b";
+  loaded.resolve();
+  await sending;
+  assert.equal(state.isChatting, false);
 });

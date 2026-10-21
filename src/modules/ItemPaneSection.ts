@@ -84,7 +84,6 @@ function getSidebarNoteKindLabel(noteKind: AiNoteKind): string {
     : getString("itempane-note-kind-deep-read");
 }
 
-const SIDEBAR_HEADING_TO_BLOCKQUOTE_TEXT_THRESHOLD = 36;
 const SIDEBAR_NOTE_OVERFLOW_GUARD_CSS = `
 .ai-butler-note-section,
 .ai-butler-note-section *,
@@ -5633,49 +5632,28 @@ function normalizeHtmlFragmentForXhtml(doc: Document, html: string): string {
     .replace(new RegExp("<(?=[^a-zA-Z/?!])", "g"), "&lt;");
 }
 
-function getVisibleTextLength(text: string): number {
-  return Array.from(text.replace(/\s+/g, "").trim()).length;
-}
-
-function demoteLongSidebarHeadingsToBlockquote(
-  doc: Document,
-  html: string,
-): string {
+/** Omit the generated note title from the preview, preserving stored HTML. */
+function hideSidebarNoteTitle(doc: Document, html: string): string {
   try {
-    const mainWin: any =
-      Zotero && (Zotero as any).getMainWindow
-        ? (Zotero as any).getMainWindow()
-        : (globalThis as any);
-    const implementation: any =
-      mainWin?.document?.implementation || doc.implementation;
-    const createHTMLDocument: any = implementation?.createHTMLDocument;
-    if (typeof createHTMLDocument !== "function") return html;
-
-    const htmlDoc: Document = createHTMLDocument.call(implementation, "");
+    const htmlDoc = doc.implementation.createHTMLDocument("");
     const container = htmlDoc.createElement("div");
     container.innerHTML = html;
 
-    container.querySelectorAll("h1, h2").forEach((heading: Element) => {
-      const headingText = heading.textContent || "";
-      if (
-        getVisibleTextLength(headingText) <=
-        SIDEBAR_HEADING_TO_BLOCKQUOTE_TEXT_THRESHOLD
-      ) {
-        return;
-      }
-
-      const blockquote = htmlDoc.createElement("blockquote");
-      const paragraph = htmlDoc.createElement("p");
-      while (heading.firstChild) {
-        paragraph.appendChild(heading.firstChild);
-      }
-      blockquote.appendChild(paragraph);
-      heading.replaceWith(blockquote);
-    });
+    const heading = container.querySelector("h1, h2");
+    const headingText = (heading?.textContent || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (
+      /^AI\s*(?:(?:Butler|管家)\s*[-–—:：]\s*)?(?:Summary|Deep Reading|总结|精读)\s*[-–—:：]/i.test(
+        headingText,
+      )
+    ) {
+      heading?.remove();
+    }
 
     return container.innerHTML;
   } catch (err) {
-    ztoolkit.log("[AI-Butler] 降级侧边栏长一级标题失败:", err);
+    ztoolkit.log("[AI-Butler] 隐藏侧边栏笔记标题失败:", err);
     return html;
   }
 }
@@ -6443,13 +6421,10 @@ async function loadNoteContent(
       return result;
     };
 
-    const adjustedHeadingContent = demoteLongSidebarHeadingsToBlockquote(
-      doc,
-      aiNoteContent,
-    );
+    const previewContent = hideSidebarNoteTitle(doc, aiNoteContent);
 
     // Render LaTeX first (before XML validation)
-    const latexRenderedContent = renderLatexFormulas(adjustedHeadingContent);
+    const latexRenderedContent = renderLatexFormulas(previewContent);
 
     const sanitizedContent = normalizeHtmlFragmentForXhtml(
       doc,

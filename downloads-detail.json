@@ -1,0 +1,1367 @@
+{
+  "repository": "steven-jianhao-li/zotero-AI-Butler",
+  "updatedAt": "2026-10-21T15:58:20.847Z",
+  "totalDownloads": 171702,
+  "releaseCount": 124,
+  "assetCount": 123,
+  "releases": [
+    {
+      "tag": "v5.1.0",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 663018587,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 0
+        }
+      ]
+    },
+    {
+      "tag": "v5.1.0-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 662157875,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 19
+        }
+      ]
+    },
+    {
+      "tag": "v5.0.0-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 658141575,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 688
+        }
+      ]
+    },
+    {
+      "tag": "v5.0.0-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 658104256,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 6
+        }
+      ]
+    },
+    {
+      "tag": "v4.1.0-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 493523204,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 15636
+        }
+      ]
+    },
+    {
+      "tag": "v4.1.0-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 493454644,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 87
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.3-beta.8",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 491128894,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 986
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.3-beta.7",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 490346507,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 553
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.3-beta.6",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 486676045,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1577
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.3-beta.5",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 486625160,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 131
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.3-beta.4",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 482980893,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1615
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.3-beta.3",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 482980909,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 14
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.3-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 482980885,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 13
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.3-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 481046846,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1122
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.2-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 477348120,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1642
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.1-beta.8",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 473516258,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1908
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.1-beta.7",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 472620099,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 538
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.1-beta.6",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 470899214,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 925
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.1-beta.5",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 469206510,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1203
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.1-beta.4",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 459365907,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 3884
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.1-beta.3",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 458525943,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 499
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.1-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 458482362,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 18
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.1-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 458297073,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 248
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.0-beta.9",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 456262041,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1364
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.0-beta.8",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 456213856,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 16
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.0-beta.7",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 456149444,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 12
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.0-beta.6",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 456139257,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 13
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.0-beta.5",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 455715903,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 412
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.0-beta.4",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 455525692,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 198
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.0-beta.3",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 454340858,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1041
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.0-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 454339669,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 14
+        }
+      ]
+    },
+    {
+      "tag": "v4.0.0-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 449934109,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 2065
+        }
+      ]
+    },
+    {
+      "tag": "v3.8.0",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 439007880,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 19174
+        }
+      ]
+    },
+    {
+      "tag": "v3.7.3-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 438863926,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 199
+        }
+      ]
+    },
+    {
+      "tag": "v3.7.2",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 438163729,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 2641
+        }
+      ]
+    },
+    {
+      "tag": "v3.7.1",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 438163719,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 14
+        }
+      ]
+    },
+    {
+      "tag": "v3.7.1-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 434802479,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 2261
+        }
+      ]
+    },
+    {
+      "tag": "v3.7.1-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 434546679,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 498
+        }
+      ]
+    },
+    {
+      "tag": "v3.7.0",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 433732642,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 6992
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.1-beta.7",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 432737421,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 825
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.1-beta.6",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 432599855,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 26
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.1-beta.5",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 424747785,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 4156
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.1-beta.4",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 424747775,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 18
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.1-beta.3",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 417524528,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 4077
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.1-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 417501142,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 15
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.1-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 416664165,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1171
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.0-beta.8",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 416073644,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 765
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.0-beta.7",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 415915093,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 304
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.0-beta.6",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 415006036,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1127
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.0-beta.5",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 414394161,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 783
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.0-beta.4",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 414250665,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 238
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.0-beta.3",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 414103162,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 439
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.0-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 414098318,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 11
+        }
+      ]
+    },
+    {
+      "tag": "v3.6.0-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 411626191,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 2165
+        }
+      ]
+    },
+    {
+      "tag": "v3.5.0-beta.4",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 411186787,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 383
+        }
+      ]
+    },
+    {
+      "tag": "v3.5.0-beta.3",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 411033809,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 164
+        }
+      ]
+    },
+    {
+      "tag": "v3.5.0-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 410659244,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 349
+        }
+      ]
+    },
+    {
+      "tag": "v3.5.0-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 410384163,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 233
+        }
+      ]
+    },
+    {
+      "tag": "v3.4.2",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 409816883,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 10750
+        }
+      ]
+    },
+    {
+      "tag": "v3.4.1",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 394778649,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 14437
+        }
+      ]
+    },
+    {
+      "tag": "v3.4.1-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 383538467,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 3565
+        }
+      ]
+    },
+    {
+      "tag": "v3.4.0-beta.3",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 383467959,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 157
+        }
+      ]
+    },
+    {
+      "tag": "v3.4.0-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 364933955,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 2515
+        }
+      ]
+    },
+    {
+      "tag": "v3.3.0",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 348222729,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 12165
+        }
+      ]
+    },
+    {
+      "tag": "v3.3.0-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 347070191,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 825
+        }
+      ]
+    },
+    {
+      "tag": "v3.2.0",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 343251899,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 5429
+        }
+      ]
+    },
+    {
+      "tag": "v3.2.0-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 343173702,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 149
+        }
+      ]
+    },
+    {
+      "tag": "v3.2.0-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 343152822,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 132
+        }
+      ]
+    },
+    {
+      "tag": "v3.1.1",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 342744031,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1903
+        }
+      ]
+    },
+    {
+      "tag": "v3.1.0",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 342314054,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1797
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.4-beta.10",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 341831616,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 537
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.4-beta.9",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 341545786,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 224
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.4-beta.8",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 341543531,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 15
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.4-beta.7",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 341532403,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 14
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.4-beta.6",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 341510431,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 14
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.4-beta.5",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 340455183,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 887
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.4-beta.4",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 339566472,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 866
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.4-beta.3",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 339427527,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 68
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.4-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 338693982,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 788
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.4-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 338180444,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 486
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.3",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 337906466,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 4271
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.2",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 337735513,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1080
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.2-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 336909825,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 693
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.2-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 336132745,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 854
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.1",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 335877159,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 3024
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.0",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 335795645,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 530
+        }
+      ]
+    },
+    {
+      "tag": "v3.0.0-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 335549920,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 246
+        }
+      ]
+    },
+    {
+      "tag": "v2.1.0",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 335493310,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 757
+        }
+      ]
+    },
+    {
+      "tag": "v2.0.7",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 335477401,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 147
+        }
+      ]
+    },
+    {
+      "tag": "v2.0.6",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 335472805,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 24
+        }
+      ]
+    },
+    {
+      "tag": "v2.0.5",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 335467683,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 28
+        }
+      ]
+    },
+    {
+      "tag": "v2.0.4",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 335455640,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 76
+        }
+      ]
+    },
+    {
+      "tag": "v2.0.3",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 332396147,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 3973
+        }
+      ]
+    },
+    {
+      "tag": "v2.0.2",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 331944427,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1470
+        }
+      ]
+    },
+    {
+      "tag": "v2.0.2-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 331715394,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 22
+        }
+      ]
+    },
+    {
+      "tag": "v2.0.2-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 331712124,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 12
+        }
+      ]
+    },
+    {
+      "tag": "v2.0.1",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 331603293,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 823
+        }
+      ]
+    },
+    {
+      "tag": "v2.0.0",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 331365287,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 727
+        }
+      ]
+    },
+    {
+      "tag": "v2.0.0-beta.3",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 331334372,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 22
+        }
+      ]
+    },
+    {
+      "tag": "v2.0.0-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 331330288,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 12
+        }
+      ]
+    },
+    {
+      "tag": "v2.0.0-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 331313900,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 13
+        }
+      ]
+    },
+    {
+      "tag": "v1.3.1-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 331237812,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 20
+        }
+      ]
+    },
+    {
+      "tag": "v1.3.1-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 331235500,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 13
+        }
+      ]
+    },
+    {
+      "tag": "v1.3.0",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 330555860,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1624
+        }
+      ]
+    },
+    {
+      "tag": "v1.3.0-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 328862257,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 44
+        }
+      ]
+    },
+    {
+      "tag": "v1.3.0-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 326277938,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 21
+        }
+      ]
+    },
+    {
+      "tag": "v1.2.0",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 316468262,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 3685
+        }
+      ]
+    },
+    {
+      "tag": "v1.2.0-beta.5",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 316468087,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 19
+        }
+      ]
+    },
+    {
+      "tag": "v1.2.0-beta.4",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 315449170,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 28
+        }
+      ]
+    },
+    {
+      "tag": "v1.2.0-beta.3",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 315442450,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 10
+        }
+      ]
+    },
+    {
+      "tag": "v1.2.0-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 314743025,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 21
+        }
+      ]
+    },
+    {
+      "tag": "v1.2.0-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 314568774,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 23
+        }
+      ]
+    },
+    {
+      "tag": "v1.1.3-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 314496625,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 11
+        }
+      ]
+    },
+    {
+      "tag": "v1.1.3-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 313631340,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 19
+        }
+      ]
+    },
+    {
+      "tag": "v1.1.2",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 312271542,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 1270
+        }
+      ]
+    },
+    {
+      "tag": "v1.1.1",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 312014988,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 272
+        }
+      ]
+    },
+    {
+      "tag": "v1.1.0",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 311845209,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 109
+        }
+      ]
+    },
+    {
+      "tag": "v1.1.0-beta.2",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 311249389,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 22
+        }
+      ]
+    },
+    {
+      "tag": "v1.1.0-beta.1",
+      "prerelease": true,
+      "assets": [
+        {
+          "id": 311246222,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 11
+        }
+      ]
+    },
+    {
+      "tag": "v1.0.3",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 310440653,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 341
+        }
+      ]
+    },
+    {
+      "tag": "v1.0.2",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 310435725,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 11
+        }
+      ]
+    },
+    {
+      "tag": "v1.0.1",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 310022689,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 117
+        }
+      ]
+    },
+    {
+      "tag": "v1.0.0",
+      "prerelease": false,
+      "assets": [
+        {
+          "id": 310017395,
+          "name": "zotero-ai-butler.xpi",
+          "downloads": 9
+        }
+      ]
+    },
+    {
+      "tag": "release",
+      "prerelease": true,
+      "assets": []
+    }
+  ]
+}

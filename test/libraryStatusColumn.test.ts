@@ -3,7 +3,6 @@ import {
   isDeepReadTask,
   isAiStatusTrackedNote,
   isSummaryTask,
-  shouldDeferLibraryStatusRefreshForSelection,
   resolveCombinedAiStatusFromTasks,
   resolveDeepReadStatusFromTasks,
   resolveSummaryStatusFromTasks,
@@ -181,19 +180,6 @@ describe("library status column", function () {
     ).to.equal(true);
     expect(
       isAiStatusTrackedNote([{ tag: "AI-DeepRead" }], "<p>deep</p>"),
-    ).to.equal(true);
-  });
-
-  it("suppresses tree refresh while a note is selected", function () {
-    expect(
-      shouldDeferLibraryStatusRefreshForSelection([
-        { isNote: () => false } as Zotero.Item,
-      ]),
-    ).to.equal(false);
-    expect(
-      shouldDeferLibraryStatusRefreshForSelection([
-        { isNote: () => true } as Zotero.Item,
-      ]),
     ).to.equal(true);
   });
 

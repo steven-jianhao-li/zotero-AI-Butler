@@ -131,6 +131,71 @@ async function runProbe() {
       legacy ? !!scope.OS : scope.IOUtils === IOUtils,
       "filesystemBoundary",
     );
+    if (!legacy) {
+      var paper = new host.Item("journalArticle");
+      paper.setField("title", "AI Butler UI regression fixture");
+      await paper.saveTx();
+      var note = new host.Item("note");
+      note.parentID = paper.id;
+      note.setNote("<h1>AI summary</h1><p>Editor focus fixture.</p>");
+      note.addTag("AI-Generated");
+      await note.saveTx();
+      await main.ZoteroPane.selectItem(note.id);
+      var editor;
+      var editable;
+      await waitFor(function () {
+        editor = host.Notes._editorInstances.find(function (instance) {
+          return instance._item && instance._item.id === note.id;
+        });
+        editable =
+          editor && editor._iframeWindow.document.querySelector(".ProseMirror");
+        return editable;
+      }, "native note editor");
+      await editor._initPromise;
+      editable.focus();
+      var editorDocument = editable.ownerDocument;
+      var redraws = 0;
+      var columnRefreshes = 0;
+      var refreshColumns = host.ItemTreeManager.refreshColumns;
+      var redrawObserver = host.Notifier.registerObserver(
+        {
+          notify: function (event, type, ids) {
+            if (
+              event === "redraw" &&
+              type === "item" &&
+              (!ids.length || ids.indexOf(paper.id) >= 0)
+            )
+              redraws++;
+          },
+        },
+        ["item"],
+        "ai-butler-ui-focus-probe",
+      );
+      host.ItemTreeManager.refreshColumns = function () {
+        columnRefreshes++;
+        return refreshColumns.apply(this, arguments);
+      };
+      try {
+        editorDocument.execCommand("insertText", false, "Saved edit 398");
+        editorDocument.execCommand("insertParagraph", false, null);
+        await waitFor(function () {
+          return note.getNote().indexOf("Saved edit 398") >= 0;
+        }, "native note autosave");
+        await waitFor(function () {
+          return redraws > 0;
+        }, "status row redraw");
+        assert(columnRefreshes === 0, "statusRedrawWithoutColumnRebuild");
+        assert(
+          host.Notes._editorInstances.indexOf(editor) >= 0 &&
+            editorDocument.activeElement === editable &&
+            main.ZoteroPane.getSelectedItems()[0].id === note.id,
+          "nativeNoteEditorKeepsFocus",
+        );
+      } finally {
+        host.ItemTreeManager.refreshColumns = refreshColumns;
+        host.Notifier.unregisterObserver(redrawObserver);
+      }
+    }
     var tab = main.document.createXULElement
       ? main.document.createXULElement("browser")
       : main.document.createElementNS(

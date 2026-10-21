@@ -66,8 +66,13 @@ export async function updateDownloadStats(github, repository) {
   const stats = await collectDownloadStats(github, repository);
   const badge = {
     schemaVersion: 1,
-    label: "XPI downloads",
-    message: stats.totalDownloads.toLocaleString("en-US"),
+    label: "downloads",
+    message: new Intl.NumberFormat("en-US", {
+      notation: "compact",
+      maximumSignificantDigits: 3,
+    })
+      .format(stats.totalDownloads)
+      .replace("K", "k"),
     color: "brightgreen",
   };
 

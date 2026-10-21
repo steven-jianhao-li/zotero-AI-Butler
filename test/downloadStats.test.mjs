@@ -140,7 +140,7 @@ test("rejects invalid counts instead of publishing an incorrect total", async ()
 });
 
 for (const existingBranch of [false, true]) {
-  test(`publishes the exact total atomically (${existingBranch ? "existing" : "new"} stats branch)`, async () => {
+  test(`publishes a compact badge and exact totals atomically (${existingBranch ? "existing" : "new"} stats branch)`, async () => {
     const { github, calls } = fixture(
       [release(1)],
       new Map([[1, [asset(1, 171662)]]]),
@@ -155,7 +155,8 @@ for (const existingBranch of [false, true]) {
       tree.tree.find((entry) => entry.path === "downloads-detail.json").content,
     );
     assert.equal(badge.schemaVersion, 1);
-    assert.equal(badge.message, "171,662");
+    assert.equal(badge.label, "downloads");
+    assert.equal(badge.message, "172k");
     assert.equal(detail.totalDownloads, 171662);
     assert.equal(detail.releases[0].assets[0].downloads, 171662);
     assert.equal(tree.base_tree, existingBranch ? "previous-tree" : undefined);

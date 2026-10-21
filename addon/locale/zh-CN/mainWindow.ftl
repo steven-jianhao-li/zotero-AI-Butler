@@ -1262,14 +1262,22 @@ summary-queue-button-error = 查看任务队列（有错误）
 summary-queue-button-ready = 查看任务队列
 summary-title = AI 总结输出
 
-content-error-no-analyzable-attachment = 该条目没有可分析附件，无法进行 AI 分析。请先添加 PDF 文件或网页快照。
-content-error-no-usable-attachment = 没有可用的分析附件。请先添加 PDF 文件、网页快照，或将附件下载到本地。
+content-error-no-analyzable-attachment = 该条目没有可分析附件，无法进行 AI 分析。请先添加 PDF、EPUB 或网页快照。
+content-error-no-usable-attachment = 没有可用的分析附件。请先添加 PDF、EPUB、网页快照，或将附件下载到本地。
 content-error-unsupported-attachment = 附件不是当前支持的可分析内容源
+epub-error-not-epub = 附件不是 EPUB 文件
+epub-error-unavailable = 当前 Zotero 不具备可用的原生 EPUB 解析能力。请使用支持 EPUB 的 Zotero 7 或更新版本；PDF 和网页快照仍可正常分析。
+epub-error-file-unavailable = EPUB 文件尚未下载或已丢失，请先将附件下载到本地。
+epub-error-no-readable-text = EPUB 中没有可提取的正文，请检查文件是否仅包含图片或受加密保护。
+epub-error-extraction-failed = 无法读取 EPUB，请确认文件能在 Zotero 中打开且未损坏或加密。详情：{ $message }
+epub-progress-extracting = 正在使用 Zotero 提取 EPUB 正文...
+epub-progress-extracted = EPUB 正文提取完成
 snapshot-error-not-web-snapshot = 附件不是网页快照
 snapshot-error-no-file-path = 无法获取网页快照文件路径
 snapshot-error-empty-file = 网页快照文件为空或无法读取
 snapshot-error-no-readable-text = 无法从网页快照中提取可读文本
 llm-warning-web-snapshot-used = 已使用网页快照文本作为本次分析内容。
+llm-warning-epub-used = 已使用 Zotero 提取的 EPUB 正文作为本次分析内容。
 llm-warning-attachment-as-text = 当前附件将按文本内容进行分析。
 
 llm-warning-auto-continuation-used = 检测到输出被截断，已自动续写 { $count } 轮。

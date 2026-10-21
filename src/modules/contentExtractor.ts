@@ -4,11 +4,12 @@ import {
   type PdfExtractionProgressCallback,
 } from "./pdfExtractor";
 import { SnapshotExtractor } from "./snapshotExtractor";
+import { EPUBExtractor, EPUBExtractionError } from "./epubExtractor";
 import type { LLMPdfProcessMode } from "./llmEndpointManager";
 import type { LLMAbortSignal } from "./llmproviders/types";
 import { throwIfAborted } from "./llmproviders/shared/requestAbort";
 
-export type AnalyzableContentKind = "pdf" | "web-snapshot";
+export type AnalyzableContentKind = "pdf" | "epub" | "web-snapshot";
 
 export type ResolvedAnalyzableContent = {
   content: string;
@@ -20,24 +21,21 @@ export type ResolvedAnalyzableContent = {
 /**
  * 统一的可分析内容源入口。
  *
- * 策略刻意保守：有 PDF 时保持原有 PDF 优先行为；只有在没有 PDF 时，才回退到
- * Zotero 网页快照文本，避免改变既有用户对 PDF 处理模式的预期。
+ * 优先使用 PDF，其次是宿主支持的 EPUB，最后使用网页快照文本。
+ * EPUB 始终通过 Zotero 原生解析器读取文字，不改变用户选择的 PDF 处理模式。
  */
 export class ContentExtractor {
   public static async hasAnalyzableAttachment(
     item: Zotero.Item,
   ): Promise<boolean> {
-    if (await PDFExtractor.hasPDFAttachment(item)) {
-      return true;
-    }
-    return SnapshotExtractor.hasWebSnapshotAttachment(item);
+    return (await this.getPreferredAnalyzableAttachments(item)).length > 0;
   }
 
   /**
    * 返回当前默认策略会使用的内容源附件。
    *
    * 注意：这不是“所有”可分析附件。为了不影响已有流程，存在 PDF 时只返回 PDF；
-   * 没有 PDF 时才返回最早的网页快照作为文本兜底。
+   * 没有 PDF 时返回最早的 EPUB（需宿主支持），再回退到最早的网页快照。
    */
   public static async getPreferredAnalyzableAttachments(
     item: Zotero.Item,
@@ -46,6 +44,9 @@ export class ContentExtractor {
     if (pdfAttachments.length > 0) {
       return pdfAttachments;
     }
+
+    const epub = await EPUBExtractor.getOldestEpubAttachment(item);
+    if (epub && EPUBExtractor.isSupported()) return [epub];
 
     const snapshot =
       await SnapshotExtractor.getOldestWebSnapshotAttachment(item);
@@ -71,6 +72,23 @@ export class ContentExtractor {
       }
     }
     return false;
+  }
+
+  /** Explain unavailable EPUB support when a manual request has no usable source. */
+  public static async getUnavailableAttachmentMessage(
+    items: readonly Zotero.Item[],
+  ): Promise<string> {
+    for (const item of items) {
+      const epub = await EPUBExtractor.getOldestEpubAttachment(item);
+      if (
+        epub &&
+        !EPUBExtractor.isSupported() &&
+        (await this.getPreferredAnalyzableAttachments(item)).length === 0
+      ) {
+        return getString("epub-error-unavailable");
+      }
+    }
+    return getString("content-error-no-usable-attachment");
   }
 
   public static async extractAnalyzableContentFromItem(
@@ -110,10 +128,25 @@ export class ContentExtractor {
       };
     }
 
+    const epub = await EPUBExtractor.getOldestEpubAttachment(item);
+    throwIfAborted(options.abortSignal);
+    if (epub && EPUBExtractor.isSupported()) {
+      progressCallback?.(getString("epub-progress-extracting"), 25);
+      const content = await EPUBExtractor.extractTextFromAttachment(
+        epub,
+        options.abortSignal,
+      );
+      progressCallback?.(getString("epub-progress-extracted"), 38);
+      return { content, isBase64: false, kind: "epub", attachment: epub };
+    }
+
     const snapshot =
       await SnapshotExtractor.getOldestWebSnapshotAttachment(item);
     throwIfAborted(options.abortSignal);
     if (!snapshot) {
+      if (epub) {
+        throw new EPUBExtractionError(getString("epub-error-unavailable"));
+      }
       throw new Error(getString("content-error-no-analyzable-attachment"));
     }
 
@@ -141,9 +174,15 @@ export class ContentExtractor {
 
   public static async extractTextFromAnalyzableAttachment(
     attachment: Zotero.Item,
+    abortSignal?: LLMAbortSignal,
   ): Promise<string> {
+    throwIfAborted(abortSignal);
     if (PDFExtractor.isPdfAttachment(attachment)) {
-      return PDFExtractor.extractTextFromAttachment(attachment);
+      return PDFExtractor.extractTextFromAttachment(attachment, abortSignal);
+    }
+
+    if (EPUBExtractor.isEpubAttachment(attachment)) {
+      return EPUBExtractor.extractTextFromAttachment(attachment, abortSignal);
     }
 
     if (await SnapshotExtractor.isWebSnapshotAttachment(attachment)) {

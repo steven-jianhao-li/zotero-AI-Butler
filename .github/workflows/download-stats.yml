@@ -1,0 +1,58 @@
+name: Download Stats
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 */6 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/download-stats.yml
+      - scripts/update-download-stats.mjs
+  # Releases created with GITHUB_TOKEN do not trigger another release workflow.
+  workflow_run:
+    workflows:
+      - Release
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+concurrency:
+  group: download-stats
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Update XPI download badge
+        uses: actions/github-script@v8
+        with:
+          retries: 3
+          script: |
+            const { pathToFileURL } = require('node:url');
+            const scriptUrl = pathToFileURL(`${process.env.GITHUB_WORKSPACE}/scripts/update-download-stats.mjs`);
+            const { updateDownloadStats } = await import(scriptUrl.href);
+            const stats = await updateDownloadStats(github, context.repo);
+            core.info(`${stats.totalDownloads} XPI downloads across ${stats.releaseCount} releases`);
+            await core.summary
+              .addHeading('XPI download statistics')
+              .addTable([
+                [{ data: 'Metric', header: true }, { data: 'Count', header: true }],
+                ['Published releases', String(stats.releaseCount)],
+                ['XPI assets', String(stats.assetCount)],
+                ['Downloads', String(stats.totalDownloads)],
+              ])
+              .addRaw('Includes prereleases, automatic updates, and repeat downloads. Excludes update manifests and draft releases. Deleted assets cannot be recovered from the API.')
+              .write();

@@ -1262,14 +1262,22 @@ summary-queue-button-error = View Task Queue (error)
 summary-queue-button-ready = View Task Queue
 summary-title = AI Summary Output
 
-content-error-no-analyzable-attachment = This item has no analyzable attachment. Please add a PDF file or web snapshot first.
-content-error-no-usable-attachment = No available analyzable attachment. Please add a PDF file or web snapshot, or download the attachment locally first.
+content-error-no-analyzable-attachment = This item has no analyzable attachment. Please add a PDF, EPUB, or web snapshot first.
+content-error-no-usable-attachment = No available analyzable attachment. Please add a PDF, EPUB, or web snapshot, or download the attachment locally first.
 content-error-unsupported-attachment = This attachment is not a supported analyzable content source.
+epub-error-not-epub = This attachment is not an EPUB file.
+epub-error-unavailable = Native EPUB parsing is unavailable in this Zotero installation. Please use Zotero 7 or later with EPUB support. PDF and web snapshot analysis remain available.
+epub-error-file-unavailable = The EPUB file is missing or has not been downloaded. Please download the attachment locally first.
+epub-error-no-readable-text = No readable text was found in the EPUB. Check whether it contains only images or is encrypted.
+epub-error-extraction-failed = Could not read the EPUB. Check that it opens in Zotero and is not damaged or encrypted. Details: { $message }
+epub-progress-extracting = Extracting EPUB text with Zotero...
+epub-progress-extracted = EPUB text extracted
 snapshot-error-not-web-snapshot = This attachment is not a web snapshot.
 snapshot-error-no-file-path = Could not get the web snapshot file path.
 snapshot-error-empty-file = The web snapshot file is empty or cannot be read.
 snapshot-error-no-readable-text = Could not extract readable text from the web snapshot.
 llm-warning-web-snapshot-used = Used web snapshot text as the analysis content.
+llm-warning-epub-used = Used EPUB text extracted by Zotero as the analysis content.
 llm-warning-attachment-as-text = This attachment will be analyzed as text content.
 
 llm-warning-auto-continuation-used = Output was truncated and automatically continued { $count } round(s).

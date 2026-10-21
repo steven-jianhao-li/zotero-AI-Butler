@@ -327,6 +327,7 @@ export class NoteGenerator {
           item,
           prefMode,
           progressCallback,
+          options?.abortSignal,
         );
         pdfContent = extracted.content;
         isBase64 = extracted.isBase64;
@@ -629,12 +630,14 @@ export class NoteGenerator {
       progress: number,
       meta?: TaskProgressMeta,
     ) => void,
+    abortSignal?: LLMAbortSignal,
   ): Promise<{ content: string; isBase64: boolean }> {
     const extracted = await ContentExtractor.extractAnalyzableContentFromItem(
       item,
       mode === "base64",
       mode,
       progressCallback,
+      { abortSignal },
     );
     if (extracted.isBase64) {
       return { content: extracted.content, isBase64: true };

@@ -19,11 +19,13 @@
 
 ### 验证
 
-先运行 `npm run build`，再运行 `npm run test:compat`、`npm run test:agent` 和 `npm run lint:check`。兼容回归在 CI 的构建之后执行。
+先运行 `npm run build`，再运行 `npm run test:compat`、`npm run test:epub`、`npm run test:agent` 和 `npm run lint:check`。兼容回归在 CI 的构建之后执行。
 
 原生测试命令：`npm run test:compat:host -- <isolated-zotero-executable>`。可追加一个 XPI 路径以检查对照包。测试创建独立 profile 和文献库，不读取用户真实 profile，也不调用 LLM。证据保存在 `.scaffold/host-tests/run-*/`，应使用具备足够空间的工作盘。
 
-Windows 上已验证 Zotero 6.0.27 与 10.0.6：安装、工具栏、版本专属侧栏边界、状态列、文件 API 边界、脑图、设置窗口、禁用清理、重新启用。单元测试覆盖 7、8、10、模拟未来大版本、无效版本、能力缺失、现代 DOM 不变及失败启动清理。7/8 尚未分别执行原生测试；macOS/Linux 尚未实机验证。
+兼容层已有 Windows 上 Zotero 6.0.27 与 10.0.6 的验证记录：安装、工具栏、版本专属侧栏边界、状态列、文件 API 边界、脑图、设置窗口、禁用清理、重新启用。单元测试覆盖 7、8、10、模拟未来大版本、无效版本、能力缺失、现代 DOM 不变及失败启动清理。
+
+EPUB 回归另在 Windows 的 Zotero 6.0.27、7.0.32 和 9.0.6 上通过：6.0.27 安全拒绝 EPUB 分析，7.0.32 的 JSM 与 9.0.6 的 ESM 原生模块均能按阅读顺序提取中文章节。原生测试使用临时生成的 EPUB，并检查插件禁用、重新启用；不调用 LLM。生成的测试脚本对路径使用 Unicode 转义，以兼容旧版加载器和中文工作目录。Zotero 8、macOS/Linux 尚未实机验证。
 
 本 PR 不包含独立的 PDF 恢复、教程窗口和侧栏滚动修复。
 
@@ -48,11 +50,13 @@ Missing required modern capabilities produce a diagnostic, never a silent legacy
 
 ### Validation
 
-Run `npm run build`, then `npm run test:compat`, `npm run test:agent` and `npm run lint:check`. CI executes compatibility regressions after building the artifact.
+Run `npm run build`, then `npm run test:compat`, `npm run test:epub`, `npm run test:agent` and `npm run lint:check`. CI executes compatibility regressions after building the artifact.
 
 Native smoke command: `npm run test:compat:host -- <isolated-zotero-executable>`. An optional additional XPI path supports control artifacts. The runner creates independent profiles/libraries, never reads the real user profile and does not call an LLM. Evidence lives in `.scaffold/host-tests/run-*/`; select a workspace drive with sufficient storage.
 
-Validated on Windows with Zotero 6.0.27 and 10.0.6: installation, toolbar, host-specific sidebar boundary, columns, filesystem boundary, mindmap, settings, disable cleanup and re-enable. Unit coverage includes majors 7/8/10 and a simulated future major, invalid versions, missing capabilities, untouched modern DOM and failed-startup cleanup. Native 7/8 and macOS/Linux remain unverified.
+The compatibility layer has prior Windows validation with Zotero 6.0.27 and 10.0.6: installation, toolbar, host-specific sidebar boundary, columns, filesystem boundary, mindmap, settings, disable cleanup and re-enable. Unit coverage includes majors 7/8/10 and a simulated future major, invalid versions, missing capabilities, untouched modern DOM and failed-startup cleanup.
+
+EPUB regressions also passed on Windows with Zotero 6.0.27, 7.0.32 and 9.0.6: 6.0.27 safely declines EPUB analysis; the native JSM module on 7.0.32 and ESM module on 9.0.6 extract Chinese sections in reading order. Native tests use a generated EPUB fixture, check disable/re-enable, and make no LLM calls. Generated probe scripts escape Unicode paths for legacy loaders and workspaces with Chinese names. Native Zotero 8 and macOS/Linux remain unverified.
 
 Independent PDF recovery, tutorial-window and sidebar-scroll fixes are deliberately excluded from this PR.
 

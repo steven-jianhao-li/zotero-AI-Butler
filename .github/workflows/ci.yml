@@ -25,6 +25,8 @@ jobs:
         run: npm install
       - name: Run Lint
         run: npm run lint:check
+      - name: Check download statistics
+        run: node --test test/downloadStats.test.mjs
 
   build:
     runs-on: ubuntu-latest
@@ -44,6 +46,8 @@ jobs:
         run: npm run build
       - name: Check PDF extraction recovery
         run: npm run test:pdf
+      - name: Check EPUB extraction and compatibility
+        run: npm run test:epub
       - name: Check Sidebar viewport scrolling
         run: npm run test:sidebar
       - name: Check Onboarding visibility

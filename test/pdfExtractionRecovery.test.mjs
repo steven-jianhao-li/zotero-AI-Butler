@@ -258,6 +258,10 @@ function routingHost() {
       "./llmEndpointManager": { LLMEndpointManager: endpoints },
       "./pdfExtractor": host,
       "./llmproviders/shared/requestAbort": host.abort,
+      "./llmproviders/shared/retry": {
+        getApiRetryDelay: () => 0,
+        waitForApiRetry: async () => {},
+      },
     },
     { ztoolkit: { log() {} } },
   );

@@ -326,6 +326,72 @@ test("service exposes connection activity before any answer text, without onProg
   assert.ok(statuses.includes("llm-streaming"));
 });
 
+test("transient API failures back off, respect the attempt cap, and preserve every attempt", async (t) => {
+  const h = host(t);
+  h.LLMEndpointManager.saveEndpoints([endpoint(h)]);
+  const calls = [];
+  h.globals.Zotero.HTTP = {
+    request: async () => {
+      calls.push(Date.now());
+      throw new Error("Request timed out after 100 ms");
+    },
+  };
+  const checked = assert.rejects(
+    h.LLMService.generate({
+      task: "summary",
+      content: { kind: "text", text: "paper" },
+    }),
+    (error) => {
+      assert.equal(error.name, "LLMApiExhaustedError");
+      assert.equal(error.attempts, 3);
+      assert.equal(error.attemptDiagnostics.length, 3);
+      assert.equal(error.attemptDiagnostics[0].request.model, "fixture");
+      assert.equal(error.suppressTaskRetry, true);
+      assert.match(error.message, /"attempts":3/);
+      return true;
+    },
+  );
+  await flush();
+  assert.equal(calls.length, 1);
+  t.mock.timers.tick(999);
+  await flush();
+  assert.equal(calls.length, 1);
+  t.mock.timers.tick(1);
+  await flush();
+  assert.equal(calls.length, 2);
+  t.mock.timers.tick(2000);
+  await flush();
+  await checked;
+  assert.deepEqual(calls, [1000, 2000, 4000]);
+});
+
+test("cancelling during API backoff prevents another request", async (t) => {
+  const h = host(t);
+  h.LLMEndpointManager.saveEndpoints([endpoint(h)]);
+  const controller = new AbortController();
+  let calls = 0;
+  h.globals.Zotero.HTTP = {
+    request: async () => {
+      calls++;
+      throw new Error("HTTP 503");
+    },
+  };
+  const checked = assert.rejects(
+    h.LLMService.chatWithEndpoint("one", {
+      content: { kind: "text", text: "paper" },
+      conversation: [],
+      transport: { abortSignal: controller.signal },
+    }),
+    { name: "LLMRequestAbortError" },
+  );
+  await flush();
+  controller.abort();
+  await checked;
+  t.mock.timers.tick(10000);
+  await flush();
+  assert.equal(calls, 1);
+});
+
 function queue(h, status = "processing") {
   const task = {
     id: "summary-task-1",

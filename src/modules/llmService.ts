@@ -36,6 +36,7 @@ import type {
   LLMToolDefinition,
 } from "./llmproviders/agentTypes";
 import { LLMIncompleteError } from "./llmproviders/shared/completion";
+import { getApiRetryDelay, waitForApiRetry } from "./llmproviders/shared/retry";
 import {
   isAbortError,
   normalizeAbortError,
@@ -225,6 +226,16 @@ export class LLMApiCallError extends Error {
   }
 }
 
+export type LLMApiAttemptDiagnostic = {
+  attempt: number;
+  endpointId: string;
+  endpointName: string;
+  providerId: string;
+  elapsedMs: number;
+  error: string;
+  request?: LLMRequestDiagnostics;
+};
+
 export class LLMApiExhaustedError extends Error {
   public readonly suppressTaskRetry = true;
   public readonly attempts: number;
@@ -234,8 +245,20 @@ export class LLMApiExhaustedError extends Error {
   public readonly providerId?: string;
   public readonly requestDiagnostics?: LLMRequestDiagnostics;
 
-  constructor(attempts: number, lastError?: Error) {
-    super(lastError?.message || getString("llm-error-all-endpoints-failed"));
+  constructor(
+    attempts: number,
+    lastError?: Error,
+    public readonly attemptDiagnostics: LLMApiAttemptDiagnostic[] = [],
+  ) {
+    super(
+      getString("llm-error-api-exhausted", {
+        args: {
+          attempts,
+          reason:
+            lastError?.message || getString("llm-error-all-endpoints-failed"),
+        },
+      }),
+    );
     this.name = "LLMApiExhaustedError";
     this.attempts = attempts;
     this.lastError = lastError;
@@ -604,6 +627,13 @@ export class LLMService {
         if (!request.endpointId)
           LLMEndpointManager.markEndpointAttempted(endpoint.id);
       }
+      if (lastError)
+        await this.waitBeforeRetry(
+          lastError,
+          attempt,
+          maxAttempts,
+          request.transport,
+        );
     }
     throw new LLMApiExhaustedError(maxAttempts, lastError);
   }
@@ -910,42 +940,92 @@ export class LLMService {
     );
   }
 
+  private static async waitBeforeRetry(
+    error: Error,
+    attempt: number,
+    maxAttempts: number,
+    transport?: LLMTransportOptions,
+  ): Promise<void> {
+    if (attempt + 1 >= maxAttempts) return;
+    const delayMs = getApiRetryDelay(error, attempt);
+    if (delayMs > 0) {
+      const label = getString("progress-llm-retrying", {
+        args: {
+          attempt: attempt + 2,
+          maxAttempts,
+          seconds: Math.ceil(delayMs / 1000),
+        },
+      });
+      transport?.onStatus?.({
+        stage: "llm-retrying",
+        label,
+        message: label,
+        progress: 45,
+        attempt: attempt + 2,
+        maxAttempts,
+      });
+    }
+    await waitForApiRetry(delayMs, transport?.abortSignal);
+  }
+
+  private static async runEndpointAttempts<T>(
+    endpoints: LLMEndpoint[],
+    maxAttempts: number,
+    transport: LLMTransportOptions | undefined,
+    markAttempted: boolean,
+    call: (endpoint: LLMEndpoint) => Promise<T>,
+  ): Promise<T> {
+    let lastError: LLMApiCallError | undefined;
+    const attempts: LLMApiAttemptDiagnostic[] = [];
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      throwIfAborted(transport?.abortSignal);
+      const endpoint = endpoints[attempt % endpoints.length];
+      const started = Date.now();
+      try {
+        const response = await call(endpoint);
+        if (markAttempted)
+          LLMEndpointManager.markEndpointAttempted(endpoint.id);
+        return response;
+      } catch (error: unknown) {
+        if (error instanceof LLMIncompleteError) throw error;
+        if (isAbortError(error, transport?.abortSignal)) {
+          throw normalizeAbortError(error, transport?.abortSignal);
+        }
+        const extractionError = PDFTextExtractionError.find(error);
+        if (extractionError) throw extractionError;
+        if (markAttempted)
+          LLMEndpointManager.markEndpointAttempted(endpoint.id);
+        lastError = this.toApiCallError(endpoint, error);
+        attempts.push({
+          attempt: attempt + 1,
+          endpointId: endpoint.id,
+          endpointName: endpoint.name,
+          providerId: endpoint.providerType,
+          elapsedMs: Date.now() - started,
+          error: lastError.message,
+          request: lastError.requestDiagnostics,
+        });
+        ztoolkit.log(
+          `[LLMService] API failed via ${endpoint.name} (${attempt + 1}/${maxAttempts}): ${lastError.message}`,
+        );
+        await this.waitBeforeRetry(lastError, attempt, maxAttempts, transport);
+      }
+    }
+    throw new LLMApiExhaustedError(attempts.length, lastError, attempts);
+  }
+
   private static async runGenerateWithEndpointRouting(
     request: LLMGenerateRequest,
     prompt: string,
   ): Promise<LLMResponse> {
     const route = LLMEndpointManager.prepareRoute();
-    const useRetry = request.transport?.retry ?? true;
-    const maxRetries = useRetry ? route.maxAttempts : 1;
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      throwIfAborted(request.transport?.abortSignal);
-      const endpoint = route.endpoints[attempt % route.endpoints.length];
-      try {
-        const response = await this.generateOnceWithEndpoint(
-          endpoint,
-          request,
-          prompt,
-        );
-        LLMEndpointManager.markEndpointAttempted(endpoint.id);
-        return response;
-      } catch (error: unknown) {
-        if (error instanceof LLMIncompleteError) throw error;
-        if (isAbortError(error, request.transport?.abortSignal)) {
-          throw normalizeAbortError(error, request.transport?.abortSignal);
-        }
-        const extractionError = PDFTextExtractionError.find(error);
-        if (extractionError) throw extractionError;
-        LLMEndpointManager.markEndpointAttempted(endpoint.id);
-        lastError = error instanceof Error ? error : new Error(String(error));
-        ztoolkit.log(
-          `[LLMService] API failed via ${endpoint.name} (${attempt + 1}/${maxRetries}): ${lastError.message}`,
-        );
-      }
-    }
-
-    throw new LLMApiExhaustedError(maxRetries, lastError || undefined);
+    return this.runEndpointAttempts(
+      route.endpoints,
+      request.transport?.retry === false ? 1 : route.maxAttempts,
+      request.transport,
+      true,
+      (endpoint) => this.generateOnceWithEndpoint(endpoint, request, prompt),
+    );
   }
 
   private static async generateOnceWithEndpoint(
@@ -1109,62 +1189,28 @@ export class LLMService {
     request: LLMGenerateRequest,
     prompt: string,
   ): Promise<LLMResponse> {
-    const useRetry = request.transport?.retry ?? true;
-    const maxAttempts = useRetry ? LLMEndpointManager.getMaxAttemptCount() : 1;
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      throwIfAborted(request.transport?.abortSignal);
-      try {
-        return await this.generateOnceWithEndpoint(endpoint, request, prompt);
-      } catch (error: unknown) {
-        if (error instanceof LLMIncompleteError) throw error;
-        if (isAbortError(error, request.transport?.abortSignal)) {
-          throw normalizeAbortError(error, request.transport?.abortSignal);
-        }
-        const extractionError = PDFTextExtractionError.find(error);
-        if (extractionError) throw extractionError;
-        lastError = error instanceof Error ? error : new Error(String(error));
-        ztoolkit.log(
-          `[LLMService] API failed via ${endpoint.name} (${attempt + 1}/${maxAttempts}): ${lastError.message}`,
-        );
-      }
-    }
-
-    throw new LLMApiExhaustedError(maxAttempts, lastError || undefined);
+    return this.runEndpointAttempts(
+      [endpoint],
+      request.transport?.retry === false
+        ? 1
+        : LLMEndpointManager.getMaxAttemptCount(),
+      request.transport,
+      false,
+      () => this.generateOnceWithEndpoint(endpoint, request, prompt),
+    );
   }
 
   private static async chatWithEndpointRouting(
     request: LLMChatRequest,
     route: ReturnType<typeof LLMEndpointManager.prepareRoute>,
   ): Promise<LLMResponse> {
-    const useRetry = request.transport?.retry ?? true;
-    const maxRetries = useRetry ? route.maxAttempts : 1;
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      throwIfAborted(request.transport?.abortSignal);
-      const endpoint = route.endpoints[attempt % route.endpoints.length];
-      try {
-        const response = await this.chatOnceWithEndpoint(endpoint, request);
-        LLMEndpointManager.markEndpointAttempted(endpoint.id);
-        return response;
-      } catch (error: unknown) {
-        if (error instanceof LLMIncompleteError) throw error;
-        if (isAbortError(error, request.transport?.abortSignal)) {
-          throw normalizeAbortError(error, request.transport?.abortSignal);
-        }
-        const extractionError = PDFTextExtractionError.find(error);
-        if (extractionError) throw extractionError;
-        LLMEndpointManager.markEndpointAttempted(endpoint.id);
-        lastError = error instanceof Error ? error : new Error(String(error));
-        ztoolkit.log(
-          `[LLMService] Chat API failed via ${endpoint.name} (${attempt + 1}/${maxRetries}): ${lastError.message}`,
-        );
-      }
-    }
-
-    throw new LLMApiExhaustedError(maxRetries, lastError || undefined);
+    return this.runEndpointAttempts(
+      route.endpoints,
+      request.transport?.retry === false ? 1 : route.maxAttempts,
+      request.transport,
+      true,
+      (endpoint) => this.chatOnceWithEndpoint(endpoint, request),
+    );
   }
 
   private static async chatOnceWithEndpoint(
@@ -1291,29 +1337,15 @@ export class LLMService {
     endpoint: LLMEndpoint,
     request: LLMChatRequest,
   ): Promise<LLMResponse> {
-    const useRetry = request.transport?.retry ?? true;
-    const maxAttempts = useRetry ? LLMEndpointManager.getMaxAttemptCount() : 1;
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      throwIfAborted(request.transport?.abortSignal);
-      try {
-        return await this.chatOnceWithEndpoint(endpoint, request);
-      } catch (error: unknown) {
-        if (error instanceof LLMIncompleteError) throw error;
-        if (isAbortError(error, request.transport?.abortSignal)) {
-          throw normalizeAbortError(error, request.transport?.abortSignal);
-        }
-        const extractionError = PDFTextExtractionError.find(error);
-        if (extractionError) throw extractionError;
-        lastError = error instanceof Error ? error : new Error(String(error));
-        ztoolkit.log(
-          `[LLMService] Chat API failed via ${endpoint.name} (${attempt + 1}/${maxAttempts}): ${lastError.message}`,
-        );
-      }
-    }
-
-    throw new LLMApiExhaustedError(maxAttempts, lastError || undefined);
+    return this.runEndpointAttempts(
+      [endpoint],
+      request.transport?.retry === false
+        ? 1
+        : LLMEndpointManager.getMaxAttemptCount(),
+      request.transport,
+      false,
+      () => this.chatOnceWithEndpoint(endpoint, request),
+    );
   }
 
   private static toApiCallError(

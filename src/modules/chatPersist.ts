@@ -2,12 +2,29 @@
 // Per-item quick-chat threads stored under the Zotero profile.
 
 import { getString } from "../utils/locale";
+import type { LLMNoteMetadata } from "./llmNoteMetadata";
+import type {
+  QuickChatRelatedItemRef,
+  QuickChatRelatedMode,
+} from "./quickChatRelatedContext";
 
 export type ChatPersistRole = "system" | "user" | "assistant";
 
 export type ChatPersistMessage = {
   role: ChatPersistRole;
   content: string;
+  pairId?: string;
+  displayContent?: string;
+  noteMetadata?: LLMNoteMetadata;
+  sourceLabel?: string;
+  savedToNote?: boolean;
+};
+
+export type ChatPersistContext = {
+  relatedItems: QuickChatRelatedItemRef[];
+  relatedMode: QuickChatRelatedMode;
+  relatedContextSignature: string;
+  relatedContextIncludedCount: number;
 };
 
 export type ChatPersistThread = {
@@ -16,6 +33,7 @@ export type ChatPersistThread = {
   createdAt: number;
   updatedAt: number;
   messages: ChatPersistMessage[];
+  context?: ChatPersistContext;
 };
 
 export type ChatPersistItemRecord = {
@@ -94,7 +112,28 @@ export function normalizeChatMessages(
           ? "system"
           : "user",
     content: truncateContent(message?.content),
+    ...(message?.pairId ? { pairId: message.pairId } : {}),
+    ...(message?.displayContent !== undefined
+      ? { displayContent: truncateContent(message.displayContent) }
+      : {}),
+    ...(message?.noteMetadata
+      ? { noteMetadata: { ...message.noteMetadata } }
+      : {}),
+    ...(message?.sourceLabel ? { sourceLabel: message.sourceLabel } : {}),
+    ...(message?.savedToNote ? { savedToNote: true } : {}),
   }));
+}
+
+/** Older threads have no context; always return an independent, empty default. */
+export function cloneChatContext(
+  context?: ChatPersistContext,
+): ChatPersistContext {
+  return {
+    relatedItems: (context?.relatedItems || []).map((ref) => ({ ...ref })),
+    relatedMode: context?.relatedMode === "fullText" ? "fullText" : "summary",
+    relatedContextSignature: context?.relatedContextSignature || "",
+    relatedContextIncludedCount: context?.relatedContextIncludedCount || 0,
+  };
 }
 
 export function titleFromMessages(
@@ -102,7 +141,7 @@ export function titleFromMessages(
 ): string {
   const firstUser = messages.find((message) => message.role === "user");
   if (!firstUser) return untitledThreadTitle();
-  const compact = String(firstUser.content || "")
+  const compact = String(firstUser.displayContent ?? firstUser.content ?? "")
     .replace(/\s+/g, " ")
     .trim();
   if (!compact) return untitledThreadTitle();
@@ -294,9 +333,15 @@ export class ChatPersist {
   ): ChatPersistThread | null {
     if (!threadId) return null;
     const record = this.ensureItem(itemId);
-    return (
-      (record.threads || []).find((thread) => thread.id === threadId) || null
-    );
+    const thread =
+      (record.threads || []).find((thread) => thread.id === threadId) || null;
+    // Assign stable IDs before later history trimming, including pre-fix data.
+    thread?.messages.forEach((message, index) => {
+      if (message.role === "assistant" && !message.pairId) {
+        message.pairId = `${thread.id}_legacy_${index}`;
+      }
+    });
+    return thread;
   }
 
   createThread(itemId: number | string, title?: string): ChatPersistThread {
@@ -307,6 +352,7 @@ export class ChatPersist {
       createdAt: this.now(),
       updatedAt: this.now(),
       messages: [],
+      context: cloneChatContext(),
     };
     record.threads.unshift(thread);
     record.activeThreadId = thread.id;
@@ -340,6 +386,7 @@ export class ChatPersist {
     itemId: number | string,
     threadId: string | null | undefined,
     messages: ChatPersistMessage[],
+    context?: ChatPersistContext,
   ): ChatPersistThread | null {
     if (itemId == null || !threadId) return null;
     const record = this.ensureItem(itemId);
@@ -348,6 +395,7 @@ export class ChatPersist {
       thread = this.createThread(itemId);
     }
     thread.messages = messages;
+    if (context) thread.context = context;
     thread.updatedAt = this.now();
     if (
       messages.some((message) => message.role === "user") ||
@@ -365,16 +413,29 @@ export class ChatPersist {
     itemId: number | string | null | undefined,
     threadId: string | null | undefined,
     messages: readonly ChatPersistMessage[] | null | undefined,
+    context?: ChatPersistContext,
   ): ChatPersistThread | null {
     if (itemId == null || !threadId) return null;
     const snapshot = normalizeChatMessages(messages);
+    const contextSnapshot = context ? cloneChatContext(context) : undefined;
     if (!this.loaded) {
       void this.ensureLoaded().then(() => {
-        this.writeMessages(itemId, threadId, snapshot);
+        this.writeMessages(itemId, threadId, snapshot, contextSnapshot);
       });
       return this.getThread(itemId, threadId);
     }
-    return this.writeMessages(itemId, threadId, snapshot);
+    return this.writeMessages(itemId, threadId, snapshot, contextSnapshot);
+  }
+
+  markPairSaved(itemId: number, threadId: string, pairId: string): void {
+    const thread = this.getThread(itemId, threadId);
+    const message = thread?.messages.find(
+      (message) => message.role === "assistant" && message.pairId === pairId,
+    );
+    if (!message) return;
+    message.savedToNote = true;
+    // Saving a note may finish after the user switches or deletes a thread.
+    this.scheduleSave();
   }
 
   deleteThread(

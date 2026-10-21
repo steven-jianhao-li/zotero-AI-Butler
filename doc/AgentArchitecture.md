@@ -44,8 +44,27 @@ routing selects a coordinator once per run; a separate reader can be selected.
 
 Tools: `search_library`, `get_item`, `read_note`, `list_collections`, `read_paper`,
 `edit_tags`, `create_collection`, `organize_items`, `create_note`, `update_plan`,
-`read_result`, `delegate_research`. Agent notes use `AI-Agent`, preserving existing
-summary/deep-reading classification.
+`read_result`, `delegate_research`, `start_paper_workflow`,
+`get_paper_workflow_status`. `create_note` uses `AI-Agent`; standard workflows
+retain their existing summary/deep-reading note classification.
+
+`start_paper_workflow(itemId, mode, regenerate?)` is a write tool routed to
+`TaskQueueManager.addTask()` / `addDeepReadTask()`. It immediately returns the
+task ID and before/after state. Active tasks and complete notes are reused by
+default; explicit regeneration still respects the saved note strategy and never
+forces an overwrite. Prompt templates, endpoint routing, PDF settings, retries,
+and incomplete deep-read recovery stay with the existing workflow.
+
+`get_paper_workflow_status(taskId, wait?)` is read-only and returns progress,
+errors, artifact readiness, and the result note ID for `read_note`. Note discovery
+uses pure classifiers instead of migration-capable `AiNoteService.findNote()`.
+With `wait=true`, queue completion/progress/removal events resume the tool call,
+so dependent research can continue without model polling. Transient failures
+that the queue will retry do not end the wait. Subscriptions and the 30-minute
+timeout are disposed on completion, final failure, removal, cancellation, or
+timeout. Stopping the Agent cancels waiting, not the already authorized queue
+job. Restarted sessions do not automatically resume; the user can query the
+persisted task in a subsequent run.
 
 ## Context and evidence
 

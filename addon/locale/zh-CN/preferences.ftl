@@ -875,3 +875,5 @@ agent-tool-error-integer = { $key } 必须是 { $minimum } 到 { $maximum } 之�
 agent-tool-error-enum = { $key } 必须是以下值之一：{ $values }。
 agent-tool-error-item-ids = { $key } 必须包含 1–50 个条目 ID。
 agent-tool-error-string-array = { $key } 必须是最多包含 50 个字符串的数组。
+agent-tool-error-boolean = { $key } 必须是布尔值。
+agent-tool-error-workflow-task = 无效的 AI 总结或精读任务 ID。

@@ -875,3 +875,5 @@ agent-tool-error-integer = { $key } must be an integer between { $minimum } and 
 agent-tool-error-enum = { $key } must be one of: { $values }.
 agent-tool-error-item-ids = { $key } must contain 1–50 item IDs.
 agent-tool-error-string-array = { $key } must be an array of at most 50 strings.
+agent-tool-error-boolean = { $key } must be a boolean.
+agent-tool-error-workflow-task = Invalid summary or deep-reading task ID.

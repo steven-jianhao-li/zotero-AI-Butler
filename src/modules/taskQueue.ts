@@ -392,6 +392,9 @@ export class TaskQueueManager {
   /** 任务完成回调函数集合 */
   private completeCallbacks: Set<TaskCompleteCallback> = new Set();
 
+  /** Removal events let asynchronous consumers stop waiting for deleted tasks. */
+  private removedCallbacks?: Set<(taskId: string) => void>;
+
   /** 任务流式事件回调函数集合 */
   private streamCallbacks: Set<TaskStreamCallback> = new Set();
 
@@ -762,6 +765,7 @@ export class TaskQueueManager {
       legacyTask.id = taskId;
       legacyTask.taskType = "summary";
       this.tasks.set(taskId, legacyTask);
+      this.notifyRemoved(legacyTaskId);
     }
 
     // 检查是否已存在
@@ -1915,6 +1919,7 @@ export class TaskQueueManager {
     }
 
     const taskTypeSet = taskTypes ? new Set(taskTypes) : null;
+    const removedIds: string[] = [];
     let removedCount = 0;
 
     for (const [taskId, task] of Array.from(this.tasks.entries())) {
@@ -1936,10 +1941,12 @@ export class TaskQueueManager {
       this.taskAbortControllers.delete(taskId);
       this.abortingTasks.delete(taskId);
       removedCount += 1;
+      removedIds.push(taskId);
     }
 
     if (removedCount > 0) {
       await this.saveToStorage();
+      for (const id of removedIds) this.notifyRemoved(id);
       logTaskQueue(`清空指定文献队列任务: ${removedCount} 个`);
 
       const hasPending = this.getAllTasks().some(
@@ -1979,6 +1986,8 @@ export class TaskQueueManager {
     this.taskAbortControllers.delete(taskId);
     await this.saveToStorage();
 
+    this.notifyRemoved(taskId);
+
     logTaskQueue(`删除任务: ${taskId}`);
   }
 
@@ -1996,12 +2005,14 @@ export class TaskQueueManager {
 
     await this.saveToStorage();
     logTaskQueue(`清空已完成任务: ${completedTasks.length} 个`);
+    for (const task of completedTasks) this.notifyRemoved(task.id);
   }
 
   /**
    * 清空所有任务
    */
   public async clearAll(): Promise<void> {
+    const removedIds = [...this.tasks.keys()];
     // 停止执行器
     this.stop();
 
@@ -2016,6 +2027,7 @@ export class TaskQueueManager {
     this.processingTasks.clear();
 
     await this.saveToStorage();
+    for (const id of removedIds) this.notifyRemoved(id);
     logTaskQueue("清空所有任务");
   }
 
@@ -2489,6 +2501,7 @@ export class TaskQueueManager {
       this.taskAbortControllers.delete(taskId);
       this.abortingTasks.delete(taskId);
       await this.saveToStorage();
+      this.notifyRemoved(taskId);
       return false;
     }
 
@@ -2985,6 +2998,21 @@ export class TaskQueueManager {
     };
   }
 
+  public onRemoved(callback: (taskId: string) => void): () => void {
+    (this.removedCallbacks ||= new Set()).add(callback);
+    return () => this.removedCallbacks?.delete(callback);
+  }
+
+  private notifyRemoved(taskId: string): void {
+    for (const callback of this.removedCallbacks || []) {
+      try {
+        callback(taskId);
+      } catch (error) {
+        logTaskQueue(`Task removal callback failed: ${error}`);
+      }
+    }
+  }
+
   /**
    * 注册流式事件回调
    */
@@ -3113,6 +3141,7 @@ export class TaskQueueManager {
       this.processingTasks.delete(task.id);
       this.taskAbortControllers.delete(task.id);
       this.abortingTasks.delete(task.id);
+      this.notifyRemoved(task.id);
     }
   }
 

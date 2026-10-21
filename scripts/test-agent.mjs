@@ -24,6 +24,12 @@ await build({
   platform: "node",
   format: "cjs",
   define: { __env__: '"test"' },
+  // Workflow tools import the queue and its theme singleton. Keep startup prefs local.
+  banner: {
+    js: `globalThis.Zotero = { Prefs: { get() {} } };
+globalThis.addon = { data: {} };
+globalThis.ztoolkit = { log() {} };`,
+  },
   logLevel: "silent",
 });
 const result = spawnSync(

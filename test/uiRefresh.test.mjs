@@ -28,6 +28,60 @@ function loadSource(path, imports, globals = {}, extra = "") {
   return module.exports;
 }
 
+function summaryFixture() {
+  let autoScroll = true;
+  const pending = [];
+  const { SummaryView } = loadSource(
+    "modules/views/SummaryView.ts",
+    {
+      "./BaseView": { BaseView: class {} },
+      "../../utils/prefs": { getPref: () => autoScroll },
+    },
+    { setTimeout: (callback) => pending.push(callback) },
+  );
+  const view = new SummaryView();
+  const area = { scrollTop: 40, scrollHeight: 900 };
+  view.scrollArea = area;
+  return {
+    view,
+    area,
+    pending,
+    setAutoScroll: (value) => {
+      autoScroll = value;
+    },
+  };
+}
+
+test("an open summary view reads auto-scroll changes without remounting (#398)", () => {
+  const { view, area, pending, setAutoScroll } = summaryFixture();
+  setAutoScroll(false);
+  view.scrollToBottom();
+  assert.equal(pending.length, 0);
+  assert.equal(area.scrollTop, 40);
+  setAutoScroll(true);
+  view.scrollToBottom();
+  pending.shift()();
+  assert.equal(area.scrollTop, 900);
+});
+
+test("queued scrolling respects a later preference change or manual scroll", () => {
+  for (const cancel of [
+    ({ setAutoScroll }) => setAutoScroll(false),
+    ({ view }) => {
+      view.userHasScrolled = true;
+    },
+    ({ view }) => {
+      view.scrollArea = null;
+    },
+  ]) {
+    const fixture = summaryFixture();
+    fixture.view.scrollToBottom();
+    cancel(fixture);
+    fixture.pending.shift()();
+    assert.equal(fixture.area.scrollTop, 40);
+  }
+});
+
 function statusFixture(selectedNote) {
   const pane = {
     getSelectedItems: () => [{ isNote: () => selectedNote }],
@@ -90,4 +144,48 @@ test("tag-wide status updates redraw rows without rebuilding columns", async () 
   assert.equal(Object.keys(pane.itemsView._rowCache).length, 0);
   assert.equal(notifications.length, 1);
   assert.equal(notifications[0][2].length, 0);
+});
+
+function sidebarFixture(editing, chatting = false) {
+  const sidebar = loadSource(
+    "modules/ItemPaneSection.ts",
+    {},
+    {},
+    `
+export { renderItemPaneSection };
+export function setFixture(body, item) {
+  sidebarRenderContext = { body, item, itemId: item.id, handleOpenAIChat: async () => {} };
+  sidebarNoteEditState = ${editing ? "{ itemId: item.id }" : "null"};
+  currentChatState.itemId = item.id;
+  currentChatState.isChatting = ${chatting};
+}`,
+  );
+  // A destructive render clears innerHTML before looking for the document.
+  const body = { innerHTML: "unsaved draft", querySelector: () => null };
+  const item = { id: 42, isRegularItem: () => true };
+  sidebar.setFixture(body, item);
+  return { sidebar, body, item };
+}
+
+test("host re-renders preserve an active sidebar editor and chat", () => {
+  for (const [editing, chatting] of [
+    [true, false],
+    [false, true],
+  ]) {
+    const { sidebar, body, item } = sidebarFixture(editing, chatting);
+    sidebar.renderItemPaneSection(body, item, async () => {});
+    assert.equal(body.innerHTML, "unsaved draft");
+  }
+});
+
+test("switching papers still replaces the previous sidebar", () => {
+  const { sidebar, body, item } = sidebarFixture(true);
+  sidebar.renderItemPaneSection(body, { ...item, id: 43 }, async () => {});
+  assert.equal(body.innerHTML, "");
+});
+
+test("an explicit refresh can rebuild the chat", () => {
+  const { sidebar, body, item } = sidebarFixture(false, true);
+  sidebar.renderItemPaneSection(body, item, async () => {}, true);
+  assert.equal(body.innerHTML, "");
 });

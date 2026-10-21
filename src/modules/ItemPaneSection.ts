@@ -879,7 +879,7 @@ export async function refreshCurrentItemPaneSection(): Promise<void> {
   }
 
   if (!item) return;
-  renderItemPaneSection(body, item, handleOpenAIChat);
+  renderItemPaneSection(body, item, handleOpenAIChat, true);
 }
 
 /**
@@ -889,7 +889,25 @@ function renderItemPaneSection(
   body: HTMLElement,
   item: Zotero.Item | undefined,
   handleOpenAIChat: (itemId: number) => Promise<void>,
+  force = false,
 ): void {
+  // Host notifications must not replace an active editor, chat, or input draft.
+  // Explicit refreshes and item changes can still rebuild the section.
+  if (
+    !force &&
+    item?.isRegularItem() &&
+    sidebarRenderContext?.body === body &&
+    sidebarRenderContext.itemId === item.id &&
+    (isSidebarNoteEditing(item.id) ||
+      (currentChatState.itemId === item.id &&
+        (currentChatState.isChatting ||
+          currentChatState.conversationHistory.length > 0 ||
+          !!body.querySelector<HTMLTextAreaElement>(
+            "#ai-butler-inline-chat textarea",
+          )?.value)))
+  ) {
+    return;
+  }
   cleanupSidebarWorkspace(body);
   body.innerHTML = "";
   const doc = body.ownerDocument;
@@ -4342,7 +4360,7 @@ function renderChatArea(
   const scrollQuickChatToBottomIfPinned = (
     wasPinned = quickChatPinnedToBottom,
   ): void => {
-    if (!wasPinned) return;
+    if (!wasPinned || getPref("autoScroll") === false) return;
     messagesArea.scrollTop = messagesArea.scrollHeight;
     quickChatPinnedToBottom = true;
   };
@@ -6019,6 +6037,8 @@ async function loadNoteContent(
     let aiNoteContent = "";
     const resolvedNote = await resolveSidebarSummaryNote(item, noteKind);
 
+    if (!noteContent.isConnected || isSidebarNoteEditing(item.id)) return;
+
     if (!resolvedNote) {
       hideSidebarMetadataPicker(doc, noteKind);
       noteContent.innerHTML = `
@@ -6043,6 +6063,7 @@ async function loadNoteContent(
         ztoolkit.log("[AI-Butler] 修复 AI 笔记溢出样式失败:", error);
       }
     }
+    if (!noteContent.isConnected || isSidebarNoteEditing(item.id)) return;
     const summaryBlocks = getDisplaySummaryBlocks(
       LLMNoteMetadataService.parseSummaryBlocks(rawNoteHtml),
     );
@@ -6215,6 +6236,8 @@ async function loadNoteContent(
     const themeCss = await themeManager.loadThemeCss();
     const katexCss = await themeManager.loadKatexCss();
     const adaptedCss = themeManager.adaptCssForSidebar(themeCss);
+
+    if (!noteContent.isConnected || isSidebarNoteEditing(item.id)) return;
 
     // 注入样式
     let styleEl = doc.getElementById(

@@ -8,6 +8,8 @@
 
 追问历史回归：`node --test test/followUpChatHistory.test.mjs`。覆盖快速追问保存后在完整追问中恢复问答、旧笔记格式、重复保存和并发保存。
 
+界面刷新回归：`node --test test/uiRefresh.test.mjs`。覆盖自动滚动设置即时生效、状态列重绘和侧栏重绘保护。测试使用模拟宿主，不代替 Zotero 原生编辑器的实机验证。
+
 原生验证：`node scripts/test-zotero-compat.mjs <Zotero可执行文件路径>` 会创建隔离配置与文献库。Zotero 9.0.6 已通过输入文字、回车、自动保存后的状态列重绘检查，原生笔记编辑器保留焦点与条目选择。
 
 ## English
@@ -17,5 +19,7 @@ Size the sidebar from its owning document viewport, offset, and bottom inset rat
 Regression command: `npm run test:sidebar`. Tests exercise boundaries and existing behavior with isolated fixtures, without personal libraries or live AI requests. Refer to the PR description for the actual native-host validation scope.
 
 Chat history: `node --test test/followUpChatHistory.test.mjs`. These fixtures cover saved quick-to-full chat history, legacy notes, and duplicate and concurrent saves.
+
+UI refresh: `node --test test/uiRefresh.test.mjs`. These fixtures cover live auto-scroll preferences, row redraws, and sidebar editing guards. They do not replace native Zotero editor testing.
 
 Native verification: `node scripts/test-zotero-compat.mjs <Zotero executable>` creates an isolated profile and library. Zotero 9.0.6 passed the text insertion, paragraph insertion, autosave, and status redraw check while retaining the native note editor's focus and item selection.

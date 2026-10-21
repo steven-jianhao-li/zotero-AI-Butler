@@ -87,9 +87,6 @@ export class SummaryView extends BaseView {
   /** 用户是否手动滚动过 */
   private userHasScrolled: boolean = false;
 
-  /** 是否启用自动滚动 */
-  private autoScrollEnabled: boolean = true;
-
   /** 上次滚动位置 */
   private lastScrollTop: number = 0;
 
@@ -1640,18 +1637,15 @@ export class SummaryView extends BaseView {
     // 应用主题
     this.applyTheme();
 
-    // 应用用户首选项: 字号与自动滚动
+    // 应用用户首选项: 字号
     try {
       const fontSize =
         parseInt(((getPref as any)("fontSize") as string) || "14", 10) || 14;
       if (this.container) {
         (this.container as HTMLElement).style.fontSize = `${fontSize}px`;
       }
-      const auto = (getPref as any)("autoScroll") as boolean;
-      this.autoScrollEnabled =
-        auto === undefined || auto === null ? true : !!auto;
     } catch (e) {
-      ztoolkit.log("[AI Butler] 应用字体或滚动首选项失败:", e);
+      ztoolkit.log("[AI Butler] 应用字体首选项失败:", e);
     }
   }
 
@@ -1738,14 +1732,22 @@ export class SummaryView extends BaseView {
    * @private
    */
   private scrollToBottom(): void {
-    if (!this.scrollArea || this.userHasScrolled || !this.autoScrollEnabled)
+    if (
+      !this.scrollArea ||
+      this.userHasScrolled ||
+      getPref("autoScroll") === false
+    )
       return;
 
     const area = this.scrollArea;
 
     // 使用 setTimeout 确保在 DOM 更新后滚动
     setTimeout(() => {
-      if (area) {
+      if (
+        this.scrollArea === area &&
+        !this.userHasScrolled &&
+        getPref("autoScroll") !== false
+      ) {
         area.scrollTop = area.scrollHeight;
       }
     }, 0);

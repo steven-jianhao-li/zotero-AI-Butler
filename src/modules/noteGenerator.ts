@@ -1,3 +1,5 @@
+import { INCOMPLETE_NOTE_TAG } from "./aiNoteClassifier";
+import { LLMIncompleteError } from "./llmproviders/shared/completion";
 /**
  * ================================================================
  * AI 笔记生成器模块
@@ -142,7 +144,7 @@ export class NoteGenerator {
    * 错误处理:
    * - PDF 提取失败:抛出明确的错误信息
    * - AI 调用失败:包含 API 错误详情
-   * - 不创建包含错误信息的笔记,直接抛出异常由上层处理
+   * - 不完整输出保存为独立草稿，并抛出异常由上层标记失败
    *
    * @param item Zotero 文献条目对象
    * @param outputWindow 可选的输出窗口,用于显示流式生成过程
@@ -566,6 +568,16 @@ export class NoteGenerator {
       // 返回创建的笔记对象和内容
       return { note, content: fullContent };
     } catch (error: any) {
+      if (error instanceof LLMIncompleteError && error.response.text.trim()) {
+        try {
+          await this.saveIncompleteDraft(item, itemTitle, error);
+        } catch (saveError) {
+          ztoolkit.log(
+            "[AI-Butler] Failed to preserve incomplete draft:",
+            saveError,
+          );
+        }
+      }
       // 记录错误日志
       ztoolkit.log(`[AI Butler] 为文献"${itemTitle}"生成笔记时出错:`, error);
 
@@ -574,7 +586,7 @@ export class NoteGenerator {
         outputWindow.showError(itemTitle, error.message);
       }
 
-      // 不创建包含错误信息的笔记,直接抛出异常由上层处理
+      // 未完成草稿不算成功，由上层显示失败并允许手动重试。
       throw error;
     }
   }
@@ -735,6 +747,36 @@ export class NoteGenerator {
         error: Error;
       } => "error" in result,
     );
+
+    // Preserve every paid-for result if any endpoint returned an incomplete answer.
+    // The outer workflow saves this combined draft and leaves the task retryable.
+    if (
+      failures.some((failure) => failure.error instanceof LLMIncompleteError)
+    ) {
+      throwIfAborted(abortSignal);
+      const draft = settled
+        .map((result) => {
+          if ("noteHtml" in result)
+            return this.formatMultiModelDisplayMarkdown(result);
+          const partial =
+            result.error instanceof LLMIncompleteError
+              ? result.error.response.text
+              : "";
+          return [`## ${result.endpoint.name}`, result.error.message, partial]
+            .filter(Boolean)
+            .join("\n\n");
+        })
+        .join("\n\n---\n\n");
+      throw new LLMIncompleteError({
+        text: draft,
+        providerId: "multi-model",
+        providerName: endpoints.map((endpoint) => endpoint.name).join(", "),
+        generatedAt: new Date().toISOString(),
+        completion: "partial",
+        recovery: "none",
+        finishReason: "multi_model_incomplete",
+      });
+    }
 
     if (successes.length === 0) {
       const details = failures
@@ -1489,7 +1531,13 @@ export class NoteGenerator {
         );
       } catch (error: any) {
         if (isAbortError(error, params.abortSignal)) throw error;
-        await updateSlot(slot, error?.message || String(error), "error");
+        await updateSlot(
+          slot,
+          error instanceof LLMIncompleteError
+            ? `${error.message}\n\n${error.response.text}`
+            : error?.message || String(error),
+          "error",
+        );
       }
     });
 
@@ -1559,12 +1607,25 @@ export class NoteGenerator {
             true,
           );
         } catch (error: any) {
+          if (error instanceof LLMIncompleteError) {
+            await updateSlot(
+              slot,
+              `${error.message}\n\n${error.response.text}`,
+              "error",
+            );
+          }
           if (
             isAbortError(error, params.abortSignal) ||
             this.shouldStopDeepReadOnError(error)
           )
             throw error;
-          await updateSlot(slot, error?.message || String(error), "error");
+          await updateSlot(
+            slot,
+            error instanceof LLMIncompleteError
+              ? `${error.message}\n\n${error.response.text}`
+              : error?.message || String(error),
+            "error",
+          );
           notifyDeepReadSlotProgress(
             slot,
             getString("note-generator-deep-read-slot-reading-failed"),
@@ -1625,12 +1686,25 @@ export class NoteGenerator {
             true,
           );
         } catch (error: any) {
+          if (error instanceof LLMIncompleteError) {
+            await updateSlot(
+              slot,
+              `${error.message}\n\n${error.response.text}`,
+              "error",
+            );
+          }
           if (
             isAbortError(error, params.abortSignal) ||
             this.shouldStopDeepReadOnError(error)
           )
             throw error;
-          await updateSlot(slot, error?.message || String(error), "error");
+          await updateSlot(
+            slot,
+            error instanceof LLMIncompleteError
+              ? `${error.message}\n\n${error.response.text}`
+              : error?.message || String(error),
+            "error",
+          );
           notifyDeepReadSlotProgress(
             slot,
             getString("note-generator-deep-read-slot-followup-failed"),
@@ -1802,8 +1876,8 @@ export class NoteGenerator {
       isBase64: params.isBase64,
       policy: params.isBase64 ? ("pdf-base64" as const) : ("text" as const),
     };
-    let conversation = params.conversation;
-    let response = await this.chatWithDeepReadSession(params.session, {
+    const conversation = params.conversation;
+    const response = await this.chatWithDeepReadSession(params.session, {
       content,
       conversation,
       transport: {
@@ -1812,34 +1886,6 @@ export class NoteGenerator {
       },
       onProgress: params.onProgress,
     });
-    let text = response.text;
-
-    for (
-      let attempt = 0;
-      attempt < 2 && this.isLikelyTruncated(response);
-      attempt++
-    ) {
-      throwIfAborted(params.abortSignal);
-      const continuePrompt =
-        "The previous answer appears to be truncated. Continue exactly from where it stopped. Do not repeat earlier content.";
-      conversation = [
-        ...conversation,
-        { role: "assistant", content: response.text },
-        { role: "user", content: continuePrompt },
-      ];
-      const continuation = await this.chatWithDeepReadSession(params.session, {
-        content,
-        conversation,
-        transport: {
-          abortSignal: params.abortSignal,
-          onStatus: params.onStatus,
-        },
-        onProgress: params.onProgress,
-      });
-      response = { ...continuation, text: text + "\n\n" + continuation.text };
-      text = response.text;
-    }
-
     return response;
   }
 
@@ -1856,6 +1902,7 @@ export class NoteGenerator {
       return await LLMService.chatWithEndpoint(fixedEndpointId, chatRequest);
     } catch (error) {
       if (
+        error instanceof LLMIncompleteError ||
         !session.allowFallback ||
         isAbortError(error, chatRequest.transport?.abortSignal)
       ) {
@@ -1873,11 +1920,34 @@ export class NoteGenerator {
     }
   }
 
-  private static isLikelyTruncated(response: LLMResponse): boolean {
-    const reason = (response.finishReason || "").toLowerCase();
-    return ["length", "max_tokens", "max_output_tokens", "content_filter"].some(
-      (value) => reason.includes(value),
+  private static async saveIncompleteDraft(
+    item: Zotero.Item,
+    title: string,
+    error: LLMIncompleteError,
+  ): Promise<void> {
+    const tag = INCOMPLETE_NOTE_TAG;
+    const notes = await Zotero.Items.getAsync(item.getNotes());
+    const existing = notes.find(
+      (candidate) => candidate.hasTag(tag) && !candidate.deleted,
     );
+    const draft = existing || new Zotero.Item("note");
+    if (!existing) {
+      draft.libraryID = item.libraryID;
+      draft.parentID = item.id;
+      draft.addTag(tag);
+    }
+    const html = this.formatNoteContent(
+      title,
+      `${error.message}\n\n${error.response.text}`,
+      getString("note-generator-incomplete-draft"),
+    );
+    draft.setNote(
+      LLMNoteMetadataService.wrapHtml(
+        html,
+        LLMNoteMetadataService.fromResponse("summary", error.response),
+      ),
+    );
+    await draft.saveTx();
   }
 
   private static shouldStopDeepReadOnError(error: unknown): boolean {

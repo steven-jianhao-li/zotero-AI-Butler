@@ -954,6 +954,7 @@ export type FluentMessageId =
   | 'note-generator-error-pdf-too-large'
   | 'note-generator-error-template-missing-sequential'
   | 'note-generator-existing-note-skipped'
+  | 'note-generator-incomplete-draft'
   | 'note-generator-llm-status-update'
   | 'note-generator-manual-chapters-message'
   | 'note-generator-manual-chapters-title'

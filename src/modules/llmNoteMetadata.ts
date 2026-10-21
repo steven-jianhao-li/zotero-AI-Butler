@@ -12,6 +12,9 @@ export interface LLMNoteMetadata {
   providerName: string;
   modelId?: string;
   generatedAt: string;
+  completion?: LLMResponse["completion"];
+  finishReason?: string;
+  maxOutputTokens?: number;
 }
 
 export interface ParsedLLMNoteBlock {
@@ -348,6 +351,9 @@ export class LLMNoteMetadataService {
         response?.providerName || response?.providerId || "Unknown provider",
       modelId: response?.model,
       generatedAt: response?.generatedAt || new Date().toISOString(),
+      completion: response?.completion,
+      finishReason: response?.finishReason,
+      maxOutputTokens: response?.maxOutputTokens,
     };
   }
 

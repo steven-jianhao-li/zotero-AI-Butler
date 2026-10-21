@@ -1,3 +1,4 @@
+import { LLMIncompleteError } from "./llmproviders/shared/completion";
 /**
  * ================================================================
  * 任务队列管理器
@@ -2714,6 +2715,8 @@ export class TaskQueueManager {
       return false; // 非快速失败，计入批次
     } catch (error: any) {
       // 任务失败
+      if (error instanceof LLMIncompleteError)
+        task.progress = Math.min(task.progress || 0, 95);
       const isTaskAborted =
         this.abortingTasks.has(taskId) ||
         abortController.signal.aborted ||

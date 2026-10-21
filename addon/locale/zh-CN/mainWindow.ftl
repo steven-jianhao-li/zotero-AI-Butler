@@ -1241,4 +1241,5 @@ llm-warning-auto-continuation-still-truncated = 自动续写 { $count } 轮后�
 llm-warning-auto-continuation-disabled = 检测到输出被截断，但自动续写轮数为 0，未继续调用 API。
 
 llm-error-incomplete-output = 输出未完成（{ $reason }），任务未标记为完成。请调整输出长度或上下文后重试。
+note-generator-incomplete-draft = AI 未完成草稿
 llm-error-invalid-output-tokens = 输出 token 数 { $value } 无效；已知模型上限为 { $limit }。

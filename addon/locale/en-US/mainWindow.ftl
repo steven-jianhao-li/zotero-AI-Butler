@@ -1241,4 +1241,5 @@ llm-warning-auto-continuation-still-truncated = Output is still truncated after 
 llm-warning-auto-continuation-disabled = Output was truncated, but auto-continuation rounds is set to 0, so no extra API call was made.
 
 llm-error-incomplete-output = Output is incomplete ({ $reason }). The task was not marked complete. Adjust the output budget or context, then retry.
+note-generator-incomplete-draft = Incomplete AI draft
 llm-error-invalid-output-tokens = Invalid output token budget { $value }; the known model limit is { $limit }.

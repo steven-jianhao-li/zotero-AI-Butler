@@ -366,23 +366,23 @@ export class NoteExportSettingsPage {
 
     const saveCurrentSettings = (showNotice = true) => {
       setNoteExportConfig({
-        enabled: getCheckboxValue(this.container, "noteExportEnabled", false),
+        enabled: getCheckboxValue(page, "noteExportEnabled", false),
         rootPath: (pathInput as HTMLInputElement).value,
         filenameTemplate: isValidNoteExportFilenameTemplate(naming.input.value)
           ? naming.input.value
           : undefined,
         includeSubcollections: getCheckboxValue(
-          this.container,
+          page,
           "noteExportIncludeSubcollections",
           true,
         ),
-        formats: readFormats(this.container),
+        formats: readFormats(page),
         conflictStrategy: getSelectValue(
           strategySelect,
           "skip",
         ) as NoteExportConflictStrategy,
         suppressDirectoryPrompt: getCheckboxValue(
-          this.container,
+          page,
           "noteExportSuppressDirectoryPrompt",
           false,
         ),

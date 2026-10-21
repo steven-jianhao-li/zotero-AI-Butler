@@ -591,3 +591,17 @@ test("settings preview, field insertion, validation, and reset share the export 
   );
   assert.equal(preview.children.length, 4);
 });
+
+test("delayed template saves retain export options after navigating away from settings", () => {
+  const f = settingsFixture();
+  f.edit("{title} - {itemKey}");
+  f.container.innerHTML = "";
+  f.flush();
+  const config = f.getNoteExportConfig();
+  assert.equal(config.filenameTemplate, "{title} - {itemKey}");
+  assert.equal(config.enabled, true);
+  assert.equal(config.includeSubcollections, false);
+  assert.equal(config.suppressDirectoryPrompt, true);
+  assert.equal(config.formats.summaryDocx, false);
+  assert.equal(config.formats.deepReadMd, false);
+});

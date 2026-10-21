@@ -313,6 +313,25 @@ settings-note-export-deep-read-markdown-description = 适合纯文本工作流
 settings-note-export-format-separator = 、
 settings-note-export-no-format-selected = 未选择格式
 settings-note-export-progress-title = AI 笔记导出
+settings-note-export-naming-title = 导出文件命名
+settings-note-export-naming-description = 自动导出与右键分类导出共用此模板。默认将 Zotero 分类层级、论文题目和笔记类型组合为文件名，方便在 Obsidian 等知识库中识别。
+settings-note-export-naming-template = 文件名模板
+settings-note-export-naming-help = 点击下方字段可插入光标位置，可搭配空格、短横线和自定义文字。无需填写扩展名；省略笔记类型时会自动补上 summary 或 deep-read。空模板使用默认规则，缺失字段留空，不允许的文件名字符会替换为下划线。
+settings-note-export-naming-insert-field = 插入 { $field }
+settings-note-export-naming-default = 默认模板：{ $template }
+settings-note-export-naming-reset = 恢复默认
+settings-note-export-naming-preview = 示例预览（使用示例论文，扩展名自动添加）
+settings-note-export-naming-invalid = 字段名或花括号有误，请使用下方提供的字段。此模板尚未保存，导出继续使用上次有效设置。
+settings-note-export-naming-sample-collection-path = 机器学习 - Transformer
+settings-note-export-naming-sample-title = Attention Is All You Need
+settings-note-export-field-collection-path = 完整分类层级，以短横线连接
+settings-note-export-field-collection = 当前分类名称
+settings-note-export-field-title = 论文题目
+settings-note-export-field-first-author = 第一作者姓氏或机构名
+settings-note-export-field-year = 发表年份
+settings-note-export-field-item-key = Zotero 条目 Key
+settings-note-export-field-model = 笔记中记录的模型，多模型以 + 连接
+settings-note-export-field-note-type = summary / deep-read
 
 # Settings: image summary
 settings-image-summary-title = 🖼️ 一图总结设置

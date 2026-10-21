@@ -313,6 +313,25 @@ settings-note-export-deep-read-markdown-description = Good for plain-text workfl
 settings-note-export-format-separator = ,
 settings-note-export-no-format-selected = No format selected
 settings-note-export-progress-title = AI Note Export
+settings-note-export-naming-title = Export filenames
+settings-note-export-naming-description = Automatic exports and collection context-menu exports share this template. By default, filenames combine the Zotero collection hierarchy, paper title, and note type for easy identification in knowledge bases such as Obsidian.
+settings-note-export-naming-template = Filename template
+settings-note-export-naming-help = Click a field below to insert it at the cursor. Combine fields with spaces, hyphens, or custom text. Extensions are added automatically; summary or deep-read is appended if the note type is omitted. An empty template uses the default, missing fields stay empty, and invalid filename characters become underscores.
+settings-note-export-naming-insert-field = Insert { $field }
+settings-note-export-naming-default = Default template: { $template }
+settings-note-export-naming-reset = Restore default
+settings-note-export-naming-preview = Example preview (sample paper; extensions added automatically)
+settings-note-export-naming-invalid = Unknown field or mismatched braces. Use the fields below. This template has not been saved; exports still use the last valid setting.
+settings-note-export-naming-sample-collection-path = Machine Learning - Transformer
+settings-note-export-naming-sample-title = Attention Is All You Need
+settings-note-export-field-collection-path = Full collection hierarchy, joined with hyphens
+settings-note-export-field-collection = Current collection name
+settings-note-export-field-title = Paper title
+settings-note-export-field-first-author = First author's last name or organization
+settings-note-export-field-year = Publication year
+settings-note-export-field-item-key = Zotero item key
+settings-note-export-field-model = Models recorded in the note, joined with +
+settings-note-export-field-note-type = summary / deep-read
 
 # Settings: image summary
 settings-image-summary-title = 🖼️ One-image Summary Settings

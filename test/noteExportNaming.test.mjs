@@ -397,3 +397,197 @@ test("automatic export uses the same saved custom template and each note's own m
       .sort(),
   );
 });
+
+function settingsFixture() {
+  const f = fixture();
+  let nextTimer = 0;
+  const timers = new Map();
+  class Element {
+    constructor(tagName) {
+      this.tagName = tagName;
+      this.style = {};
+      this.children = [];
+      this.attributes = new Map();
+      this.listeners = new Map();
+      this.ownerDocument = doc;
+      this.textContent = "";
+    }
+    set innerHTML(value) {
+      assert.equal(value, "");
+      for (const child of this.children) child.parentElement = null;
+      this.children = [];
+    }
+    appendChild(child) {
+      child.parentElement = this;
+      this.children.push(child);
+      return child;
+    }
+    setAttribute(key, value) {
+      this.attributes.set(key, value);
+    }
+    getAttribute(key) {
+      return this.attributes.get(key);
+    }
+    addEventListener(type, listener) {
+      this.listeners.set(type, [...(this.listeners.get(type) || []), listener]);
+    }
+    dispatchEvent(event) {
+      for (const listener of this.listeners.get(event.type) || [])
+        listener(event);
+      if (event.bubbles) this.parentElement?.dispatchEvent(event);
+    }
+    querySelector(selector) {
+      const id = selector.match(/#([\w-]+)/)?.[1];
+      return this.find((element) => element.id === id);
+    }
+    find(predicate) {
+      if (predicate(this)) return this;
+      for (const child of this.children) {
+        const result = child.find(predicate);
+        if (result) return result;
+      }
+      return null;
+    }
+    setRangeText(value, start, end) {
+      this.value = this.value.slice(0, start) + value + this.value.slice(end);
+      this.selectionStart = this.selectionEnd = start + value.length;
+    }
+    focus() {}
+  }
+  const doc = {
+    createElement: (name) => new Element(name),
+    createEvent: () => ({
+      initEvent(type, bubbles) {
+        this.type = type;
+        this.bubbles = bubbles;
+      },
+    }),
+  };
+  const input = (id, type, value) =>
+    Object.assign(doc.createElement("input"), {
+      id: `setting-${id}`,
+      type,
+      value,
+    });
+  const { NoteExportSettingsPage } = loadSource(
+    "views/settings/NoteExportSettingsPage",
+    {
+      "../../noteExportConfig": f,
+      "../../noteExportNaming": f,
+      "../../autoNoteExportManager": {
+        AutoNoteExportManager: { getInstance: () => ({ reload() {} }) },
+      },
+      "../../folderPicker": {},
+      "../../../utils/collectionSelection": {},
+      "../../../utils/locale": {
+        getString: (key) =>
+          ({
+            "settings-note-export-naming-sample-collection-path":
+              "机器学习 - Transformer",
+            "settings-note-export-naming-sample-title":
+              "Attention Is All You Need",
+          })[key] || key,
+      },
+      "../ui/components": {
+        createInput: input,
+        createCheckbox: (id, checked) =>
+          Object.assign(input(id, "checkbox", ""), { checked }),
+        createSelect: (id, options, value) =>
+          Object.assign(doc.createElement("div"), { getValue: () => value }),
+        createStyledButton: (label) =>
+          Object.assign(doc.createElement("button"), { textContent: label }),
+      },
+    },
+    {
+      setTimeout: (callback) => {
+        timers.set(++nextTimer, callback);
+        return nextTimer;
+      },
+      clearTimeout: (id) => timers.delete(id),
+      ztoolkit: {
+        ProgressWindow: class {
+          createLine() {
+            return this;
+          }
+          show() {}
+        },
+      },
+    },
+  );
+  const container = doc.createElement("div");
+  f.setNoteExportConfig({
+    enabled: true,
+    includeSubcollections: false,
+    suppressDirectoryPrompt: true,
+    formats: {
+      summaryMd: true,
+      summaryDocx: false,
+      deepReadMd: false,
+      deepReadDocx: false,
+    },
+  });
+  new NoteExportSettingsPage(container).render();
+  const templateInput = container.querySelector(
+    "#setting-noteExportFilenameTemplate",
+  );
+  return {
+    ...f,
+    container,
+    templateInput,
+    edit: (value) => {
+      templateInput.value = value;
+      templateInput.dispatchEvent({ type: "input", bubbles: true });
+    },
+    flush: () => {
+      for (const [id, callback] of timers) {
+        timers.delete(id);
+        callback();
+      }
+    },
+  };
+}
+
+test("settings preview, field insertion, validation, and reset share the export formatter", () => {
+  const f = settingsFixture();
+  const preview = f.container.find(
+    (element) => element.getAttribute("aria-live") === "polite",
+  );
+  assert.equal(f.templateInput.value, f.DEFAULT_NOTE_EXPORT_FILENAME_TEMPLATE);
+  assert.equal(
+    preview.children[0].textContent,
+    "机器学习 - Transformer - Attention Is All You Need - summary.md",
+  );
+  f.edit("{title} - ");
+  f.templateInput.selectionStart = f.templateInput.selectionEnd =
+    f.templateInput.value.length;
+  f.container
+    .find(
+      (element) =>
+        element.tagName === "button" &&
+        element.textContent.startsWith("{model}"),
+    )
+    .dispatchEvent({ type: "click" });
+  assert.equal(f.templateInput.value, "{title} - {model}");
+  assert.equal(
+    preview.children[0].textContent,
+    "Attention Is All You Need - example-model - summary.md",
+  );
+  f.flush();
+  assert.equal(f.getNoteExportConfig().filenameTemplate, "{title} - {model}");
+  f.edit("{misspelled}");
+  f.flush();
+  assert.equal(f.templateInput.getAttribute("aria-invalid"), "true");
+  assert.equal(preview.children.length, 0);
+  assert.equal(f.getNoteExportConfig().filenameTemplate, "{title} - {model}");
+  f.container
+    .find(
+      (element) => element.textContent === "settings-note-export-naming-reset",
+    )
+    .dispatchEvent({ type: "click" });
+  f.flush();
+  assert.equal(
+    f.getNoteExportConfig().filenameTemplate,
+    f.DEFAULT_NOTE_EXPORT_FILENAME_TEMPLATE,
+  );
+  assert.equal(preview.children.length, 4);
+});

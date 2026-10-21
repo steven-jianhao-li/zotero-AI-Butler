@@ -77,7 +77,12 @@ await writeFile(
 const reportPath = path.join(directory, "report.json");
 const citationProbe = path.join(probe, "agent-citations.js");
 await build({
-  entryPoints: ["src/modules/views/agent/AgentMarkdown.ts"],
+  stdin: {
+    contents:
+      "export * from './src/modules/views/agent/AgentMarkdown'; export { runAgentUIHostChecks } from './test/agentUIHost';",
+    resolveDir: process.cwd(),
+    loader: "ts",
+  },
   outfile: citationProbe,
   bundle: true,
   format: "iife",

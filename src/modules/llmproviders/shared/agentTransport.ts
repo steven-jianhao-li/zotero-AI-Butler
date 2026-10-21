@@ -556,6 +556,14 @@ export function parseAgentTurn(
         .filter((part) => part.type === "text")
         .map((part) => string(part.text))
         .join(""),
+      reasoningContent:
+        parts
+          .filter(
+            (part) =>
+              part.type === "thinking" && typeof part.thinking === "string",
+          )
+          .map((part) => part.thinking)
+          .join("\n\n") || undefined,
       toolCalls: parts
         .filter((part) => part.type === "tool_use")
         .map((part) => ({
@@ -583,6 +591,13 @@ export function parseAgentTurn(
       .filter((part) => typeof part.text === "string" && !part.thought)
       .map((part) => part.text)
       .join(""),
+    reasoningContent:
+      parts
+        .filter(
+          (part) => part.thought === true && typeof part.text === "string",
+        )
+        .map((part) => part.text)
+        .join("\n\n") || undefined,
     toolCalls: parts
       .filter((part) => part.functionCall)
       .map((part, index) => {

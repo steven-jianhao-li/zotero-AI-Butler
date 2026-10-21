@@ -8,18 +8,24 @@ const SESSION_ID = /^session-[a-z0-9]+-[a-z0-9]+$/;
 export class AgentStore {
   private writes = new Map<string, Promise<void>>();
 
-  private directory(): string {
+  static directory(): string {
     return PathUtils.join(Zotero.DataDirectory.dir, "ai-butler-agent");
+  }
+
+  static async openDirectory(): Promise<void> {
+    const directory = AgentStore.directory();
+    await IOUtils.makeDirectory(directory, { ignoreExisting: true });
+    Zotero.File.pathToFile(directory).launch();
   }
 
   private path(id: string): string {
     if (!SESSION_ID.test(id))
       throw new Error(agentText("agent-runtime-invalid-session-id"));
-    return PathUtils.join(this.directory(), `${id}.json`);
+    return PathUtils.join(AgentStore.directory(), `${id}.json`);
   }
 
   async load(): Promise<AgentSession[]> {
-    const directory = this.directory();
+    const directory = AgentStore.directory();
     if (!(await IOUtils.exists(directory))) return [];
     const sessions: AgentSession[] = [];
     for (const path of await IOUtils.getChildren(directory)) {
@@ -76,7 +82,9 @@ export class AgentStore {
     const write = previous
       .catch(() => undefined)
       .then(async () => {
-        await IOUtils.makeDirectory(this.directory(), { ignoreExisting: true });
+        await IOUtils.makeDirectory(AgentStore.directory(), {
+          ignoreExisting: true,
+        });
         await IOUtils.writeUTF8(path, snapshot, { tmpPath: `${path}.tmp` });
       });
     this.writes.set(session.id, write);

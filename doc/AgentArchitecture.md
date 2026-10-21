@@ -85,6 +85,31 @@ host smoke test exercises the actual Markdown anchor click in a chrome dialog.
 
 ## Context and evidence
 
+The conversation groups each user turn into an expandable work process and a
+separate final delivery. Completed turns default to the delivery; running,
+failed and interrupted work remains open. Tool cards pair arguments with results
+by call/member ID, and pending approval controls stay outside the fold. The
+Activity tab opens work for all turns while retaining the conversation's fold
+state. Explicit assistant phases and terminal status events preserve per-turn
+outcomes; older ledgers infer the final lead response only after tool work ends.
+
+This interaction follows the local DSH reference's `TurnProcessSpec`,
+`TurnProcessNodeView` and `ReasoningRow` pattern (under
+`reference/deepseek-harness/packages/client/ui-chat/src/client/`): final answers
+remain separate from intermediate text, reasoning and tool disclosures.
+Readable reasoning returned by providers is recorded as reasoning events;
+encrypted replay data, redacted thinking and signatures are never rendered.
+Agent transport remains non-streaming, so reasoning appears after each complete
+model response. Existing sessions retain their recorded history; missing old
+reasoning events are not fabricated from opaque replay data.
+
+The sidebar storage disclosure shows the actual
+`Zotero.DataDirectory.dir/ai-butler-agent` path and opens that folder. Each session
+is a JSON snapshot containing conversation, evidence and approval history.
+These files are local and are not part of Zotero sync; model requests still go
+to the configured provider. Both sidebar and welcome branding use the packaged
+`icons/logo.svg` asset.
+
 The session's activity and evidence ledger is distinct from `messages`, the
 working model projection. Tool results receive recoverable `resultRef` identifiers.
 Large results are paged; metadata and note previews precede full note/original

@@ -1,4 +1,5 @@
 /* eslint-disable no-unused-vars -- Entry points are invoked by Zotero's addon loader. */
+/* global PathUtils */
 var hostServices =
   typeof Services === "undefined"
     ? Components.utils.import("resource://gre/modules/Services.jsm").Services
@@ -244,6 +245,8 @@ async function runProbe() {
         addon: host.AIButler,
         ztoolkit: toolkit,
         URL: main.URL,
+        PathUtils: PathUtils,
+        IOUtils: hostFiles,
       };
       var citationFile = Components.classes[
         "@mozilla.org/file/local;1"
@@ -252,6 +255,10 @@ async function runProbe() {
       hostServices.scriptloader.loadSubScript(
         hostServices.io.newFileURI(citationFile).spec,
         citationScope,
+      );
+      await citationScope.AgentCitationProbe.runAgentUIHostChecks(
+        dashboard.document,
+        assert,
       );
       var citationHost = dashboard.document.createElementNS(
         "http://www.w3.org/1999/xhtml",

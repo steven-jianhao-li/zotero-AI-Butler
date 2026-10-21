@@ -1,3 +1,14 @@
+import { config } from "../../../../package.json";
+import { element } from "./dom";
+
+/** The same branded asset used by the packaged plugin. */
+export function agentLogo(doc: Document): HTMLImageElement {
+  const image = element(doc, "img", "agent-logo");
+  image.src = `chrome://${config.addonRef}/content/icons/logo.svg`;
+  image.alt = "";
+  return image;
+}
+
 /** Small, consistent line icons; no platform-dependent emoji rendering. */
 const paths = {
   book: "M12 5.5C9 3.5 5 3.5 3 4.5v14c3-1 6-1 9 1 3-2 6-2 9-1v-14c-2-1-6-1-9 1Zm0 0v14",
@@ -15,6 +26,7 @@ const paths = {
   compare: "M5 4h5v16H5zM14 4h5v16h-5zM5 9h5m4 6h5",
   folder: "M3 7V5h7l2 3h9v12H3V7Z",
   local: "M4 4h16v12H4zM8 20h8m-4-4v4",
+  info: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 11v6m0-10v.1",
 } as const;
 
 export type AgentIcon = keyof typeof paths;

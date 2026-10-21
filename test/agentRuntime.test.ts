@@ -95,6 +95,80 @@ function dependencies(
 }
 
 describe("Agent runtime authority and recovery", function () {
+  it("records readable thinking and distinct work/delivery without exposing provider replay state", async function () {
+    const state = session();
+    let count = 0;
+    const runner = new AgentRunner(
+      dependencies({
+        tools: [tool("search", false, async () => ({ found: true }))],
+        turn: async () =>
+          ++count === 1
+            ? {
+                text: "Checking the library.",
+                reasoningContent: "Search by title.",
+                toolCalls: [call("search", "call-search")],
+                providerState: {
+                  providerId: "openai",
+                  parts: [{ encrypted_content: "opaque-replay" }],
+                },
+              }
+            : {
+                text: "Found the paper.",
+                reasoningContent: "The title matches.",
+                toolCalls: [],
+              },
+      }),
+    );
+    await runner.run(state, new AbortController().signal);
+    expect(
+      state.events
+        .filter((entry) => entry.type === "reasoning")
+        .map((entry) => entry.text),
+    ).to.deep.equal(["Search by title.", "The title matches."]);
+    expect(
+      state.events
+        .filter((entry) => entry.type === "assistant")
+        .map((entry) => entry.phase),
+    ).to.deep.equal(["work", "delivery"]);
+    expect(state.events.at(-1)?.runStatus).to.equal("completed");
+    expect(JSON.stringify(state.events)).not.to.include("opaque-replay");
+  });
+
+  it("opens the actual storage folder only after ensuring it exists", async function () {
+    const globals = globalThis as unknown as Record<string, unknown>;
+    const previous = {
+      Zotero: globals.Zotero,
+      PathUtils: globals.PathUtils,
+      IOUtils: globals.IOUtils,
+    };
+    const actions: string[] = [];
+    globals.Zotero = {
+      DataDirectory: { dir: "/custom/data" },
+      File: {
+        pathToFile: (path: string) => ({
+          launch: () => actions.push(`open:${path}`),
+        }),
+      },
+    };
+    globals.PathUtils = { join: (...parts: string[]) => parts.join("/") };
+    globals.IOUtils = {
+      makeDirectory: async (path: string) => {
+        actions.push(`mkdir:${path}`);
+      },
+    };
+    try {
+      expect(AgentStore.directory()).to.equal("/custom/data/ai-butler-agent");
+      expect(actions).to.deep.equal([]);
+      await AgentStore.openDirectory();
+      expect(actions).to.deep.equal([
+        "mkdir:/custom/data/ai-butler-agent",
+        "open:/custom/data/ai-butler-agent",
+      ]);
+    } finally {
+      Object.assign(globals, previous);
+    }
+  });
+
   it("accepts an approval during slow persistence without executing before the save completes", async function () {
     const state = session("confirm");
     const service = Object.create(AgentService.prototype) as AgentService;

@@ -217,6 +217,19 @@ export class AgentRunner {
         "Run interrupted; execution may have been cancelled. Consult the activity log before retrying a write.",
       );
       session.pendingApprovals = [];
+      if (
+        session.status === "completed" ||
+        session.status === "cancelled" ||
+        session.status === "error"
+      )
+        this.event(
+          session,
+          "status",
+          agentText(`agent-status-${session.status}`),
+          {
+            runStatus: session.status,
+          },
+        );
       await this.deps.save(session);
       this.deps.changed();
     }
@@ -372,7 +385,14 @@ export class AgentRunner {
         reasoningContent: turn.reasoningContent,
         providerState: turn.providerState,
       });
-      if (turn.text) this.event(session, "assistant", turn.text, { memberId });
+      // Display only readable provider output; opaque replay state stays private.
+      if (turn.reasoningContent?.trim())
+        this.event(session, "reasoning", turn.reasoningContent, { memberId });
+      if (turn.text)
+        this.event(session, "assistant", turn.text, {
+          memberId,
+          phase: !child && !turn.toolCalls.length ? "delivery" : "work",
+        });
       if (!turn.toolCalls.length) {
         if (!turn.text.trim())
           throw new Error(agentText("agent-runtime-empty-answer"));

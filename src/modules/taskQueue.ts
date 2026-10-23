@@ -976,6 +976,30 @@ export class TaskQueueManager {
     priority: boolean = false,
     options?: TaskOptions,
   ): Promise<string[]> {
+    const taskIds = await this.enqueueTaskBatch(
+      items,
+      priority,
+      async (item, batch) => {
+        if (!(await this.hasUsableTaskSource(item))) return undefined;
+        return this.enqueueTask(item, priority, options, batch);
+      },
+    );
+    const skippedCount = items.length - taskIds.length;
+    if (skippedCount > 0) {
+      logTaskQueue(`[AI-Butler] 跳过 ${skippedCount} 篇无可用分析附件的文献`);
+    }
+    return taskIds;
+  }
+
+  /** 统一批量入队的保存、UI 让步和调度恢复。 */
+  private async enqueueTaskBatch(
+    items: Zotero.Item[],
+    priority: boolean,
+    enqueue: (
+      item: Zotero.Item,
+      batch: TaskEnqueueBatch,
+    ) => Promise<string | undefined>,
+  ): Promise<string[]> {
     if (items.length === 0) return [];
     const taskIds: string[] = [];
     const batch: TaskEnqueueBatch = {
@@ -987,20 +1011,13 @@ export class TaskQueueManager {
     this.mergeStoredDeletedFixedTasks();
 
     try {
-      let skippedCount = 0;
       for (const [index, item] of items.entries()) {
-        if (await this.hasUsableTaskSource(item)) {
-          taskIds.push(await this.enqueueTask(item, priority, options, batch));
-        } else {
-          skippedCount++;
-        }
+        const taskId = await enqueue(item, batch);
+        if (taskId !== undefined) taskIds.push(taskId);
         // 以检查数计数，全部被过滤的批次也需要让出 UI。
         if ((index + 1) % 50 === 0 && index + 1 < items.length) {
           await new Promise<void>((resolve) => setTimeout(resolve, 0));
         }
-      }
-      if (skippedCount > 0) {
-        logTaskQueue(`[AI-Butler] 跳过 ${skippedCount} 篇无可用分析附件的文献`);
       }
       return taskIds;
     } finally {
@@ -1035,6 +1052,24 @@ export class TaskQueueManager {
     item: Zotero.Item,
     priority: boolean = true,
   ): Promise<string> {
+    return this.enqueueImageSummaryTask(item, priority);
+  }
+
+  /** 批量添加一图总结任务，默认按队列批次设置执行。 */
+  public async addImageSummaryTasks(
+    items: Zotero.Item[],
+    priority: boolean = false,
+  ): Promise<string[]> {
+    return this.enqueueTaskBatch(items, priority, (item, batch) =>
+      this.enqueueImageSummaryTask(item, priority, batch),
+    );
+  }
+
+  private async enqueueImageSummaryTask(
+    item: Zotero.Item,
+    priority: boolean,
+    batch?: TaskEnqueueBatch,
+  ): Promise<string> {
     const taskId = `img-task-${item.id}`;
 
     // 检查是否已存在
@@ -1047,16 +1082,10 @@ export class TaskQueueManager {
         priority,
         undefined,
         getString("task-stage-waiting-start"),
+        batch,
       );
       if (shouldRun) {
-        if (!this.isRunning) {
-          this.start();
-        }
-        if (priority) {
-          this.executeImageSummaryTask(taskId).catch((e) => {
-            logTaskQueue(`一图总结任务执行失败: ${e}`);
-          });
-        }
+        this.startEnqueuedTask(taskId, priority, batch);
       }
       return taskId;
     }
@@ -1076,19 +1105,11 @@ export class TaskQueueManager {
     };
 
     this.tasks.set(taskId, task);
-    await this.saveToStorage();
+    await this.saveEnqueueChanges(batch);
 
     logTaskQueue(`添加一图总结任务: ${task.title} (${taskId})`);
 
-    if (!this.isRunning) {
-      this.start();
-    }
-
-    if (priority) {
-      this.executeImageSummaryTask(taskId).catch((e) => {
-        logTaskQueue(`一图总结任务执行失败: ${e}`);
-      });
-    }
+    this.startEnqueuedTask(taskId, priority, batch);
 
     return taskId;
   }

@@ -44,6 +44,8 @@ jobs:
         run: npm install
       - name: Run Build
         run: npm run build
+      - name: Check image summary queue
+        run: npm run test:image-summary
       - name: Check PDF extraction recovery
         run: npm run test:pdf
       - name: Check EPUB extraction and compatibility

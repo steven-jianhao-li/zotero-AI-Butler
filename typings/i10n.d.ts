@@ -527,6 +527,7 @@ export type FluentMessageId =
   | 'image-summary-progress-saving'
   | 'image-summary-progress-summarizing'
   | 'image-summary-queue-added'
+  | 'image-summary-queue-batch-added'
   | 'itempane-added-to-queue'
   | 'itempane-adding-to-queue'
   | 'itempane-ai-no-item'

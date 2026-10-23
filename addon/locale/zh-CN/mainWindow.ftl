@@ -268,6 +268,7 @@ task-error-no-paper-selected = 请先选择要处理的文献
 task-error-select-regular-item = 请选择一个文献条目
 task-queue-add-failed = ❌ 添加任务失败: { $error }
 image-summary-queue-added = 🖼️ 一图总结任务已加入队列
+image-summary-queue-batch-added = 🖼️ 已将 { $count } 篇文献的一图总结任务加入队列，将按批次设置处理。
 mindmap-queue-added = 🧠 思维导图任务已加入队列
 literature-review-open-failed = 打开文献综述失败: { $error }
 table-fill-disabled = 表格功能已在设置中关闭

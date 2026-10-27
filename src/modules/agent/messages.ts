@@ -18,6 +18,8 @@ const defaults = {
     "Context summary was incomplete; original history was retained.",
   "agent-runtime-summary-not-smaller":
     "Context summary did not reduce the request; original history was retained.",
+  "agent-runtime-summary-deferred":
+    "Context summary failed. Continuing with retained history while it still fits the context budget.",
   "agent-runtime-empty-answer": "Model returned an empty final answer.",
   "agent-runtime-calls-exhausted": "Shared team tool-call budget exhausted.",
   "agent-runtime-tool-unavailable":
@@ -58,6 +60,7 @@ const defaults = {
     "Older tool output compacted; full evidence remains available through read_result.",
   "agent-runtime-compacted":
     "Conversation summarized; recent tool calls, research plan and evidence references retained.",
+  "agent-runtime-compacting": "Summarizing earlier conversation…",
   "agent-runtime-cancelled": "Research cancelled by the user.",
   "agent-runtime-approved": "Approved: {tool}",
   "agent-runtime-declined": "Declined: {tool}",

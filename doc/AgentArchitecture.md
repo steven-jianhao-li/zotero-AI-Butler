@@ -130,7 +130,14 @@ when API input usage exceeds the estimate. Compaction first prunes older tool
 results with recoverable references, then archives and summarizes complete older
 exchanges. Recent calls remain paired. Summarizer input is bounded by the selected
 context window; empty, incomplete or non-shrinking summaries do not replace the
-history. API overflow receives one retry only after actual context reduction.
+history. Summaries use the Agent output allowance (capped at one quarter of the
+context window) with low reasoning effort instead of inheriting the endpoint's
+effort. If a proactive summary fails, the retained history can continue while it
+fits the input budget; another summary is deferred until that budget is exceeded
+or the API reports overflow. Cancellation and failed mandatory compaction still
+stop the run. Failed summaries do not accumulate duplicate history archives.
+API overflow receives one retry only after actual context reduction; truncated
+tool calls remain invalid even when their argument JSON is parseable.
 
 Default limits: 262144 context tokens, 8192 output tokens, 32 lead steps, 10 steps
 per teammate, six teammates per run, three per delegation batch, 128 shared tool

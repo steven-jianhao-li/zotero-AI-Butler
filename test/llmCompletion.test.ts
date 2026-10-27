@@ -131,7 +131,9 @@ const protocols: TextProtocol[] = [
   "ollama",
 ];
 const providerIds = LLMEndpointManager.providerTypes();
-const multiPdfProviderIds = providerIds.filter((id) => id !== "ollama");
+const supportsMultiPdf = (id: string): boolean =>
+  (ProviderRegistry.get(id)?.capabilities?.maxPdfFiles ?? 0) > 1;
+const multiPdfProviderIds = providerIds.filter(supportsMultiPdf);
 
 describe("LLM completion", function () {
   describe("LLM completion parsing", function () {
@@ -409,7 +411,8 @@ describe("LLM completion", function () {
     }
     for (const id of providerIds) {
       for (const mode of ["summary", "chat", "multi"] as const) {
-        if (mode === "multi" && id === "ollama") continue;
+        if (mode === "multi" && (id === "ollama" || id === "opencode-go"))
+          continue;
         const call = (options: LLMOptions): Promise<LLMProviderResult> => {
           const provider = ProviderRegistry.get(id)!;
           return mode === "summary"

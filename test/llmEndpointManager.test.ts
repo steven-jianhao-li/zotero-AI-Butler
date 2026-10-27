@@ -255,6 +255,28 @@ describe("LLMEndpointManager", function () {
     );
   });
 
+  it("exposes OpenCode Go as a built-in endpoint provider", function () {
+    expect(LLMEndpointManager.providerTypes()).to.include("opencode-go");
+    const defaults = LLMEndpointManager.providerDefaults("opencode-go");
+    expect(defaults.apiUrl).to.equal(
+      "https://opencode.ai/inference/go/openai/v1/chat/completions",
+    );
+    expect(defaults.model).to.equal("glm-5.3");
+    expect(
+      LLMEndpointManager.providerAllowsEmptyApiKey("opencode-go"),
+    ).to.equal(false);
+
+    const endpoint = LLMEndpointManager.createEndpoint("opencode-go");
+    expect(endpoint).to.include({
+      providerType: "opencode-go",
+      apiUrl: "https://opencode.ai/inference/go/openai/v1/chat/completions",
+      model: "glm-5.3",
+    });
+    expect(LLMEndpointManager.validateEndpoint(endpoint)).to.deep.equal([
+      "apiKey",
+    ]);
+  });
+
   it("allows Ollama endpoints without API keys", function () {
     const endpoint: LLMEndpoint = {
       ...makeEndpoint("ollama"),

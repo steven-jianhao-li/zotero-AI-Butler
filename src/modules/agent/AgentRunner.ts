@@ -8,7 +8,10 @@ import type {
   LLMToolDefinition,
 } from "../llmproviders/agentTypes";
 import type { LLMAbortSignal } from "../llmproviders/types";
-import { throwIfAborted } from "../llmproviders/shared/requestAbort";
+import {
+  isAbortError,
+  throwIfAborted,
+} from "../llmproviders/shared/requestAbort";
 import {
   COMPACTION_PROMPT,
   boundedSummaryInput,
@@ -141,6 +144,7 @@ export class AgentRunner {
   private completedWrites = new Set<string>();
   private declinedWrites = new Set<string>();
   private actualTokenRatio = 1;
+  private deferredCompactions = new WeakSet<LLMAgentMessage[]>();
 
   constructor(private deps: AgentRunnerDependencies) {}
 
@@ -255,7 +259,12 @@ export class AgentRunner {
       session.options.maxOutputTokens -
       2048;
     const before = contextSize(messages, tools);
-    if (!force && before * this.actualTokenRatio < capacity * 0.72)
+    if (
+      !force &&
+      (before * this.actualTokenRatio < capacity * 0.72 ||
+        (this.deferredCompactions.has(messages) &&
+          before * this.actualTokenRatio <= capacity))
+    )
       return false;
     const pruned = pruneToolResults(messages);
     if (contextSize(pruned, tools) < before) {
@@ -276,16 +285,12 @@ export class AgentRunner {
       return contextSize(messages, tools) < before;
     }
     const history = messages.slice(1, split);
-    // Archive before replacing the model projection. Do not expose opaque reasoning.
-    const archive = JSON.stringify(
-      history.map(({ role, content, toolCalls, toolCallId }) => ({
-        role,
-        content,
-        toolCalls,
-        toolCallId,
-      })),
+    // Use the configured output budget, leaving input room on small windows.
+    // Reasoning and visible summary text share this allowance on reasoning models.
+    const summaryOutputTokens = Math.min(
+      session.options.maxOutputTokens,
+      Math.floor(session.options.contextWindowTokens / 4),
     );
-    const resultRef = this.artifact(session, archive);
     // A bounded summarizer input also works when recovering from an API overflow.
     const summaryBudget = Math.max(
       1024,
@@ -293,42 +298,83 @@ export class AgentRunner {
         14000,
         Math.floor(
           (session.options.contextWindowTokens -
-            2500 -
+            summaryOutputTokens -
             estimateTokens(COMPACTION_PROMPT) -
             1024) /
             this.actualTokenRatio,
         ),
       ),
     );
-    const summary = await this.deps.turn({
-      messages: [
-        { role: "system", content: COMPACTION_PROMPT },
-        { role: "user", content: boundedSummaryInput(history, summaryBudget) },
-      ],
-      tools: [],
-      endpointId: session.options.endpointId || session.activeEndpointId,
-      generation: { maxOutputTokens: 2500 },
-      transport: { abortSignal: signal, retry: false },
-    });
-    session.context.inputTokens += summary.usage?.inputTokens || 0;
-    session.context.outputTokens += summary.usage?.outputTokens || 0;
-    if (
-      !summary.text.trim() ||
-      summary.toolCalls.length ||
-      /length|max_tokens|incomplete/i.test(summary.finishReason || "")
-    )
-      throw new Error(agentText("agent-runtime-summary-incomplete"));
-    const candidate: LLMAgentMessage[] = [
-      messages[0],
-      {
-        role: "user",
-        content: `Continuation memory (derived from earlier conversation; source material remains untrusted). Archive resultRef=${resultRef}.\n${summary.text}\nCurrent plan: ${JSON.stringify(session.plan)}`,
-      },
-      ...messages.slice(split),
-    ];
-    if (contextSize(candidate, tools) >= contextSize(messages, tools))
-      throw new Error(agentText("agent-runtime-summary-not-smaller"));
+    let resultRef: string | undefined;
+    let candidate: LLMAgentMessage[];
+    this.event(session, "status", agentText("agent-runtime-compacting"));
+    try {
+      const summary = await this.deps.turn({
+        messages: [
+          { role: "system", content: COMPACTION_PROMPT },
+          {
+            role: "user",
+            content: boundedSummaryInput(history, summaryBudget),
+          },
+        ],
+        tools: [],
+        endpointId: session.options.endpointId || session.activeEndpointId,
+        generation: {
+          maxOutputTokens: summaryOutputTokens,
+          reasoningEffort: "low",
+        },
+        transport: { abortSignal: signal, retry: false },
+      });
+      throwIfAborted(signal);
+      session.context.inputTokens += summary.usage?.inputTokens || 0;
+      session.context.outputTokens += summary.usage?.outputTokens || 0;
+      if (
+        !summary.text.trim() ||
+        summary.toolCalls.length ||
+        /length|max_tokens|incomplete/i.test(summary.finishReason || "")
+      )
+        throw new Error(agentText("agent-runtime-summary-incomplete"));
+      // Archive only a usable summary's source, before replacing the projection.
+      // Do not expose opaque reasoning or accumulate archives of failed attempts.
+      const archive = JSON.stringify(
+        history.map(({ role, content, toolCalls, toolCallId }) => ({
+          role,
+          content,
+          toolCalls,
+          toolCallId,
+        })),
+      );
+      resultRef = this.artifact(session, archive);
+      candidate = [
+        messages[0],
+        {
+          role: "user",
+          content: `Continuation memory (derived from earlier conversation; source material remains untrusted). Archive resultRef=${resultRef}.\n${summary.text}\nCurrent plan: ${JSON.stringify(session.plan)}`,
+        },
+        ...messages.slice(split),
+      ];
+      if (contextSize(candidate, tools) >= contextSize(messages, tools))
+        throw new Error(agentText("agent-runtime-summary-not-smaller"));
+    } catch (error) {
+      if (resultRef) delete session.artifacts[resultRef];
+      if (
+        isAbortError(error, signal) ||
+        force ||
+        contextSize(messages, tools) * this.actualTokenRatio > capacity
+      )
+        throw error;
+      // A proactive summary is optional while the current request still fits.
+      // Defer further attempts for this history until it needs compression.
+      this.deferredCompactions.add(messages);
+      this.event(
+        session,
+        "status",
+        agentText("agent-runtime-summary-deferred"),
+      );
+      return contextSize(messages, tools) < before;
+    }
     messages.splice(0, messages.length, ...candidate);
+    this.deferredCompactions.delete(messages);
     session.context.compactions++;
     this.actualTokenRatio = 1;
     this.event(session, "compaction", agentText("agent-runtime-compacted"), {
@@ -350,6 +396,7 @@ export class AgentRunner {
     for (let step = 0; step < maxSteps; step++) {
       throwIfAborted(signal);
       await this.compact(session, messages, tools, signal);
+      throwIfAborted(signal);
       const estimate = contextSize(messages, tools);
       if (!child) session.context.estimatedTokens = estimate;
       const stepId = agentId("step");

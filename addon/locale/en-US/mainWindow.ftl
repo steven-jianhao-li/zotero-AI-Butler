@@ -268,6 +268,7 @@ task-error-no-paper-selected = Please select a paper to process first
 task-error-select-regular-item = Please select a regular paper item
 task-queue-add-failed = ❌ Failed to add task: { $error }
 image-summary-queue-added = 🖼️ One-image summary task added to the queue
+image-summary-queue-batch-added = 🖼️ Added { $count } one-image summary tasks to the queue. They will be processed according to batch settings.
 mindmap-queue-added = 🧠 Mind map task added to the queue
 literature-review-open-failed = Failed to open literature review: { $error }
 table-fill-disabled = Table filling is disabled in settings

@@ -1,7 +1,7 @@
 {
   "name": "zotero-ai-butler",
   "type": "module",
-  "version": "5.1.0",
+  "version": "5.1.1",
   "description": "Your personal AI butler, automatically and meticulously reads papers and summarizes notes.",
   "config": {
     "addonName": "zotero-ai-butler",
@@ -32,6 +32,7 @@
     "test": "zotero-plugin test --exit-on-finish",
     "test:agent": "node ./scripts/test-agent.mjs",
     "test:task-queue": "node ./scripts/test-task-queue.mjs",
+    "test:image-summary": "node --test test/imageSummaryQueue.test.mjs",
     "test:headers": "node ./scripts/test-request-headers.mjs",
     "test:llm-completion": "node ./scripts/test-llm-completion.mjs",
     "test:llm-lifecycle": "node --test test/llmRequestLifecycle.test.mjs",

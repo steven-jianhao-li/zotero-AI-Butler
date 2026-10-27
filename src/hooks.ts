@@ -1997,9 +1997,7 @@ async function handleImageSummary() {
     return;
   }
 
-  // 只处理第一个选中的条目
-  const item = items[0];
-  if (!item.isRegularItem()) {
+  if (!items.every((item) => item.isRegularItem())) {
     new ztoolkit.ProgressWindow("AI Butler", {
       closeOnClick: true,
       closeTime: 3000,
@@ -2013,10 +2011,10 @@ async function handleImageSummary() {
   }
 
   try {
-    // 添加到任务队列
-    const { TaskQueueManager } = await import("./modules/taskQueue");
+    // 单篇优先执行，多选按队列批次设置处理。
     const manager = TaskQueueManager.getInstance();
-    await manager.addImageSummaryTask(item);
+    const priority = items.length === 1;
+    const taskIds = await manager.addImageSummaryTasks(items, priority);
 
     // 显示开始提示
     new ztoolkit.ProgressWindow("AI Butler", {
@@ -2024,7 +2022,11 @@ async function handleImageSummary() {
       closeTime: 3000,
     })
       .createLine({
-        text: getString("image-summary-queue-added"),
+        text: priority
+          ? getString("image-summary-queue-added")
+          : getString("image-summary-queue-batch-added", {
+              args: { count: taskIds.length },
+            }),
         type: "success",
       })
       .show();

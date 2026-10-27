@@ -19,6 +19,7 @@ import type {
   LLMToolCall,
 } from "../src/modules/llmproviders/agentTypes";
 import { validateAgentMessages } from "../src/modules/llmproviders/shared/agentTransport";
+import { AgentProtocolError } from "../src/modules/llmproviders/shared/agentErrors";
 
 function session(permission: AgentPermission = "read-only"): AgentSession {
   return {
@@ -92,6 +93,30 @@ function dependencies(
     write: (operation) => operation(),
     ...overrides,
   };
+}
+
+function compactionSession(
+  contextWindowTokens = 32768,
+  maxOutputTokens = 8192,
+  repetitions = 250,
+): AgentSession {
+  const state = session();
+  state.options.contextWindowTokens = contextWindowTokens;
+  state.options.maxOutputTokens = maxOutputTokens;
+  for (let i = 0; i < 15; i++)
+    state.messages.push(
+      {
+        role: "assistant",
+        content: `Evidence ${i}: ${"long evidence ".repeat(repetitions)}`,
+        toolCalls: [call("read_note", `read-${i}`)],
+      },
+      { role: "tool", toolCallId: `read-${i}`, content: `Result ${i}` },
+    );
+  state.messages.push({
+    role: "user",
+    content: "Give the final comparison.",
+  });
+  return state;
 }
 
 describe("Agent runtime authority and recovery", function () {
@@ -705,22 +730,11 @@ describe("Agent runtime authority and recovery", function () {
   });
 
   it("compacts only complete older exchanges and retains a recoverable archive", async function () {
-    const state = session();
-    state.options.contextWindowTokens = 16384;
-    state.options.maxOutputTokens = 2048;
-    for (let i = 0; i < 15; i++)
-      state.messages.push(
-        {
-          role: "assistant",
-          content: `Evidence ${i}: ${"long evidence ".repeat(250)}`,
-          toolCalls: [call("read_note", `read-${i}`)],
-        },
-        { role: "tool", toolCallId: `read-${i}`, content: `Result ${i}` },
-      );
-    state.messages.push({
-      role: "user",
-      content: "Give the final comparison.",
-    });
+    const state = compactionSession(16384, 2048);
+    state.messages[2].providerState = {
+      providerId: "openai",
+      parts: [{ type: "reasoning", encrypted_content: "opaque-private-state" }],
+    };
     let summaries = 0;
     const runner = new AgentRunner(
       dependencies({
@@ -728,6 +742,9 @@ describe("Agent runtime authority and recovery", function () {
           expect(() => validateAgentMessages(request.messages)).not.to.throw();
           if (!request.tools.length) {
             summaries++;
+            expect(request.messages[1].content).not.to.include(
+              "opaque-private-state",
+            );
             expect(
               contextSize(request.messages, []) +
                 (request.generation?.maxOutputTokens || 0),
@@ -752,8 +769,234 @@ describe("Agent runtime authority and recovery", function () {
     expect(
       Object.values(state.artifacts).some((value) => value.includes("read-0")),
     ).to.equal(true);
+    expect(Object.values(state.artifacts).join("")).not.to.include(
+      "opaque-private-state",
+    );
     expect(() => validateAgentMessages(state.messages)).not.to.throw();
   });
+
+  for (const [contextWindow, outputTokens, repetitions, summaryTokens] of [
+    [262144, 24576, 2800, 24576],
+    [16384, 8192, 100, 4096],
+  ])
+    it(`budgets reasoning summaries within a ${contextWindow}-token window`, async function () {
+      const state = compactionSession(contextWindow, outputTokens, repetitions);
+      state.activeEndpointId = "pinned-endpoint";
+      let summaries = 0;
+      await new AgentRunner(
+        dependencies({
+          turn: async (request) => {
+            expect(request.endpointId).to.equal("pinned-endpoint");
+            if (!request.tools.length) {
+              summaries++;
+              expect(request.generation).to.include({
+                maxOutputTokens: summaryTokens,
+                reasoningEffort: "low",
+              });
+              expect(
+                contextSize(request.messages, []) + summaryTokens,
+              ).to.be.lessThan(contextWindow);
+              return { text: "Compare the archived evidence.", toolCalls: [] };
+            }
+            expect(request.generation?.maxOutputTokens).to.equal(outputTokens);
+            expect(request.generation?.reasoningEffort).to.equal(undefined);
+            return turn();
+          },
+        }),
+      ).run(state, new AbortController().signal);
+      expect(state.error).to.equal(undefined);
+      expect(state.status).to.equal("completed");
+      expect(summaries).to.equal(1);
+      expect(state.context.compactions).to.equal(1);
+    });
+
+  const failedSummaries: {
+    name: string;
+    summarize: () => Promise<LLMAgentTurn>;
+  }[] = [
+    {
+      name: "wrapped protocol error",
+      summarize: async () => {
+        throw Object.assign(new Error("API attempts exhausted"), {
+          lastError: {
+            originalError: new AgentProtocolError("truncated-turn"),
+          },
+        });
+      },
+    },
+    {
+      name: "truncated summary",
+      summarize: async () => ({ ...turn(), finishReason: "length" }),
+    },
+    {
+      name: "empty summary",
+      summarize: async () => ({ text: " ", toolCalls: [] }),
+    },
+    {
+      name: "unexpected tool call",
+      summarize: async () => turn(call("read_note", "unexpected-call")),
+    },
+    {
+      name: "non-shrinking summary",
+      summarize: async () => ({
+        text: "Too long. ".repeat(10000),
+        toolCalls: [],
+      }),
+    },
+  ];
+  for (const { name, summarize } of failedSummaries)
+    it(`continues within budget after summary failure (${name}) without retrying every step`, async function () {
+      const state = compactionSession();
+      const original = structuredClone(state.messages.slice(1));
+      let summaries = 0;
+      let requests = 0;
+      let reads = 0;
+      await new AgentRunner(
+        dependencies({
+          tools: [tool("read_probe", false, async () => ++reads)],
+          turn: async (request) => {
+            if (!request.tools.length) {
+              summaries++;
+              return summarize();
+            }
+            expect(
+              request.messages.slice(1, original.length + 1),
+            ).to.deep.equal(original);
+            expect(
+              contextSize(request.messages, request.tools) +
+                state.options.maxOutputTokens +
+                2048,
+            ).to.be.at.most(state.options.contextWindowTokens);
+            return requests++ === 0
+              ? turn(call("read_probe", "probe"))
+              : turn();
+          },
+        }),
+      ).run(state, new AbortController().signal);
+      expect(state.error).to.equal(undefined);
+      expect(state.status).to.equal("completed");
+      expect(summaries).to.equal(1);
+      expect(requests).to.equal(2);
+      expect(reads).to.equal(1);
+      expect(state.context.compactions).to.equal(0);
+      expect(Object.values(state.artifacts)).to.deep.equal(["1"]);
+      const summaryStart = state.events.findIndex(
+        (event) => event.text === agentText("agent-runtime-compacting"),
+      );
+      expect(summaryStart).to.be.at.least(0);
+      expect(summaryStart).to.be.lessThan(
+        state.events.findIndex(
+          (event) =>
+            event.text ===
+            agentText("agent-runtime-step", { step: 1, total: 32 }),
+        ),
+      );
+      expect(
+        state.events.filter(
+          (event) => event.text === agentText("agent-runtime-summary-deferred"),
+        ),
+      ).to.have.length(1);
+      expect(() => validateAgentMessages(state.messages)).not.to.throw();
+    });
+
+  it("requires compaction again when retained history outgrows the remaining budget", async function () {
+    const state = compactionSession();
+    let summaries = 0;
+    let requests = 0;
+    let reads = 0;
+    await new AgentRunner(
+      dependencies({
+        tools: [
+          tool("read_probe", false, async () => {
+            reads++;
+            return "More evidence. ".repeat(4000);
+          }),
+        ],
+        turn: async (request) => {
+          if (!request.tools.length) {
+            summaries++;
+            throw new AgentProtocolError("truncated-turn");
+          }
+          requests++;
+          return turn(call("read_probe", "probe"));
+        },
+      }),
+    ).run(state, new AbortController().signal);
+    expect(state.status).to.equal("error");
+    expect(state.error).to.equal(
+      new AgentProtocolError("truncated-turn").message,
+    );
+    expect(summaries).to.equal(2);
+    expect(requests).to.equal(1);
+    expect(reads).to.equal(1);
+    expect(state.context.compactions).to.equal(0);
+    expect(() => validateAgentMessages(state.messages)).not.to.throw();
+  });
+
+  for (const succeeds of [true, false])
+    it(`handles a forced overflow summary that ${succeeds ? "succeeds" : "fails"} without replaying writes`, async function () {
+      const state = compactionSession(65536);
+      state.permission = state.options.permission = "full";
+      let requests = 0;
+      let summaries = 0;
+      let writes = 0;
+      await new AgentRunner(
+        dependencies({
+          tools: [tool("write_probe", true, async () => ++writes)],
+          turn: async (request) => {
+            if (!request.tools.length) {
+              summaries++;
+              if (!succeeds) throw new AgentProtocolError("truncated-turn");
+              return {
+                text: "Evidence archived; probe write completed.",
+                toolCalls: [],
+              };
+            }
+            requests++;
+            if (requests === 1) return turn(call("write_probe", "probe"));
+            if (requests === 2)
+              throw Object.assign(new Error("API attempts exhausted"), {
+                lastError: {
+                  originalError: new AgentProtocolError("context-overflow"),
+                },
+              });
+            expect(request.messages[1].content).to.include(
+              "Archive resultRef=",
+            );
+            return turn();
+          },
+        }),
+      ).run(state, new AbortController().signal);
+      expect(state.status).to.equal(succeeds ? "completed" : "error");
+      expect(summaries).to.equal(1);
+      expect(requests).to.equal(succeeds ? 3 : 2);
+      expect(writes).to.equal(1);
+      expect(state.context.compactions).to.equal(succeeds ? 1 : 0);
+      expect(() => validateAgentMessages(state.messages)).not.to.throw();
+    });
+
+  for (const rejects of [true, false])
+    it(`honors cancellation when the summarizer ${rejects ? "rejects" : "resolves late"}`, async function () {
+      const state = compactionSession();
+      const original = structuredClone(state.messages.slice(1));
+      const controller = new AbortController();
+      let requests = 0;
+      await new AgentRunner(
+        dependencies({
+          turn: async () => {
+            requests++;
+            controller.abort("Cancelled during summary");
+            if (rejects) throw new AgentProtocolError("truncated-turn");
+            return turn();
+          },
+        }),
+      ).run(state, controller.signal);
+      expect(state.status).to.equal("cancelled");
+      expect(requests).to.equal(1);
+      expect(state.messages.slice(1)).to.deep.equal(original);
+      expect(state.context.compactions).to.equal(0);
+      expect(state.artifacts).to.deep.equal({});
+    });
 
   it("retains original exchanges when the summarizer returns an incomplete answer", async function () {
     const state = session();
@@ -787,9 +1030,7 @@ describe("Agent runtime authority and recovery", function () {
     expect(state.error).to.equal(agentText("agent-runtime-summary-incomplete"));
     expect(state.messages.slice(1)).to.deep.equal(original);
     expect(state.context.compactions).to.equal(0);
-    const archive = Object.values(state.artifacts).join("");
-    expect(archive).to.include("full original evidence");
-    expect(archive).not.to.include("opaque-private-state");
+    expect(state.artifacts).to.deep.equal({});
   });
 
   it("resets authority and pending approvals and balances interrupted calls after restart", async function () {

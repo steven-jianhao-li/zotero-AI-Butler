@@ -4,6 +4,7 @@ import { getPref, setPref } from "../../../utils/prefs";
 import LLMService from "../../llmService";
 import { normalizeReasoningEffortSetting } from "../../llmproviders/shared/reasoning";
 import { parseCustomRequestHeaders } from "../../llmproviders/shared/requestHeaders";
+import { resolveOpenCodeGoChatUrl } from "../../llmproviders/shared/openCodeGo";
 import {
   LLMEndpointManager,
   type LLMEndpoint,
@@ -98,6 +99,7 @@ function endpointSupportsReasoningEffort(endpoint: LLMEndpoint): boolean {
   return (
     endpoint.providerType === "openai" ||
     endpoint.providerType === "openai-compat" ||
+    endpoint.providerType === "opencode-go" ||
     endpoint.providerType === "openrouter"
   );
 }
@@ -1665,6 +1667,9 @@ export class EndpointSettingsPanel {
 
     if (endpoint.providerType === "openai") {
       return this.toResponsesEndpoint(rawUrl, "/v1");
+    }
+    if (endpoint.providerType === "opencode-go") {
+      return resolveOpenCodeGoChatUrl(rawUrl);
     }
     if (
       endpoint.providerType === "openai-compat" ||

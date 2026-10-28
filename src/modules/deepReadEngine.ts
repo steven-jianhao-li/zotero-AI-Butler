@@ -352,7 +352,13 @@ export function replaceDeepReadSlotHtml(
     `<!-- ${DEEP_READ_SLOT_PREFIX}:${escapeRegExp(slotId)}:(?:pending|running|done|error) -->[\\s\\S]*?<!-- ${DEEP_READ_SLOT_PREFIX}:${escapeRegExp(slotId)}:end -->`,
   );
   const replacement = wrapDeepReadSlotHtml(slotId, innerHtml, status);
-  if (pattern.test(noteHtml)) return noteHtml.replace(pattern, replacement);
+  // Use a replacer function so `$` sequences inside the generated HTML stay
+  // literal. With a string replacement, String.prototype.replace would expand
+  // `$&`, `$'`, `$n` and friends, corrupting content such as LaTeX `$<9$`
+  // (escaped to `$&lt;9$`) by splicing the matched slot block into the text.
+  if (pattern.test(noteHtml)) {
+    return noteHtml.replace(pattern, () => replacement);
+  }
 
   const legacySection = slotTitle
     ? findLegacySlotSection(noteHtml, slotTitle, slot)

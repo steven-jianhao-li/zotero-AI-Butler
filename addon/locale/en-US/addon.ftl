@@ -239,3 +239,15 @@ agent-runtime-approved = Approved: { $tool }
 agent-runtime-declined = Declined: { $tool }
 agent-runtime-approval = Review the proposed library change: { $tool }
 agent-runtime-step-limit = Agent reached its { $count }-step budget. Evidence and progress have been saved; send a follow-up to continue.
+
+agent-web-search = Web search
+agent-web-parallel = Parallel (no API key)
+agent-web-disabled = Disabled (local library only)
+agent-web-help = Send public research queries and URLs to Parallel. Disable for local-only research.
+agent-web-invalid-provider = Invalid web search provider.
+agent-web-invalid-response = Parallel returned an invalid MCP response.
+agent-web-service-error = Parallel could not complete this request. Try again later or continue with local evidence.
+agent-web-rate-limit = Parallel free search limit reached. Try again later or continue with local evidence.
+agent-web-timeout = Parallel search request timed out.
+agent-web-tool-unavailable = The requested Parallel tool is unavailable.
+agent-web-invalid-url = Only HTTP(S) URLs without credentials are allowed.

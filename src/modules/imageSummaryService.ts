@@ -235,11 +235,11 @@ export class ImageSummaryService {
     );
 
     // 替换变量
-    prompt = prompt.replace(
-      /\$\{context\}/g,
+    // 用函数式替换：内容里的 `$&`、`$'`、`$n` 等序列不会被 String.replace 展开
+    prompt = prompt.replace(/\$\{context\}/g, () =>
       isBase64 ? "[PDF 文件内容]" : pdfContent.substring(0, 5000),
     );
-    prompt = prompt.replace(/\$\{title\}/g, itemTitle);
+    prompt = prompt.replace(/\$\{title\}/g, () => itemTitle);
 
     // 调用 LLM 生成视觉摘要 (使用带重试的方法，支持 API 密钥轮换)
     const summary = await LLMService.generateText({
@@ -275,9 +275,9 @@ export class ImageSummaryService {
       getString("settings-image-summary-default-language");
 
     // 替换变量
-    prompt = prompt.replace(/\$\{summaryForImage\}/g, visualSummary);
-    prompt = prompt.replace(/\$\{title\}/g, itemTitle);
-    prompt = prompt.replace(/\$\{language\}/g, language);
+    prompt = prompt.replace(/\$\{summaryForImage\}/g, () => visualSummary);
+    prompt = prompt.replace(/\$\{title\}/g, () => itemTitle);
+    prompt = prompt.replace(/\$\{language\}/g, () => language);
 
     return prompt;
   }

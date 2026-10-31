@@ -1,3 +1,4 @@
+import { runAgentParallelHostChecks } from "./agentParallelHost";
 import { AgentTimeline } from "../src/modules/views/agent/AgentTimeline";
 import { AgentTrajectory } from "../src/modules/views/agent/AgentTrajectory";
 import { requestAgentTurn } from "../src/modules/llmproviders/shared/agentTransport";
@@ -16,6 +17,7 @@ export async function runAgentUIHostChecks(
   assert: (value: boolean, name: string) => void,
   streamFixtureUrl: string,
 ): Promise<void> {
+  await runAgentParallelHostChecks(doc, assert, streamFixtureUrl);
   const element = (className: string) => {
     const node = doc.createElementNS(
       "http://www.w3.org/1999/xhtml",

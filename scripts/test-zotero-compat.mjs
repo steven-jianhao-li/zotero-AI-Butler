@@ -125,7 +125,55 @@ await build({
 // The final chunk is withheld until Gecko acknowledges a visible partial reply.
 // A buffered-only implementation therefore cannot pass this real transport check.
 let pendingStream;
+const mcpRequests = [];
 const streamFixture = createServer((request, response) => {
+  if (request.url === "/mcp-requests") {
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify(mcpRequests));
+    return;
+  }
+  if (request.url === "/mcp") {
+    let raw = "";
+    request.on("data", (chunk) => {
+      raw += chunk;
+    });
+    request.on("end", () => {
+      const message = JSON.parse(raw);
+      mcpRequests.push({
+        userAgent: request.headers["user-agent"],
+        method: message.method,
+        arguments: message.params?.arguments,
+      });
+      if (message.method === "notifications/initialized") {
+        response.writeHead(202).end();
+        return;
+      }
+      const result =
+        message.method === "initialize"
+          ? { protocolVersion: "2025-03-26", capabilities: { tools: {} } }
+          : message.method === "tools/list"
+            ? { tools: [{ name: "web_search" }, { name: "web_fetch" }] }
+            : {
+                content: [
+                  {
+                    type: "text",
+                    text: "NATIVE_MCP_EVIDENCE https://example.org/native-paper",
+                  },
+                ],
+              };
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.end(
+        "event: message\ndata: " +
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: message.id,
+            result,
+          }) +
+          "\n\n",
+      );
+    });
+    return;
+  }
   if (request.url === "/ack") {
     response.end("ok");
     if (pendingStream) {
@@ -244,6 +292,7 @@ console.log("Isolated evidence: " + directory);
 console.log("Host exit: " + exitCode);
 const report = JSON.parse(await readFile(reportPath, "utf8"));
 console.log(JSON.stringify(report.checks, null, 2));
+console.log("PARALLEL_NATIVE_OBSERVED " + JSON.stringify(mcpRequests));
 const required = [
   "finished",
   "installation",

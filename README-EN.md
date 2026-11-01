@@ -127,7 +127,7 @@ The main interface has five pages: Dashboard, AI Summary, Agent, Task Queue, and
 ![Task queue page](./assets/images/任务队列页面.png)
 
 - Quick Settings: the configuration center.
-  - API settings: currently supports OpenAI, Gemini, Anthropic, OpenAI-compatible services such as SiliconFlow, and other providers. After adding keys, click "Test Connection" to verify availability.
+  - API settings: currently supports OpenAI, Gemini, Anthropic, OpenCode Go, OpenAI-compatible services such as SiliconFlow, and other providers. After adding keys, click "Test Connection" to verify availability.
     ![API settings and test](./assets/images/API配置与连接测试.png)
   - Processing speed: control how many papers are processed per minute to avoid API rate limits.
   - PDF processing mode: choose multimodal processing (Base64) or text extraction. Base64 is suitable for multimodal LLMs and lets the model directly "see" the PDF, improving understanding of figures, formulas, and tables. Text extraction is suitable for models without multimodal support.
@@ -146,14 +146,30 @@ AI Butler supports multi-turn chat, allowing users to ask follow-up questions ba
 
 AI Butler supports multiple mainstream LLM platforms:
 
-| Platform              | Recommended Model        | Notes                                                                                         |
-| --------------------- | ------------------------ | --------------------------------------------------------------------------------------------- |
-| **Google Gemini**     | gemini-3-pro-preview     | 🌟 Recommended. Strong multimodal capability and accurate PDF understanding                   |
-| **OpenAI**            | gpt-5                    | Official new API                                                                              |
-| **Anthropic Claude**  | claude-opus-4-5-20251101 | Strong overall capability                                                                     |
-| **OpenAI Compatible** | Custom                   | Legacy OpenAI-style Chat Completions API, supporting third-party services such as SiliconFlow |
-| **Volcano Ark**       | doubao-seed-1-8-251228   | 🆕 2 million free tokens per day, supports Doubao models                                      |
-| **Ollama**            | llama3.2                 | Local or LAN model service; use text extraction or MinerU for PDF processing                  |
+| Platform              | Recommended Model        | Notes                                                                                                      |
+| --------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| **Google Gemini**     | gemini-3-pro-preview     | 🌟 Recommended. Strong multimodal capability and accurate PDF understanding                                |
+| **OpenAI**            | gpt-5                    | Official new API                                                                                           |
+| **Anthropic Claude**  | claude-opus-4-5-20251101 | Strong overall capability                                                                                  |
+| **OpenAI Compatible** | Custom                   | Legacy OpenAI-style Chat Completions API, supporting third-party services such as SiliconFlow              |
+| **Volcano Ark**       | doubao-seed-1-8-251228   | 🆕 2 million free tokens per day, supports Doubao models                                                   |
+| **Ollama**            | llama3.2                 | Local or LAN model service; use text extraction or MinerU for PDF processing                               |
+| **OpenCode Go**       | glm-5.3                  | 🆕 Subscription gateway with a built-in catalog covering Chat Completions / Responses / Anthropic / Gemini |
+
+> **OpenCode Go setup**: subscribe to Go / Go Plus in the [OpenCode Console](https://opencode.ai/docs/console/go) and create a personal API key (`oc_sk_...`). Add an endpoint, pick **OpenCode Go (Chat Completions)** and paste the key; the endpoint defaults to `https://opencode.ai/inference/go/openai/v1/chat/completions`.
+>
+> Go models are served by four protocol families. The plugin builds the endpoint from the provider type you pick; whenever the address points at the Go gateway (`https://opencode.ai/inference/go/...`) the Go protocol headers are added automatically:
+>
+> | Protocol family    | Provider type                   | Endpoint                                    | Example models                                     |
+> | ------------------ | ------------------------------- | ------------------------------------------- | -------------------------------------------------- |
+> | Chat Completions   | OpenCode Go / OpenAI Compatible | `…/inference/go/openai/v1/chat/completions` | glm-5.3, kimi-k3, deepseek-v4.1-flash, qwen3.8-max |
+> | Responses          | OpenAI (Responses API)          | `…/inference/go/openai/v1/responses`        | gpt-6-luna, grok-4.7, muse-spark-1.3-contributor   |
+> | Anthropic Messages | Anthropic Claude                | `…/inference/go/anthropic`                  | claude-haiku-5-5, minimax-m3, qwen3.7-plus         |
+> | Gemini             | Google Gemini                   | `…/inference/go/google`                     | gemini-4-argon                                     |
+>
+> Every request carries the Go protocol headers: `x-opencode-session` (stable session id), `x-opencode-request` (unique request id), `x-opencode-client` (`zotero-ai-butler`), `x-opencode-project` (`global`) and `User-Agent: zotero-ai-butler/<version>`. Custom request headers can override each of them. The plugin identifies itself instead of impersonating the OpenCode client, so free-tier models still return 403.
+>
+> The gateway has no public `/models` endpoint; the model picker falls back to the built-in catalog for the selected protocol family, and you can always type any Go model id manually. Go serves text models only, so use "Text extraction" or MinerU for PDFs (the plugin downgrades Base64 automatically and shows a warning).
 
 ![Multi-platform API settings](./assets/images/多平台API配置.png)
 

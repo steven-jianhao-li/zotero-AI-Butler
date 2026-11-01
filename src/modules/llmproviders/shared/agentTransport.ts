@@ -304,6 +304,7 @@ export function buildAgentHttpRequest(
     ![
       "openai",
       "openai-compat",
+      "opencode-go",
       "openrouter",
       "volcanoark",
       "ollama",

@@ -2078,6 +2078,11 @@ export class ApiSettingsPage {
         apiKeyId: "openaiCompatApiKey",
         modelId: "openaiCompatModel",
       },
+      "opencode-go": {
+        apiUrlId: "openCodeGoApiUrl",
+        apiKeyId: "openCodeGoApiKey",
+        modelId: "openCodeGoModel",
+      },
       google: {
         apiUrlId: "geminiApiUrl",
         apiKeyId: "geminiApiKey",
@@ -2216,6 +2221,7 @@ export class ApiSettingsPage {
       const mapping: Record<ProviderId, string> = {
         openai: "openaiApiKey",
         "openai-compat": "openaiCompatApiKey",
+        "opencode-go": "openCodeGoApiKey",
         google: "geminiApiKey",
         anthropic: "anthropicApiKey",
         openrouter: "openRouterApiKey",

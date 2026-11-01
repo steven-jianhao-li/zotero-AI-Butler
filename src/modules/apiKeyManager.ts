@@ -17,6 +17,7 @@ import { getString } from "../utils/locale";
 export type ProviderId =
   | "openai"
   | "openai-compat"
+  | "opencode-go"
   | "google"
   | "anthropic"
   | "openrouter"
@@ -44,6 +45,10 @@ const PROVIDER_KEY_MAPPINGS: Record<ProviderId, ProviderKeyMapping> = {
   "openai-compat": {
     primaryPrefKey: "openaiCompatApiKey",
     extraKeysPrefKey: "openaiCompatApiKeysFallback",
+  },
+  "opencode-go": {
+    primaryPrefKey: "openCodeGoApiKey",
+    extraKeysPrefKey: "openCodeGoApiKeysFallback",
   },
   google: {
     primaryPrefKey: "geminiApiKey",

@@ -131,7 +131,7 @@ b. 任意条目上右键 -> “AI管家仪表盘”。
 ![任务队列页面](./assets/images/任务队列页面.png)
 
 - 快捷设置：这是插件的配置中心，支持配置：
-  - API配置： 目前支持 OpenAI、Gemini、Anthropic 以及 OpenAI兼容（支持第三方如硅基流动等）四大平台。配置密钥后可点击 “测试连接” 验证可用性。
+  - API配置： 目前支持 OpenAI、Gemini、Anthropic、OpenCode Go 以及 OpenAI兼容（支持第三方如硅基流动等）等平台。配置密钥后可点击 “测试连接” 验证可用性。
     ![API配置与连接测试](./assets/images/API配置与连接测试.png)
   - 任务处理速度： 控制每分钟处理论文的数量，避免API调用超限。
   - PDF处理方式： 可选择多模态处理（Base64编码）或文字提取模式。Base64编码适用于多模态大模型（如Gemini 2.5 Pro），此方式能让模型直接“看到”PDF原文，对图片、公式、表格的理解能力更强；文字提取模式适用于不支持多模态的模型。
@@ -150,14 +150,30 @@ AI管家支持多轮对话功能，允许用户在生成的AI总结基础上进�
 
 AI管家支持多种主流大模型平台，满足不同用户的需求：
 
-| 平台                 | 推荐模型                 | 特点                                                                                |
-| -------------------- | ------------------------ | ----------------------------------------------------------------------------------- |
-| **Google Gemini**    | gemini-3-pro-preview     | 🌟 推荐！多模态能力强，PDF理解准确                                                  |
-| **OpenAI**           | gpt-5                    | 官方新接口                                                                          |
-| **Anthropic Claude** | claude-opus-4-5-20251101 | 综合能力优秀                                                                        |
-| **OpenAI 兼容**      | 自定义                   | OpenAI旧接口，使用标准的 Chat Completions 接口格式，支持 SiliconFlow 等第三方服务商 |
-| **火山方舟**         | doubao-seed-1-8-251228   | 🆕 每日200万tokens免费额度，支持豆包大模型系列                                      |
-| **Ollama**           | llama3.2                 | 本地/局域网模型服务，使用文本提取或 MinerU 处理 PDF                                 |
+| 平台                 | 推荐模型                 | 特点                                                                                               |
+| -------------------- | ------------------------ | -------------------------------------------------------------------------------------------------- |
+| **Google Gemini**    | gemini-3-pro-preview     | 🌟 推荐！多模态能力强，PDF理解准确                                                                 |
+| **OpenAI**           | gpt-5                    | 官方新接口                                                                                         |
+| **Anthropic Claude** | claude-opus-4-5-20251101 | 综合能力优秀                                                                                       |
+| **OpenAI 兼容**      | 自定义                   | OpenAI旧接口，使用标准的 Chat Completions 接口格式，支持 SiliconFlow 等第三方服务商                |
+| **火山方舟**         | doubao-seed-1-8-251228   | 🆕 每日200万tokens免费额度，支持豆包大模型系列                                                     |
+| **Ollama**           | llama3.2                 | 本地/局域网模型服务，使用文本提取或 MinerU 处理 PDF                                                |
+| **OpenCode Go**      | glm-5.3                  | 🆕 订阅制 Go 网关：内置模型目录，覆盖 Chat Completions / Responses / Anthropic / Gemini 四种协议族 |
+
+> **OpenCode Go 配置**：先在 [OpenCode Console](https://opencode.ai/docs/console/go) 订阅 Go / Go Plus，并在工作区创建个人 API Key（`oc_sk_...`）。在「模型端点」中新增供应商，选 **OpenCode Go（Chat Completions）**，填入 Key 即可；端点地址已内置 `https://opencode.ai/inference/go/openai/v1/chat/completions`。
+>
+> Go 的模型分属四种协议族。插件会根据你选择的供应商类型拼接端点地址；只要地址指向 Go 网关（`https://opencode.ai/inference/go/...`），就会自动补齐 Go 协议头：
+>
+> | 协议族             | 供应商类型                | 端点地址                                    | 示例模型                                           |
+> | ------------------ | ------------------------- | ------------------------------------------- | -------------------------------------------------- |
+> | Chat Completions   | OpenCode Go / OpenAI 兼容 | `…/inference/go/openai/v1/chat/completions` | glm-5.3、kimi-k3、deepseek-v4.1-flash、qwen3.8-max |
+> | Responses          | OpenAI (Responses API)    | `…/inference/go/openai/v1/responses`        | gpt-6-luna、grok-4.7、muse-spark-1.3-contributor   |
+> | Anthropic Messages | Anthropic Claude          | `…/inference/go/anthropic`                  | claude-haiku-5-5、minimax-m3、qwen3.7-plus         |
+> | Gemini             | Google Gemini             | `…/inference/go/google`                     | gemini-4-argon                                     |
+>
+> 每个请求都会自动附带 Go 要求的特殊协议头：`x-opencode-session`（稳定会话 ID）、`x-opencode-request`（唯一请求 ID）、`x-opencode-client`（`zotero-ai-butler`）、`x-opencode-project`（`global`）以及 `User-Agent: zotero-ai-butler/<版本>`；自定义请求头可逐项覆盖。插件以自己的身份标识，不伪装成 OpenCode 客户端，因此免费层模型仍会返回 403。
+>
+> 该网关没有公开 `/models` 接口，模型列表按钮会按协议族使用内置目录回退，也可以手动填写任意 Go 模型 ID。Go 模型均为文本模型，PDF 处理请使用「文本提取」或 MinerU（选择 Base64 时会自动降级并给出提示）。
 
 ![多平台API配置](./assets/images/多平台API配置.png)
 

@@ -40,7 +40,10 @@ import {
  * 不会在代码中自动追加路径。
  */
 export class OpenAICompatProvider implements ILlmProvider {
-  readonly id = "openai-compat"; // 供偏好使用的唯一标识
+  readonly id: string = "openai-compat"; // 供偏好使用的唯一标识
+  /** 子类可覆盖为厂商自己的 Chat Completions 默认端点。 */
+  protected readonly defaultChatCompletionsUrl: string =
+    "https://api.openai.com/v1/chat/completions";
   readonly capabilities: LLMProviderCapabilities = {
     supportsText: true,
     supportsStreaming: true,
@@ -56,10 +59,9 @@ export class OpenAICompatProvider implements ILlmProvider {
     ],
   };
 
-  private ensureUrlAndKey(options: LLMOptions) {
-    const rawApiUrl = (
-      options.apiUrl || "https://api.openai.com/v1/chat/completions"
-    ).trim();
+  /** 解析并校验端点地址与密钥；子类可覆盖地址默认值。 */
+  protected ensureUrlAndKey(options: LLMOptions) {
+    const rawApiUrl = (options.apiUrl || this.defaultChatCompletionsUrl).trim();
     const apiUrl = this.normalizeChatCompletionsUrl(rawApiUrl);
     const apiKey = (options.apiKey || "").trim();
     if (!apiUrl) throw new Error(providerMissingApiUrl());
@@ -67,7 +69,8 @@ export class OpenAICompatProvider implements ILlmProvider {
     return { apiUrl, apiKey };
   }
 
-  private normalizeChatCompletionsUrl(apiUrl: string): string {
+  /** 子类可覆盖地址归一化规则（例如固定网关路径）。 */
+  protected normalizeChatCompletionsUrl(apiUrl: string): string {
     const raw = apiUrl.trim().replace(/\/+$/, "");
     if (!raw) return raw;
     if (/\/(?:v\d+(?:beta)?\/)?chat\/completions$/i.test(raw)) return raw;
@@ -78,7 +81,10 @@ export class OpenAICompatProvider implements ILlmProvider {
     return `${raw}/v1/chat/completions`;
   }
 
-  private buildHeaders(apiKey: string, customHeaders?: Record<string, string>) {
+  protected buildHeaders(
+    apiKey: string,
+    customHeaders?: Record<string, string>,
+  ) {
     return mergeRequestHeaders(
       {
         "Content-Type": "application/json",
@@ -88,7 +94,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     );
   }
 
-  private buildGenParams(options: LLMOptions) {
+  protected buildGenParams(options: LLMOptions) {
     const params: any = {};
     if (options.temperature !== undefined)
       params.temperature = options.temperature;
@@ -232,7 +238,7 @@ export class OpenAICompatProvider implements ILlmProvider {
     const { apiUrl, apiKey } = this.ensureUrlAndKey(options);
     const url = deriveVersionedModelsUrl(
       apiUrl,
-      "https://api.openai.com/v1/chat/completions",
+      this.defaultChatCompletionsUrl,
     );
     const data = await requestModelListJson(
       url,

@@ -240,6 +240,85 @@ describe("Custom LLM request headers", function () {
     expect(requests).to.have.length(0);
   });
 
+  it("injects the full OpenCode Go protocol header set", function () {
+    const endpoint = {
+      ...LLMEndpointManager.createEndpoint("opencode-go"),
+      apiKey: "sk-go",
+      customHeaders: JSON.stringify({ "X-Client-Name": "header-test" }),
+    };
+    const options = LLMService.buildOptions(endpoint);
+    expect(options.customHeaders).to.include({
+      "X-Client-Name": "header-test",
+      "x-opencode-client": "zotero-ai-butler",
+      "x-opencode-project": "global",
+    });
+    expect(options.customHeaders?.["User-Agent"]).to.match(
+      /^zotero-ai-butler\/\d+\.\d+/,
+    );
+    expect(options.customHeaders?.["x-opencode-session"]).to.match(/^ses_/);
+    expect(options.customHeaders?.["x-opencode-request"]).to.match(/^msg_/);
+
+    const overridden = LLMService.buildOptions({
+      ...endpoint,
+      customHeaders: JSON.stringify({
+        "User-Agent": "my-client/1.0",
+        "x-opencode-session": "ses_custom",
+        "x-opencode-client": "my-client",
+        "x-opencode-project": "my-project",
+        "x-opencode-request": "msg_custom",
+      }),
+    });
+    expect(overridden.customHeaders).to.deep.equal({
+      "User-Agent": "my-client/1.0",
+      "x-opencode-session": "ses_custom",
+      "x-opencode-client": "my-client",
+      "x-opencode-project": "my-project",
+      "x-opencode-request": "msg_custom",
+    });
+  });
+
+  it("adds the Go protocol headers to every API family pointed at the Go gateway", function () {
+    const endpoints = [
+      {
+        ...LLMEndpointManager.createEndpoint("anthropic"),
+        apiUrl: "https://opencode.ai/inference/go/anthropic",
+        model: "claude-haiku-5-5",
+      },
+      {
+        ...LLMEndpointManager.createEndpoint("openai"),
+        apiUrl: "https://opencode.ai/inference/go/openai/v1/responses",
+        model: "gpt-6-luna",
+      },
+      {
+        ...LLMEndpointManager.createEndpoint("google"),
+        apiUrl: "https://opencode.ai/inference/go/google",
+        model: "gemini-4-argon",
+      },
+      {
+        ...LLMEndpointManager.createEndpoint("openai-compat"),
+        apiUrl: "https://opencode.ai/inference/go/openai/v1/chat/completions",
+        model: "glm-5.3",
+      },
+    ];
+    for (const endpoint of endpoints) {
+      endpoint.apiKey = "oc_sk_test";
+      const headers = LLMService.buildOptions(endpoint).customHeaders;
+      expect(headers?.["x-opencode-session"]).to.match(/^ses_/);
+      expect(headers?.["x-opencode-client"]).to.equal("zotero-ai-butler");
+      expect(headers?.["x-opencode-project"]).to.equal("global");
+      expect(headers?.["x-opencode-request"]).to.match(/^msg_/);
+    }
+
+    const plainEndpoint = {
+      ...LLMEndpointManager.createEndpoint("openai"),
+      apiUrl: "https://api.openai.com/v1/responses",
+      apiKey: "sk-openai",
+    };
+    expect(LLMService.buildOptions(plainEndpoint).customHeaders).to.deep.equal(
+      {},
+    );
+  });
+
   it("preserves custom headers when synchronizing a migrated legacy endpoint", function () {
     const [endpoint] = LLMEndpointManager.getEndpoints();
     endpoint.customHeaders = JSON.stringify(customHeaders);

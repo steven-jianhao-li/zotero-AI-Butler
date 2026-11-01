@@ -31,6 +31,14 @@ import {
 import { sanitizeLLMOutputText } from "./llmproviders/shared/outputSanitizer";
 import { requestAgentTurn } from "./llmproviders/shared/agentTransport";
 import { parseCustomRequestHeaders } from "./llmproviders/shared/requestHeaders";
+import {
+  isOpenCodeGoGatewayUrl,
+  OPENCODE_GO_DEFAULT_CHAT_URL,
+  OPENCODE_GO_DEFAULT_MODEL,
+  withOpenCodeGoHeaders,
+} from "./llmproviders/shared/openCodeGo";
+import { openCodeGoModelsForFamily } from "./llmproviders/openCodeGoModels";
+import type { OpenCodeGoApiFamily } from "./llmproviders/openCodeGoModels";
 import type {
   LLMAgentMessage,
   LLMAgentTurn,
@@ -307,6 +315,7 @@ export class LLMService {
     if (id.includes("gemini") || id === "google") return "google";
     if (id.includes("anthropic") || id.includes("claude")) return "anthropic";
     if (id === "openai-compat") return "openai-compat";
+    if (id.includes("opencode")) return "opencode-go";
     if (id === "openrouter") return "openrouter";
     if (id === "volcanoark") return "volcanoark";
     if (id === "ollama") return "ollama";
@@ -472,6 +481,15 @@ export class LLMService {
         getPref("openaiApiModel") ||
         "gpt-3.5-turbo"
       ).trim();
+    } else if (id === "opencode-go") {
+      const keyManagerId = this.mapToKeyManagerId(id);
+      common.apiUrl = (
+        getPref("openCodeGoApiUrl") || OPENCODE_GO_DEFAULT_CHAT_URL
+      ).trim();
+      common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
+      common.model = (
+        getPref("openCodeGoModel") || OPENCODE_GO_DEFAULT_MODEL
+      ).trim();
     } else if (id === "openrouter") {
       const keyManagerId = this.mapToKeyManagerId(id);
       common.apiUrl = (
@@ -504,6 +522,13 @@ export class LLMService {
       common.apiUrl = (getPref("openaiApiUrl") || "").trim();
       common.apiKey = ApiKeyManager.getCurrentKey(keyManagerId);
       common.model = (getPref("openaiApiModel") || "gpt-3.5-turbo").trim();
+    }
+
+    // OpenCode Go 要求每个请求携带完整的 Go 协议头。除了原生 opencode-go
+    // 端点，其它协议族（Responses / Anthropic / Gemini）只要地址指向 Go
+    // 网关，也自动补齐，这样四类 Go 模型都能直接使用。
+    if (id === "opencode-go" || isOpenCodeGoGatewayUrl(common.apiUrl)) {
+      common.customHeaders = withOpenCodeGoHeaders(common.customHeaders);
     }
 
     return { ...common, ...(extra || {}) };
@@ -684,7 +709,37 @@ export class LLMService {
         ...(optionsOverride || {}),
       },
     );
-    return impl.listModels(options);
+    try {
+      return await impl.listModels(options);
+    } catch (error) {
+      const catalog = this.openCodeGoCatalogForProvider(id, options.apiUrl);
+      if (catalog) return catalog;
+      throw error;
+    }
+  }
+
+  /**
+   * Go 网关没有公开 `/models` 接口，但每个协议族都有固定模型清单。
+   * 端点地址指向 Go 网关时用内置目录兜底，避免“拉取模型列表”直接报错。
+   */
+  private static openCodeGoCatalogForProvider(
+    providerId: string,
+    apiUrl?: string,
+  ): LLMModelInfo[] | undefined {
+    if (!isOpenCodeGoGatewayUrl(apiUrl)) return undefined;
+    const family: OpenCodeGoApiFamily | undefined =
+      providerId === "openai"
+        ? "responses"
+        : providerId === "openai-compat"
+          ? "chat"
+          : providerId === "anthropic"
+            ? "anthropic"
+            : providerId === "google"
+              ? "google"
+              : providerId.includes("opencode")
+                ? "chat"
+                : undefined;
+    return family ? openCodeGoModelsForFamily(family) : undefined;
   }
 
   static async testEndpointConnection(endpoint: LLMEndpoint): Promise<string> {
@@ -1462,7 +1517,12 @@ export class LLMService {
     }
 
     const capabilities = this.getProviderCapabilities(provider);
-    const policy = this.choosePolicy(input.policy, capabilities, endpoint);
+    const policy = this.choosePolicy(
+      input.policy,
+      capabilities,
+      endpoint,
+      warnings,
+    );
 
     if (input.kind === "zotero-item") {
       return this.resolveZoteroItemContent(
@@ -1509,8 +1569,9 @@ export class LLMService {
 
   private static choosePolicy(
     requestedPolicy: LLMContentPolicy | undefined,
-    _capabilities: LLMProviderCapabilities,
-    endpoint?: LLMEndpoint,
+    capabilities: LLMProviderCapabilities,
+    endpoint: LLMEndpoint | undefined,
+    warnings: string[],
   ): LLMContentPolicy {
     const rawMode = (
       requestedPolicy || LLMEndpointManager.getEffectivePdfProcessMode(endpoint)
@@ -1523,6 +1584,13 @@ export class LLMService {
     else if (rawMode === "auto") policy = "pdf-base64";
     else {
       policy = "pdf-base64";
+    }
+
+    // 不支持 PDF 直传的供应商（例如 OpenCode Go、Ollama）自动降级为文本提取，
+    // 避免用户沿用全局 base64 配置时每个请求都失败。
+    if (policy === "pdf-base64" && !capabilities.supportsPdfBase64) {
+      warnings.push(getString("llm-warning-pdf-text-downgrade"));
+      return "text";
     }
 
     return policy;
@@ -1838,6 +1906,7 @@ export class LLMService {
       undefined,
       this.getProviderCapabilities(provider),
       endpoint,
+      [],
     );
     return policy === "pdf-base64" ? "pdf-base64" : "text";
   }

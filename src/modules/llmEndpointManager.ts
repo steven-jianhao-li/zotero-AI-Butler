@@ -1,6 +1,10 @@
 import { getString } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
 import type { ProviderId } from "./apiKeyManager";
+import {
+  OPENCODE_GO_DEFAULT_CHAT_URL,
+  OPENCODE_GO_DEFAULT_MODEL,
+} from "./llmproviders/shared/openCodeGo";
 import { normalizeReasoningEffortSetting } from "./llmproviders/shared/reasoning";
 import type { LLMReasoningEffortSetting } from "./llmproviders/types";
 
@@ -49,6 +53,12 @@ const PROVIDER_DEFAULTS: Record<
     labelKey: "llm-endpoint-provider-openai-compat",
     apiUrl: "https://api.openai.com/v1/chat/completions",
     model: "gpt-3.5-turbo",
+    reasoningEffort: "default",
+  },
+  "opencode-go": {
+    labelKey: "llm-endpoint-provider-opencode-go",
+    apiUrl: OPENCODE_GO_DEFAULT_CHAT_URL,
+    model: OPENCODE_GO_DEFAULT_MODEL,
     reasoningEffort: "default",
   },
   openai: {
@@ -109,6 +119,7 @@ function safeProviderType(raw: unknown): LLMEndpointProviderType {
   if (value.includes("gemini")) return "google";
   if (value.includes("claude")) return "anthropic";
   if (value.includes("ollama")) return "ollama";
+  if (value.includes("opencode")) return "opencode-go";
   if (PROVIDER_TYPES.includes(value as LLMEndpointProviderType)) {
     return value as LLMEndpointProviderType;
   }
@@ -501,6 +512,7 @@ export class LLMEndpointManager {
     const keyByProvider: Record<LLMEndpointProviderType, string> = {
       openai: "openaiApiUrl",
       "openai-compat": "openaiCompatApiUrl",
+      "opencode-go": "openCodeGoApiUrl",
       google: "geminiApiUrl",
       anthropic: "anthropicApiUrl",
       openrouter: "openRouterApiUrl",
@@ -516,6 +528,7 @@ export class LLMEndpointManager {
     const keyByProvider: Record<LLMEndpointProviderType, string> = {
       openai: "openaiApiKey",
       "openai-compat": "openaiCompatApiKey",
+      "opencode-go": "openCodeGoApiKey",
       google: "geminiApiKey",
       anthropic: "anthropicApiKey",
       openrouter: "openRouterApiKey",
@@ -533,6 +546,7 @@ export class LLMEndpointManager {
     const keyByProvider: Record<LLMEndpointProviderType, string> = {
       openai: "openaiApiModel",
       "openai-compat": "openaiCompatModel",
+      "opencode-go": "openCodeGoModel",
       google: "geminiModel",
       anthropic: "anthropicModel",
       openrouter: "openRouterModel",

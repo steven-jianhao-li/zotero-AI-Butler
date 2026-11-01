@@ -261,6 +261,11 @@ function initializeDefaultPrefsOnStartup() {
     openaiCompatApiUrl: "https://api.openai.com/v1/chat/completions",
     openaiCompatApiKey: "",
     openaiCompatModel: "gpt-3.5-turbo",
+    // OpenCode Go（Console 网关，OpenAI Chat Completions 协议）
+    openCodeGoApiUrl:
+      "https://opencode.ai/inference/go/openai/v1/chat/completions",
+    openCodeGoApiKey: "",
+    openCodeGoModel: "glm-5.3",
     // OpenRouter 默认
     openRouterApiUrl: "https://openrouter.ai/api/v1/chat/completions",
     openRouterApiKey: "",
@@ -276,6 +281,7 @@ function initializeDefaultPrefsOnStartup() {
     // 备用 API 密钥列表（JSON 数组格式）
     openaiApiKeysFallback: "[]",
     openaiCompatApiKeysFallback: "[]",
+    openCodeGoApiKeysFallback: "[]",
     geminiApiKeysFallback: "[]",
     anthropicApiKeysFallback: "[]",
     openRouterApiKeysFallback: "[]",

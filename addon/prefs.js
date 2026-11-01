@@ -16,6 +16,13 @@ pref(
   "https://api.openai.com/v1/chat/completions",
 );
 pref("__prefsPrefix__.openaiCompatModel", "gpt-3.5-turbo");
+// OpenCode Go（Console 网关，OpenAI Chat Completions 协议）
+pref(
+  "__prefsPrefix__.openCodeGoApiUrl",
+  "https://opencode.ai/inference/go/openai/v1/chat/completions",
+);
+pref("__prefsPrefix__.openCodeGoApiKey", "");
+pref("__prefsPrefix__.openCodeGoModel", "glm-5.3");
 pref(
   "__prefsPrefix__.geminiApiUrl",
   "https://generativelanguage.googleapis.com",

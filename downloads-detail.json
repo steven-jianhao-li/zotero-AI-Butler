@@ -1,7 +1,7 @@
 {
   "repository": "steven-jianhao-li/zotero-AI-Butler",
-  "updatedAt": "2026-11-01T13:33:34.590Z",
-  "totalDownloads": 191293,
+  "updatedAt": "2026-11-01T22:08:14.346Z",
+  "totalDownloads": 191414,
   "releaseCount": 125,
   "assetCount": 124,
   "releases": [
@@ -12,7 +12,7 @@
         {
           "id": 681844785,
           "name": "zotero-ai-butler.xpi",
-          "downloads": 9312
+          "downloads": 9432
         }
       ]
     },
@@ -23,7 +23,7 @@
         {
           "id": 663018587,
           "name": "zotero-ai-butler.xpi",
-          "downloads": 10076
+          "downloads": 10077
         }
       ]
     },

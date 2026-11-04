@@ -1004,6 +1004,7 @@ export type FluentMessageId =
   | 'note-generator-deep-read-template-changed-resume-current'
   | 'note-generator-deep-read-template-changed-resume-saved'
   | 'note-generator-deep-read-window-title'
+  | 'note-generator-error-chapter-planning'
   | 'note-generator-error-empty-note'
   | 'note-generator-error-empty-response'
   | 'note-generator-error-invalid-source-item'

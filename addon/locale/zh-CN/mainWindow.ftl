@@ -1204,6 +1204,7 @@ llm-metadata-selector-provider = 供应商: { $provider } · { $generated } ⓘ
 note-generator-existing-note-skipped = 已存在{ $kind }，跳过
 note-generator-model-metadata = 供应商: { $provider } 模型: { $model }
 note-generator-error-template-missing-sequential = AI 精读模板缺少 sequential_dynamic 阶段
+note-generator-error-chapter-planning = 章节规划未返回可识别的章节 JSON，任务已停止；未写入精读笔记，也不会自动重试或使用虚构的默认章节。若响应提示无法读取 PDF，请将当前模型的 PDF 处理模式改为本地文本提取（扫描件可用 MinerU），再手动重试。若已提供全文，请检查章节规划提示词及模型返回格式。以下为输入模式和模型响应摘要：
 note-generator-deep-read-intro = ## AI 精读：双阶段逐章阅读  AI 会先解析章节结构，再按章节顺序逐章精读，最后执行重点追问。
 note-generator-deep-read-parsing-heading = ### 正在解析章节结构
 note-generator-deep-read-planning-prompt-label = **章节解析提示词：**  { $prompt }

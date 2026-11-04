@@ -505,7 +505,7 @@ const DEEP_READ_PROMPT_DEFAULTS_EN: DeepReadPromptDefaults = {
           "Requirements:",
           "1. Prefer the section titles used in the original paper.",
           "2. If a title is not in English, provide a concise English translation and keep the original meaning.",
-          "3. Return at least two chapters. If the structure is unclear, return Introduction and Main Body.",
+          '3. Plan reading units only from the supplied full paper; no minimum chapter count is required. If the paper is readable but has no explicit section headings (for example, a Letter or short article), read it as one unit: {"chapters":[{"id":"whole_paper","title_zh":"全文","title_en":"Whole paper"}]}. This describes the reading scope, not an invented original section. Return {"chapters":[]} only if the full paper is missing or unreadable. Never invent Introduction or Main Body headings absent from the paper.',
           "4. The JSON fields are used directly in the chapter reading prompt template: title_zh maps to {{title_zh}}, title_en maps to {{title_en}}, and id is only an internal identifier.",
         ],
         fixedPrompts: [],
@@ -789,7 +789,7 @@ export function parseChapterStructureResult(
     try {
       const parsed = JSON.parse(candidate.trim());
       const chapters = normalizeChapterArray(
-        (parsed as { chapters?: unknown }).chapters,
+        Array.isArray(parsed) ? parsed : parsed?.chapters,
         DEFAULT_DEEP_READ_CHAPTER_LIMIT,
       );
       if (chapters.length > 0) {

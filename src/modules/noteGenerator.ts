@@ -82,6 +82,7 @@ import {
   markDeepReadSlotRunning,
   migrateLegacyDeepReadHtmlToSlots,
   planDeepReadSlots,
+  repairDeepReadSlotMath,
   resetRunningDeepReadSlots,
   shouldRunDeepReadSlot,
   type DeepReadSlot,
@@ -1425,13 +1426,14 @@ export class NoteGenerator {
 
     if (shouldResume) {
       const currentHtml = ((note as any).getNote?.() as string) || "";
+      const repairedHtml = repairDeepReadSlotMath(currentHtml);
       const nextHtml = shouldMigrateLegacyResume
         ? migrateLegacyDeepReadHtmlToSlots(
             currentHtml || params.existingHtml,
             template,
             planned,
           )
-        : ensureDeepReadSlotsHtml(currentHtml, planned);
+        : ensureDeepReadSlotsHtml(repairedHtml, planned);
       if (nextHtml !== currentHtml) {
         (note as any).setNote?.(nextHtml);
         await (note as any).saveTx?.();

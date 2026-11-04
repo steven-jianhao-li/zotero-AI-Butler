@@ -48,6 +48,8 @@ jobs:
         run: npm run test:image-summary
       - name: Check PDF extraction recovery
         run: npm run test:pdf
+      - name: Check deep-read note recovery
+        run: npm run test:deepread-recovery
       - name: Check EPUB extraction and compatibility
         run: npm run test:epub
       - name: Check Sidebar viewport scrolling

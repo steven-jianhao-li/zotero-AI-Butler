@@ -234,9 +234,10 @@ function loadPluginScript(uri) {
     Services.scriptloader.loadSubScriptWithOptions(uri, {
       target: pluginScope,
       allowUnsafeURL: true,
+      charset: "UTF-8",
     });
   } else {
-    Services.scriptloader.loadSubScript(uri, pluginScope);
+    Services.scriptloader.loadSubScript(uri, pluginScope, "UTF-8");
   }
 }
 

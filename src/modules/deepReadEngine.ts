@@ -367,6 +367,61 @@ export function replaceDeepReadSlotHtml(
   return `${noteHtml.slice(0, legacySection.index)}${replacement}${noteHtml.slice(legacySection.endIndex)}`;
 }
 
+export function repairDeepReadSlotMath(noteHtml: string): string {
+  // Only undo the recognizable replacement expansion, never genuine unfinished rounds.
+  const openSlots: Array<{
+    id: string;
+    status: string;
+    start: number;
+    bodyStart: number;
+  }> = [];
+  const parts: string[] = [];
+  let copiedUntil = 0;
+  const markers =
+    /<!-- zab:slot:([^:<>\s]+):(pending|running|done|error|end) -->/g;
+  for (const marker of noteHtml.matchAll(markers)) {
+    const [comment, slotId, status] = marker;
+    const start = marker.index!;
+    const end = start + comment.length;
+    if (status !== "end") {
+      openSlots.push({ id: slotId, status, start, bodyStart: end });
+      continue;
+    }
+    const closedSlot = openSlots.pop();
+    const parentSlot = openSlots[openSlots.length - 1];
+    if (!closedSlot || closedSlot.id !== slotId) {
+      openSlots.length = 0;
+      continue;
+    }
+    if (
+      closedSlot.status !== "running" ||
+      parentSlot?.status !== "done" ||
+      parentSlot.id !== slotId
+    ) {
+      continue;
+    }
+    const mathStart = noteHtml.lastIndexOf(
+      '<span class="math">',
+      closedSlot.start,
+    );
+    const body = noteHtml.slice(closedSlot.bodyStart, start);
+    if (
+      mathStart < parentSlot.bodyStart ||
+      !/^<span class="math">[^<]*$/.test(
+        noteHtml.slice(mathStart, closedSlot.start),
+      ) ||
+      !/^\s*<h2>[^<]*<\/h2>\s*<p>[^<]*<\/p>\s*$/.test(body) ||
+      !hasDeepReadPlaceholderText(stripHtml(body)) ||
+      !/^(?:gt|lt|amp|quot|#\d+|#x[\da-f]+);/i.test(noteHtml.slice(end))
+    ) {
+      continue;
+    }
+    parts.push(noteHtml.slice(copiedUntil, closedSlot.start), "$&");
+    copiedUntil = end;
+  }
+  return parts.length ? parts.join("") + noteHtml.slice(copiedUntil) : noteHtml;
+}
+
 export function getDeepReadSlotStatus(
   noteHtml: string,
   slotId: string,

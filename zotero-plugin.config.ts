@@ -1,6 +1,7 @@
 import { defineConfig } from "zotero-plugin-scaffold";
 import pkg from "./package.json";
 import { buildCompatibility } from "./scripts/build-compatibility.mjs";
+import { bundleKatexAssets } from "./scripts/bundle-katex-assets.mjs";
 
 export default defineConfig({
   source: ["src", "addon"],
@@ -14,7 +15,11 @@ export default defineConfig({
 
   build: {
     hooks: {
-      "build:bundle": buildCompatibility,
+      "build:bundle": async (context) => {
+        // Renderer class names and fonts must match before legacy assets are copied.
+        await bundleKatexAssets(context.dist);
+        await buildCompatibility(context);
+      },
     },
     assets: ["addon/**/*.*"],
     define: {

@@ -997,6 +997,10 @@ export class ApiSettingsPage {
         },
         { value: "v1", label: getString("settings-api-mineru-format-v1") },
         { value: "v4", label: getString("settings-api-mineru-format-v4") },
+        {
+          value: "v4.1.7",
+          label: getString("settings-api-mineru-format-v417"),
+        },
       ],
       getMineruCustomApiFormat(),
       (value) => {

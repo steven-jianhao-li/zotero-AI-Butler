@@ -165,6 +165,16 @@ describe("MinerU service selection and extraction", function () {
       "https://example.invalid/proxy/api/v4/",
       "https://example.invalid/proxy/api/v4",
     ],
+    [
+      "v4.1.7",
+      "http://127.0.0.1:8000/proxy/",
+      "http://127.0.0.1:8000/proxy/v1",
+    ],
+    [
+      "v4.1.7",
+      "http://127.0.0.1:8000/proxy/v1/",
+      "http://127.0.0.1:8000/proxy/v1",
+    ],
   ]) {
     it(`accepts the ${format} address ${address} without duplicating paths`, function () {
       values.mineruCustomApiFormat = format;
@@ -340,6 +350,98 @@ describe("MinerU service selection and extraction", function () {
     expect(JSON.parse(String(requests[0].options.body)).model_version).to.equal(
       "pipeline",
     );
+  });
+
+  it("creates a 4.1.7 task, uploads the file and downloads its result zip", async function () {
+    values.mineruCustomApiFormat = "v4.1.7";
+    values.mineruCustomApiKey = "fixture-custom-key";
+    mockFetch((url) => {
+      if (url.endsWith("/proxy/v1/tasks"))
+        return json({
+          task_id: "job/fixture",
+          status: "waiting-file",
+          files: [
+            {
+              file_id: "file-fixture",
+              file_name: "document.pdf",
+              status: "waiting-file",
+              upload: {
+                url: "/proxy/v1/tasks/job%2Ffixture/uploads/file-fixture",
+                headers: { "Content-Type": "application/octet-stream" },
+              },
+            },
+          ],
+        });
+      if (url.endsWith("/uploads/file-fixture")) return new Response(null);
+      if (url.endsWith("/tasks/job%2Ffixture"))
+        return json({
+          task_id: "job/fixture",
+          status: "completed",
+          progress: { completed: 1, failed: 0, total: 1 },
+          files: [
+            {
+              file_id: "file-fixture",
+              file_name: "document.pdf",
+              status: "completed",
+              result_url: "/proxy/v1/files/file-fixture/content",
+            },
+          ],
+        });
+      if (url.endsWith("/files/file-fixture/content")) return zipResponse();
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    expect(await MineruClient.extractMarkdown(paper)).to.equal(markdown);
+    expect(requests.map(({ url }) => url)).to.deep.equal([
+      "http://127.0.0.1:8000/proxy/v1/tasks",
+      "http://127.0.0.1:8000/proxy/v1/tasks/job%2Ffixture/uploads/file-fixture",
+      "http://127.0.0.1:8000/proxy/v1/tasks/job%2Ffixture",
+      "http://127.0.0.1:8000/proxy/v1/files/file-fixture/content",
+    ]);
+    expect(JSON.parse(String(requests[0].options.body))).to.deep.equal({
+      output_formats: ["default"],
+      files: [{ file_name: "document.pdf", bytes: pdfBytes.byteLength }],
+    });
+    expect(
+      new Headers(requests[1].options.headers).get("Authorization"),
+    ).to.equal("Bearer fixture-custom-key");
+    expect(
+      new Headers(requests[1].options.headers).get("Content-Type"),
+    ).to.equal("application/octet-stream");
+    expect(saveCount).to.equal(1);
+  });
+
+  it("reports a failed 4.1.7 task without downloading a result", async function () {
+    values.mineruCustomApiFormat = "v4.1.7";
+    mockFetch((url) => {
+      if (url.endsWith("/proxy/v1/tasks"))
+        return json({
+          task_id: "job-fixture",
+          status: "waiting-file",
+          files: [
+            { file_id: "file-fixture", upload: { url: "/proxy/upload" } },
+          ],
+        });
+      if (url.endsWith("/proxy/upload")) return new Response(null);
+      if (url.endsWith("/tasks/job-fixture"))
+        return json({
+          task_id: "job-fixture",
+          status: "failed",
+          files: [
+            {
+              file_id: "file-fixture",
+              status: "failed",
+              error: { code: "parse_failed", message: "fixture failure" },
+            },
+          ],
+        });
+      throw new Error(`Unexpected URL ${url}`);
+    });
+    await rejects(
+      MineruClient.extractMarkdown(paper),
+      "mineru-error-task-failed",
+    );
+    expect(saveCount).to.equal(0);
   });
 
   function mockV1(

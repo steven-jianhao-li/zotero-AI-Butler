@@ -1,7 +1,7 @@
 import { getString } from "../utils/locale";
 import { getPref } from "../utils/prefs";
 
-export type MineruApiFormat = "file-parse" | "v1" | "v4";
+export type MineruApiFormat = "file-parse" | "v1" | "v4" | "v4.1.7";
 
 export interface MineruServiceConfig {
   apiUrl: string;
@@ -15,7 +15,9 @@ export function isCustomMineruServer(): boolean {
 
 export function getMineruCustomApiFormat(): MineruApiFormat {
   const value = getPref("mineruCustomApiFormat");
-  return value === "v1" || value === "v4" ? value : "file-parse";
+  return value === "v1" || value === "v4" || value === "v4.1.7"
+    ? value
+    : "file-parse";
 }
 
 /** Snapshot the selected server so an in-flight parse keeps using one service. */
@@ -55,7 +57,13 @@ export function getMineruServiceConfig(): MineruServiceConfig {
   if (apiFormat === "file-parse") {
     apiUrl = apiUrl.replace(/\/file_parse$/, "");
   } else {
-    const suffix = apiFormat === "v1" ? "/v1" : "/api/v4";
+    // api format => /suffix
+    const _api_suffixies = {
+      "v1": "/v1",
+      "v4": "/api/v4",
+      "v4.1.7": "/v1",
+    }
+    const suffix = _api_suffixies[apiFormat] ?? "/v1";
     if (!apiUrl.endsWith(suffix)) apiUrl += suffix;
   }
   return {

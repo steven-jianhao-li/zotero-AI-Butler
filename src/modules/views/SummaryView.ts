@@ -2299,36 +2299,41 @@ export class SummaryView extends BaseView {
     const clipboard = win.navigator?.clipboard;
 
     try {
-      if (clipboard?.writeText) {
-        await clipboard.writeText(text);
-      } else {
-        throw new Error("clipboard api unavailable");
-      }
+      Zotero.Utilities.Internal.copyTextToClipboard(text);
     } catch {
       try {
-        const host = document.body || document.documentElement;
-        if (!host) {
-          throw new Error("document host unavailable");
-        }
-        const textarea = document.createElement("textarea");
-        textarea.value = text;
-        Object.assign(textarea.style, {
-          position: "fixed",
-          left: "-9999px",
-          top: "0",
-        });
-        host.appendChild(textarea);
-        textarea.select();
-        document.execCommand("copy");
-        textarea.remove();
+        if (!clipboard?.writeText) throw new Error("clipboard api unavailable");
+        await clipboard.writeText(text);
       } catch {
-        new ztoolkit.ProgressWindow("AI Butler", { closeTime: 2200 })
-          .createLine({
-            text: getString("summary-copy-failed"),
-            type: "fail",
-          })
-          .show();
-        return;
+        let textarea: HTMLTextAreaElement | undefined;
+        try {
+          const host = document.body || document.documentElement;
+          if (!host) throw new Error("document host unavailable");
+          textarea = document.createElementNS(
+            "http://www.w3.org/1999/xhtml",
+            "textarea",
+          ) as HTMLTextAreaElement;
+          textarea.value = text;
+          Object.assign(textarea.style, {
+            position: "fixed",
+            left: "-9999px",
+            top: "0",
+          });
+          host.appendChild(textarea);
+          textarea.select();
+          if (!document.execCommand("copy"))
+            throw new Error(getString("summary-copy-failed"));
+        } catch {
+          new ztoolkit.ProgressWindow("AI Butler", { closeTime: 2200 })
+            .createLine({
+              text: getString("summary-copy-failed"),
+              type: "fail",
+            })
+            .show();
+          return;
+        } finally {
+          textarea?.remove();
+        }
       }
     }
 

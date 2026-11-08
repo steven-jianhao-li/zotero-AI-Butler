@@ -380,7 +380,8 @@ export async function requestLLMText(args: {
   if (!result.text && result.error)
     throw new LLMTransportError(result.error, result.requestDiagnostics);
   result.maxOutputTokens = number(
-    payload.max_tokens ??
+    payload.max_completion_tokens ??
+      payload.max_tokens ??
       payload.max_output_tokens ??
       object(payload.generationConfig).maxOutputTokens ??
       object(payload.options).num_predict,

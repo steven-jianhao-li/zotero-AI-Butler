@@ -13,6 +13,22 @@ import {
 export const DEFAULT_ANTHROPIC_MAX_TOKENS = 8192;
 const limits = new Map<string, { expires: number; limit?: number }>();
 
+/** Modern OpenAI models reject max_tokens; other compatible APIs still use it. */
+export function buildChatCompletionTokenLimit(
+  model: string,
+  maxTokens: number | undefined,
+): { max_tokens?: number; max_completion_tokens?: number } {
+  if (maxTokens === undefined) return {};
+  const id = model
+    .trim()
+    .toLowerCase()
+    .replace(/^(?:(?:models|openai)\/)+/, "");
+  const gptGeneration = Number(/^gpt-(\d+)(?:[.-]|$)/.exec(id)?.[1] ?? 0);
+  return gptGeneration >= 5 || /^o\d+(?:[.-]|$)/.test(id)
+    ? { max_completion_tokens: maxTokens }
+    : { max_tokens: maxTokens };
+}
+
 export function validateOutputTokens(
   value: number | undefined,
   limit?: number,

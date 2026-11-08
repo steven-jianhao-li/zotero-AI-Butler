@@ -47,6 +47,7 @@ const prefs = {
   "extensions.zoteroMacWordIntegration.skipInstallation": true,
   "extensions.zoteroOpenOfficeIntegration.skipInstallation": true,
   "app.update.enabled": false,
+  "app.update.auto": false,
   "extensions.update.enabled": false,
   "xpinstall.signatures.required": false,
 };

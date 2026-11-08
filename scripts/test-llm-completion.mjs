@@ -11,6 +11,7 @@ await build({
     contents: [
       "llmCompletion",
       "anthropicProvider",
+      "openaiCompatProvider",
       "llmTruncation",
       "openaiResponsesParser",
       "requestHeaders",

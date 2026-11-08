@@ -65,7 +65,6 @@ import {
   getDefaultMultiRoundPromptTemplate,
   mergeMultiRoundPromptTemplates,
   parseChapterStructureResult,
-  parseManualChapterStructure,
   parseMultiRoundPromptTemplates,
   type MultiRoundPromptTemplate,
   type SummaryMode,
@@ -1295,19 +1294,23 @@ export class NoteGenerator {
       });
       lastResponse = planningResponse;
       const parsedChapters = parseChapterStructureResult(planningResponse.text);
-      chapters =
-        parsedChapters.source === "fallback"
-          ? this.promptManualChapterStructure() || parsedChapters.chapters
-          : parsedChapters.chapters;
+      if (parsedChapters.source === "fallback") {
+        const preview = planningResponse.text
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 600);
+        // A generic fallback would invent paper sections and spend more tokens without valid input.
+        throw Object.assign(
+          new Error(
+            `${getString("note-generator-error-chapter-planning")}\n${params.isBase64 ? "PDF Base64" : "PDF text"}\n${preview || "(empty response)"}`,
+          ),
+          { name: "DeepReadChapterPlanningError", suppressTaskRetry: true },
+        );
+      }
+      chapters = parsedChapters.chapters;
       if (parsedChapters.source === "regex") {
         this.showDeepReadNotice(
           getString("note-generator-deep-read-chapter-json-fallback"),
-          "warning",
-        );
-      }
-      if (parsedChapters.source === "fallback") {
-        this.showDeepReadNotice(
-          getString("note-generator-deep-read-chapter-manual-fallback"),
           "warning",
         );
       }
@@ -1816,24 +1819,6 @@ export class NoteGenerator {
     };
   }
 
-  private static promptManualChapterStructure(): ReturnType<
-    typeof parseManualChapterStructure
-  > | null {
-    const win = Zotero.getMainWindow() as any;
-    const text = { value: "" } as any;
-    const ok = Services.prompt.prompt(
-      win,
-      getString("note-generator-manual-chapters-title"),
-      getString("note-generator-manual-chapters-message"),
-      text,
-      "",
-      { value: false },
-    );
-    if (!ok || !text.value?.trim()) return null;
-    const chapters = parseManualChapterStructure(text.value);
-    return chapters.length ? chapters : null;
-  }
-
   private static showDeepReadNotice(
     text: string,
     type: "success" | "warning" | "fail" = "warning",
@@ -1909,6 +1894,7 @@ export class NoteGenerator {
       if (
         error instanceof LLMIncompleteError ||
         !session.allowFallback ||
+        this.shouldStopDeepReadOnError(error) ||
         isAbortError(error, chatRequest.transport?.abortSignal)
       ) {
         throw error;

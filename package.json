@@ -35,6 +35,7 @@
     "test:image-summary": "node --test test/imageSummaryQueue.test.mjs",
     "test:headers": "node ./scripts/test-request-headers.mjs",
     "test:llm-completion": "node ./scripts/test-llm-completion.mjs",
+    "test:deepread-planning": "node --test test/deepReadPlanning.test.mjs",
     "test:llm-lifecycle": "node --test test/llmRequestLifecycle.test.mjs",
     "test:agent:live": "node ./scripts/test-agent-live.mjs",
     "test:mineru": "node ./scripts/test-mineru.mjs",

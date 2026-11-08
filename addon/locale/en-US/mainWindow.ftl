@@ -1204,6 +1204,7 @@ llm-metadata-selector-provider = Provider: { $provider } · { $generated } ⓘ
 note-generator-existing-note-skipped = { $kind } already exists; skipped
 note-generator-model-metadata = Provider: { $provider } Model: { $model }
 note-generator-error-template-missing-sequential = AI Deep Reading template is missing the sequential_dynamic phase
+note-generator-error-chapter-planning = Chapter planning returned no recognizable chapter JSON. The task stopped without writing a deep-reading note, retrying automatically, or inventing default chapters. If the response says the PDF cannot be read, switch this model's PDF processing mode to local text extraction (or MinerU for scanned documents), then retry manually. If full text was provided, check the planning prompt and response format. Input mode and model response preview follow:
 note-generator-deep-read-intro = ## AI Deep Reading: two-stage chapter-by-chapter reading  AI will first parse the chapter structure, then read each chapter in order, and finally run focused follow-up questions.
 note-generator-deep-read-parsing-heading = ### Parsing chapter structure
 note-generator-deep-read-planning-prompt-label = **Chapter parsing prompt:**  { $prompt }

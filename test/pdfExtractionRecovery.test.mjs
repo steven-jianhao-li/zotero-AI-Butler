@@ -711,6 +711,34 @@ function legacyPathHost() {
   return { ...host, calls, removed };
 }
 
+test("legacy Unicode PDF paths use private conversion without invoking the broken host converter or indexing", async () => {
+  const host = legacyPathHost();
+  const sourcePath = "E:/资料/paper.pdf";
+  host.files.set(sourcePath, "fixture");
+  host.attachment.getFilePathAsync = async () => sourcePath;
+  assert.equal(
+    await host.extractor.extractTextFromAttachment(host.attachment),
+    "Recovered from staged PDF",
+  );
+  assert.equal(host.counters.indexes, 0);
+  assert.equal(host.calls.length, 1);
+  assert.ok(host.calls[0].args.at(-2).startsWith("E:/isolated-system-temp/"));
+});
+
+test("legacy Unicode PDF paths reuse readable cached text without staging or indexing", async () => {
+  const host = legacyPathHost();
+  const sourcePath = "E:/资料/paper.pdf";
+  host.files.set(sourcePath, "fixture");
+  host.files.set(host.cachePath, "Cached Unicode paper");
+  host.attachment.getFilePathAsync = async () => sourcePath;
+  assert.equal(
+    await host.extractor.extractTextFromAttachment(host.attachment),
+    "Cached Unicode paper",
+  );
+  assert.equal(host.counters.indexes, 0);
+  assert.equal(host.calls.length, 0);
+});
+
 test("legacy Windows conversion recovers from safe staged paths and removes copies", async () => {
   const host = legacyPathHost();
   assert.equal(
@@ -797,11 +825,22 @@ test("staging does not remove a pre-existing directory after a name collision", 
   assert.equal(host.calls.length, 0);
 });
 
-test("unwritable library root falls back to the host temporary root", async () => {
+test("legacy staging prefers the configured system temporary root over library storage", async () => {
+  const host = legacyPathHost();
+  host.Zotero.DataDirectory.dir = "C:/user-library";
+  host.Zotero.getTempDirectory = () => ({ path: "C:/user-library/tmp" });
+  assert.equal(
+    await host.extractor.extractTextFromAttachment(host.attachment),
+    "Recovered from staged PDF",
+  );
+  assert.ok(host.calls[0].args.at(-2).startsWith("E:/isolated-system-temp/"));
+});
+
+test("unwritable system temporary root falls back to the host temporary root", async () => {
   const host = legacyPathHost();
   const createDirectory = host.IOUtils.makeDirectory;
   host.IOUtils.makeDirectory = async (path, options) => {
-    if (path.startsWith("E:/isolated-library/"))
+    if (path.startsWith("E:/isolated-system-temp/"))
       throw new Error("read-only directory");
     return createDirectory(path, options);
   };

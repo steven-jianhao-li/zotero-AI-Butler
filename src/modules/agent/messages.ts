@@ -2,6 +2,16 @@ import { getString } from "../../utils/locale";
 
 // English fallbacks are used only before locale initialization (including Node tests).
 const defaults = {
+  "agent-web-invalid-url": "Only HTTP(S) URLs without credentials are allowed.",
+  "agent-web-invalid-provider": "Invalid web search provider.",
+  "agent-web-invalid-response": "Parallel returned an invalid MCP response.",
+  "agent-web-service-error":
+    "Parallel could not complete this request. Try again later or continue with local evidence.",
+  "agent-web-rate-limit":
+    "Parallel free search limit reached. Try again later or continue with local evidence.",
+  "agent-web-timeout": "Parallel search request timed out.",
+  "agent-web-tool-unavailable": "The requested Parallel tool is unavailable.",
+
   "agent-status-completed": "Completed",
   "agent-status-cancelled": "Cancelled",
   "agent-status-error": "Error",

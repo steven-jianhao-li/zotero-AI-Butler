@@ -289,6 +289,9 @@ async function runProbe() {
       // Exercise the real click handler in a chrome dialog, using only fixture items.
       var citationScope = {
         Zotero: host,
+        Services: hostServices,
+        setTimeout: main.setTimeout.bind(main),
+        clearTimeout: main.clearTimeout.bind(main),
         addon: host.AIButler,
         ztoolkit: toolkit,
         URL: main.URL,

@@ -11,6 +11,7 @@ await build({
     contents: [
       "agentContext",
       "agentRuntime",
+      "agentParallelSearch",
       "agentTransport",
       "agentLibraryTools",
       "agentCitations",
@@ -30,6 +31,7 @@ await build({
   // Workflow tools import the queue and its theme singleton. Keep startup prefs local.
   banner: {
     js: `globalThis.Zotero = { Prefs: { get() {} } };
+globalThis.Services = { uuid: { generateUUID() { return "{" + require("node:crypto").randomUUID() + "}"; } } };
 globalThis.addon = { data: {} };
 globalThis.ztoolkit = { log() {} };`,
   },

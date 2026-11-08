@@ -48,6 +48,7 @@ export class AgentView extends BaseView {
   private endpoint!: AgentSelect;
   private deepReadEndpoint!: AgentSelect;
   private pdfPolicy!: AgentSelect;
+  private webSearch!: AgentSelect;
   private contextWindow!: HTMLInputElement;
   private outputTokens!: HTMLInputElement;
   private maxSteps!: HTMLInputElement;
@@ -337,6 +338,7 @@ export class AgentView extends BaseView {
       this.endpoint,
       this.deepReadEndpoint,
       this.pdfPolicy,
+      this.webSearch,
     ])
       select?.close();
   }
@@ -553,6 +555,11 @@ export class AgentView extends BaseView {
       { value: "mineru", label: t("agent-pdf-mineru") },
     ]);
     this.pdfPolicy.element.classList.add("agent-pdf-select");
+    this.webSearch = new AgentSelect(doc, t("agent-web-search"), [
+      { value: "parallel", label: t("agent-web-parallel") },
+      { value: "disabled", label: t("agent-web-disabled") },
+    ]);
+    this.webSearch.trigger.title = t("agent-web-help");
     const defaults = defaultAgentOptions();
     this.contextWindow = this.numberInput(
       doc,
@@ -570,6 +577,7 @@ export class AgentView extends BaseView {
     const fieldPairs: Array<[FluentMessageId, HTMLElement]> = [
       ["agent-deep-read-model", this.deepReadEndpoint.element],
       ["agent-pdf-policy", this.pdfPolicy.element],
+      ["agent-web-search", this.webSearch.element],
       ["agent-context-window", this.contextWindow],
       ["agent-output-tokens", this.outputTokens],
       ["agent-max-steps", this.maxSteps],
@@ -587,6 +595,7 @@ export class AgentView extends BaseView {
     }
     this.deepReadEndpoint.onChange = () => this.saveDraft();
     this.pdfPolicy.onChange = () => this.saveDraft();
+    this.webSearch.onChange = () => this.saveDraft();
     this.permissionHelp = element(doc, "p", "agent-permission-help");
     this.updatePermissionHelp();
     settingsPanel.append(
@@ -700,6 +709,7 @@ export class AgentView extends BaseView {
       draft.options.deepReadEndpointId,
     );
     this.pdfPolicy.value = draft.options.pdfPolicy;
+    this.webSearch.value = draft.options.webSearch || "parallel";
     this.contextWindow.value = String(draft.options.contextWindowTokens);
     this.outputTokens.value = String(draft.options.maxOutputTokens);
     this.maxSteps.value = String(draft.options.maxSteps);
@@ -728,6 +738,7 @@ export class AgentView extends BaseView {
       endpointId: this.endpoint.value || undefined,
       deepReadEndpointId: this.deepReadEndpoint.value || undefined,
       pdfPolicy: this.pdfPolicy.value as AgentRunOptions["pdfPolicy"],
+      webSearch: this.webSearch.value as AgentRunOptions["webSearch"],
       contextWindowTokens: this.numericValue(this.contextWindow),
       maxOutputTokens: this.numericValue(this.outputTokens),
       maxSteps: this.numericValue(this.maxSteps),
@@ -903,6 +914,7 @@ export class AgentView extends BaseView {
       this.endpoint,
       this.deepReadEndpoint,
       this.pdfPolicy,
+      this.webSearch,
       this.contextWindow,
       this.outputTokens,
       this.maxSteps,

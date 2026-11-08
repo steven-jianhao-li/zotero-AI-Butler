@@ -10,6 +10,7 @@ import { AgentRunner } from "./AgentRunner";
 import { AgentStore } from "./AgentStore";
 import { closePendingToolCalls } from "./context";
 import { createLibraryTools } from "./tools/libraryTools";
+import { createParallelSearchTools } from "./tools/parallelSearchTools";
 import {
   agentId,
   defaultAgentOptions,
@@ -127,7 +128,13 @@ export class AgentService {
       throw new Error(agentText("agent-runtime-prompt-length"));
     if (this.controllers.size >= 3)
       throw new Error(agentText("agent-runtime-session-concurrency"));
-    const options = { ...session.options, ...requested };
+    const options = {
+      webSearch: "parallel" as const,
+      ...session.options,
+      ...requested,
+    };
+    if (!["parallel", "disabled"].includes(options.webSearch || ""))
+      throw new Error(agentText("agent-web-invalid-provider"));
     if (!["read-only", "confirm", "full"].includes(options.permission))
       throw new Error(agentText("agent-runtime-invalid-permission"));
     if (!["auto", "text", "pdf-base64", "mineru"].includes(options.pdfPolicy))
@@ -196,12 +203,17 @@ export class AgentService {
         data: { previousPermission, permission: options.permission },
       });
     }
+    if (options.webSearch === "parallel" && !session.webSearchSessionId)
+      session.webSearchSessionId = Services.uuid
+        .generateUUID()
+        .toString()
+        .slice(1, -1);
     const controller = createChatAbortController();
     this.controllers.set(id, controller);
     this.changed();
     const runner = new AgentRunner({
       turn: (request) => LLMService.agentTurn(request),
-      tools: createLibraryTools(),
+      tools: [...createLibraryTools(), ...createParallelSearchTools(session)],
       // Teammates share this ledger, but cannot replace the parent's session state.
       save: () => this.store.save(session),
       changed: () => this.changed(),

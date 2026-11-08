@@ -1476,6 +1476,7 @@ export type FluentMessageId =
   | 'settings-api-mineru-format-label'
   | 'settings-api-mineru-format-v1'
   | 'settings-api-mineru-format-v4'
+  | 'settings-api-mineru-format-v417'
   | 'settings-api-mineru-key-help'
   | 'settings-api-mineru-key-label'
   | 'settings-api-mineru-key-placeholder'

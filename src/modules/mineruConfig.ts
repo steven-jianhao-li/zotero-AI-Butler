@@ -59,10 +59,10 @@ export function getMineruServiceConfig(): MineruServiceConfig {
   } else {
     // api format => /suffix
     const _api_suffixies = {
-      "v1": "/v1",
-      "v4": "/api/v4",
+      v1: "/v1",
+      v4: "/api/v4",
       "v4.1.7": "/v1",
-    }
+    };
     const suffix = _api_suffixies[apiFormat] ?? "/v1";
     if (!apiUrl.endsWith(suffix)) apiUrl += suffix;
   }

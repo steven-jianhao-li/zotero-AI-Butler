@@ -574,6 +574,37 @@ export class PDFExtractor {
 
       await this.recordPdfFileInfo(path, diagnostics, startedAtMs);
 
+      if (
+        Zotero.isWin &&
+        String(Zotero.version).startsWith("6.") &&
+        /[^\x20-\x7e]/.test(path) &&
+        typeof Zotero.Fulltext.getPDFConverterExecAndArgs === "function"
+      ) {
+        // The legacy converter cannot open Unicode paths; avoid failing host
+        // conversion/indexing and keep private staging in the configured temp root.
+        const cachedText = await this.tryReadFulltextCache(
+          pdfAttachment,
+          diagnostics,
+          startedAtMs,
+          "fulltext-cache:unicode-path",
+        );
+        throwIfAborted(abortSignal);
+        if (cachedText) return cachedText;
+        const stagedText = await this.extractLegacyPdfFromAsciiWorkspace(
+          path,
+          diagnostics,
+          startedAtMs,
+          abortSignal,
+        );
+        throwIfAborted(abortSignal);
+        if (stagedText) return stagedText;
+        throw this.createTextExtractionError(
+          getString("pdf-error-no-extractable-text"),
+          diagnostics,
+          startedAtMs,
+        );
+      }
+
       const attachmentText = await this.tryReadAttachmentText(
         pdfAttachment,
         diagnostics,
@@ -718,9 +749,9 @@ export class PDFExtractor {
       // of renaming an attachment, mutating host APIs, or uploading its content.
       const creationErrors: string[] = [];
       const workspaceRoots = [
-        () => Zotero.DataDirectory.dir,
-        () => Zotero.getTempDirectory().path,
         () => Services.dirsvc.get("TmpD", Ci.nsIFile).path,
+        () => Zotero.getTempDirectory().path,
+        () => Zotero.DataDirectory.dir,
       ];
       for (const workspaceRoot of workspaceRoots) {
         let root: string;

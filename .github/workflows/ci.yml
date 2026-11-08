@@ -44,12 +44,14 @@ jobs:
         run: npm install
       - name: Run Build
         run: npm run build
+      - name: Check deep-read planning failures
+        run: npm run test:deepread-planning
       - name: Check image summary queue
         run: npm run test:image-summary
       - name: Check PDF extraction recovery
         run: npm run test:pdf
-      - name: Check deep-read planning failures
-        run: npm run test:deepread-planning
+      - name: Check summary clipboard
+        run: npm run test:summary-clipboard
       - name: Check EPUB extraction and compatibility
         run: npm run test:epub
       - name: Check Sidebar viewport scrolling

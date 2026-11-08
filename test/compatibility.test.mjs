@@ -349,7 +349,8 @@ function bootstrapHost() {
       removeListener: (listener) => calls.push(listener),
     },
     scriptloader: {
-      loadSubScript: (uri, scope) => calls.push({ uri, scope }),
+      loadSubScript: (uri, scope, charset) =>
+        calls.push({ uri, scope, charset }),
       loadSubScriptWithOptions: (uri, options) =>
         calls.push({ uri, scope: options.target, options }),
     },
@@ -493,6 +494,18 @@ test("disabling before a host window exists cancels pending startup", async () =
   assert.equal(observers.size, 0);
   assert.equal(calls.length, 0);
 });
+
+for (const loader of ["loadSubScript", "loadSubScriptWithOptions"]) {
+  test(`${loader} explicitly decodes Chinese and mathematical patterns as UTF-8`, async () => {
+    const { context, calls, services } = bootstrapHost();
+    if (loader === "loadSubScript")
+      delete services.scriptloader.loadSubScriptWithOptions;
+    vm.runInContext(await read("addon/bootstrap.js"), context);
+    context.loadPluginScript("file:///isolated-fixture.js");
+    const script = calls.at(-1);
+    assert.equal(script.options?.charset || script.charset, "UTF-8");
+  });
+}
 
 test("modern bootstrap preserves native capabilities and permits trusted packaged scripts", async () => {
   const { context, calls, host } = bootstrapHost();

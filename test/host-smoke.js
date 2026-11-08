@@ -160,6 +160,125 @@ async function runProbe() {
       note.setNote("<h1>AI summary</h1><p>Editor focus fixture.</p>");
       note.addTag("AI-Generated");
       await note.saveTx();
+      var sidebarVisibilityPref =
+        "extensions.zotero.aiButler.sidebarModuleVisibility";
+      var sidebarTabPref = "extensions.zotero.aiButler.sidebarActiveTab";
+      var previousSidebarVisibility = host.Prefs.get(
+        sidebarVisibilityPref,
+        true,
+      );
+      var previousSidebarTab = host.Prefs.get(sidebarTabPref, true);
+      host.Prefs.set(
+        sidebarVisibilityPref,
+        JSON.stringify({
+          actionButtons: false,
+          note: true,
+          deepRead: false,
+          table: false,
+          imageSummary: false,
+          mindmap: false,
+          quickChat: false,
+        }),
+        true,
+      );
+      host.Prefs.set(sidebarTabPref, "summary", true);
+      var secondPaper = new host.Item("journalArticle");
+      secondPaper.setField("title", "Sidebar viewport second paper");
+      await secondPaper.saveTx();
+      var secondNote = new host.Item("note");
+      secondNote.parentID = secondPaper.id;
+      secondNote.setNote("<p>Second sidebar summary fixture.</p>");
+      secondNote.addTag("AI-Generated");
+      await secondNote.saveTx();
+      main.maximize();
+      try {
+        for (var sidebarFixture of [
+          [paper, "Editor focus fixture."],
+          [secondPaper, "Second sidebar summary fixture."],
+          [paper, "Editor focus fixture."],
+          [secondPaper, "Second sidebar summary fixture."],
+        ]) {
+          await main.ZoteroPane.selectItem(sidebarFixture[0].id);
+          var sidebarShell;
+          await waitFor(function () {
+            sidebarShell = main.document.querySelector(
+              ".ai-butler-sidebar-shell",
+            );
+            return (
+              sidebarShell &&
+              sidebarShell.textContent.includes(sidebarFixture[1])
+            );
+          }, "sidebar summary loaded");
+          var sidebarBody = sidebarShell.parentElement;
+          var sidebarSection = sidebarBody.closest("item-pane-custom-section");
+          var sidebarScroller = sidebarSection.parentElement;
+          // Keep enough scroll range to move a zero-height section into view.
+          var beforeSidebar = main.document.createElementNS(
+            "http://www.w3.org/1999/xhtml",
+            "div",
+          );
+          var afterSidebar = beforeSidebar.cloneNode();
+          beforeSidebar.style.height = afterSidebar.style.height =
+            main.innerHeight * 2 + "px";
+          beforeSidebar.style.flexShrink = afterSidebar.style.flexShrink = "0";
+          sidebarSection.before(beforeSidebar);
+          sidebarSection.after(afterSidebar);
+          try {
+            sidebarScroller.scrollTop = 0;
+            // Reproduce the initial off-screen measurement, then recover by scroll alone.
+            main.dispatchEvent(new main.Event("resize"));
+            var hiddenMeasurements = 0;
+            await waitFor(function () {
+              var hidden =
+                sidebarBody.getBoundingClientRect().top > main.innerHeight &&
+                sidebarBody.style.height === "0px";
+              hiddenMeasurements = hidden ? hiddenMeasurements + 1 : 0;
+              // Drain initial ResizeObserver deliveries before testing position-only changes.
+              return hiddenMeasurements >= 3;
+            }, "offscreen sidebar has zero height");
+            var summaryBeforeScroll = sidebarShell.textContent;
+            sidebarSection.scrollIntoView({
+              block: "start",
+              behavior: "instant",
+            });
+            await waitFor(function () {
+              return (
+                sidebarBody.getBoundingClientRect().height > 100 &&
+                sidebarShell.getBoundingClientRect().height > 100
+              );
+            }, "sidebar recovers by scrolling without resize");
+            assert(
+              sidebarBody.querySelector(".ai-butler-sidebar-shell") ===
+                sidebarShell &&
+                sidebarShell.textContent === summaryBeforeScroll,
+              "sidebarScrollPreservesLoadedSummary" + sidebarFixture[0].id,
+            );
+          } catch (error) {
+            checks.sidebarViewportFailure = {
+              bodyConnected: sidebarBody.isConnected,
+              shellConnected: sidebarShell.isConnected,
+              bodyTop: sidebarBody.getBoundingClientRect().top,
+              bodyHeight: sidebarBody.getBoundingClientRect().height,
+              styleHeight: sidebarBody.style.height,
+              viewportHeight: main.innerHeight,
+              scrollTop: sidebarScroller.scrollTop,
+              scrollHeight: sidebarScroller.scrollHeight,
+              clientHeight: sidebarScroller.clientHeight,
+              currentShell:
+                sidebarBody.querySelector(".ai-butler-sidebar-shell") ===
+                sidebarShell,
+            };
+            throw error;
+          } finally {
+            beforeSidebar.remove();
+            afterSidebar.remove();
+          }
+        }
+        assert(true, "sidebarViewportRecoveryAfterItemSwitch");
+      } finally {
+        host.Prefs.set(sidebarVisibilityPref, previousSidebarVisibility, true);
+        host.Prefs.set(sidebarTabPref, previousSidebarTab, true);
+      }
       await main.ZoteroPane.selectItem(note.id);
       var editor;
       var editable;

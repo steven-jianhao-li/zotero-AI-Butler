@@ -256,10 +256,7 @@ let sidebarNoteEditState: SidebarNoteEditState | null = null;
 const pendingSidebarRefreshTargets = new Set<SidebarAutoRefreshTarget>();
 const quickChatToggleListeners = new WeakMap<HTMLElement, EventListener>();
 const sidebarNoteEditEventCleanups = new WeakMap<HTMLElement, () => void>();
-const sidebarWorkspaceResizeObservers = new WeakMap<
-  HTMLElement,
-  ResizeObserver
->();
+const sidebarWorkspaceLayoutCleanups = new WeakMap<HTMLElement, () => void>();
 const sidebarWorkspaceMenuCleanups = new WeakMap<HTMLElement, () => void>();
 const SIDEBAR_SUMMARY_SELECTION_PREF = "sidebarSelectedSummaryBlockIds" as any;
 
@@ -842,6 +839,9 @@ export function registerItemPaneSection(
       onRender: ({ body, item, editable, tabType }: any) => {
         renderItemPaneSection(body, item, handleOpenAIChat);
       },
+      onDestroy: ({ body }: { body: HTMLElement }) => {
+        cleanupSidebarWorkspace(body);
+      },
     });
 
     ztoolkit.log("[AI-Butler] 条目面板区块已注册");
@@ -1189,16 +1189,8 @@ function renderItemPaneSection(
   };
   doc.addEventListener("click", closeMenu);
 
-  const relayoutSidebar = (): void => {
-    fitSidebarShellToViewport(body, shell);
-    applySidebarTabOverflow(nav, tabs, tabButtons, overflowMenuItems, moreWrap);
-  };
-  doc.defaultView?.addEventListener("resize", relayoutSidebar);
-  doc.defaultView?.top?.addEventListener("resize", relayoutSidebar);
   sidebarWorkspaceMenuCleanups.set(body, () => {
     doc.removeEventListener("click", closeMenu);
-    doc.defaultView?.removeEventListener("resize", relayoutSidebar);
-    doc.defaultView?.top?.removeEventListener("resize", relayoutSidebar);
   });
 
   for (const tab of tabs) {
@@ -1221,16 +1213,78 @@ function renderItemPaneSection(
 
   activateTab(activeTab);
 
-  const ResizeObserverCtor = doc.defaultView?.ResizeObserver;
-  if (ResizeObserverCtor) {
-    const observer = new ResizeObserverCtor(relayoutSidebar);
-    observer.observe(nav);
-    observer.observe(body);
-    if (body.parentElement) observer.observe(body.parentElement);
-    sidebarWorkspaceResizeObservers.set(body, observer);
-  }
+  sidebarWorkspaceLayoutCleanups.set(
+    body,
+    bindSidebarWorkspaceLayout(body, nav, () => {
+      fitSidebarShellToViewport(body, shell);
+      applySidebarTabOverflow(
+        nav,
+        tabs,
+        tabButtons,
+        overflowMenuItems,
+        moreWrap,
+      );
+    }),
+  );
+}
 
-  doc.defaultView?.setTimeout(relayoutSidebar, 0);
+function bindSidebarWorkspaceLayout(
+  body: HTMLElement,
+  nav: HTMLElement,
+  relayoutSidebar: () => void,
+): () => void {
+  const doc = body.ownerDocument;
+  const view = doc?.defaultView;
+  if (!doc || !view) return () => undefined;
+
+  const topView = view.top !== view ? view.top : null;
+  let layoutTimer: number | null = null;
+  let disposed = false;
+  const scheduleLayout = (): void => {
+    if (disposed || layoutTimer !== null) return;
+    // Gecko can suspend animation frames while the host window is occluded.
+    layoutTimer = view.setTimeout(() => {
+      layoutTimer = null;
+      if (!disposed && body.isConnected) relayoutSidebar();
+    }, 16);
+  };
+  const onScroll = (event: Event): void => {
+    const target = event.target as Node | null;
+    // Only outer scrolling moves the section; scrolling its content does not.
+    if (target === doc || (target !== body && target?.contains?.(body))) {
+      scheduleLayout();
+    }
+  };
+
+  view.addEventListener("resize", scheduleLayout);
+  topView?.addEventListener("resize", scheduleLayout);
+  // Scroll events do not bubble. Capture scrolls from Zotero's item-pane ancestors.
+  doc.addEventListener("scroll", onScroll, { capture: true, passive: true });
+  const resizeObserver = view.ResizeObserver
+    ? new view.ResizeObserver(scheduleLayout)
+    : null;
+  resizeObserver?.observe(nav);
+  resizeObserver?.observe(body);
+  if (body.parentElement) resizeObserver?.observe(body.parentElement);
+
+  // A zero-height body can move into view without changing size or scrolling.
+  const intersectionObserver = view.IntersectionObserver
+    ? new view.IntersectionObserver((entries: IntersectionObserverEntry[]) => {
+        if (entries.some((entry) => entry.isIntersecting)) scheduleLayout();
+      })
+    : null;
+  intersectionObserver?.observe(body);
+  scheduleLayout();
+
+  return () => {
+    disposed = true;
+    view.removeEventListener("resize", scheduleLayout);
+    topView?.removeEventListener("resize", scheduleLayout);
+    doc.removeEventListener("scroll", onScroll, true);
+    resizeObserver?.disconnect();
+    intersectionObserver?.disconnect();
+    if (layoutTimer !== null) view.clearTimeout(layoutTimer);
+  };
 }
 
 function fitSidebarShellToViewport(
@@ -1325,10 +1379,10 @@ function canElementScrollVertically(
 }
 
 function cleanupSidebarWorkspace(body: HTMLElement): void {
-  const previousObserver = sidebarWorkspaceResizeObservers.get(body);
-  if (previousObserver) {
-    previousObserver.disconnect();
-    sidebarWorkspaceResizeObservers.delete(body);
+  const previousLayoutCleanup = sidebarWorkspaceLayoutCleanups.get(body);
+  if (previousLayoutCleanup) {
+    previousLayoutCleanup();
+    sidebarWorkspaceLayoutCleanups.delete(body);
   }
 
   const previousMenuCleanup = sidebarWorkspaceMenuCleanups.get(body);

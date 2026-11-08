@@ -62,6 +62,8 @@ jobs:
         run: npm run test:onboarding
       - name: Test compatibility boundaries
         run: npm run test:compat
+      - name: Check renderer-matched KaTeX assets
+        run: npm run test:katex-assets
       - name: Upload build result
         uses: actions/upload-artifact@v4
         with:

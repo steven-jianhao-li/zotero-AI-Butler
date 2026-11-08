@@ -17,6 +17,7 @@ import {
   requestModelListJson,
 } from "./shared/modelList";
 import { parseOpenAIResponsesText } from "./shared/openaiResponses";
+import { buildChatCompletionTokenLimit } from "./shared/outputTokens";
 import { resolveOpenAIReasoningEffort } from "./shared/reasoning";
 import { throwIfAborted } from "./shared/requestAbort";
 import { mergeRequestHeaders } from "./shared/requestHeaders";
@@ -110,9 +111,14 @@ export class OpenAIProvider implements ILlmProvider {
     if (options.temperature !== undefined)
       payload.temperature = options.temperature;
     if (options.topP !== undefined) payload.top_p = options.topP;
-    if (options.maxTokens !== undefined)
-      payload[responses ? "max_output_tokens" : "max_tokens"] =
-        options.maxTokens;
+    if (options.maxTokens !== undefined) {
+      if (responses) payload.max_output_tokens = options.maxTokens;
+      else
+        Object.assign(
+          payload,
+          buildChatCompletionTokenLimit(model, options.maxTokens),
+        );
+    }
     if (responses) this.applyResponsesReasoning(payload, model, options);
     else this.applyChatReasoning(payload, model, options);
     return requestLLMText({

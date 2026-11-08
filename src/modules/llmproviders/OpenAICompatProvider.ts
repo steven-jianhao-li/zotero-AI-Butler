@@ -16,6 +16,7 @@ import {
   parseModelListResponse,
   requestModelListJson,
 } from "./shared/modelList";
+import { buildChatCompletionTokenLimit } from "./shared/outputTokens";
 import { resolveReasoningEffort } from "./shared/reasoning";
 import { throwIfAborted } from "./shared/requestAbort";
 import { mergeRequestHeaders } from "./shared/requestHeaders";
@@ -89,11 +90,12 @@ export class OpenAICompatProvider implements ILlmProvider {
   }
 
   private buildGenParams(options: LLMOptions) {
-    const params: any = {};
+    const params: Record<string, unknown> = {
+      ...buildChatCompletionTokenLimit(options.model || "", options.maxTokens),
+    };
     if (options.temperature !== undefined)
       params.temperature = options.temperature;
     if (options.topP !== undefined) params.top_p = options.topP;
-    if (options.maxTokens !== undefined) params.max_tokens = options.maxTokens;
     const reasoningEffort = resolveReasoningEffort(options.reasoningEffort);
     if (reasoningEffort) params.reasoning_effort = reasoningEffort;
     return params;

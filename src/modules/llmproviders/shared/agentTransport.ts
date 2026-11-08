@@ -10,6 +10,7 @@ import type {
 } from "../agentTypes";
 import type { LLMOptions, LLMUsage, ProgressCb } from "../types";
 import { parseOpenAIResponsesAgentTurn } from "./openaiResponses";
+import { buildChatCompletionTokenLimit } from "./outputTokens";
 import {
   bindAbortSignal,
   isAbortError,
@@ -463,9 +464,11 @@ export function buildAgentHttpRequest(
       ...common,
       model,
       stream: options.stream === true,
-      ...(options.maxTokens !== undefined
-        ? { max_tokens: options.maxTokens }
-        : {}),
+      ...(providerId === "openai-compat"
+        ? buildChatCompletionTokenLimit(model, options.maxTokens)
+        : options.maxTokens !== undefined
+          ? { max_tokens: options.maxTokens }
+          : {}),
       ...(options.reasoningEffort
         ? { reasoning_effort: options.reasoningEffort }
         : {}),

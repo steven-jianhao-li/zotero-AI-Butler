@@ -288,6 +288,8 @@ function initializeDefaultPrefsOnStartup() {
     reasoningEffort: "default",
     stream: true,
     promptLanguage: "auto", // 默认提示词语言跟随 Zotero 界面语言
+    outputLanguage: "", // 输出语言：留空表示不干预
+    outputLanguageDomain: "general", // 学科口径
     summaryPrompt: getDefaultSummaryPrompt(), // 加载默认提示词模板
     promptVersion: PROMPT_VERSION, // 当前提示词版本号
     contextMenuCollapsed: DEFAULT_CONTEXT_MENU_COLLAPSED,

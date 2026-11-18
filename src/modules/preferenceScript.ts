@@ -228,6 +228,8 @@ function initializeDefaultPrefs() {
     reasoningEffort: "default",
     stream: true,
     promptLanguage: "auto",
+    outputLanguage: "",
+    outputLanguageDomain: "general",
     summaryPrompt: getDefaultSummaryPrompt(),
     promptVersion: PROMPT_VERSION,
     // 文献综述表格填写相关

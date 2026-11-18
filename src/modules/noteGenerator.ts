@@ -1287,6 +1287,8 @@ export class NoteGenerator {
         session,
         pdfContent: params.pdfContent,
         isBase64: params.isBase64,
+        // 章节规划必须返回 JSON，不能追加语言改写要求
+        skipOutputLanguage: true,
         conversation: [{ role: "user", content: planningPrompt }],
         abortSignal: params.abortSignal,
         onStatus: (event) =>
@@ -1869,6 +1871,8 @@ export class NoteGenerator {
     pdfContent: string;
     isBase64: boolean;
     conversation: Array<{ role: "user" | "assistant"; content: string }>;
+    /** 跳过输出语言注入（章节规划等结构化请求） */
+    skipOutputLanguage?: boolean;
     abortSignal?: LLMAbortSignal;
     onProgress?: (chunk: string) => void;
     onStatus?: (event: LLMLifecycleEvent) => void;
@@ -1883,6 +1887,7 @@ export class NoteGenerator {
     const response = await this.chatWithDeepReadSession(params.session, {
       content,
       conversation,
+      skipOutputLanguage: params.skipOutputLanguage,
       transport: {
         abortSignal: params.abortSignal,
         onStatus: params.onStatus,

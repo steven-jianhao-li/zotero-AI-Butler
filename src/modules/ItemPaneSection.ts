@@ -899,20 +899,76 @@ function sidebarHasQuickChat(body: HTMLElement): boolean {
   return !!body.querySelector("#ai-butler-inline-chat");
 }
 
-function persistActiveQuickChatThread(): void {
+function persistActiveQuickChatThread(
+  messages: ChatPersistMessage[] = currentChatState.conversationHistory,
+  target?: { itemId: number | null; threadId: string | null },
+): void {
   try {
-    if (currentChatState.itemId != null && currentChatState.threadId) {
-      chatPersist.saveMessages(
-        currentChatState.itemId,
-        currentChatState.threadId,
-        currentChatState.conversationHistory,
-        currentChatState,
-      );
+    const itemId = target ? target.itemId : currentChatState.itemId;
+    const threadId = target ? target.threadId : currentChatState.threadId;
+    if (itemId != null && threadId) {
+      chatPersist.saveMessages(itemId, threadId, messages, currentChatState);
     }
   } catch (err) {
     ztoolkit.log("[AI-Butler] ChatPersist save failed:", err);
   }
 }
+
+/**
+ * 取消/出错时把「提问 + 已生成的部分回答」一起落盘。
+ *
+ * 之前只有成功的一对才会持久化：一旦用户点停止（或请求卡住），这条问答就只
+ * 存在于内存里，切线程/重开面板即丢失，用户无法回看自己问了什么、回答到哪。
+ * 这里显式写入一条 `stopped: true` 的记录，恢复时会带“已停止”标记。
+ */
+function persistStoppedQuickChatPair(params: {
+  conversationQuestion: string;
+  displayQuestion: string;
+  pairId: string;
+  response: string;
+  sourceLabel?: string;
+  /** 请求所属的条目/线程：面板可能已经切走，不能再用 currentChatState */
+  itemId?: number | null;
+  threadId?: string | null;
+  baseHistory?: ChatPersistMessage[];
+}): void {
+  try {
+    const messages: ChatPersistMessage[] = [
+      ...(params.baseHistory ?? currentChatState.conversationHistory),
+      {
+        role: "user",
+        content: params.conversationQuestion,
+        displayContent: params.displayQuestion,
+        pairId: params.pairId,
+      },
+    ];
+    if (params.response) {
+      messages.push({
+        role: "assistant",
+        content: params.response,
+        pairId: params.pairId,
+        stopped: true,
+        ...(params.sourceLabel ? { sourceLabel: params.sourceLabel } : {}),
+      });
+    }
+    persistActiveQuickChatThread(messages, {
+      itemId: params.itemId ?? currentChatState.itemId,
+      threadId: params.threadId ?? currentChatState.threadId,
+    });
+  } catch (err) {
+    ztoolkit.log("[AI-Butler] ChatPersist stopped pair failed:", err);
+  }
+}
+
+/**
+ * 当前真正在运行的聊天请求控制器。
+ *
+ * 侧边栏的“停止”按钮此前只 abort `currentChatState.abortController`；
+ * 一旦面板切到别的条目/线程（state 被替换），该字段已经是 null，
+ * 正在跑的请求就再也停不下来 —— 这正是“停止按钮卡住”的一个来源。
+ * 这里额外记一份，保证停止键总能打到真实请求。
+ */
+let activeChatAbortController: ChatAbortControllerLike | null = null;
 
 function resetQuickChatState(itemId: number | null): void {
   currentChatState = {
@@ -4436,7 +4492,13 @@ function renderChatArea(
           overflow-x: hidden;
           user-select: text;
         `;
-        updateQuickChatAssistantMessage(aiMsgDiv, answer.content);
+        updateQuickChatAssistantMessage(
+          aiMsgDiv,
+          answer.content,
+          answer.stopped
+            ? `<div style="color: #777; font-size: 11px; margin-top: 6px;">${getString("itempane-stopped-note")}</div>`
+            : "",
+        );
         pairWrapper.appendChild(aiMsgDiv);
         appendPairActions(pairWrapper, pairId, question, answer);
       }
@@ -5025,11 +5087,15 @@ function renderChatArea(
     justify-content: center;
   `;
   stopBtn.addEventListener("click", () => {
-    if (!currentChatState.isChatting) return;
+    // 面板状态可能已经被换掉（切线程/换条目），此时 isChatting 为 false，
+    // 但请求仍在跑：只要还有活动控制器就要能停。
+    const target =
+      currentChatState.abortController ?? activeChatAbortController ?? null;
+    if (!currentChatState.isChatting && !target) return;
     stopBtn.textContent = getString("itempane-stopping");
     stopBtn.style.background = "#9e9e9e";
     (stopBtn as HTMLButtonElement).disabled = true;
-    currentChatState.abortController?.abort(getString("itempane-stop-current"));
+    target?.abort(getString("itempane-stop-current"));
   });
 
   const resizeQuickChatInput = (): void => {
@@ -5290,7 +5356,10 @@ function renderChatArea(
     currentChatState.abortController = createChatAbortController();
     const requestState = currentChatState;
     const requestController = currentChatState.abortController;
+    const requestItemId = currentChatState.itemId;
     const requestThreadId = currentChatState.threadId;
+    const requestHistory = [...currentChatState.conversationHistory];
+    activeChatAbortController = requestController;
     const isCurrentRequest = (): boolean =>
       currentChatState === requestState &&
       currentChatState.threadId === requestThreadId &&
@@ -5305,7 +5374,7 @@ function renderChatArea(
     stopBtn.style.display = "inline-flex";
     (inputBox as HTMLTextAreaElement).disabled = false;
 
-    // 生成唯一对话对 ID
+    // 生成唯一对话对 ID（同一函数作用域，catch 里也能用于落盘）
     quickChatPairIdCounter++;
     const pairId = `quick_${Date.now()}_${quickChatPairIdCounter}`;
 
@@ -5389,14 +5458,16 @@ function renderChatArea(
     inputBox.value = "";
     resizeQuickChatInput();
     let fullResponse = "";
+    let conversationQuestion = question;
+    let sourceLabel = getString("itempane-quick-chat-source-label");
 
     try {
       const { default: LLMService } = await import("./llmService");
       if (!isCurrentRequest()) return;
 
       let relatedContextResult: QuickChatRelatedContextResult | null = null;
-      let conversationQuestion = question;
-      let sourceLabel = getString("itempane-quick-chat-source-label");
+      conversationQuestion = question;
+      sourceLabel = getString("itempane-quick-chat-source-label");
       if (currentChatState.relatedItems.length > 0) {
         const nextSignature = createQuickChatRelatedContextSignature(
           currentChatState.relatedMode,
@@ -5457,6 +5528,20 @@ function renderChatArea(
         }
       }
 
+      // 先把提问落盘：即使随后请求卡住、被取消或应用退出，历史里也不会丢问题。
+      persistActiveQuickChatThread(
+        [
+          ...requestHistory,
+          {
+            role: "user",
+            content: conversationQuestion,
+            displayContent: question,
+            pairId,
+          },
+        ],
+        { itemId: requestItemId, threadId: requestThreadId },
+      );
+
       const conversationHistory = buildQuickChatConversation(
         currentChatState.conversationHistory,
         conversationQuestion,
@@ -5509,8 +5594,25 @@ function renderChatArea(
       refreshThreadSelect();
       appendPairActions(pairWrapper, pairId, question, answer);
     } catch (err: any) {
-      if (!isCurrentRequest()) return;
-      if (isChatAbortError(err, requestController.signal)) {
+      const aborted = isChatAbortError(err, requestController.signal);
+      if (aborted) {
+        // 面板可能已经切到别的条目/线程，仍然把这一问一答写回它自己的线程，
+        // 否则用户停止后既看不到问题也看不到已生成的部分。
+        persistStoppedQuickChatPair({
+          conversationQuestion,
+          displayQuestion: question,
+          pairId,
+          response: fullResponse,
+          sourceLabel,
+          itemId: requestItemId,
+          threadId: requestThreadId,
+          baseHistory: requestHistory,
+        });
+      }
+      // 中断渲染放在“过期请求”守卫之前：aiMsgDiv 属于这一次请求自己的气泡，
+      // 即使停止恰好撞上侧栏重新绑定（isCurrentRequest() 变 false），也应由这一轮
+      // 把已生成内容与“已终止”提示写完；共享的输入区/按钮仍由下面的守卫把关。
+      if (aborted) {
         if (fullResponse) {
           updateQuickChatAssistantMessage(
             aiMsgDiv,
@@ -5522,22 +5624,35 @@ function renderChatArea(
         }
         return;
       }
+      if (!isCurrentRequest()) return;
       ztoolkit.log("[AI-Butler] 快速追问发送失败:", err);
       aiMsgDiv.innerHTML = `<strong>${getString("itempane-assistant-label")}</strong> <span style="color: #f44336;">${getString("itempane-error", { args: { error: err?.message || getString("itempane-send-failed") } })}</span>`;
     } finally {
-      // 恢复状态
-      if (isCurrentRequest()) {
+      const stateIsCurrent = isCurrentRequest();
+      if (activeChatAbortController === requestController) {
+        activeChatAbortController = null;
+      }
+      if (stateIsCurrent) {
         currentChatState.isChatting = false;
         currentChatState.abortController = null;
+      }
+      // 发送/停止按钮是共享 DOM：只要没有新的请求在跑就必须复位。
+      // 旧实现在这里用 isCurrentRequest() 做唯一条件，一旦请求变“过期”
+      // （切线程、换条目、或请求始终不结束），按钮就永远停在
+      // “停止中…”且发送键保持禁用 —— 这就是“stop 按钮卡住”。
+      if (!currentChatState.isChatting) {
         syncQuickChatThreadControls();
         sendBtn.textContent = "↑";
         sendBtn.title = getString("itempane-send");
         sendBtn.style.background = "#59c0bc";
         (sendBtn as HTMLButtonElement).disabled = false;
         stopBtn.style.display = "none";
+        stopBtn.textContent = getString("itempane-stop");
+        stopBtn.style.background = "#f44336";
         (stopBtn as HTMLButtonElement).disabled = false;
         (inputBox as HTMLTextAreaElement).disabled = false;
-        inputBox.focus();
+        // 只有当前请求才抢焦点：过期请求不得打断用户（#427）。
+        if (stateIsCurrent) inputBox.focus();
       }
     }
   });

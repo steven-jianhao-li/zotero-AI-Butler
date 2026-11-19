@@ -438,6 +438,9 @@ function deferred() {
 test("a late reply from another paper cannot overwrite or unlock the active chat (#427)", async () => {
   const started = deferred();
   const response = deferred();
+  const persistCalls = [];
+  const stoppedPairs = [];
+  const contextRef = { stateSwitched: false };
   const sendBtn = new Element("button");
   const inputBox = new Element("textarea");
   inputBox.value = "Question?";
@@ -461,6 +464,7 @@ test("a late reply from another paper cannot overwrite or unlock the active chat
     quickChatPairIdCounter: 0,
     quickChatBindGeneration: 0,
     quickChatPinnedToBottom: true,
+    activeChatAbortController: null,
     getString: locale.getString,
     escapeHtmlForChat: (text) => text,
     createChatAbortController: () => new globalThis.AbortController(),
@@ -473,10 +477,17 @@ test("a late reply from another paper cannot overwrite or unlock the active chat
       ...history,
       { role: "user", content: question },
     ],
-    updateQuickChatAssistantMessage: () =>
-      assert.fail("A stale reply changed the UI"),
-    persistActiveQuickChatThread: () =>
-      assert.fail("A stale reply was persisted"),
+    updateQuickChatAssistantMessage: () => {
+      if (contextRef.stateSwitched) {
+        assert.fail("A stale reply changed the UI");
+      }
+    },
+    persistActiveQuickChatThread: (messages) => {
+      persistCalls.push(messages ?? []);
+    },
+    persistStoppedQuickChatPair: (params) => {
+      stoppedPairs.push(params);
+    },
   };
   const first = sidebarSource.indexOf(
     '  sendBtn.addEventListener("click", async () => {',
@@ -516,15 +527,174 @@ test("a late reply from another paper cannot overwrite or unlock the active chat
     conversationHistory: [{ role: "user", content: "Question B" }],
     abortController: new globalThis.AbortController(),
   };
+  // 发送时已经把提问落盘；切换条目之后不得再写入任何内容。
+  const persistCountAtSend = persistCalls.length;
+  assert.ok(
+    persistCountAtSend >= 1,
+    "the question should be persisted on send",
+  );
+  contextRef.stateSwitched = true;
   context.currentChatState = nextState;
   options.onProgress("Late text from A");
   response.resolve({ text: "Late answer from A" });
   await sending;
+  assert.equal(
+    persistCalls.length,
+    persistCountAtSend,
+    "a stale reply must not be persisted",
+  );
+  assert.equal(
+    stoppedPairs.length,
+    0,
+    "a stale reply must not be recorded as stopped",
+  );
   assert.equal(nextState.isChatting, true);
   assert.ok(nextState.abortController);
   assert.deepEqual(nextState.conversationHistory, [
     { role: "user", content: "Question B" },
   ]);
+});
+
+test("stopping a request whose state went stale still releases the composer", async () => {
+  const started = deferred();
+  const sendBtn = new Element("button");
+  const stopBtn = new Element("button");
+  const inputBox = new Element("textarea");
+  inputBox.value = "Question?";
+  inputBox.focus = () => {};
+  const stoppedPairs = [];
+  const persistCalls = [];
+  const updateCalls = [];
+  const scope = {
+    currentChatState: {
+      itemId: 7,
+      threadId: "a",
+      isChatting: false,
+      pdfContent: "Paper A",
+      relatedItems: [],
+      conversationHistory: [],
+      abortController: null,
+    },
+    sendBtn,
+    inputBox,
+    stopBtn,
+    doc,
+    item: { id: 7 },
+    messagesArea: new Element("div"),
+    quickChatPairIdCounter: 0,
+    quickChatBindGeneration: 0,
+    quickChatPinnedToBottom: true,
+    activeChatAbortController: null,
+    getString: locale.getString,
+    escapeHtmlForChat: (value) => value,
+    createChatAbortController: () => new globalThis.AbortController(),
+    isChatAbortError: (error, signal) =>
+      signal?.aborted === true ||
+      error?.name === "LLMRequestAbortError" ||
+      error?.name === "AbortError",
+    ensureActiveThreadLoaded: async () => {},
+    syncQuickChatThreadControls() {},
+    quickChatHasVisibleMessages: () => false,
+    scrollQuickChatToBottomIfPinned() {},
+    resizeQuickChatInput() {},
+    buildQuickChatConversation: (history, question) => [
+      ...history,
+      { role: "user", content: question },
+    ],
+    updateQuickChatAssistantMessage: (container, markdown, suffixHtml = "") => {
+      updateCalls.push({ markdown, suffixHtml });
+    },
+    persistActiveQuickChatThread: (messages) => {
+      persistCalls.push(messages ?? []);
+    },
+    persistStoppedQuickChatPair: (params) => {
+      stoppedPairs.push(params);
+    },
+  };
+  const context = vm.createContext({
+    ...scope,
+    require: () => ({
+      __esModule: true,
+      default: {
+        chat: (options) => {
+          started.resolve(options);
+          options.onProgress("Partial answer");
+          return new Promise((_resolve, reject) => {
+            const fail = () => {
+              const error = new Error("stopped by user");
+              error.name = "LLMRequestAbortError";
+              reject(error);
+            };
+            const signal = options.transport.abortSignal;
+            if (signal.aborted) fail();
+            else signal.addEventListener("abort", fail);
+          });
+        },
+      },
+    }),
+    ztoolkit: { log() {} },
+  });
+  const compile = (source) =>
+    transformSync(source, {
+      loader: "ts",
+      format: "cjs",
+      target: "es2018",
+      supported: { "dynamic-import": false },
+    }).code;
+
+  // 停止按钮处理器与发送处理器是两段独立代码，都需要注册到同一个上下文里。
+  const stopStart = sidebarSource.indexOf(
+    '  stopBtn.addEventListener("click", () => {',
+  );
+  const stopEnd = sidebarSource.indexOf(
+    "  const resizeQuickChatInput = ",
+    stopStart,
+  );
+  assert.ok(stopStart > 0 && stopEnd > stopStart, "stop handler slice");
+  vm.runInContext(compile(sidebarSource.slice(stopStart, stopEnd)), context);
+
+  const sendStart = sidebarSource.indexOf(
+    '  sendBtn.addEventListener("click", async () => {',
+  );
+  const sendEnd = sidebarSource.indexOf("  // Enter 发送", sendStart);
+  vm.runInContext(compile(sidebarSource.slice(sendStart, sendEnd)), context);
+
+  const sending = sendBtn.click();
+  await started.promise;
+  // 面板已经切到另一个条目：原请求成了“过期请求”，此时用户点停止。
+  context.currentChatState = {
+    itemId: 8,
+    threadId: "b",
+    isChatting: false,
+    pdfContent: "Paper B",
+    relatedItems: [],
+    conversationHistory: [],
+    abortController: null,
+  };
+  stopBtn.listeners.get("click")?.();
+  await sending;
+
+  assert.equal(
+    stopBtn.style.display,
+    "none",
+    "stop button must be hidden again",
+  );
+  assert.equal(stopBtn.disabled, false, "stop button must be clickable again");
+  assert.equal(sendBtn.disabled, false, "send button must be enabled again");
+  assert.equal(inputBox.disabled, false, "input must be enabled again");
+  assert.equal(stoppedPairs.length, 1, "the stopped pair must be persisted");
+  assert.ok(stoppedPairs[0].pairId.length > 0);
+  assert.ok(persistCalls.length >= 1);
+  assert.ok(
+    updateCalls.length >= 1,
+    "a stopped turn must still paint its own bubble",
+  );
+  const finalPaint = updateCalls[updateCalls.length - 1];
+  assert.equal(finalPaint.markdown, "Partial answer");
+  assert.ok(
+    finalPaint.suffixHtml.includes("itempane-stopped-note"),
+    "the bubble must carry the stopped note",
+  );
 });
 
 test("a late PDF extraction does not replace another paper's content (#427)", async () => {

@@ -7,6 +7,7 @@ import {
 import {
   ChatPersist,
   cloneChatContext,
+  normalizeChatMessages,
   type ChatPersistIo,
   type ChatPersistMessage,
   type ChatPersistContext,
@@ -300,5 +301,24 @@ describe("quick-chat persistence and abort labeling", function () {
     expect(isChatAbortError(new Error("network"), controller.signal)).to.equal(
       true,
     );
+  });
+
+  it("keeps the stopped marker so interrupted answers stay identifiable", function () {
+    const messages = normalizeChatMessages([
+      { role: "user", content: "Q", pairId: "p1" },
+      {
+        role: "assistant",
+        content: "partial answer",
+        pairId: "p1",
+        stopped: true,
+      },
+      { role: "assistant", content: "complete answer", pairId: "p2" },
+    ]);
+
+    expect(messages).to.have.length(3);
+    expect(messages[1].content).to.equal("partial answer");
+    expect(messages[1].stopped).to.equal(true);
+    expect(messages[1].pairId).to.equal("p1");
+    expect(messages[2].stopped).to.equal(undefined);
   });
 });

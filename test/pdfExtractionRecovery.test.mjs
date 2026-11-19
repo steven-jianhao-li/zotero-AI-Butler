@@ -84,6 +84,10 @@ function extractionHost() {
     {
       "../utils/locale": locale,
       "../utils/prefs": { getPref: () => undefined },
+      "../utils/outputLanguage": {
+        applyOutputLanguageToPrompt: (prompt) => prompt,
+        applyOutputLanguageToConversation: (conversation) => conversation,
+      },
       "./llmproviders/shared/requestAbort": abort,
     },
     {
@@ -255,6 +259,10 @@ function routingHost() {
     {
       "../utils/locale": locale,
       "../utils/prefs": { getPref: () => undefined },
+      "../utils/outputLanguage": {
+        applyOutputLanguageToPrompt: (prompt) => prompt,
+        applyOutputLanguageToConversation: (conversation) => conversation,
+      },
       "./llmEndpointManager": { LLMEndpointManager: endpoints },
       "./pdfExtractor": host,
       "./epubExtractor": loadSource("modules/epubExtractor.ts", {

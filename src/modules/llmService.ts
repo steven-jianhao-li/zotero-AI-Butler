@@ -10,6 +10,10 @@
 import { getString } from "../utils/locale";
 import { getPref } from "../utils/prefs";
 import { getConfiguredSummaryPrompt } from "../utils/prompts";
+import {
+  applyOutputLanguageToConversation,
+  applyOutputLanguageToPrompt,
+} from "../utils/outputLanguage";
 import { ApiKeyManager, type ProviderId } from "./apiKeyManager";
 import {
   LLMEndpointManager,
@@ -154,6 +158,8 @@ export type LLMTransportOptions = {
 
 export type LLMGenerateRequest = {
   task: LLMTask;
+  /** 跳过输出语言注入（返回结构化数据等场景） */
+  skipOutputLanguage?: boolean;
   prompt?: string;
   content: LLMContentInput;
   output?: {
@@ -168,6 +174,10 @@ export type LLMGenerateRequest = {
 export type LLMChatRequest = {
   content: LLMContentInput;
   conversation: ConversationMessage[];
+  /** 任务类型，仅用于判断是否需要注入输出语言 */
+  task?: LLMTask;
+  /** 跳过输出语言注入（如精读的章节规划 JSON） */
+  skipOutputLanguage?: boolean;
   generation?: LLMGenerationOptions;
   transport?: LLMTransportOptions;
   metadata?: Record<string, unknown>;
@@ -1038,6 +1048,11 @@ export class LLMService {
     request: LLMGenerateRequest,
     prompt: string,
   ): Promise<LLMResponse> {
+    // 输出语言：统一在这里注入，所有 generate 类任务（总结/表格/综述/导图）自动生效
+    prompt = applyOutputLanguageToPrompt(prompt, {
+      task: request.task,
+      skipOutputLanguage: request.skipOutputLanguage,
+    });
     const provider = this.getProviderForEndpoint(endpoint);
     const warnings: string[] = [];
     request.transport?.onStatus?.({
@@ -1222,6 +1237,14 @@ export class LLMService {
     endpoint: LLMEndpoint,
     request: LLMChatRequest,
   ): Promise<LLMResponse> {
+    // 输出语言：统一在这里注入，覆盖 AI 精读各轮与侧边栏对话
+    const conversation = applyOutputLanguageToConversation(
+      request.conversation,
+      {
+        task: request.task,
+        skipOutputLanguage: request.skipOutputLanguage,
+      },
+    );
     const provider = this.getProviderForEndpoint(endpoint);
     const warnings: string[] = [];
     request.transport?.onStatus?.({
@@ -1291,7 +1314,7 @@ export class LLMService {
       result = await provider.chat(
         resolved.content,
         resolved.isBase64,
-        request.conversation,
+        conversation,
         options,
         progressProxy,
       );
@@ -1299,7 +1322,7 @@ export class LLMService {
         provider,
         resolved.content,
         resolved.isBase64,
-        request.conversation,
+        conversation,
         result,
         options,
         progressProxy,

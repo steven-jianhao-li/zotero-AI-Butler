@@ -18,6 +18,8 @@ export type ChatPersistMessage = {
   noteMetadata?: LLMNoteMetadata;
   sourceLabel?: string;
   savedToNote?: boolean;
+  /** 该回答被用户停止（内容可能不完整），用于恢复时给出标记 */
+  stopped?: boolean;
 };
 
 export type ChatPersistContext = {
@@ -121,6 +123,7 @@ export function normalizeChatMessages(
       : {}),
     ...(message?.sourceLabel ? { sourceLabel: message.sourceLabel } : {}),
     ...(message?.savedToNote ? { savedToNote: true } : {}),
+    ...(message?.stopped ? { stopped: true } : {}),
   }));
 }
 

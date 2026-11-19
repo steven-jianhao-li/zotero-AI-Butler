@@ -62,6 +62,37 @@ export function normalizeAbortError(
   return createAbortError(signal);
 }
 
+/**
+ * 竞速用的中止信号。
+ *
+ * `bindAbortSignal` 依赖 `xmlhttp.abort()` 触发底层 reject；但请求尚在排队、
+ * XHR 已关闭或实现未把 abort 转为拒绝时，等待方会一直挂到请求自身的超时
+ * （默认 `requestTimeout * 6`，最长 30 分钟）。把本函数的 promise 一起塞进
+ * `Promise.race`，可以保证用户点“停止”后等待方当帧结束。
+ *
+ * 返回的 promise 永不 resolve，只会以 `LLMRequestAbortError` reject；
+ * 调用方必须在 `finally` 里调用 `dispose()`，避免监听器泄漏。
+ */
+export function raceAbortSignal(signal?: LLMAbortSignal): {
+  promise: Promise<never>;
+  dispose: () => void;
+} {
+  let dispose = () => {};
+  const promise = new Promise<never>((_resolve, reject) => {
+    if (!signal) return;
+    if (signal.aborted) {
+      reject(createAbortError(signal));
+      return;
+    }
+    const onAbort = () => reject(createAbortError(signal));
+    signal.addEventListener?.("abort", onAbort, { once: true });
+    dispose = () => signal.removeEventListener?.("abort", onAbort);
+  });
+  // 竞速的另一侧胜出时不要留下未处理的拒绝。
+  promise.catch(() => {});
+  return { promise, dispose };
+}
+
 export function bindAbortSignal(
   signal: LLMAbortSignal | undefined,
   xmlhttp: XMLHttpRequest,

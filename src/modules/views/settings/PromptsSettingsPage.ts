@@ -41,11 +41,16 @@ import {
   createCheckbox,
 } from "../ui/components";
 import { getString } from "../../../utils/locale";
+import {
+  getPromptLanguageOptions,
+  normalizePromptLanguageSelection,
+} from "../../../utils/promptLanguageSelect";
 
 type PresetMap = Record<string, string>;
 type PromptSettingsKind = "summary" | "deepRead" | "table" | "all";
 const CURRENT_MULTI_ROUND_TEMPLATE_ID = "__current_multi_round_template__";
 const MULTI_ROUND_TEMPLATE_ID_PREF = "multiRoundPromptTemplateId";
+const XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
 export class PromptsSettingsPage {
   private container: HTMLElement;
@@ -415,40 +420,57 @@ export class PromptsSettingsPage {
 
   // ===== helpers =====
   private renderDefaultPromptLanguageSetting(): HTMLElement {
-    const select = createSelect(
-      "promptLanguage",
-      [
-        {
-          value: "auto",
-          label: getString("settings-prompts-language-auto"),
-        },
-        {
-          value: "zh-CN",
-          label: getString("settings-prompts-language-zh"),
-        },
-        {
-          value: "en-US",
-          label: getString("settings-prompts-language-en"),
-        },
-      ],
+    // 原生 select：Zotero 6 (Gecko 60) 下比自绘下拉可靠。
+    // 旧实现在 document 上注册捕获阶段的 click 监听，并在插件沙盒里构造
+    // CustomEvent —— 后者不在 bootstrap.js 的 wantGlobalProperties 中，
+    // 选中后收尾逻辑抛错，界面回弹，用户表现为“设不了”。
+    const doc = Zotero.getMainWindow().document;
+    const select = doc.createElementNS(
+      XHTML_NAMESPACE,
+      "select",
+    ) as HTMLSelectElement;
+    select.id = "setting-promptLanguage";
+    const currentValue = normalizePromptLanguageSelection(
       getDefaultPromptLanguagePreference(),
-      (newValue) => {
-        const oldSummaryPrompt = (getPref("summaryPrompt") as string) || "";
-        setPref("promptLanguage" as any, newValue as any);
-
-        if (isKnownDefaultSummaryPrompt(oldSummaryPrompt)) {
-          setPref("summaryPrompt", getDefaultSummaryPrompt());
-          setPref("promptVersion" as any, PROMPT_VERSION as any);
-        }
-
-        this.render();
-        this.showPromptToast(
-          getString("settings-prompts-language-saved"),
-          "success",
-        );
-      },
     );
-
+    for (const option of getPromptLanguageOptions((key) =>
+      getString(key as any),
+    )) {
+      const element = doc.createElementNS(
+        XHTML_NAMESPACE,
+        "option",
+      ) as HTMLOptionElement;
+      element.value = option.value;
+      element.textContent = option.label;
+      element.selected = option.value === currentValue;
+      select.appendChild(element);
+    }
+    Object.assign(select.style, {
+      width: "100%",
+      maxWidth: "420px",
+      padding: "10px 12px",
+      fontSize: "14px",
+      borderRadius: "6px",
+      border: "1px solid var(--ai-input-border, #cccccc)",
+      backgroundColor: "var(--ai-input-bg, #ffffff)",
+      color: "var(--ai-input-text, #000000)",
+      boxSizing: "border-box",
+      cursor: "pointer",
+    });
+    select.addEventListener("change", () => {
+      const newValue = normalizePromptLanguageSelection(select.value);
+      const oldSummaryPrompt = (getPref("summaryPrompt") as string) || "";
+      setPref("promptLanguage" as any, newValue as any);
+      if (isKnownDefaultSummaryPrompt(oldSummaryPrompt)) {
+        setPref("summaryPrompt", getDefaultSummaryPrompt());
+        setPref("promptVersion" as any, PROMPT_VERSION as any);
+      }
+      this.render();
+      this.showPromptToast(
+        getString("settings-prompts-language-saved"),
+        "success",
+      );
+    });
     return createFormGroup(
       getString("settings-prompts-language-label"),
       select,

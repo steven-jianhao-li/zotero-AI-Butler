@@ -74,7 +74,7 @@ export const PROMPT_VERSION = 3;
 export type DefaultPromptLanguage = "auto" | "zh-CN" | "en-US";
 export type ResolvedDefaultPromptLanguage = "zh-CN" | "en-US";
 
-function normalizeDefaultPromptLanguage(
+export function normalizeDefaultPromptLanguage(
   value: unknown,
 ): DefaultPromptLanguage | undefined {
   const normalized = String(value || "")

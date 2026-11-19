@@ -427,6 +427,36 @@ test("a failed note save can be retried without marking the reply as saved (#427
   assert.equal(save.disabled, true);
 });
 
+// 侧边栏发送处理器现在通过 StreamingMarkdownRenderer 合并流式写入，
+// VM 夹具需要提供同名构造器（真实实现由 test/streamingMarkdownRenderer.test.ts 覆盖）。
+class StreamingMarkdownRendererStub {
+  constructor(options = {}) {
+    this.options = options;
+    this.buffer = "";
+    this.disposed = false;
+  }
+
+  push(delta) {
+    if (this.disposed) return;
+    this.buffer += delta;
+  }
+
+  flush() {}
+
+  finalize(markdown) {
+    if (this.disposed) return;
+    this.buffer = typeof markdown === "string" ? markdown : this.buffer;
+  }
+
+  dispose() {
+    this.disposed = true;
+  }
+
+  get metrics() {
+    return { streamingWrites: 0, finalRender: 0, pushes: 0 };
+  }
+}
+
 function deferred() {
   let resolve;
   const promise = new Promise((done) => {
@@ -477,6 +507,7 @@ test("a late reply from another paper cannot overwrite or unlock the active chat
       assert.fail("A stale reply changed the UI"),
     persistActiveQuickChatThread: () =>
       assert.fail("A stale reply was persisted"),
+    StreamingMarkdownRenderer: StreamingMarkdownRendererStub,
   };
   const first = sidebarSource.indexOf(
     '  sendBtn.addEventListener("click", async () => {',

@@ -564,6 +564,7 @@ test("stopping a request whose state went stale still releases the composer", as
   inputBox.focus = () => {};
   const stoppedPairs = [];
   const persistCalls = [];
+  const updateCalls = [];
   const scope = {
     currentChatState: {
       itemId: 7,
@@ -600,7 +601,9 @@ test("stopping a request whose state went stale still releases the composer", as
       ...history,
       { role: "user", content: question },
     ],
-    updateQuickChatAssistantMessage: () => {},
+    updateQuickChatAssistantMessage: (container, markdown, suffixHtml = "") => {
+      updateCalls.push({ markdown, suffixHtml });
+    },
     persistActiveQuickChatThread: (messages) => {
       persistCalls.push(messages ?? []);
     },
@@ -615,6 +618,7 @@ test("stopping a request whose state went stale still releases the composer", as
       default: {
         chat: (options) => {
           started.resolve(options);
+          options.onProgress("Partial answer");
           return new Promise((_resolve, reject) => {
             const fail = () => {
               const error = new Error("stopped by user");
@@ -681,6 +685,16 @@ test("stopping a request whose state went stale still releases the composer", as
   assert.equal(stoppedPairs.length, 1, "the stopped pair must be persisted");
   assert.ok(stoppedPairs[0].pairId.length > 0);
   assert.ok(persistCalls.length >= 1);
+  assert.ok(
+    updateCalls.length >= 1,
+    "a stopped turn must still paint its own bubble",
+  );
+  const finalPaint = updateCalls[updateCalls.length - 1];
+  assert.equal(finalPaint.markdown, "Partial answer");
+  assert.ok(
+    finalPaint.suffixHtml.includes("itempane-stopped-note"),
+    "the bubble must carry the stopped note",
+  );
 });
 
 test("a late PDF extraction does not replace another paper's content (#427)", async () => {

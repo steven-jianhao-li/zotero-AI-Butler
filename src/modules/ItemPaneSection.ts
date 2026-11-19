@@ -5609,7 +5609,9 @@ function renderChatArea(
           baseHistory: requestHistory,
         });
       }
-      if (!isCurrentRequest()) return;
+      // 中断渲染放在“过期请求”守卫之前：aiMsgDiv 属于这一次请求自己的气泡，
+      // 即使停止恰好撞上侧栏重新绑定（isCurrentRequest() 变 false），也应由这一轮
+      // 把已生成内容与“已终止”提示写完；共享的输入区/按钮仍由下面的守卫把关。
       if (aborted) {
         if (fullResponse) {
           updateQuickChatAssistantMessage(
@@ -5622,6 +5624,7 @@ function renderChatArea(
         }
         return;
       }
+      if (!isCurrentRequest()) return;
       ztoolkit.log("[AI-Butler] 快速追问发送失败:", err);
       aiMsgDiv.innerHTML = `<strong>${getString("itempane-assistant-label")}</strong> <span style="color: #f44336;">${getString("itempane-error", { args: { error: err?.message || getString("itempane-send-failed") } })}</span>`;
     } finally {

@@ -27,6 +27,7 @@ import { BaseView } from "./BaseView";
 import { MainWindow } from "./MainWindow";
 import { marked } from "marked";
 import { getPref } from "../../utils/prefs";
+import { StreamingMarkdownRenderer } from "../../utils/streamingMarkdownRenderer";
 import { getConfiguredSummaryPrompt } from "../../utils/prompts";
 import { getString } from "../../utils/locale";
 import { createStyledButton } from "./ui/components";
@@ -61,6 +62,13 @@ export class SummaryView extends BaseView {
 
   /** 当前条目的内容缓冲区 */
   private currentItemBuffer: string = "";
+
+  /**
+   * 输出窗口的流式渲染器：合并 chunk 的 Markdown 渲染与 DOM 写入。
+   * 该窗口会夹杂非流式片段（标题、提示语），因此使用 markdown-coalesced
+   * 策略——保持 Markdown 结构即时可见，但把渲染频率限制到每个 interval 一次。
+   */
+  private itemStreamRenderer: StreamingMarkdownRenderer | null = null;
 
   /** Deep-read progress tree container */
   private deepReadProgressContainer: HTMLElement | null = null;
@@ -650,11 +658,25 @@ export class SummaryView extends BaseView {
     }
 
     let fullResponse = "";
+    // 流式渲染器：合并 delta 的 DOM 写入，收尾时一次性渲染 Markdown/公式
+    let streamRenderer: StreamingMarkdownRenderer | null = null;
 
     try {
       const { default: LLMService } = await import("../llmService");
 
       let responseMetadata: LLMNoteMetadata | null = null;
+      const streamContentDiv = assistantMessageContainer
+        ? (assistantMessageContainer.querySelector(
+            ".chat-message-content",
+          ) as HTMLElement | null)
+        : null;
+      streamRenderer = new StreamingMarkdownRenderer({
+        mount: () => streamContentDiv,
+        renderFinal: (markdown) =>
+          SummaryView.convertMarkdownToHTMLCore(markdown),
+        isVisible: () => Boolean(streamContentDiv?.isConnected),
+        onAfterRender: () => this.scrollToBottom(),
+      });
       const response = await LLMService.chat({
         content: {
           kind: "legacy",
@@ -668,31 +690,14 @@ export class SummaryView extends BaseView {
         },
         onProgress: (chunk: string) => {
           fullResponse += chunk;
-          // 更新助手消息显示
-          if (assistantMessageContainer) {
-            const contentDiv = assistantMessageContainer.querySelector(
-              ".chat-message-content",
-            ) as HTMLElement;
-            if (contentDiv) {
-              contentDiv.innerHTML =
-                SummaryView.convertMarkdownToHTMLCore(fullResponse);
-            }
-          }
-          // 自动滚动
-          this.scrollToBottom();
+          // 只累积 + 合并调度：流式期不做 Markdown/公式渲染
+          streamRenderer?.push(chunk);
         },
       });
       fullResponse = response.text;
       responseMetadata = LLMNoteMetadataService.fromResponse("chat", response);
-      if (assistantMessageContainer) {
-        const contentDiv = assistantMessageContainer.querySelector(
-          ".chat-message-content",
-        ) as HTMLElement;
-        if (contentDiv) {
-          contentDiv.innerHTML =
-            SummaryView.convertMarkdownToHTMLCore(fullResponse);
-        }
-      }
+      // 完成后一次性渲染 Markdown（含公式）
+      streamRenderer?.finalize(fullResponse);
 
       // 完成后再写入上下文；中断/失败不会污染后续追问。
       this.conversationHistory.push({
@@ -729,10 +734,15 @@ export class SummaryView extends BaseView {
             ".chat-message-content",
           ) as HTMLElement;
           if (contentDiv) {
-            const stoppedHtml = fullResponse
-              ? `${SummaryView.convertMarkdownToHTMLCore(fullResponse)}<p style="color: #777; font-size: 12px;">${getString("summary-chat-stopped-not-saved")}</p>`
-              : `<p style="color: #777;">${getString("summary-chat-stopped-empty")}</p>`;
-            contentDiv.innerHTML = stoppedHtml;
+            if (fullResponse) {
+              streamRenderer?.finalize(
+                fullResponse,
+                `<p style="color: #777; font-size: 12px;">${getString("summary-chat-stopped-not-saved")}</p>`,
+              );
+            } else {
+              streamRenderer?.dispose();
+              contentDiv.innerHTML = `<p style="color: #777;">${getString("summary-chat-stopped-empty")}</p>`;
+            }
           }
         }
         return;
@@ -748,6 +758,7 @@ export class SummaryView extends BaseView {
         }
       }
     } finally {
+      streamRenderer?.dispose();
       this.isChatting = false;
       this.chatAbortController = null;
       if (this.chatSendButton) {
@@ -2007,8 +2018,20 @@ export class SummaryView extends BaseView {
     // 应用主题到新添加的元素
     this.applyTheme();
 
-    // 重置缓冲区
+    // 重置缓冲区（并重建流式渲染器，绑定到新的内容容器）
     this.currentItemBuffer = "";
+    this.itemStreamRenderer?.dispose();
+    this.itemStreamRenderer = new StreamingMarkdownRenderer({
+      mount: () => contentElement,
+      policy: "markdown-coalesced",
+      renderCoalesced: (markdown) => this.convertMarkdownToHTML(markdown),
+      renderFinal: (markdown) => this.convertMarkdownToHTML(markdown),
+      isVisible: () => Boolean(contentElement.isConnected),
+      onAfterRender: () => {
+        this.scheduleRenderMath();
+        this.scrollToBottom();
+      },
+    });
 
     // 滚动到底部
     this.scrollToBottom();
@@ -2167,34 +2190,9 @@ export class SummaryView extends BaseView {
     // 累积内容
     this.currentItemBuffer += chunk;
 
-    // 获取内容容器
-    const contentElement = this.currentItemContainer.querySelector(
-      ".item-content",
-    ) as HTMLElement;
-
-    if (contentElement) {
-      // 渲染 Markdown
-      const html = this.convertMarkdownToHTML(this.currentItemBuffer);
-      contentElement.innerHTML = html;
-
-      // 调试信息:检查滚动容器状态
-      if (this.scrollArea) {
-        const scrollHeight = this.scrollArea.scrollHeight;
-        const clientHeight = this.scrollArea.clientHeight;
-        const hasScroll = scrollHeight > clientHeight;
-
-        // 输出调试信息到控制台
-        ztoolkit.log(
-          `[AI Butler] 滚动状态 - scrollHeight: ${scrollHeight}, clientHeight: ${clientHeight}, hasScroll: ${hasScroll}`,
-        );
-      }
-
-      // 节流渲染数学公式
-      this.scheduleRenderMath();
-
-      // 滚动到底部
-      this.scrollToBottom();
-    }
+    // 合并渲染：Markdown 与滚动/公式调度都收敛到每个 interval 一次，
+    // 避免每个 stream chunk 都全量 parse + 全量替换 innerHTML。
+    this.itemStreamRenderer?.push(chunk);
   }
 
   /**
@@ -2202,6 +2200,11 @@ export class SummaryView extends BaseView {
    */
   public finishItem(): void {
     if (!this.currentItemContainer) return;
+
+    // 落盘最后的增量，并释放流式渲染器
+    this.itemStreamRenderer?.flush();
+    this.itemStreamRenderer?.dispose();
+    this.itemStreamRenderer = null;
 
     // 最终渲染一次数学公式
     this.renderMath();
@@ -2571,6 +2574,8 @@ export class SummaryView extends BaseView {
       // 重新显示初始提示
       this.showInitialHint();
     }
+    this.itemStreamRenderer?.dispose();
+    this.itemStreamRenderer = null;
     this.currentItemContainer = null;
     this.currentItemBuffer = "";
     this.userHasScrolled = false;

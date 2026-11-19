@@ -31,6 +31,15 @@ import {
   type MultiRoundPromptPhase,
 } from "../../../utils/prompts";
 import {
+  OUTPUT_LANGUAGE_DOMAINS,
+  detectBuiltinPromptLanguage,
+  getOutputLanguage,
+  getOutputLanguageDomain,
+  setOutputLanguage,
+  setOutputLanguageDomain,
+  type OutputLanguageDomain,
+} from "../../../utils/outputLanguage";
+import {
   createFormGroup,
   createInput,
   createTextarea,
@@ -41,16 +50,22 @@ import {
   createCheckbox,
 } from "../ui/components";
 import { getString } from "../../../utils/locale";
-import {
-  getPromptLanguageOptions,
-  normalizePromptLanguageSelection,
-} from "../../../utils/promptLanguageSelect";
 
 type PresetMap = Record<string, string>;
 type PromptSettingsKind = "summary" | "deepRead" | "table" | "all";
 const CURRENT_MULTI_ROUND_TEMPLATE_ID = "__current_multi_round_template__";
 const MULTI_ROUND_TEMPLATE_ID_PREF = "multiRoundPromptTemplateId";
 const XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+const OUTPUT_LANGUAGE_DOMAIN_LABEL_IDS: Record<OutputLanguageDomain, string> = {
+  general: "settings-output-language-domain-general",
+  science: "settings-output-language-domain-science",
+  engineering: "settings-output-language-domain-engineering",
+  arts: "settings-output-language-domain-arts",
+  business: "settings-output-language-domain-business",
+  humanities: "settings-output-language-domain-humanities",
+  medicine: "settings-output-language-domain-medicine",
+  law: "settings-output-language-domain-law",
+};
 
 export class PromptsSettingsPage {
   private container: HTMLElement;
@@ -129,7 +144,7 @@ export class PromptsSettingsPage {
     contentWrapper.appendChild(title);
 
     contentWrapper.appendChild(createNotice(this.getPageNotice(), "info"));
-    contentWrapper.appendChild(this.renderDefaultPromptLanguageSetting());
+    contentWrapper.appendChild(this.renderOutputLanguageSetting());
 
     // =========== AI 精读提示词设置 ===========
     const modeSection = Zotero.getMainWindow().document.createElement("div");
@@ -419,33 +434,69 @@ export class PromptsSettingsPage {
   }
 
   // ===== helpers =====
-  private renderDefaultPromptLanguageSetting(): HTMLElement {
-    // 原生 select：Zotero 6 (Gecko 60) 下比自绘下拉可靠。
-    // 旧实现在 document 上注册捕获阶段的 click 监听，并在插件沙盒里构造
-    // CustomEvent —— 后者不在 bootstrap.js 的 wantGlobalProperties 中，
-    // 选中后收尾逻辑抛错，界面回弹，用户表现为“设不了”。
+  private renderOutputLanguageSetting(): HTMLElement {
     const doc = Zotero.getMainWindow().document;
-    const select = doc.createElementNS(
+    const wrapper = doc.createElementNS(
+      XHTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
+    Object.assign(wrapper.style, { marginBottom: "18px" });
+
+    wrapper.appendChild(
+      createNotice(getString("settings-output-language-notice"), "info"),
+    );
+
+    const languageInput = createInput(
+      "outputLanguage",
+      "text",
+      getOutputLanguage(),
+      getString("settings-output-language-placeholder"),
+    );
+    languageInput.style.maxWidth = "420px";
+
+    const persistLanguage = () => {
+      const previous = getOutputLanguage();
+      const next = setOutputLanguage(languageInput.value);
+      if (languageInput.value !== next) languageInput.value = next;
+      this.syncBuiltinPromptLanguage(next);
+      if (next !== previous) {
+        this.showPromptToast(
+          getString("settings-output-language-saved"),
+          "success",
+        );
+      }
+    };
+    languageInput.addEventListener("change", persistLanguage);
+    languageInput.addEventListener("blur", persistLanguage);
+
+    wrapper.appendChild(
+      createFormGroup(
+        getString("settings-output-language-label"),
+        languageInput,
+        getString("settings-output-language-help"),
+      ),
+    );
+
+    // 原生 select：Zotero 6 (Gecko 60) 下比自绘下拉稳定
+    const domainSelect = doc.createElementNS(
       XHTML_NAMESPACE,
       "select",
     ) as HTMLSelectElement;
-    select.id = "setting-promptLanguage";
-    const currentValue = normalizePromptLanguageSelection(
-      getDefaultPromptLanguagePreference(),
-    );
-    for (const option of getPromptLanguageOptions((key) =>
-      getString(key as any),
-    )) {
-      const element = doc.createElementNS(
+    domainSelect.id = "setting-outputLanguageDomain";
+    const currentDomain = getOutputLanguageDomain();
+    for (const domain of OUTPUT_LANGUAGE_DOMAINS) {
+      const option = doc.createElementNS(
         XHTML_NAMESPACE,
         "option",
       ) as HTMLOptionElement;
-      element.value = option.value;
-      element.textContent = option.label;
-      element.selected = option.value === currentValue;
-      select.appendChild(element);
+      option.value = domain;
+      option.textContent = getString(
+        OUTPUT_LANGUAGE_DOMAIN_LABEL_IDS[domain] as any,
+      );
+      if (domain === currentDomain) option.selected = true;
+      domainSelect.appendChild(option);
     }
-    Object.assign(select.style, {
+    Object.assign(domainSelect.style, {
       width: "100%",
       maxWidth: "420px",
       padding: "10px 12px",
@@ -457,25 +508,38 @@ export class PromptsSettingsPage {
       boxSizing: "border-box",
       cursor: "pointer",
     });
-    select.addEventListener("change", () => {
-      const newValue = normalizePromptLanguageSelection(select.value);
-      const oldSummaryPrompt = (getPref("summaryPrompt") as string) || "";
-      setPref("promptLanguage" as any, newValue as any);
-      if (isKnownDefaultSummaryPrompt(oldSummaryPrompt)) {
-        setPref("summaryPrompt", getDefaultSummaryPrompt());
-        setPref("promptVersion" as any, PROMPT_VERSION as any);
-      }
-      this.render();
+    domainSelect.addEventListener("change", () => {
+      setOutputLanguageDomain(domainSelect.value);
       this.showPromptToast(
-        getString("settings-prompts-language-saved"),
+        getString("settings-output-language-saved"),
         "success",
       );
     });
-    return createFormGroup(
-      getString("settings-prompts-language-label"),
-      select,
-      getString("settings-prompts-language-help"),
+    wrapper.appendChild(
+      createFormGroup(
+        getString("settings-output-language-domain-label"),
+        domainSelect,
+        getString("settings-output-language-domain-help"),
+      ),
     );
+
+    return wrapper;
+  }
+
+  /**
+   * 让内置默认提示词跟随目标语言（仅中文/英文可判定）。
+   * 其他语言保留现有模板，最终输出语言由注入的规则保证。
+   */
+  private syncBuiltinPromptLanguage(language: string): void {
+    const builtin = detectBuiltinPromptLanguage(language);
+    if (!builtin) return;
+    if (builtin === getDefaultPromptLanguagePreference()) return;
+    const oldSummaryPrompt = (getPref("summaryPrompt") as string) || "";
+    setPref("promptLanguage" as any, builtin as any);
+    if (isKnownDefaultSummaryPrompt(oldSummaryPrompt)) {
+      setPref("summaryPrompt", getDefaultSummaryPrompt());
+      setPref("promptVersion" as any, PROMPT_VERSION as any);
+    }
   }
 
   private getSummaryPanelStyle(): Partial<CSSStyleDeclaration> {

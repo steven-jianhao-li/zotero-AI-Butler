@@ -903,3 +903,20 @@ agent-citation-invalid = This citation link is invalid.
 agent-citation-item-unavailable = The cited item is unavailable or is in Trash.
 agent-citation-window-unavailable = Open the Zotero library window and try again.
 agent-runtime-permission-changed = Library permission for this run: { $permission }.
+
+# ==================== Output language ====================
+settings-output-language-notice = This setting applies to AI Summary, AI Deep Reading, table fill/review, literature review, mindmap and the sidebar chat at the same time.
+settings-output-language-label = Output Language
+settings-output-language-help = Type the language you want the final output in, for example Simplified Chinese, Traditional Chinese, English, Japanese or French. Leave it empty to add nothing and rely on your own prompts. Chinese or English also switches the built-in default prompts.
+settings-output-language-placeholder = e.g. English / Simplified Chinese / Japanese (empty = no rule)
+settings-output-language-domain-label = Discipline Profile
+settings-output-language-domain-help = Tailors the generated translation and writing rules to the field (terminology, units, citations, register). Choose General when unsure.
+settings-output-language-domain-general = General (basic)
+settings-output-language-domain-science = Science (maths / physics / chemistry / biology / earth)
+settings-output-language-domain-engineering = Engineering (mechanical / electrical / CS / civil / chemical)
+settings-output-language-domain-arts = Arts (fine art / music / film / design / architecture)
+settings-output-language-domain-business = Business (economics / finance / management / accounting)
+settings-output-language-domain-humanities = Humanities (philosophy / history / literature / law / sociology)
+settings-output-language-saved = Output language saved.
+settings-output-language-domain-medicine = Medicine (clinical / basic / pharmacy / public health / nursing)
+settings-output-language-domain-law = Law (jurisprudence / civil / criminal / public / international)

@@ -432,6 +432,7 @@ test("a failed note save can be retried without marking the reply as saved (#427
 class StreamingMarkdownRendererStub {
   constructor(options = {}) {
     this.options = options;
+    StreamingMarkdownRendererStub.lastOptions = options;
     this.buffer = "";
     this.disposed = false;
   }
@@ -508,6 +509,8 @@ test("a late reply from another paper cannot overwrite or unlock the active chat
     persistActiveQuickChatThread: () =>
       assert.fail("A stale reply was persisted"),
     StreamingMarkdownRenderer: StreamingMarkdownRendererStub,
+    buildQuickChatAssistantHtml: (markdown, suffixHtml = "") =>
+      String(markdown) + suffixHtml,
   };
   const first = sidebarSource.indexOf(
     '  sendBtn.addEventListener("click", async () => {',
@@ -556,6 +559,19 @@ test("a late reply from another paper cannot overwrite or unlock the active chat
   assert.deepEqual(nextState.conversationHistory, [
     { role: "user", content: "Question B" },
   ]);
+
+  // 渲染器的 renderFinal 必须把调用方追加的后缀（例如“已终止”提示）一起渲染出来。
+  const hook = StreamingMarkdownRendererStub.lastOptions;
+  assert.equal(typeof hook.renderFinal, "function");
+  const rendered = hook.renderFinal("# answer", "<div>STOPPED-NOTE</div>");
+  assert.ok(
+    rendered.includes("STOPPED-NOTE"),
+    "renderFinal must keep the suffix the caller appends",
+  );
+  assert.ok(
+    rendered.includes("answer"),
+    "renderFinal must still render the markdown",
+  );
 });
 
 test("a late PDF extraction does not replace another paper's content (#427)", async () => {

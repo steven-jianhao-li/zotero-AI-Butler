@@ -672,8 +672,8 @@ export class SummaryView extends BaseView {
         : null;
       streamRenderer = new StreamingMarkdownRenderer({
         mount: () => streamContentDiv,
-        renderFinal: (markdown) =>
-          SummaryView.convertMarkdownToHTMLCore(markdown),
+        renderFinal: (markdown, suffixHtml = "") =>
+          SummaryView.convertMarkdownToHTMLCore(markdown) + suffixHtml,
         isVisible: () => Boolean(streamContentDiv?.isConnected),
         onAfterRender: () => this.scrollToBottom(),
       });

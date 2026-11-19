@@ -5470,7 +5470,8 @@ function renderChatArea(
         mount: () => aiMsgDiv,
         renderStreamingSeed: () =>
           `<strong>${getString("itempane-assistant-label")}</strong><br/>`,
-        renderFinal: (markdown) => buildQuickChatAssistantHtml(markdown),
+        renderFinal: (markdown, suffixHtml = "") =>
+          buildQuickChatAssistantHtml(markdown, suffixHtml),
         isVisible: () => messagesArea.isConnected !== false,
         onAfterRender: () => scrollQuickChatToBottomIfPinned(),
       });

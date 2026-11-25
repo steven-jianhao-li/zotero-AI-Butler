@@ -225,6 +225,7 @@ export class ChatPersist {
   private loaded = false;
   private loadingPromise: Promise<ChatPersistData> | null = null;
   private writeTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingWrite: Promise<void> = Promise.resolve();
   private readonly io: ChatPersistIo;
   private readonly now: () => number;
   private readonly createId: () => string;
@@ -283,11 +284,17 @@ export class ChatPersist {
     }, WRITE_DELAY_MS);
   }
 
-  async flush(): Promise<void> {
+  flush(): Promise<void> {
     if (this.writeTimer) {
       clearTimeout(this.writeTimer);
       this.writeTimer = null;
     }
+    // Debounced and explicit flushes share one file across all items.
+    this.pendingWrite = this.pendingWrite.then(() => this.writeSnapshot());
+    return this.pendingWrite;
+  }
+
+  private async writeSnapshot(): Promise<void> {
     try {
       const dir = this.io.getDirectory();
       const storePath = this.getStorePath();

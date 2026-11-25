@@ -665,16 +665,13 @@ export class SummaryView extends BaseView {
       const { default: LLMService } = await import("../llmService");
 
       let responseMetadata: LLMNoteMetadata | null = null;
-      const streamContentDiv = assistantMessageContainer
-        ? (assistantMessageContainer.querySelector(
-            ".chat-message-content",
-          ) as HTMLElement | null)
-        : null;
       streamRenderer = new StreamingMarkdownRenderer({
-        mount: () => streamContentDiv,
+        mount: () =>
+          assistantMessageContainer?.querySelector<HTMLElement>(
+            ".chat-message-content",
+          ) ?? null,
         renderFinal: (markdown, suffixHtml = "") =>
           SummaryView.convertMarkdownToHTMLCore(markdown) + suffixHtml,
-        isVisible: () => Boolean(streamContentDiv?.isConnected),
         onAfterRender: () => this.scrollToBottom(),
       });
       const response = await LLMService.chat({

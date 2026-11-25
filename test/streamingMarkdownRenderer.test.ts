@@ -8,29 +8,41 @@ import {
 // （在真实 Zotero 进程里替换全局对象会让插件启动/收尾钩子拿到假对象、
 // mocha 收不到结束信号，CI 上表现为 test job 挂起。）
 
-type FakeHost = {
-  innerHTML: string;
-  isConnected: boolean;
-  children: any[];
-  appendChild: (node: any) => void;
-  ownerDocument: {
-    createTextNode: (text: string) => {
-      data: string;
-      appendData: (d: string) => void;
-      writes: number;
-    };
-  };
-};
-
-function fakeHost(): FakeHost {
-  const host: FakeHost = {
-    innerHTML: "",
+function fakeHost() {
+  let markup = "";
+  const children: any[] = [];
+  return {
+    get innerHTML() {
+      return markup;
+    },
+    set innerHTML(html: string) {
+      children.length = 0;
+      markup = html;
+    },
     isConnected: true,
-    children: [],
+    visible: true,
+    getClientRects() {
+      return this.visible ? [{}] : [];
+    },
+    children,
     appendChild(node: any) {
-      host.children.push(node);
+      children.push(node);
+    },
+    contains(node: unknown) {
+      return children.some((child) => child === node || child.child === node);
     },
     ownerDocument: {
+      createElementNS(namespace: string, tag: string) {
+        return {
+          namespace,
+          tag,
+          style: { whiteSpace: "" },
+          child: null as unknown,
+          appendChild(node: unknown) {
+            this.child = node;
+          },
+        };
+      },
       createTextNode(text: string) {
         return {
           data: text,
@@ -43,8 +55,9 @@ function fakeHost(): FakeHost {
       },
     },
   };
-  return host;
 }
+
+type FakeHost = ReturnType<typeof fakeHost>;
 
 function harness(
   overrides: Partial<StreamingMarkdownRendererOptions> = {},
@@ -100,7 +113,7 @@ describe("streaming markdown renderer", function () {
     }
     advance(200); // 让尾部刷新落地
 
-    const node = host.children[0];
+    const node = host.children[0].child;
     expect(node.data).to.equal("abc".repeat(deltas));
     // 关键断言：DOM 写入次数与 delta 数无关，只与时长/间隔有关
     expect(renderer.metrics.pushes).to.equal(deltas);
@@ -110,6 +123,54 @@ describe("streaming markdown renderer", function () {
     // 流式期只写一次 seed，之后不再重建 DOM
     expect(host.innerHTML).to.equal("<seed/>");
     expect(host.children).to.have.length(1);
+  });
+
+  it("preserves newlines and indentation only in the raw chat preview", function () {
+    const { host, renderer } = harness();
+    const raw = "First line\n\n  <second>";
+    renderer.push(raw);
+    renderer.flush();
+
+    const preview = host.children[0];
+    expect(preview.style.whiteSpace).to.equal("pre-wrap");
+    expect(preview.namespace).to.equal("http://www.w3.org/1999/xhtml");
+    expect(preview.child.data).to.equal(raw);
+    renderer.finalize("final", "<i>stopped</i>");
+    expect(host.innerHTML).to.equal("<final>final<i>stopped</i></final>");
+    expect(host.children).not.to.include(preview);
+  });
+
+  it("replays the buffer when a previously written host is replaced", function () {
+    const first = fakeHost();
+    let mounted = first;
+    const { renderer } = harness({ mount: () => mounted as any });
+    renderer.push("first");
+    renderer.flush();
+    const firstText = first.children[0].child;
+
+    first.isConnected = false;
+    renderer.push(" second");
+    renderer.flush();
+    expect(renderer.metrics.streamingWrites).to.equal(1);
+
+    mounted = fakeHost();
+    renderer.flush();
+    expect(mounted.children[0].child.data).to.equal("first second");
+    expect(firstText.data).to.equal("first");
+
+    mounted.innerHTML = "";
+    renderer.flush();
+    expect(mounted.children[0].child.data).to.equal("first second");
+  });
+
+  it("buffers in a hidden panel and finalizes there even without another delta", function () {
+    const { renderer, host, advance } = harness();
+    host.visible = false;
+    renderer.push("hidden");
+    advance(500);
+    expect(renderer.metrics.streamingWrites).to.equal(0);
+    renderer.finalize();
+    expect(host.innerHTML).to.equal("<final>hidden</final>");
   });
 
   it("does not touch markdown (or katex) while streaming", function () {
@@ -153,7 +214,7 @@ describe("streaming markdown renderer", function () {
     expect(host.children).to.have.length(0);
 
     renderer.flush();
-    expect(host.children[0].data).to.equal("partial");
+    expect(host.children[0].child.data).to.equal("partial");
     expect(renderer.pendingChars).to.equal(0);
   });
 
@@ -203,7 +264,7 @@ describe("streaming markdown renderer", function () {
     renderer.flush();
     const recovered = host as FakeHost;
     expect(recovered.children).to.have.length(1);
-    expect(recovered.children[0].data).to.equal("abc");
+    expect(recovered.children[0].child.data).to.equal("abc");
 
     renderer.finalize();
     expect(recovered.innerHTML).to.equal("<final>abc</final>");

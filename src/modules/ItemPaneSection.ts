@@ -5472,7 +5472,6 @@ function renderChatArea(
           `<strong>${getString("itempane-assistant-label")}</strong><br/>`,
         renderFinal: (markdown, suffixHtml = "") =>
           buildQuickChatAssistantHtml(markdown, suffixHtml),
-        isVisible: () => messagesArea.isConnected !== false,
         onAfterRender: () => scrollQuickChatToBottomIfPinned(),
       });
       const response = await LLMService.chat({

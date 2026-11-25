@@ -26,23 +26,7 @@
 export type StreamingMarkdownPolicy =
   "plain-until-final" | "markdown-coalesced";
 
-type TextNodeLike = {
-  appendData: (data: string) => void;
-};
-
-/** 渲染器只用到宿主元素的一小部分能力，便于测试注入假对象 */
-export type StreamingRenderHost = {
-  /**
-   * 不同 DOM lib 版本对 innerHTML 的签名不同（string 或 string | TrustedHTML），
-   * 这里放宽为 any，避免为了写入一个字符串而引入 TrustedHTML 依赖。
-   */
-  innerHTML: any;
-  appendChild: (node: any) => void;
-  isConnected?: boolean;
-  ownerDocument?: {
-    createTextNode: (text: string) => TextNodeLike;
-  } | null;
-};
+export type StreamingRenderHost = HTMLElement;
 
 export type StreamingMarkdownRendererOptions = {
   /** 每次需要写入时重新解析宿主，元素被移除时返回 null 即可安全跳过 */
@@ -59,7 +43,7 @@ export type StreamingMarkdownRendererOptions = {
   intervalMs?: number;
   /** 不可见时跳过 DOM 写入（内容仍会累积） */
   isVisible?: () => boolean;
-  /** 每次真正写入 DOM 之后调用（滚动、公式调度等放这里） */
+  /** 写入可见 DOM 后调用（滚动、公式调度等放这里） */
   onAfterRender?: () => void;
   /** 以下三个用于测试注入 */
   now?: () => number;
@@ -88,10 +72,10 @@ export class StreamingMarkdownRenderer {
 
   private buffer = "";
   private flushedLength = 0;
-  private textNode: TextNodeLike | null = null;
-  private seeded = false;
+  private textNode: Text | null = null;
+  private renderedHost: StreamingRenderHost | null = null;
   private scheduledHandle: unknown = null;
-  private lastWriteAt = 0;
+  private lastFlushAt = 0;
   private disposed = false;
   private stats: StreamingRenderStats = {
     streamingWrites: 0,
@@ -110,7 +94,7 @@ export class StreamingMarkdownRenderer {
     this.cancel =
       options.cancel ??
       ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
-    this.lastWriteAt = this.now() - this.intervalMs;
+    this.lastFlushAt = this.now() - this.intervalMs;
   }
 
   /** 已累积但尚未写入 DOM 的字符数 */
@@ -144,22 +128,31 @@ export class StreamingMarkdownRenderer {
   flush(): void {
     if (this.disposed) return;
     this.cancelScheduledFlush();
+    this.lastFlushAt = this.now();
     const host = this.options.mount();
-    if (!host) return;
-    if (this.options.isVisible && !this.options.isVisible()) return;
-    if (this.buffer.length === this.flushedLength) return;
+    if (!host || !this.isHostVisible(host)) return;
+
+    // A remount (or a rebuilt message body) needs the whole stream again.
+    if (
+      host !== this.renderedHost ||
+      (this.textNode && !host.contains(this.textNode))
+    ) {
+      this.flushedLength = 0;
+      this.textNode = null;
+      this.renderedHost = host;
+    }
+    if (!this.pendingChars) return;
 
     if (this.policy === "markdown-coalesced") {
       const render = this.options.renderCoalesced ?? this.options.renderFinal;
       host.innerHTML = render(this.buffer);
     } else {
-      const target = this.ensureStreamingDom(host);
-      if (!target) return;
-      target.appendData(this.buffer.slice(this.flushedLength));
+      this.textNode ??= this.createPreview(host);
+      if (!this.textNode) return;
+      this.textNode.appendData(this.buffer.slice(this.flushedLength));
     }
 
     this.flushedLength = this.buffer.length;
-    this.lastWriteAt = this.now();
     this.stats.streamingWrites += 1;
     this.options.onAfterRender?.();
   }
@@ -170,20 +163,16 @@ export class StreamingMarkdownRenderer {
    */
   finalize(markdown?: string, suffixHtml = ""): void {
     if (this.disposed) return;
-    this.cancelScheduledFlush();
+    this.dispose();
     if (typeof markdown === "string") this.buffer = markdown;
     const host = this.options.mount();
-    if (!host) {
-      this.disposed = true;
-      return;
-    }
+    if (!host) return;
+    // Retained panels must already contain the final answer when shown again.
+    const visible = this.isHostVisible(host);
     host.innerHTML = this.options.renderFinal(this.buffer, suffixHtml);
     this.flushedLength = this.buffer.length;
-    this.textNode = null;
-    this.seeded = false;
     this.stats.finalRender += 1;
-    this.options.onAfterRender?.();
-    this.disposed = true;
+    if (visible) this.options.onAfterRender?.();
   }
 
   /** 取消挂起的刷新并释放，不再写 DOM */
@@ -191,13 +180,13 @@ export class StreamingMarkdownRenderer {
     if (this.disposed) return;
     this.cancelScheduledFlush();
     this.textNode = null;
-    this.seeded = false;
+    this.renderedHost = null;
     this.disposed = true;
   }
 
   private scheduleFlush(): void {
     if (this.scheduledHandle !== null || this.disposed) return;
-    const elapsed = this.now() - this.lastWriteAt;
+    const elapsed = this.now() - this.lastFlushAt;
     const delay = elapsed >= this.intervalMs ? 0 : this.intervalMs - elapsed;
     this.scheduledHandle = this.schedule(() => {
       this.scheduledHandle = null;
@@ -215,22 +204,25 @@ export class StreamingMarkdownRenderer {
    * 首次写入时把宿主重置为「固定前缀 + 单个文本节点」，
    * 之后每个 delta 只需 appendData，避免重建 DOM。
    */
-  private ensureStreamingDom(host: StreamingRenderHost): TextNodeLike | null {
-    if (this.seeded && this.textNode) return this.textNode;
-
-    const seed = this.options.renderStreamingSeed?.() ?? "";
-    host.innerHTML = seed;
-
+  private createPreview(host: StreamingRenderHost): Text | null {
     const doc = host.ownerDocument;
-    if (!doc?.createTextNode) {
-      this.seeded = false;
-      this.textNode = null;
-      return null;
-    }
-    const node = doc.createTextNode("");
-    host.appendChild(node);
-    this.textNode = node;
-    this.seeded = true;
-    return node;
+    if (!doc) return null;
+    host.innerHTML = this.options.renderStreamingSeed?.() ?? "";
+    const preview = doc.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "span",
+    ) as HTMLSpanElement;
+    preview.style.whiteSpace = "pre-wrap";
+    const text = doc.createTextNode("");
+    preview.appendChild(text);
+    host.appendChild(preview);
+    return text;
+  }
+
+  private isHostVisible(host: StreamingRenderHost): boolean {
+    return (
+      host.isConnected &&
+      (this.options.isVisible?.() ?? host.getClientRects().length > 0)
+    );
   }
 }

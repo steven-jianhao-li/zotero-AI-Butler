@@ -359,6 +359,25 @@ describe("TaskQueue artifact-aware requeue", function () {
     expect(task.workflowStage).to.equal("等待开始");
   });
 
+  it("requeues a completed table task when forceOverwrite is requested under skip", async function () {
+    const manager = createQueueInternals();
+    const task = createTask(TaskStatus.COMPLETED);
+    stubProbe({ exists: true });
+
+    const shouldRun = await manager.requeueExistingFixedTask(
+      task,
+      item,
+      "tableFill",
+      true,
+      { forceOverwrite: true },
+      "等待开始",
+    );
+
+    expect(shouldRun).to.equal(true);
+    expect(task.status).to.equal(TaskStatus.PRIORITY);
+    expect(task.options?.forceOverwrite).to.equal(true);
+  });
+
   it("keeps processing tasks deduplicated and requeues failed tasks", async function () {
     const manager = createQueueInternals();
     const processingTask = createTask(TaskStatus.PROCESSING);

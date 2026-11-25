@@ -381,6 +381,7 @@ const CONTEXT_MENU_DOM_IDS: Record<ContextMenuItemId, string> = {
   dashboard: "zotero-itemmenu-ai-butler-dashboard",
   imageSummary: "zotero-itemmenu-ai-butler-image-summary",
   mindmap: "zotero-itemmenu-ai-butler-mindmap",
+  refreshTable: "zotero-itemmenu-ai-butler-refresh-table",
   chatWithAI: "zotero-itemmenu-ai-butler-chat",
   literatureReview: "zotero-collectionmenu-ai-butler-literature-review",
   clearCollectionAiNotes:
@@ -1267,6 +1268,20 @@ function registerContextMenuItem(win?: Window) {
         },
         getVisibility: () =>
           isContextMenuItemEnabled("mindmap") && isRegularItemSelection(),
+      },
+    },
+    refreshTable: {
+      scope: "item",
+      options: {
+        tag: "menuitem",
+        id: CONTEXT_MENU_DOM_IDS.refreshTable,
+        label: getString("menuitem-refreshTable"),
+        icon: menuIcon,
+        commandListener: async () => {
+          await handleRefreshTable();
+        },
+        getVisibility: () =>
+          isContextMenuItemEnabled("refreshTable") && isRegularItemSelection(),
       },
     },
     chatWithAI: {
@@ -2695,12 +2710,12 @@ function createDialogCheckbox(
 }
 
 /**
- * 处理填表请求
+ * 刷新文献表格
  *
- * 当用户在文献右键点击"AI管家填表"时触发
- * 为选中文献的 PDF 附件进行填表
+ * 当用户在文献右键点击"AI管家刷新文献表格"时触发
+ * 为选中文献的 PDF 附件重新填表，已有表格强制覆盖
  */
-async function handleFillTable() {
+async function handleRefreshTable() {
   if (!isTableFeatureEnabled()) {
     new ztoolkit.ProgressWindow("AI Butler", {
       closeOnClick: true,
@@ -2732,9 +2747,11 @@ async function handleFillTable() {
     const { TaskQueueManager } = await import("./modules/taskQueue");
     const manager = TaskQueueManager.getInstance();
 
+    let count = 0;
     for (const item of items) {
       if (!item.isRegularItem()) continue;
-      await manager.addTableFillTask(item);
+      await manager.addTableFillTask(item, true, { forceOverwrite: true });
+      count++;
     }
 
     // 打开主窗口并切换到任务队列标签页
@@ -2752,7 +2769,7 @@ async function handleFillTable() {
     })
       .createLine({
         text: getString("table-fill-queue-added", {
-          args: { count: items.length },
+          args: { count },
         }),
         type: "success",
       })

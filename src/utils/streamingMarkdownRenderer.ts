@@ -42,7 +42,7 @@ export type StreamingMarkdownRendererOptions = {
   /** 两次 DOM 写入的最小间隔，默认 120ms */
   intervalMs?: number;
   /** 不可见时跳过 DOM 写入（内容仍会累积） */
-  isVisible?: () => boolean;
+  isVisible?: (host: StreamingRenderHost) => boolean;
   /** 写入可见 DOM 后调用（滚动、公式调度等放这里） */
   onAfterRender?: () => void;
   /** 以下三个用于测试注入 */
@@ -222,7 +222,7 @@ export class StreamingMarkdownRenderer {
   private isHostVisible(host: StreamingRenderHost): boolean {
     return (
       host.isConnected &&
-      (this.options.isVisible?.() ?? host.getClientRects().length > 0)
+      (this.options.isVisible?.(host) ?? host.getClientRects().length > 0)
     );
   }
 }

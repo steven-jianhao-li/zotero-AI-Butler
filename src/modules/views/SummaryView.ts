@@ -60,9 +60,6 @@ export class SummaryView extends BaseView {
   /** 当前条目的容器 */
   private currentItemContainer: HTMLElement | null = null;
 
-  /** 当前条目的内容缓冲区 */
-  private currentItemBuffer: string = "";
-
   /**
    * 输出窗口的流式渲染器：合并 chunk 的 Markdown 渲染与 DOM 写入。
    * 该窗口会夹杂非流式片段（标题、提示语），因此使用 markdown-coalesced
@@ -139,6 +136,8 @@ export class SummaryView extends BaseView {
 
   /** 当前追问请求的中断控制器 */
   private chatAbortController: ChatAbortControllerLike | null = null;
+
+  private chatStreamRenderer: StreamingMarkdownRenderer | null = null;
 
   /** 已保存的追问对（仅限后续追问，不含首轮“提示词+总结”） */
   private chatPairs: Array<{ id: string; user: string; assistant: string }> =
@@ -541,7 +540,8 @@ export class SummaryView extends BaseView {
     }
 
     this.isChatting = true;
-    this.chatAbortController = createChatAbortController();
+    const requestController = createChatAbortController();
+    this.chatAbortController = requestController;
     this.chatSendButton.disabled = false;
     this.chatSendButton.innerHTML = getString("summary-chat-stop");
     this.chatSendButton.style.backgroundColor = "#f44336";
@@ -657,23 +657,22 @@ export class SummaryView extends BaseView {
       }
     }
 
-    let fullResponse = "";
-    // 流式渲染器：合并 delta 的 DOM 写入，收尾时一次性渲染 Markdown/公式
-    let streamRenderer: StreamingMarkdownRenderer | null = null;
+    const streamRenderer = new StreamingMarkdownRenderer({
+      mount: () =>
+        assistantMessageContainer?.querySelector<HTMLElement>(
+          ".chat-message-content",
+        ) ?? null,
+      renderFinal: (markdown, suffixHtml = "") =>
+        SummaryView.convertMarkdownToHTMLCore(markdown) + suffixHtml,
+      isVisible: (host) => this.isVisible && host.getClientRects().length > 0,
+      onAfterRender: () => this.scrollToBottom(),
+    });
+    this.chatStreamRenderer = streamRenderer;
 
     try {
       const { default: LLMService } = await import("../llmService");
+      if (this.chatAbortController !== requestController) return;
 
-      let responseMetadata: LLMNoteMetadata | null = null;
-      streamRenderer = new StreamingMarkdownRenderer({
-        mount: () =>
-          assistantMessageContainer?.querySelector<HTMLElement>(
-            ".chat-message-content",
-          ) ?? null,
-        renderFinal: (markdown, suffixHtml = "") =>
-          SummaryView.convertMarkdownToHTMLCore(markdown) + suffixHtml,
-        onAfterRender: () => this.scrollToBottom(),
-      });
       const response = await LLMService.chat({
         content: {
           kind: "legacy",
@@ -683,18 +682,17 @@ export class SummaryView extends BaseView {
         },
         conversation: requestConversation,
         transport: {
-          abortSignal: this.chatAbortController?.signal,
+          abortSignal: requestController.signal,
         },
-        onProgress: (chunk: string) => {
-          fullResponse += chunk;
-          // 只累积 + 合并调度：流式期不做 Markdown/公式渲染
-          streamRenderer?.push(chunk);
-        },
+        onProgress: (chunk: string) => streamRenderer.push(chunk),
       });
-      fullResponse = response.text;
-      responseMetadata = LLMNoteMetadataService.fromResponse("chat", response);
-      // 完成后一次性渲染 Markdown（含公式）
-      streamRenderer?.finalize(fullResponse);
+      if (this.chatAbortController !== requestController) return;
+      const fullResponse = response.text;
+      const responseMetadata = LLMNoteMetadataService.fromResponse(
+        "chat",
+        response,
+      );
+      streamRenderer.finalize(fullResponse);
 
       // 完成后再写入上下文；中断/失败不会污染后续追问。
       this.conversationHistory.push({
@@ -725,19 +723,19 @@ export class SummaryView extends BaseView {
         );
       }
     } catch (error: any) {
-      if (isChatAbortError(error, this.chatAbortController?.signal)) {
+      if (this.chatAbortController !== requestController) return;
+      if (isChatAbortError(error, requestController.signal)) {
         if (assistantMessageContainer) {
           const contentDiv = assistantMessageContainer.querySelector(
             ".chat-message-content",
           ) as HTMLElement;
           if (contentDiv) {
-            if (fullResponse) {
-              streamRenderer?.finalize(
-                fullResponse,
+            if (streamRenderer.text) {
+              streamRenderer.finalize(
+                undefined,
                 `<p style="color: #777; font-size: 12px;">${getString("summary-chat-stopped-not-saved")}</p>`,
               );
             } else {
-              streamRenderer?.dispose();
               contentDiv.innerHTML = `<p style="color: #777;">${getString("summary-chat-stopped-empty")}</p>`;
             }
           }
@@ -755,20 +753,26 @@ export class SummaryView extends BaseView {
         }
       }
     } finally {
-      streamRenderer?.dispose();
-      this.isChatting = false;
-      this.chatAbortController = null;
-      if (this.chatSendButton) {
-        this.chatSendButton.disabled = false;
-        this.chatSendButton.innerHTML = getString("summary-chat-send");
-        this.chatSendButton.style.backgroundColor = "var(--ai-accent)";
-        this.chatSendButton.style.color = "#ffffff";
-      }
-      if (this.chatInput) {
-        this.chatInput.disabled = false;
-        this.chatInput.focus();
+      if (this.chatAbortController === requestController) {
+        this.resetChatRequest();
+        this.chatInput?.focus();
       }
     }
+  }
+
+  private resetChatRequest(abortReason?: string): void {
+    if (abortReason) this.chatAbortController?.abort(abortReason);
+    this.chatStreamRenderer?.dispose();
+    this.chatStreamRenderer = null;
+    this.chatAbortController = null;
+    this.isChatting = false;
+    if (this.chatSendButton) {
+      this.chatSendButton.disabled = false;
+      this.chatSendButton.innerHTML = getString("summary-chat-send");
+      this.chatSendButton.style.backgroundColor = "var(--ai-accent)";
+      this.chatSendButton.style.color = "#ffffff";
+    }
+    if (this.chatInput) this.chatInput.disabled = false;
   }
 
   private abortActiveChat(): void {
@@ -1157,12 +1161,10 @@ export class SummaryView extends BaseView {
   /**
    * 清除论文上下文
    */
-  public clearPaperContext(): void {
-    this.chatAbortController?.abort(
-      getString("summary-chat-abort-context-cleared"),
-    );
-    this.chatAbortController = null;
-    this.isChatting = false;
+  public clearPaperContext(
+    reason = getString("summary-chat-abort-context-cleared"),
+  ): void {
+    this.resetChatRequest(reason);
     this.currentItemId = null;
     this.currentPdfContent = "";
     this.currentIsBase64 = false;
@@ -1657,6 +1659,11 @@ export class SummaryView extends BaseView {
     }
   }
 
+  protected onShow(): void {
+    this.itemStreamRenderer?.flush();
+    this.chatStreamRenderer?.flush();
+  }
+
   /**
    * 初始化 KaTeX CSS 样式
    *
@@ -1741,6 +1748,7 @@ export class SummaryView extends BaseView {
    */
   private scrollToBottom(): void {
     if (
+      !this.isVisible ||
       !this.scrollArea ||
       this.userHasScrolled ||
       getPref("autoScroll") === false
@@ -1752,6 +1760,7 @@ export class SummaryView extends BaseView {
     // 使用 setTimeout 确保在 DOM 更新后滚动
     setTimeout(() => {
       if (
+        this.isVisible &&
         this.scrollArea === area &&
         !this.userHasScrolled &&
         getPref("autoScroll") !== false
@@ -1961,6 +1970,7 @@ export class SummaryView extends BaseView {
    */
   public startItem(itemTitle: string): void {
     if (!this.outputContainer) return;
+    this.finishItem();
 
     // 隐藏加载状态(如果存在)
     this.hideLoading();
@@ -2015,15 +2025,11 @@ export class SummaryView extends BaseView {
     // 应用主题到新添加的元素
     this.applyTheme();
 
-    // 重置缓冲区（并重建流式渲染器，绑定到新的内容容器）
-    this.currentItemBuffer = "";
-    this.itemStreamRenderer?.dispose();
     this.itemStreamRenderer = new StreamingMarkdownRenderer({
       mount: () => contentElement,
       policy: "markdown-coalesced",
-      renderCoalesced: (markdown) => this.convertMarkdownToHTML(markdown),
       renderFinal: (markdown) => this.convertMarkdownToHTML(markdown),
-      isVisible: () => Boolean(contentElement.isConnected),
+      isVisible: () => this.isVisible,
       onAfterRender: () => {
         this.scheduleRenderMath();
         this.scrollToBottom();
@@ -2182,13 +2188,6 @@ export class SummaryView extends BaseView {
   }
 
   public appendContent(chunk: string): void {
-    if (!this.currentItemContainer) return;
-
-    // 累积内容
-    this.currentItemBuffer += chunk;
-
-    // 合并渲染：Markdown 与滚动/公式调度都收敛到每个 interval 一次，
-    // 避免每个 stream chunk 都全量 parse + 全量替换 innerHTML。
     this.itemStreamRenderer?.push(chunk);
   }
 
@@ -2198,17 +2197,20 @@ export class SummaryView extends BaseView {
   public finishItem(): void {
     if (!this.currentItemContainer) return;
 
-    // 落盘最后的增量，并释放流式渲染器
-    this.itemStreamRenderer?.flush();
+    try {
+      // A hidden tab still needs its last buffered Markdown for the next show().
+      if (this.itemStreamRenderer?.pendingChars)
+        this.itemStreamRenderer.finalize();
+      if (this.isVisible) this.renderMath();
+    } finally {
+      this.resetItemStream();
+    }
+  }
+
+  private resetItemStream(): void {
     this.itemStreamRenderer?.dispose();
     this.itemStreamRenderer = null;
-
-    // 最终渲染一次数学公式
-    this.renderMath();
-
-    // 清空引用
     this.currentItemContainer = null;
-    this.currentItemBuffer = "";
   }
 
   /**
@@ -2543,7 +2545,8 @@ export class SummaryView extends BaseView {
     }
 
     this.renderMathTimer = setTimeout(() => {
-      this.renderMath();
+      this.renderMathTimer = null;
+      if (this.isVisible) this.renderMath();
     }, 500);
   }
 
@@ -2571,10 +2574,10 @@ export class SummaryView extends BaseView {
       // 重新显示初始提示
       this.showInitialHint();
     }
-    this.itemStreamRenderer?.dispose();
-    this.itemStreamRenderer = null;
-    this.currentItemContainer = null;
-    this.currentItemBuffer = "";
+    this.resetItemStream();
+    if (this.chatAbortController) {
+      this.resetChatRequest(getString("summary-chat-abort-context-cleared"));
+    }
     this.userHasScrolled = false;
     this.updateQueueButton("ready");
   }
@@ -2585,10 +2588,8 @@ export class SummaryView extends BaseView {
    * @protected
    */
   protected onDestroy(): void {
-    this.chatAbortController?.abort(
-      getString("summary-chat-abort-view-closed"),
-    );
-    this.chatAbortController = null;
+    this.resetItemStream();
+    this.clearPaperContext(getString("summary-chat-abort-view-closed"));
 
     // 清理计时器
     if (this.renderMathTimer) {
@@ -2602,7 +2603,14 @@ export class SummaryView extends BaseView {
     }
 
     this.outputContainer = null;
-    this.currentItemContainer = null;
+    this.deepReadProgressContainer = null;
+    this.deepReadProgressRows.clear();
+    this.deepReadRetryHandler = null;
+    this.chatContainer = null;
+    this.chatSendButton = null;
+    this.chatInput = null;
+    this.userHasScrolled = false;
+    this.lastScrollTop = 0;
     this.queueButton = null;
     this.scrollContainer = null;
     this.scrollArea = null;

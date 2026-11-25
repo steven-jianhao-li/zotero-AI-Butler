@@ -239,3 +239,15 @@ agent-runtime-approved = 已允许：{ $tool }
 agent-runtime-declined = 已拒绝：{ $tool }
 agent-runtime-approval = 请检查拟执行的文献库修改：{ $tool }
 agent-runtime-step-limit = Agent 已达到 { $count } 步运行预算。证据和进度已保存，可发送追问继续。
+
+agent-web-search = 网页搜索
+agent-web-parallel = Parallel（无需 API 密钥）
+agent-web-disabled = 禁用（仅本地文献库）
+agent-web-help = 向 Parallel 发送公开的研究查询和网址。仅研究本地文献时请禁用。
+agent-web-invalid-provider = 无效的网页搜索服务。
+agent-web-invalid-response = Parallel 返回了无效的 MCP 响应。
+agent-web-service-error = Parallel 无法完成此请求。请稍后重试或继续使用本地资料。
+agent-web-rate-limit = 已达到 Parallel 免费搜索限额。请稍后重试或继续使用本地资料。
+agent-web-timeout = Parallel 搜索请求超时。
+agent-web-tool-unavailable = 请求的 Parallel 工具不可用。
+agent-web-invalid-url = 仅支持不含凭据的 HTTP(S) 网址。

@@ -201,3 +201,31 @@ or copied application framework was introduced:
 - [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness/tree/5badb15009ae1756c3afe0ae0cef1faafc290ccc): balanced loop history, compaction envelope, interruption and bounded teams.
 - [dsh-desktop](https://github.com/dataelement/dsh-desktop/tree/beb6821af66d5980b2526ecb63b2df29badf4a1f): session sidebar, centered conversation/composer and secondary activity panel.
 - [beaver-zotero](https://github.com/jlegewie/beaver-zotero/tree/b87cf998d6e326c6fa82a5eb5af4af57ef23cc43): paginated note disclosure, library scoping and audited write boundaries.
+
+## Public web evidence
+
+`AgentService` resolves the session's `webSearch` setting: unconfigured sessions
+use Parallel Search MCP, and `disabled` removes both `web_search` and
+`web_fetch` before the model turn. The existing endpoint, PDF policy and library
+permissions still apply. The existing run-settings picker saves this choice with
+the conversation. Read-only teammates receive the same enabled web tools.
+
+`parallelSearchClient.ts` uses native `Zotero.HTTP.request` for MCP Streamable
+HTTP initialization, tool discovery and execution at
+`https://search.parallel.ai/mcp`. JSON and SSE responses are accepted. Requests
+have a 60-second timeout, cancellation aborts XHR, and failures return to the
+normal tool-error ledger without a provider fallback. Only text tool content is
+returned as evidence; the runtime's existing artifact and context bounds apply.
+
+`AgentService` creates an opaque UUID for each conversation before its first
+enabled run. The durable `webSearchSessionId` is supplied outside model-selected
+arguments and reused for search, fetch, follow-ups and retries. New conversations
+get independent IDs; concurrent sessions never mutate the shared client's
+identity. MCP connection headers remain local to each call.
+
+The tools send model-selected public research queries and URLs to Parallel,
+not an automatic copy of library notes or PDFs. Prompt instructions treat web
+results as untrusted evidence and require source URLs. Disabling web search
+makes no MCP requests. HTTP(S) fetch URLs with embedded credentials are rejected.
+Anonymous searches use Fast mode without an API key and are subject to service
+limits. Search errors do not count as evidence.

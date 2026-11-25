@@ -10,6 +10,7 @@ export interface AgentRunOptions {
   endpointId?: string;
   deepReadEndpointId?: string;
   pdfPolicy: LLMContentPolicy;
+  webSearch?: "parallel" | "disabled";
   selectedItemIds: number[];
   libraryID: number;
   contextWindowTokens: number;
@@ -77,6 +78,8 @@ export interface AgentSession {
   options: AgentRunOptions;
   /** Endpoint pinned for this run; options.endpointId may still mean automatic. */
   activeEndpointId?: string;
+  /** Opaque external-search identity, stable for this conversation and follow-ups. */
+  webSearchSessionId?: string;
   messages: LLMAgentMessage[];
   events: AgentEvent[];
   plan: AgentPlanStep[];
@@ -105,6 +108,7 @@ export function defaultAgentOptions(libraryID = 1): AgentRunOptions {
   return {
     permission: "read-only",
     pdfPolicy: "auto",
+    webSearch: "parallel",
     selectedItemIds: [],
     libraryID,
     contextWindowTokens: 262144,

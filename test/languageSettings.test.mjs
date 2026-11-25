@@ -92,7 +92,9 @@ function settingsFixture(initialPrefs) {
     "../../../utils/promptLanguageSelect": load("utils/promptLanguageSelect", {
       "./prompts": prompts,
     }),
-    "../ui/components": load("modules/views/ui/components", {}),
+    "../ui/components": load("modules/views/ui/components", {
+      "../../../utils/locale": locale,
+    }),
   };
   const { PromptsSettingsPage } = load(
     "modules/views/settings/PromptsSettingsPage",
@@ -111,6 +113,22 @@ function settingsFixture(initialPrefs) {
     prefs,
     prompts,
     dataPage,
+    openTableSettings() {
+      const start = elements.length;
+      promptPage.renderTableSettings(document.body);
+      const section = elements.slice(start);
+      return {
+        editors: section.filter((node) => node.tag === "textarea"),
+        save() {
+          section
+            .find(
+              (node) =>
+                node.innerHTML === "settings-prompts-save-table-settings",
+            )
+            .dispatchEvent(new Event("click"));
+        },
+      };
+    },
     change(id, value, event = "change") {
       const element = elements.find((node) => node.id === "setting-" + id);
       element.value = value;
@@ -149,6 +167,44 @@ test("only changing the native template selector updates an untouched built-in p
   prefs.set("summaryPrompt", "My own template");
   change("promptLanguage", "en-US");
   assert.equal(prefs.get("summaryPrompt"), "My own template");
+});
+
+test("untouched saved table settings follow the selected prompt language", () => {
+  const { openTableSettings, change, prompts } = settingsFixture({
+    promptLanguage: "zh-CN",
+  });
+  openTableSettings().save();
+  change("promptLanguage", "en-US");
+  assert.deepEqual(
+    openTableSettings().editors.map((editor) => editor.value),
+    [
+      prompts.DEFAULT_TABLE_TEMPLATE_EN,
+      prompts.DEFAULT_TABLE_FILL_PROMPT_EN,
+      prompts.DEFAULT_TABLE_REVIEW_PROMPT_EN,
+    ],
+  );
+});
+
+test("edited table settings survive saving and reopening in another prompt language", () => {
+  const { openTableSettings, change } = settingsFixture({
+    promptLanguage: "zh-CN",
+  });
+  const {
+    editors: [template, fill, review],
+    save,
+  } = openTableSettings();
+  template.value = template.value.replace(
+    "| 论文标题 | |",
+    "| 论文标题 | |\n| 标题翻译 | |",
+  );
+  fill.value += "\n为标题提供译文。";
+  review.value += "\n综述中引用标题译文。";
+  save();
+  change("promptLanguage", "en-US");
+  assert.deepEqual(
+    openTableSettings().editors.map((editor) => editor.value),
+    [template.value, fill.value, review.value],
+  );
 });
 
 test("language settings round-trip through export, reset and import, including older backups", () => {

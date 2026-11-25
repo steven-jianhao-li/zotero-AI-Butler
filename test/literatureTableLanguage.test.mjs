@@ -6,7 +6,7 @@ import vm from "node:vm";
 import { transformSync } from "esbuild";
 import { marked } from "marked";
 
-function fixture(language, reply) {
+function fixture(language, reply, savedPrefs = {}) {
   const item = { id: 1, libraryID: 7, getField: () => "Example" };
   const pdf = { parentID: item.id };
   const requests = [];
@@ -42,7 +42,7 @@ function fixture(language, reply) {
   };
   const prefs = {
     getPref: (key) =>
-      ({ outputLanguage: language, tableStrategy: "skip" })[key],
+      ({ outputLanguage: language, tableStrategy: "skip", ...savedPrefs })[key],
   };
   const locale = {
     getString: (key, options) =>
@@ -73,9 +73,16 @@ function fixture(language, reply) {
       "../utils/prefs": prefs,
       "../utils/locale": locale,
       "../utils/outputLanguage": output,
-      "../utils/prompts": {
-        getConfiguredTableFillPrompt: () => "Fill " + "${tableTemplate}",
-      },
+      "../utils/prompts": load("utils/prompts", {
+        "./prefs": prefs,
+        "./locale": locale,
+        "../defaults/prompts/deep-read.json": JSON.parse(
+          readFileSync(
+            new URL("../src/defaults/prompts/deep-read.json", import.meta.url),
+            "utf8",
+          ),
+        ),
+      }),
       "./literatureTable": table,
       "./llmService": {
         generate: async (request) => {
@@ -108,6 +115,7 @@ function fixture(language, reply) {
     saves,
     service,
     item,
+    review: () => service.generateReview({}, [pdf], "Review", ""),
     fill: (schema, prompt = "Fill ${tableTemplate}") =>
       service.fillTableForSingleAttachment(item, pdf, schema, prompt),
     append: (schema, keys) =>
@@ -128,6 +136,26 @@ const zhTemplate = zhHeader + "\n| 样本 | | |\n| 发现 | | |";
 const filled =
   zhHeader + "\n| 样本 | Ten | p. 3 |\n| 发现 | Effective | p. 4 |";
 const enTemplate = "| Field | Value |\n|---|---|\n| Sample | |";
+
+test("review requests use the saved table and instructions even when they share built-in phrases", async () => {
+  const tableTemplate =
+    "| Dimension | Content |\n|---|---|\n| Translated title | |";
+  const tableFillPrompt =
+    "Write in English and translate the title.\n${tableTemplate}";
+  const tableReviewPrompt =
+    "Read the following academic papers and compare the translated titles.";
+  const f = fixture("", tableTemplate, {
+    tableTemplate,
+    tableFillPrompt,
+    tableReviewPrompt,
+  });
+  await f.review();
+  assert.equal(
+    f.requests[0],
+    tableFillPrompt.replace("${tableTemplate}", tableTemplate),
+  );
+  assert.ok(f.requests[1].startsWith(tableReviewPrompt));
+});
 
 test("full fills translate values in either direction while keeping exact headers and keys", async () => {
   const zh = fixture("English", filled);

@@ -13,6 +13,7 @@
 import { config } from "../../package.json";
 import { getString, getLocaleID } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
+import { StreamingMarkdownRenderer } from "../utils/streamingMarkdownRenderer";
 import { registerLegacySidebar } from "../compatibility/legacyUi";
 import { isLegacyHost } from "../compatibility/host";
 import {
@@ -5389,6 +5390,8 @@ function renderChatArea(
     inputBox.value = "";
     resizeQuickChatInput();
     let fullResponse = "";
+    // 流式渲染器：合并 delta 的 DOM 写入，收尾时一次性渲染 Markdown/公式
+    let streamRenderer: StreamingMarkdownRenderer | null = null;
 
     try {
       const { default: LLMService } = await import("./llmService");
@@ -5463,6 +5466,14 @@ function renderChatArea(
       );
 
       let responseMetadata: LLMNoteMetadata | null = null;
+      streamRenderer = new StreamingMarkdownRenderer({
+        mount: () => aiMsgDiv,
+        renderStreamingSeed: () =>
+          `<strong>${getString("itempane-assistant-label")}</strong><br/>`,
+        renderFinal: (markdown, suffixHtml = "") =>
+          buildQuickChatAssistantHtml(markdown, suffixHtml),
+        onAfterRender: () => scrollQuickChatToBottomIfPinned(),
+      });
       const response = await LLMService.chat({
         content: {
           kind: "legacy",
@@ -5477,18 +5488,16 @@ function renderChatArea(
         onProgress: (chunk: string) => {
           if (!isCurrentRequest()) return;
           fullResponse += chunk;
-          const shouldFollowStream = quickChatPinnedToBottom;
-          // Update streaming AI response
-          updateQuickChatAssistantMessage(aiMsgDiv, fullResponse);
-          scrollQuickChatToBottomIfPinned(shouldFollowStream);
+          // 只累积 + 合并调度：流式期不做 Markdown/公式渲染
+          streamRenderer?.push(chunk);
         },
       });
       if (!isCurrentRequest()) return;
       fullResponse = response.text;
       responseMetadata = LLMNoteMetadataService.fromResponse("chat", response);
 
-      // 完成后最终更新
-      updateQuickChatAssistantMessage(aiMsgDiv, fullResponse);
+      // 完成后一次性渲染 Markdown（含公式）
+      streamRenderer?.finalize(fullResponse);
 
       const answer: ChatPersistMessage = {
         role: "assistant",
@@ -5512,19 +5521,21 @@ function renderChatArea(
       if (!isCurrentRequest()) return;
       if (isChatAbortError(err, requestController.signal)) {
         if (fullResponse) {
-          updateQuickChatAssistantMessage(
-            aiMsgDiv,
+          streamRenderer?.finalize(
             fullResponse,
             `<div style="color: #777; font-size: 11px; margin-top: 6px;">${getString("itempane-stopped-note")}</div>`,
           );
         } else {
+          streamRenderer?.dispose();
           aiMsgDiv.innerHTML = `<strong>${getString("itempane-assistant-label")}</strong> <span style="color: #777;">${getString("itempane-stopped-empty")}</span>`;
         }
         return;
       }
       ztoolkit.log("[AI-Butler] 快速追问发送失败:", err);
+      streamRenderer?.dispose();
       aiMsgDiv.innerHTML = `<strong>${getString("itempane-assistant-label")}</strong> <span style="color: #f44336;">${getString("itempane-error", { args: { error: err?.message || getString("itempane-send-failed") } })}</span>`;
     } finally {
+      streamRenderer?.dispose();
       // 恢复状态
       if (isCurrentRequest()) {
         currentChatState.isChatting = false;

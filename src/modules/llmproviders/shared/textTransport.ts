@@ -49,6 +49,7 @@ export class TextResponseParser {
   private terminal = false;
   private failure = "";
   private reason = "";
+  private providerFinishReason?: string;
   private text = "";
   private requestId: string | undefined;
   private usage: LLMUsage = {};
@@ -64,15 +65,18 @@ export class TextResponseParser {
     this.onText?.(text);
   }
 
-  private recordReason(reason: string): void {
+  private recordReason(reported: string, fallback = ""): void {
+    const reason = reported || fallback;
     if (!reason) return;
     // Once a model reports truncation or another abnormal stop, a later normal
     // terminal marker from a gateway must not erase it.
     if (
       !this.reason ||
       completionForReason(this.reason).completion === "complete"
-    )
+    ) {
       this.reason = reason;
+      this.providerFinishReason = reported || undefined;
+    }
   }
 
   private readUsage(value: unknown): void {
@@ -193,7 +197,7 @@ export class TextResponseParser {
       this.readUsage(event);
       if (event.done === true) {
         this.terminal = true;
-        this.recordReason(string(event.done_reason) || "stop");
+        this.recordReason(string(event.done_reason), "stop");
       }
     }
   }
@@ -265,6 +269,7 @@ export class TextResponseParser {
     return {
       text: this.text,
       ...state,
+      providerFinishReason: this.providerFinishReason,
       finishReason:
         !this.text.trim() &&
         state.completion === "partial" &&

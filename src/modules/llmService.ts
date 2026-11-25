@@ -51,6 +51,7 @@ import {
 import type {
   ConversationMessage,
   LLMAbortSignal,
+  LLMContinuationRoundDiagnostic,
   LLMOptions,
   LLMModelInfo,
   LLMProviderCapabilities,
@@ -826,6 +827,7 @@ export class LLMService {
   }> {
     let result = initial;
     let rounds = 0;
+    const diagnostics: LLMContinuationRoundDiagnostic[] = [];
     while (
       rounds < this.getAutoContinuationRounds() &&
       result.recovery === "continue"
@@ -838,6 +840,12 @@ export class LLMService {
       } catch (error) {
         if (isAbortError(error, options.abortSignal))
           throw normalizeAbortError(error, options.abortSignal);
+        diagnostics.push({
+          round: rounds,
+          finishReason: "continuation_failed",
+          receivedChars: 0,
+          addedChars: 0,
+        });
         result = {
           ...result,
           completion: "partial",
@@ -865,7 +873,15 @@ export class LLMService {
         ),
       };
       // A duplicate/empty continuation is not evidence that the missing answer was completed.
-      if (!added.trim() || result.text.includes(next.text.trim())) {
+      const noProgress =
+        !added.trim() || result.text.includes(next.text.trim());
+      diagnostics.push({
+        round: rounds,
+        finishReason: next.providerFinishReason ?? next.finishReason,
+        receivedChars: next.text.length,
+        addedChars: noProgress ? 0 : added.length,
+      });
+      if (noProgress) {
         result = {
           ...next,
           text: result.text,
@@ -888,6 +904,17 @@ export class LLMService {
       }
     }
     result.continuationRounds = rounds;
+    if (rounds > 0) {
+      result.continuationDiagnostics = [
+        {
+          round: 0,
+          finishReason: initial.providerFinishReason ?? initial.finishReason,
+          receivedChars: initial.text.length,
+          addedChars: initial.text.length,
+        },
+        ...diagnostics,
+      ];
+    }
     return { result, rounds };
   }
 
@@ -1416,6 +1443,14 @@ export class LLMService {
           options,
           warnings,
         ),
+        result.continuationDiagnostics
+          ? [
+              {
+                endpointId: endpoint.id,
+                rounds: result.continuationDiagnostics,
+              },
+            ]
+          : [],
       );
     }
   }

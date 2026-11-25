@@ -110,17 +110,27 @@ export type LLMUsage = {
   totalTokens?: number;
 };
 
+export type LLMContinuationRoundDiagnostic = {
+  /** Round 0 is the initial answer. */
+  round: number;
+  finishReason: string;
+  receivedChars: number;
+  addedChars: number;
+};
+
 /** A transport ending is separate from the model completing its answer. */
 export type LLMProviderResult = {
   text: string;
   completion: "complete" | "partial";
   finishReason: string;
+  providerFinishReason?: string;
   recovery: "none" | "continue" | "retry";
   usage?: LLMUsage;
   requestId?: string;
   maxOutputTokens?: number;
   error?: string;
   continuationRounds?: number;
+  continuationDiagnostics?: LLMContinuationRoundDiagnostic[];
   requestDiagnostics?: LLMRequestDiagnostics;
 };
 

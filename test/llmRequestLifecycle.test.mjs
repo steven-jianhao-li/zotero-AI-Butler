@@ -539,3 +539,71 @@ for (const [providerType, message, expectHint] of [
     }
   });
 }
+
+for (const lastText of ["", "private draft"]) {
+  test(`copied diagnostics distinguish ${lastText ? "duplicate" : "empty"} Ollama continuations`, async (t) => {
+    const h = host(t);
+    const { q, task } = queue(h, "pending");
+    h.LLMEndpointManager.saveEndpoints([
+      { ...endpoint(h), providerType: "ollama" },
+    ]);
+    const first = "private draft";
+    const replies = [first, " with new text", lastText];
+    let calls = 0;
+    h.globals.Zotero.HTTP = {
+      request: async () => {
+        const content = replies[calls++];
+        return {
+          status: 200,
+          response: JSON.stringify({
+            message: { content },
+            done: true,
+            done_reason: calls === 3 ? "stop" : "length",
+          }),
+        };
+      },
+    };
+    h.ContentExtractor.hasAnalyzableAttachment = async () => true;
+    h.NoteGenerator.generateNoteForItem = () =>
+      h.LLMService.chat({
+        content: { kind: "text", text: "private paper" },
+        conversation: [{ role: "user", content: "private prompt" }],
+      });
+    await q.executeTask(task.id);
+    assert.equal(calls, 3);
+    assert.equal(task.status, "failed");
+    assert.match(
+      task.error,
+      lastText ? /continuation_no_progress/ : /empty_output/,
+    );
+    assert.doesNotMatch(task.errorDetails, /private (draft|paper|prompt)/);
+    const diagnosticText = task.errorDetails
+      .split("--- continuation diagnostics ---\n")[1]
+      .split("\n\n")[0];
+    assert.deepEqual(JSON.parse(diagnosticText), [
+      {
+        endpointId: "one",
+        rounds: [
+          {
+            round: 0,
+            finishReason: "length",
+            receivedChars: first.length,
+            addedChars: first.length,
+          },
+          {
+            round: 1,
+            finishReason: "length",
+            receivedChars: replies[1].length,
+            addedChars: replies[1].length,
+          },
+          {
+            round: 2,
+            finishReason: "stop",
+            receivedChars: lastText.length,
+            addedChars: 0,
+          },
+        ],
+      },
+    ]);
+  });
+}

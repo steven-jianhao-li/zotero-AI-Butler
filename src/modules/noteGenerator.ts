@@ -770,15 +770,22 @@ export class NoteGenerator {
             .join("\n\n");
         })
         .join("\n\n---\n\n");
-      throw new LLMIncompleteError({
-        text: draft,
-        providerId: "multi-model",
-        providerName: endpoints.map((endpoint) => endpoint.name).join(", "),
-        generatedAt: new Date().toISOString(),
-        completion: "partial",
-        recovery: "none",
-        finishReason: "multi_model_incomplete",
-      });
+      throw new LLMIncompleteError(
+        {
+          text: draft,
+          providerId: "multi-model",
+          providerName: endpoints.map((endpoint) => endpoint.name).join(", "),
+          generatedAt: new Date().toISOString(),
+          completion: "partial",
+          recovery: "none",
+          finishReason: "multi_model_incomplete",
+        },
+        failures.flatMap(({ error }) =>
+          error instanceof LLMIncompleteError
+            ? error.continuationDiagnostics
+            : [],
+        ),
+      );
     }
 
     if (successes.length === 0) {

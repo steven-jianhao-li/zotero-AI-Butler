@@ -436,7 +436,7 @@ export class ChatPersist {
     context?: ChatPersistContext,
   ): boolean {
     const thread = this.getThread(itemId, threadId);
-    const pending = thread?.messages.at(-1);
+    const pending = thread?.messages[thread.messages.length - 1];
     if (
       !thread ||
       pending?.role !== "user" ||

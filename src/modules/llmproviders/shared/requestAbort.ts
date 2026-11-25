@@ -93,6 +93,22 @@ export function raceAbortSignal(signal?: LLMAbortSignal): {
   return { promise, dispose };
 }
 
+/** Release the caller even when an in-flight host operation ignores cancellation. */
+export async function waitWithAbort<T>(
+  operation: Promise<T>,
+  signal?: LLMAbortSignal,
+): Promise<T> {
+  if (!signal) return operation;
+  const abort = raceAbortSignal(signal);
+  try {
+    const result = await Promise.race([operation, abort.promise]);
+    throwIfAborted(signal);
+    return result;
+  } finally {
+    abort.dispose();
+  }
+}
+
 export function bindAbortSignal(
   signal: LLMAbortSignal | undefined,
   xmlhttp: XMLHttpRequest,

@@ -1,4 +1,10 @@
 import { getString } from "../utils/locale";
+import {
+  isAbortError,
+  throwIfAborted,
+  waitWithAbort,
+} from "./llmproviders/shared/requestAbort";
+import type { LLMAbortSignal } from "./llmproviders/types";
 import { AiNoteService } from "./aiNoteService";
 import { ContentExtractor } from "./contentExtractor";
 import { LLMNoteMetadataService } from "./llmNoteMetadata";
@@ -51,6 +57,7 @@ export interface QuickChatRelatedValidation {
 }
 
 export interface QuickChatRelatedContextDeps {
+  abortSignal?: LLMAbortSignal;
   getItemById?: (itemId: number) => Promise<Zotero.Item | null>;
   getSummaryMarkdown?: (item: Zotero.Item) => Promise<string | null>;
   getFullText?: (item: Zotero.Item) => Promise<string>;
@@ -179,6 +186,8 @@ export async function resolveQuickChatRelatedContext(
   mode: QuickChatRelatedMode,
   deps: QuickChatRelatedContextDeps = {},
 ): Promise<QuickChatRelatedContextResult> {
+  const { abortSignal } = deps;
+  throwIfAborted(abortSignal);
   const normalizedMode = normalizeQuickChatRelatedMode(mode);
   const limit = getQuickChatRelatedLimit(normalizedMode);
   const uniqueRefs = mergeQuickChatRelatedItemRefs([], refs).items.slice(
@@ -197,7 +206,11 @@ export async function resolveQuickChatRelatedContext(
       break;
     }
 
-    const item = await getRelatedItem(ref.itemId, deps);
+    const item = await waitWithAbort(
+      getRelatedItem(ref.itemId, deps),
+      abortSignal,
+    );
+    throwIfAborted(abortSignal);
     if (!item) {
       skipped.push({ ref, reason: "missing-item" });
       continue;
@@ -205,11 +218,15 @@ export async function resolveQuickChatRelatedContext(
 
     let rawContent: string | null;
     try {
-      rawContent =
+      rawContent = await waitWithAbort(
         normalizedMode === "summary"
-          ? await getSummaryMarkdown(item, deps)
-          : await getFullText(item, deps);
+          ? getSummaryMarkdown(item, deps)
+          : getFullText(item, deps),
+        abortSignal,
+      );
+      throwIfAborted(abortSignal);
     } catch (error) {
+      if (isAbortError(error, abortSignal)) throw error;
       skipped.push({
         ref,
         reason: "extract-failed",
@@ -306,6 +323,7 @@ async function getSummaryMarkdown(
   if (deps.getSummaryMarkdown) return deps.getSummaryMarkdown(item);
 
   const record = await AiNoteService.findNoteRecord(item, "summary");
+  throwIfAborted(deps.abortSignal);
   if (!record) return null;
 
   const blocks = LLMNoteMetadataService.parseSummaryBlocks(record.rawHtml);
@@ -327,7 +345,12 @@ async function getFullText(
   deps: QuickChatRelatedContextDeps,
 ): Promise<string> {
   if (deps.getFullText) return deps.getFullText(item);
-  return ContentExtractor.extractTextFromItem(item, "text");
+  return ContentExtractor.extractTextFromItem(
+    item,
+    "text",
+    undefined,
+    deps.abortSignal,
+  );
 }
 
 function hasRenderableHtml(html: string): boolean {

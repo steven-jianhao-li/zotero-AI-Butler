@@ -489,7 +489,18 @@ async function chatProfile(t) {
     write: (file, value) => writeFile(file, value, "utf8"),
     join: path.join,
   };
-  return async (chat, imports = {}) => {
+  return async (chat, imports = {}, globals = {}) => {
+    const deps = {
+      "../utils/locale": locale,
+      "./llmproviders/shared/requestAbort": load(
+        moduleSource("llmproviders/shared/requestAbort"),
+        {
+          "../../../utils/locale": locale,
+        },
+      ),
+      ...imports,
+    };
+    deps["./contentExtractor"] = load(moduleSource("contentExtractor"), deps);
     const chatPersist = new ChatPersist(io);
     await chatPersist.ensureLoaded();
     const ui = sidebar({
@@ -502,20 +513,24 @@ async function chatProfile(t) {
       }),
       "./quickChatRelatedContext": load(
         moduleSource("quickChatRelatedContext"),
-        { "../utils/locale": locale },
+        deps,
+        globals,
       ),
-      "./llmService": { __esModule: true, default: { chat } },
+      "./llmService": {
+        __esModule: true,
+        default: { chat, getEffectivePdfProcessMode: () => "text" },
+      },
       "./llmNoteMetadata": {
         LLMNoteMetadataService: { fromResponse: () => null },
       },
-      ...imports,
+      ...deps,
     });
-    async function open(itemId = 7) {
+    async function open(itemId = 7, preload = false) {
       const panel = new Element("div");
-      ui.renderChatArea(panel, doc, { id: itemId });
+      ui.renderChatArea(panel, doc, { id: itemId }, preload);
       await new Promise(setImmediate);
       const state = ui.getState();
-      state.pdfContent = "Paper " + itemId;
+      if (!preload) state.pdfContent = "Paper " + itemId;
       const input = panel.find((element) => element.tag === "textarea");
       const send = panel.find((element) => element.title === "itempane-send");
       const stop = panel.find(
@@ -756,51 +771,223 @@ for (const change of ["switch", "clear", "delete", "newer turn"]) {
   });
 }
 
-test("a late PDF extraction does not replace another paper's content (#427)", async () => {
-  const started = deferred();
-  const extracted = deferred();
-  const context = vm.createContext({
-    currentChatState: { itemId: 7, pdfContent: "" },
-    item: { id: 7 },
-    messagesArea: new Element("div"),
-    getString: locale.getString,
-    showPdfStatus() {},
-    ztoolkit: { log() {} },
-    require: (name) =>
-      name === "./contentExtractor"
-        ? {
-            ContentExtractor: {
-              extractAnalyzableContentFromItem: () => {
-                started.resolve();
-                return extracted.promise;
-              },
-            },
-          }
-        : {
-            __esModule: true,
-            default: { getEffectivePdfProcessMode: () => "text" },
-          },
-  });
-  vm.runInContext(
-    transformSync(
-      closure("loadPdfContentIfNeeded", "showChatArea") +
-        "\nglobalThis.loadPdf = loadPdfContentIfNeeded;",
-      {
-        loader: "ts",
-        format: "cjs",
-        target: "es2018",
-        supported: { "dynamic-import": false },
-      },
-    ).code,
-    context,
+test("a same-thread sidebar rebuild restores the interrupted stream in the replacement panel (#457)", async (t) => {
+  const profile = await chatProfile(t);
+  const old = { partial: "Fragment", delayAbort: true };
+  const blocked = pausedChat(old);
+  const session = await profile(blocked.chat);
+  const a = await session.open();
+  const pending = a.ask("Interrupted");
+  await blocked.started;
+  a.messages.isConnected = false;
+  const b = await session.open();
+  await pending;
+  assert.match(b.messages.children[0].children[1].html, /Fragment/);
+  assert.match(
+    b.messages.children[0].children[1].html,
+    /itempane-stopped-note/,
   );
-  const loading = context.loadPdf();
-  await started.promise;
-  context.currentChatState = { itemId: 8, pdfContent: "Paper B" };
-  extracted.resolve({ content: "Paper A", isBase64: false });
-  await loading;
-  assert.equal(context.currentChatState.pdfContent, "Paper B");
 });
+
+test("stop releases a send during the shared primary PDF preload (#457)", async (t) => {
+  const profile = await chatProfile(t);
+  const reads = [];
+  const slow = deferred();
+  const prompts = [];
+  const session = await profile(
+    (request) => {
+      prompts.push(request);
+      return { text: "Answer" };
+    },
+    {
+      "./pdfExtractor": {
+        PDFExtractor: {
+          getAllPdfAttachments: async () => [{}],
+          extractTextFromItem: (_item, _mode, _progress, { abortSignal }) => {
+            reads.push(abortSignal);
+            return reads.length === 1 ? slow.promise : "Fresh PDF text";
+          },
+        },
+      },
+    },
+  );
+  const a = await session.open(7, true);
+  const sending = a.ask("First question");
+  await new Promise(setImmediate);
+  assert.equal(reads.length, 1);
+  const signal = reads[0];
+  assert.equal(signal, a.state.abortController.signal);
+  await a.stop.click();
+  await new Promise(setImmediate);
+  assert.equal(signal.aborted, true);
+  assert.equal(a.send.disabled, false);
+  assert.equal(a.state.conversationHistory.at(-1).stopped, true);
+  await sending;
+  assert.equal(prompts.length, 0);
+  await a.ask("Try again");
+  slow.resolve("Obsolete text");
+  await new Promise(setImmediate);
+  assert.equal(reads.length, 2);
+  assert.equal(a.state.pdfContent, "Fresh PDF text");
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].content.content, "Fresh PDF text");
+  assert.deepEqual(
+    Array.from(prompts[0].conversation, (m) => m.content),
+    ["Try again"],
+  );
+});
+
+test("reset during text preparation keeps a newer reply when the cancelled read returns (#457)", async (t) => {
+  const profile = await chatProfile(t);
+  const slow = deferred();
+  const started = deferred();
+  let reads = 0;
+  const session = await profile(
+    () => ({ text: "New reply" }),
+    {
+      "./pdfExtractor": {
+        PDFExtractor: {
+          getAllPdfAttachments: async () => [{}],
+          extractTextFromItem: () => {
+            if (++reads > 1) return "Fresh source";
+            started.resolve();
+            return slow.promise;
+          },
+        },
+      },
+    },
+    { Zotero: { Items: { getAsync: async (id) => ({ id }) } } },
+  );
+  const a = await session.open();
+  a.state.relatedItems = [{ itemId: 10, title: "Related" }];
+  a.state.relatedMode = "fullText";
+  const sending = a.ask("Before reset");
+  await started.promise;
+  await a.panel
+    .find((element) => element.title === "itempane-quick-chat-new-conversation")
+    .click();
+  await a.ask("After reset");
+  slow.resolve("Obsolete source");
+  await sending;
+  await session.chatPersist.flush();
+  const restored = await (await profile()).open();
+  const messages = restored.state.conversationHistory;
+  assert.equal(messages.length, 2);
+  assert.equal(messages[0].displayContent, "After reset");
+  assert.match(messages[0].content, /Fresh source/);
+  assert.equal(messages[1].content, "New reply");
+  assert.equal(restored.state.relatedContextSignature, "fullText:10");
+});
+
+for (const mode of ["summary", "fullText"]) {
+  test(`stop while preparing related ${mode} releases the composer before the host read finishes (#457)`, async (t) => {
+    const profile = await chatProfile(t);
+    const slow = deferred();
+    const started = deferred();
+    const reads = [];
+    const lookups = [];
+    const prompts = [];
+    const read = (item, signal) => {
+      reads.push(item.id);
+      if (reads.length > 1) return "Related text " + item.id;
+      started.resolve(signal);
+      return slow.promise;
+    };
+    const session = await profile(
+      (request) => {
+        prompts.push(request.conversation);
+        return { text: "Complete" };
+      },
+      {
+        "./pdfExtractor": {
+          PDFExtractor: {
+            getAllPdfAttachments: async () => [{}],
+            extractTextFromItem: (item, _mode, _progress, { abortSignal }) =>
+              read(item, abortSignal),
+          },
+        },
+        "./aiNoteService": {
+          AiNoteService: {
+            findNoteRecord: async (item) => ({ rawHtml: await read(item) }),
+          },
+        },
+        "./llmNoteMetadata": {
+          LLMNoteMetadataService: {
+            parseSummaryBlocks: () => [],
+            stripSidebarMetadata: (html) => html,
+            fromResponse: () => null,
+          },
+        },
+      },
+      {
+        Zotero: {
+          Items: {
+            getAsync: async (id) => {
+              lookups.push(id);
+              return { id };
+            },
+          },
+        },
+      },
+    );
+    const a = await session.open();
+    a.state.relatedItems = [
+      { itemId: 9, title: "Nine" },
+      { itemId: 10, title: "Ten" },
+    ];
+    a.state.relatedMode = mode;
+    const sending = a.ask("Cancelled during prep");
+    const signal = await started.promise;
+    if (mode === "fullText")
+      assert.equal(signal, a.state.abortController.signal);
+    await a.stop.click();
+    await new Promise(setImmediate);
+    assert.equal(a.send.disabled, false);
+    assert.equal(a.state.isChatting, false);
+    await sending;
+    assert.deepEqual(lookups, [9]);
+    assert.equal(prompts.length, 0);
+    assert.equal(a.state.relatedContextSignature, "");
+    const stored = session.chatPersist.getThread(7, a.state.threadId);
+    assert.equal(stored.messages[1].stopped, true);
+    assert.equal(stored.messages[1].content, "");
+    await a.ask("Follow-up");
+    slow.resolve("Obsolete related text");
+    await new Promise(setImmediate);
+    assert.deepEqual(lookups, [9, 9, 10]);
+    assert.equal(prompts.length, 1);
+    assert.equal(prompts[0].length, 1);
+    assert.match(prompts[0][0].content, /Follow-up/);
+    assert.match(prompts[0][0].content, /Related text 10/);
+    assert.equal(a.state.relatedContextIncludedCount, 2);
+  });
+}
+
+for (const fails of [false, true]) {
+  test(`late primary PDF ${fails ? "failure" : "success"} leaves the new paper and status alone (#427)`, async (t) => {
+    const profile = await chatProfile(t);
+    const slow = deferred();
+    const session = await profile(undefined, {
+      "./pdfExtractor": {
+        PDFExtractor: {
+          getAllPdfAttachments: async () => [{}],
+          extractTextFromItem: async () => {
+            await slow.promise;
+            if (fails) throw new Error("Late error");
+            return "Obsolete PDF text";
+          },
+        },
+      },
+    });
+    const a = await session.open(7, true);
+    const status = a.messages.html;
+    const b = await session.open(8);
+    slow.resolve();
+    await new Promise(setImmediate);
+    assert.equal(a.messages.html, status);
+    assert.equal(b.state.pdfContent, "Paper 8");
+  });
+}
 
 test("sending while history loads cannot submit a question to a different thread (#427)", async () => {
   const loaded = deferred();

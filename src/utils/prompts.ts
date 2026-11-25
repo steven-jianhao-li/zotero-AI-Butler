@@ -1414,12 +1414,10 @@ export function getDefaultTableReviewPrompt(): string {
 }
 
 export function getConfiguredTableTemplate(value?: string): string {
-  return resolveConfiguredDefaultPrompt(
-    value,
-    getDefaultTableTemplate(),
-    [DEFAULT_TABLE_TEMPLATE, DEFAULT_TABLE_TEMPLATE_EN],
-    ["| 维度 | 内容 |", "| 论文标题 |", "| Dimension | Content |"],
-  );
+  return resolveConfiguredDefaultPrompt(value, getDefaultTableTemplate(), [
+    DEFAULT_TABLE_TEMPLATE,
+    DEFAULT_TABLE_TEMPLATE_EN,
+  ]);
 }
 
 export function getConfiguredTableFillPrompt(value?: string): string {

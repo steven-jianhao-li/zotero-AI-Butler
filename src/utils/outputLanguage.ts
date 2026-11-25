@@ -285,6 +285,7 @@ export function setOutputLanguageDomain(value: unknown): OutputLanguageDomain {
 function buildChineseDirective(
   language: string,
   profile: DomainProfile,
+  table: boolean,
 ): string {
   const rules = profile.zhRules
     .map((rule, index) => `${index + 1}. ${rule}`)
@@ -301,7 +302,9 @@ function buildChineseDirective(
     rules,
     "",
     "三、翻译与写作要求",
-    `1. 最终答案必须全部使用${language}书写，即使论文原文、提示词或上文使用其他语言。`,
+    table
+      ? `1. 仅用${language}填写内容单元格。逐字保留模板的表头、列顺序和第一列的条目名称（包括追加条目），按原顺序填写每个条目。`
+      : `1. 最终答案必须全部使用${language}书写，即使论文原文、提示词或上文使用其他语言。`,
     "2. 忠实于原文：不得增删事实、篡改结论或加入原文没有的观点；任务要求的分析、总结与评价除外。",
     `3. 符合${language}的学术表达习惯，避免逐字直译与机器翻译腔；同一术语全文统一。`,
     "4. 结构对齐原文：保留标题层级、列表、表格、图表题注、编号与脚注。",
@@ -315,6 +318,7 @@ function buildChineseDirective(
 function buildEnglishDirective(
   language: string,
   profile: DomainProfile,
+  table: boolean,
 ): string {
   const rules = profile.enRules
     .map((rule, index) => `${index + 1}. ${rule}`)
@@ -331,7 +335,9 @@ function buildEnglishDirective(
     rules,
     "",
     "3. Translation and writing rules",
-    `1. Write the entire final answer in ${language}, even if the paper, the prompt or earlier context is in another language.`,
+    table
+      ? `1. Write only the cell values in ${language}. Copy column headers and first-column row keys (including appended keys) verbatim. Preserve column and row order and fill every requested row.`
+      : `1. Write the entire final answer in ${language}, even if the paper, the prompt or earlier context is in another language.`,
     "2. Stay faithful: never add or drop facts, bend conclusions or introduce claims absent from the source; analysis the task explicitly requests is exempt.",
     `3. Follow ${language} academic style; avoid word-for-word translation and machine-translation phrasing; keep one consistent rendering per term.`,
     "4. Mirror the source structure: heading levels, lists, tables, figure/table captions, numbering and footnotes.",
@@ -348,6 +354,7 @@ function buildEnglishDirective(
 export function buildOutputLanguageDirective(
   language?: string,
   domain?: OutputLanguageDomain,
+  task?: string,
 ): string {
   const target = normalizeOutputLanguage(language ?? getOutputLanguage());
   if (!target) return "";
@@ -356,8 +363,8 @@ export function buildOutputLanguageDirective(
   );
   const profile = DOMAIN_PROFILES[resolvedDomain];
   const body = ZH_LANGUAGE_PATTERN.test(target)
-    ? buildChineseDirective(target, profile)
-    : buildEnglishDirective(target, profile);
+    ? buildChineseDirective(target, profile, task === "table")
+    : buildEnglishDirective(target, profile, task === "table");
   return `<${OUTPUT_LANGUAGE_TAG}>\n${body}\n</${OUTPUT_LANGUAGE_TAG}>`;
 }
 
@@ -401,6 +408,7 @@ export function applyOutputLanguageToPrompt(
   const directive = buildOutputLanguageDirective(
     resolveOutputLanguage(context),
     resolveOutputLanguageDomain(context),
+    context?.task,
   );
   return directive ? `${prompt}\n\n${directive}` : prompt;
 }
@@ -418,6 +426,7 @@ export function applyOutputLanguageToConversation<T extends ChatMessage>(
   const directive = buildOutputLanguageDirective(
     resolveOutputLanguage(context),
     resolveOutputLanguageDomain(context),
+    context?.task,
   );
   if (!directive) return conversation;
   let injected = false;

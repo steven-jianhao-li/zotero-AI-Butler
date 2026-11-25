@@ -15,6 +15,12 @@
  * @author AI-Butler Team
  */
 
+import {
+  readTable,
+  tableCells,
+  isTableSeparator,
+  templateForEntries,
+} from "../literatureTable";
 import { BaseView } from "./BaseView";
 import { MainWindow } from "./MainWindow";
 import { LiteratureReviewService } from "../literatureReviewService";
@@ -136,7 +142,7 @@ export class LiteratureReviewView extends BaseView {
   private targetedTableEntriesContainer: HTMLElement | null = null;
   private targetedTableEntryCheckboxes: Map<string, HTMLInputElement> =
     new Map();
-  private firstCollectionTableEntries: string[] = [];
+  private firstCollectionTableTemplate = "";
   private reviewPresetNameInput: HTMLInputElement | null = null;
   private tablePresetNameInput: HTMLInputElement | null = null;
   private reviewPresetSelect: HTMLElement | null = null;
@@ -1361,19 +1367,12 @@ export class LiteratureReviewView extends BaseView {
     return entry.trim().replace(/\s+/g, " ").toLowerCase();
   }
 
-  private parseMarkdownTableCells(line: string): string[] {
-    const content = line.trim().replace(/^\|/, "").replace(/\|$/, "");
-    return content.split("|").map((cell) => cell.trim());
-  }
-
-  private isMarkdownSeparatorRow(cells: string[]): boolean {
-    return (
-      cells.length > 0 &&
-      cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")))
-    );
-  }
-
   private parseTableTemplateEntries(template: string): string[] {
+    const table = readTable(template);
+    if (table)
+      return this.mergeUniqueEntries([
+        table.rows.map((row) => tableCells(row)[0]),
+      ]);
     const entries: string[] = [];
     const seen = new Set<string>();
 
@@ -1381,8 +1380,8 @@ export class LiteratureReviewView extends BaseView {
       const trimmed = line.trim();
       if (!trimmed.startsWith("|")) continue;
 
-      const cells = this.parseMarkdownTableCells(trimmed);
-      if (cells.length < 2 || this.isMarkdownSeparatorRow(cells)) continue;
+      const cells = tableCells(trimmed);
+      if (cells.length < 2 || isTableSeparator(cells)) continue;
 
       const first = cells[0].trim();
       const normalizedFirst = this.normalizeTableEntryName(first);
@@ -1437,7 +1436,7 @@ export class LiteratureReviewView extends BaseView {
   }
 
   private async loadFirstCollectionTableEntries(): Promise<void> {
-    this.firstCollectionTableEntries = [];
+    this.firstCollectionTableTemplate = "";
     for (const node of this.treeNodes) {
       try {
         const tableContent = await LiteratureReviewService.findTableNote(
@@ -1446,7 +1445,10 @@ export class LiteratureReviewView extends BaseView {
         if (!tableContent) continue;
         const entries = this.parseTableTemplateEntries(tableContent);
         if (entries.length > 0) {
-          this.firstCollectionTableEntries = entries;
+          const table = readTable(tableContent);
+          this.firstCollectionTableTemplate = table
+            ? templateForEntries(table, entries)
+            : this.buildTableTemplateFromEntries(entries);
           return;
         }
       } catch {
@@ -1483,11 +1485,9 @@ export class LiteratureReviewView extends BaseView {
       this.tablePromptTextarea?.value.trim() ||
       this.getCurrentTablePreset().prompt ||
       getDefaultTableTemplate();
-    const templateEntries = this.parseTableTemplateEntries(template);
-    const baseEntries =
-      this.firstCollectionTableEntries.length > 0
-        ? this.firstCollectionTableEntries
-        : templateEntries;
+    const baseEntries = this.parseTableTemplateEntries(
+      this.firstCollectionTableTemplate || template,
+    );
     const currentAppendingEntries = this.targetedAppendTableEntriesCheckbox
       ?.checked
       ? this.parseExtraTargetedTableEntries(
@@ -1644,8 +1644,8 @@ export class LiteratureReviewView extends BaseView {
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed.startsWith("|")) continue;
-      const cells = this.parseMarkdownTableCells(trimmed);
-      if (cells.length >= 2 && !this.isMarkdownSeparatorRow(cells)) {
+      const cells = tableCells(trimmed);
+      if (cells.length >= 2 && !isTableSeparator(cells)) {
         columnCount = Math.max(2, cells.length);
         break;
       }
@@ -1784,16 +1784,8 @@ export class LiteratureReviewView extends BaseView {
     const tableTemplate =
       this.tablePromptTextarea.value.trim() ||
       getConfiguredTableTemplate(getPref("tableTemplate" as any) as string);
-    const configuredTemplateEntries =
-      this.parseTableTemplateEntries(tableTemplate);
-    const baseEntriesForAsk =
-      this.firstCollectionTableEntries.length > 0
-        ? this.firstCollectionTableEntries
-        : configuredTemplateEntries;
     const baseTemplateForAsk =
-      this.firstCollectionTableEntries.length > 0
-        ? this.buildTableTemplateFromEntries(baseEntriesForAsk)
-        : tableTemplate;
+      this.firstCollectionTableTemplate || tableTemplate;
     const selectedTableEntries = this.collectSelectedTargetedTableEntries();
     if (selectedTableEntries.length === 0) {
       new ztoolkit.ProgressWindow("AI Butler", {

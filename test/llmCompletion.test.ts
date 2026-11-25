@@ -804,6 +804,25 @@ describe("LLM completion", function () {
         createdAt: "",
         updatedAt: "",
       }));
+      const continuationDiagnostics = [
+        {
+          endpointId: "partial",
+          rounds: [
+            {
+              round: 0,
+              finishReason: "max_tokens",
+              receivedChars: 19,
+              addedChars: 19,
+            },
+            {
+              round: 1,
+              finishReason: "end_turn",
+              receivedChars: 19,
+              addedChars: 0,
+            },
+          ],
+        },
+      ];
       generator.generateSummaryWithEndpoint = async ({ endpoint }) => {
         const response: LLMResponse = {
           providerId: "anthropic",
@@ -811,7 +830,8 @@ describe("LLM completion", function () {
           completion: endpoint.id === "complete" ? "complete" : "partial",
           finishReason: endpoint.id === "complete" ? "end_turn" : "max_tokens",
         };
-        if (endpoint.id === "partial") throw new LLMIncompleteError(response);
+        if (endpoint.id === "partial")
+          throw new LLMIncompleteError(response, continuationDiagnostics);
         return {
           endpoint,
           content: response.text,
@@ -841,6 +861,9 @@ describe("LLM completion", function () {
         completion: "partial",
         finishReason: "multi_model_incomplete",
       });
+      expect(
+        (caught as LLMIncompleteError).continuationDiagnostics,
+      ).to.deep.equal(continuationDiagnostics);
       expect((caught as LLMIncompleteError).response.text)
         .to.include("complete paid answer")
         .and.include("partial paid answer");

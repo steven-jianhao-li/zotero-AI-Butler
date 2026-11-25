@@ -1188,16 +1188,13 @@ function normalizePromptForDefaultComparison(value: string): string {
 function isKnownDefaultPrompt(
   value: string | undefined,
   defaults: string[],
-  markers: string[] = [],
 ): boolean {
   if (!value || !value.trim()) {
     return true;
   }
   const normalized = normalizePromptForDefaultComparison(value);
-  return (
-    defaults.some(
-      (item) => normalizePromptForDefaultComparison(item) === normalized,
-    ) || markers.some((marker) => normalized.includes(marker))
+  return defaults.some(
+    (item) => normalizePromptForDefaultComparison(item) === normalized,
   );
 }
 
@@ -1205,9 +1202,8 @@ function resolveConfiguredDefaultPrompt(
   value: string | undefined,
   defaultValue: string,
   knownDefaults: string[],
-  markers: string[] = [],
 ): string {
-  return isKnownDefaultPrompt(value, knownDefaults, markers)
+  return isKnownDefaultPrompt(value, knownDefaults)
     ? defaultValue
     : value!.trim();
 }
@@ -1421,31 +1417,17 @@ export function getConfiguredTableTemplate(value?: string): string {
 }
 
 export function getConfiguredTableFillPrompt(value?: string): string {
-  return resolveConfiguredDefaultPrompt(
-    value,
-    getDefaultTableFillPrompt(),
-    [DEFAULT_TABLE_FILL_PROMPT, DEFAULT_TABLE_FILL_PROMPT_EN],
-    [
-      "请仔细阅读以下学术论文的内容",
-      "使用中文填写",
-      "Carefully read the content of the following academic paper",
-      "Write in English",
-    ],
-  );
+  return resolveConfiguredDefaultPrompt(value, getDefaultTableFillPrompt(), [
+    DEFAULT_TABLE_FILL_PROMPT,
+    DEFAULT_TABLE_FILL_PROMPT_EN,
+  ]);
 }
 
 export function getConfiguredTableReviewPrompt(value?: string): string {
-  return resolveConfiguredDefaultPrompt(
-    value,
-    getDefaultTableReviewPrompt(),
-    [DEFAULT_TABLE_REVIEW_PROMPT, DEFAULT_TABLE_REVIEW_PROMPT_EN],
-    [
-      "请阅读以下多篇学术论文",
-      "使用中文输出",
-      "Read the following academic papers",
-      "Write in English",
-    ],
-  );
+  return resolveConfiguredDefaultPrompt(value, getDefaultTableReviewPrompt(), [
+    DEFAULT_TABLE_REVIEW_PROMPT,
+    DEFAULT_TABLE_REVIEW_PROMPT_EN,
+  ]);
 }
 
 // ================================================================

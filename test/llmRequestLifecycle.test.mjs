@@ -494,3 +494,116 @@ test("queue failure diagnostics contain final status, previous stage and API att
   assert.match(task.errorDetails, /queueRetryCount: 0/);
   assert.ok(task.errorDetails.includes("--- API attempts ---"));
 });
+
+const ollamaLimit =
+  "request (16217 tokens) exceeds the available context size (4096 tokens), try increasing it";
+
+for (const [providerType, message, expectHint] of [
+  ["ollama", ollamaLimit, true],
+  ["ollama", "invalid model option", false],
+  ["openai-compat", ollamaLimit, false],
+]) {
+  test(`task error for ${providerType} 400: ${message}`, async (t) => {
+    const h = host(t);
+    const { q, task } = queue(h, "pending");
+    const model = { ...endpoint(h), providerType };
+    h.LLMEndpointManager.saveEndpoints([model]);
+    let calls = 0;
+    h.globals.Zotero.HTTP = {
+      request: async () => {
+        calls++;
+        throw Object.assign(new Error("Bad request"), {
+          xmlhttp: {
+            status: 400,
+            response: JSON.stringify({ error: message }),
+          },
+        });
+      },
+    };
+    h.ContentExtractor.hasAnalyzableAttachment = async () => true;
+    h.NoteGenerator.generateNoteForItem = () =>
+      h.LLMService.chat({
+        content: { kind: "text", text: "paper" },
+        conversation: [{ role: "user", content: "read the chapter" }],
+      });
+    await q.executeTask(task.id);
+    assert.equal(calls, 3);
+    assert.equal(task.status, "failed");
+    assert.equal(task.retryCount, 0);
+    if (expectHint) {
+      assert.match(task.error, /ollama-context-limit.*16217.*4096/);
+      assert.match(task.errorDetails, /"inputTokens": 16217/);
+      assert.match(task.errorDetails, /"contextTokens": 4096/);
+    } else {
+      assert.match(task.error, /llm-error-api-exhausted/);
+    }
+  });
+}
+
+for (const lastText of ["", "private draft"]) {
+  test(`copied diagnostics distinguish ${lastText ? "duplicate" : "empty"} Ollama continuations`, async (t) => {
+    const h = host(t);
+    const { q, task } = queue(h, "pending");
+    h.LLMEndpointManager.saveEndpoints([
+      { ...endpoint(h), providerType: "ollama" },
+    ]);
+    const first = "private draft";
+    const replies = [first, " with new text", lastText];
+    let calls = 0;
+    h.globals.Zotero.HTTP = {
+      request: async () => {
+        const content = replies[calls++];
+        return {
+          status: 200,
+          response: JSON.stringify({
+            message: { content },
+            done: true,
+            done_reason: calls === 3 ? "stop" : "length",
+          }),
+        };
+      },
+    };
+    h.ContentExtractor.hasAnalyzableAttachment = async () => true;
+    h.NoteGenerator.generateNoteForItem = () =>
+      h.LLMService.chat({
+        content: { kind: "text", text: "private paper" },
+        conversation: [{ role: "user", content: "private prompt" }],
+      });
+    await q.executeTask(task.id);
+    assert.equal(calls, 3);
+    assert.equal(task.status, "failed");
+    assert.match(
+      task.error,
+      lastText ? /continuation_no_progress/ : /empty_output/,
+    );
+    assert.doesNotMatch(task.errorDetails, /private (draft|paper|prompt)/);
+    const diagnosticText = task.errorDetails
+      .split("--- continuation diagnostics ---\n")[1]
+      .split("\n\n")[0];
+    assert.deepEqual(JSON.parse(diagnosticText), [
+      {
+        endpointId: "one",
+        rounds: [
+          {
+            round: 0,
+            finishReason: "length",
+            receivedChars: first.length,
+            addedChars: first.length,
+          },
+          {
+            round: 1,
+            finishReason: "length",
+            receivedChars: replies[1].length,
+            addedChars: replies[1].length,
+          },
+          {
+            round: 2,
+            finishReason: "stop",
+            receivedChars: lastText.length,
+            addedChars: 0,
+          },
+        ],
+      },
+    ]);
+  });
+}

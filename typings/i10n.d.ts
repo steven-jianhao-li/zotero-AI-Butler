@@ -878,6 +878,7 @@ export type FluentMessageId =
   | 'llm-error-multifile-unsupported'
   | 'llm-error-no-enabled-endpoints'
   | 'llm-error-no-pdf-content'
+  | 'llm-error-ollama-context-limit'
   | 'llm-error-provider-multi-file-unsupported'
   | 'llm-error-unknown-provider'
   | 'llm-error-unknown-provider-type'

@@ -3027,6 +3027,16 @@ export class TaskQueueManager {
         this.stringifyDebugValue(errorInfo.attemptDiagnostics),
       );
     }
+    if (
+      error instanceof LLMIncompleteError &&
+      error.continuationDiagnostics.length
+    ) {
+      lines.push(
+        "",
+        "--- continuation diagnostics ---",
+        this.stringifyDebugValue(error.continuationDiagnostics),
+      );
+    }
 
     const diagnosticText =
       extractionError?.diagnosticText || errorInfo?.diagnosticText;

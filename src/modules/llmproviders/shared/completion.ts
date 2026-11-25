@@ -1,4 +1,8 @@
-import type { LLMProviderResult, LLMResponse } from "../types";
+import type {
+  LLMContinuationRoundDiagnostic,
+  LLMProviderResult,
+  LLMResponse,
+} from "../types";
 import { getString } from "../../../utils/locale";
 
 const tokenLimits = new Set([
@@ -29,7 +33,13 @@ export class LLMIncompleteError extends Error {
   get requestDiagnostics() {
     return this.response.requestDiagnostics;
   }
-  constructor(public readonly response: LLMResponse) {
+  constructor(
+    public readonly response: LLMResponse,
+    public readonly continuationDiagnostics: {
+      endpointId: string;
+      rounds: LLMContinuationRoundDiagnostic[];
+    }[] = [],
+  ) {
     super(
       getString("llm-error-incomplete-output", {
         args: { reason: response.finishReason || "unknown" },

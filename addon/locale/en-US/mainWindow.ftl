@@ -810,6 +810,7 @@ llm-error-multifile-unsupported = Provider { $provider } does not support multi-
 llm-error-api-keys-exhausted = All API keys have been exhausted
 llm-error-all-endpoints-failed = All configured LLM endpoints failed.
 llm-error-api-exhausted = API failed after { $attempts } attempts. Automatic task retries stopped. Last error: { $reason }
+llm-error-ollama-context-limit = The request contains { $inputTokens } tokens, but Ollama's context window is { $contextTokens } tokens. Increase the context length in Ollama, then retry.
 llm-error-no-pdf-content = No available PDF content
 llm-error-missing-uploadable-pdf = The current input has no uploadable PDF/Base64 content.
 llm-error-missing-text-or-pdf = The current input has no usable text or uploadable PDF/Base64 content

@@ -810,6 +810,7 @@ llm-error-multifile-unsupported = Provider { $provider } 不支持多文件摘�
 llm-error-api-keys-exhausted = 所有 API 密钥均已耗尽
 llm-error-all-endpoints-failed = 所有已配置的 LLM Endpoint 均调用失败。
 llm-error-api-exhausted = API 已尝试 { $attempts } 次仍失败，已停止任务自动重试。最后错误：{ $reason }
+llm-error-ollama-context-limit = 本次输入为 { $inputTokens } tokens，超过 Ollama 当前的上下文上限（{ $contextTokens } tokens）。请在 Ollama 中调大上下文长度后重试。
 llm-error-no-pdf-content = 没有可用的 PDF 内容
 llm-error-missing-uploadable-pdf = 当前输入缺少可上传的 PDF/Base64 内容。
 llm-error-missing-text-or-pdf = 当前输入缺少可用文本或可上传的 PDF/Base64 内容

@@ -3,10 +3,14 @@ import {
   DEFAULT_CHAPTER_FALLBACKS,
   DEFAULT_SUMMARY_PROMPT,
   DEFAULT_SUMMARY_PROMPT_EN,
+  DEFAULT_TABLE_FILL_PROMPT,
+  DEFAULT_TABLE_REVIEW_PROMPT,
   DEFAULT_TABLE_TEMPLATE,
   buildUserMessage,
   generateChapterPrompts,
   getConfiguredSummaryPrompt,
+  getConfiguredTableFillPrompt,
+  getConfiguredTableReviewPrompt,
   getConfiguredTableTemplate,
   getDefaultMultiRoundPromptTemplate,
   getDefaultSummaryPrompt,
@@ -439,9 +443,32 @@ describe("multi-round prompt templates v2", function () {
 
     it("treats saved Chinese table defaults as defaults in English locale", function () {
       const table = getConfiguredTableTemplate(DEFAULT_TABLE_TEMPLATE);
+      const fill = getConfiguredTableFillPrompt(DEFAULT_TABLE_FILL_PROMPT);
+      const review = getConfiguredTableReviewPrompt(
+        DEFAULT_TABLE_REVIEW_PROMPT,
+      );
 
       expect(table).to.include("| Dimension | Content |");
       expect(table).to.not.include("| 维度 | 内容 |");
+      expect(fill).to.include("Write in English.");
+      expect(review).to.include("Write in English.");
+    });
+
+    it("preserves custom table templates and prompts that keep default headers or phrases", function () {
+      const customTemplate = DEFAULT_TABLE_TEMPLATE.replace(
+        "| 论文标题 | |",
+        "| 论文标题 | |\n| 标题翻译 | |",
+      );
+      const customFill = `${DEFAULT_TABLE_FILL_PROMPT}\n6. 补充公式`;
+      const customReview = `${DEFAULT_TABLE_REVIEW_PROMPT}\n补充对比。`;
+
+      expect(getConfiguredTableTemplate(customTemplate)).to.equal(
+        customTemplate,
+      );
+      expect(getConfiguredTableFillPrompt(customFill)).to.equal(customFill);
+      expect(getConfiguredTableReviewPrompt(customReview)).to.equal(
+        customReview,
+      );
     });
 
     it("allows overriding default prompt language to Chinese in an English UI", function () {

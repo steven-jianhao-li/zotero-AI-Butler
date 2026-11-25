@@ -13,6 +13,7 @@ import {
   bindAbortSignal,
   isAbortError,
   normalizeAbortError,
+  raceAbortSignal,
   throwIfAborted,
 } from "./requestAbort";
 import { LLMRequestMonitor, LLMTransportError } from "./requestMonitor";
@@ -324,6 +325,7 @@ export async function requestLLMText(args: {
     }
   };
   let transportError: string | undefined;
+  const abortRace = raceAbortSignal(options.abortSignal);
   try {
     monitor.start();
     const response = await Promise.race([
@@ -343,6 +345,7 @@ export async function requestLLMText(args: {
         },
       }),
       monitor.deadline,
+      abortRace.promise,
     ]);
     monitor.snapshot(response.status);
     if (response.status >= 400)
@@ -368,6 +371,7 @@ export async function requestLLMText(args: {
     }
     transportError = status ? `HTTP ${status}: ${message}` : message;
   } finally {
+    abortRace.dispose();
     cleanup?.();
     if (activeRequest) activeRequest.onprogress = null;
     monitor.finish();

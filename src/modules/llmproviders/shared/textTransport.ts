@@ -325,6 +325,7 @@ export async function requestLLMText(args: {
     }
   };
   let transportError: string | undefined;
+  let errorBody: unknown;
   const abortRace = raceAbortSignal(options.abortSignal);
   try {
     monitor.start();
@@ -348,8 +349,10 @@ export async function requestLLMText(args: {
       abortRace.promise,
     ]);
     monitor.snapshot(response.status);
-    if (response.status >= 400)
+    if (response.status >= 400) {
+      errorBody = response.response;
       throw new Error(providerHttpRequestFailed(response.status));
+    }
     feed(response.response);
   } catch (error) {
     if (isAbortError(error, options.abortSignal))
@@ -361,6 +364,7 @@ export async function requestLLMText(args: {
     let message =
       string(object(error).message) || providerRequestFailed(provider);
     const responseBody = xhr.response ?? xhr.responseText;
+    errorBody ??= responseBody;
     if (typeof responseBody === "string" && responseBody.trim()) {
       try {
         const body = object(JSON.parse(responseBody));
@@ -381,8 +385,21 @@ export async function requestLLMText(args: {
   result.requestDiagnostics = monitor.snapshot();
   await delivery;
   throwIfAborted(options.abortSignal);
-  if (!result.text && result.error)
+  if (!result.text && result.error) {
+    if (protocol === "ollama" && result.requestDiagnostics.httpStatus === 400) {
+      const pattern =
+        /request \((\d+) tokens\) exceeds the available context size \((\d+) tokens\)/i;
+      const match =
+        pattern.exec(string(errorBody)) ?? pattern.exec(result.error);
+      if (match) {
+        result.requestDiagnostics.ollamaContextLimit = {
+          inputTokens: Number(match[1]),
+          contextTokens: Number(match[2]),
+        };
+      }
+    }
     throw new LLMTransportError(result.error, result.requestDiagnostics);
+  }
   result.maxOutputTokens = number(
     payload.max_completion_tokens ??
       payload.max_tokens ??

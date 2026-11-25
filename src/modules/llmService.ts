@@ -263,14 +263,21 @@ export class LLMApiExhaustedError extends Error {
     lastError?: Error,
     public readonly attemptDiagnostics: LLMApiAttemptDiagnostic[] = [],
   ) {
+    const contextLimit =
+      lastError instanceof LLMApiCallError
+        ? lastError.requestDiagnostics?.ollamaContextLimit
+        : undefined;
     super(
-      getString("llm-error-api-exhausted", {
-        args: {
-          attempts,
-          reason:
-            lastError?.message || getString("llm-error-all-endpoints-failed"),
-        },
-      }),
+      contextLimit
+        ? getString("llm-error-ollama-context-limit", { args: contextLimit })
+        : getString("llm-error-api-exhausted", {
+            args: {
+              attempts,
+              reason:
+                lastError?.message ||
+                getString("llm-error-all-endpoints-failed"),
+            },
+          }),
     );
     this.name = "LLMApiExhaustedError";
     this.attempts = attempts;

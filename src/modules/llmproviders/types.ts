@@ -32,7 +32,7 @@ export type LLMTruncationState = {
   kind: "max_tokens" | "context_window" | "other";
 };
 
-/** Timing and routing metadata only; never include credentials or model text. */
+/** Request diagnostics must never include credentials or model text. */
 export type LLMRequestDiagnostics = {
   providerId: string;
   model?: string;
@@ -47,6 +47,7 @@ export type LLMRequestDiagnostics = {
   lastActivityMs?: number;
   receivedChars: number;
   httpStatus?: number;
+  ollamaContextLimit?: { inputTokens: number; contextTokens: number };
   timeoutKind?: "first-response" | "idle" | "total";
 };
 

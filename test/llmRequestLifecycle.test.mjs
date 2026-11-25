@@ -494,3 +494,48 @@ test("queue failure diagnostics contain final status, previous stage and API att
   assert.match(task.errorDetails, /queueRetryCount: 0/);
   assert.ok(task.errorDetails.includes("--- API attempts ---"));
 });
+
+const ollamaLimit =
+  "request (16217 tokens) exceeds the available context size (4096 tokens), try increasing it";
+
+for (const [providerType, message, expectHint] of [
+  ["ollama", ollamaLimit, true],
+  ["ollama", "invalid model option", false],
+  ["openai-compat", ollamaLimit, false],
+]) {
+  test(`task error for ${providerType} 400: ${message}`, async (t) => {
+    const h = host(t);
+    const { q, task } = queue(h, "pending");
+    const model = { ...endpoint(h), providerType };
+    h.LLMEndpointManager.saveEndpoints([model]);
+    let calls = 0;
+    h.globals.Zotero.HTTP = {
+      request: async () => {
+        calls++;
+        throw Object.assign(new Error("Bad request"), {
+          xmlhttp: {
+            status: 400,
+            response: JSON.stringify({ error: message }),
+          },
+        });
+      },
+    };
+    h.ContentExtractor.hasAnalyzableAttachment = async () => true;
+    h.NoteGenerator.generateNoteForItem = () =>
+      h.LLMService.chat({
+        content: { kind: "text", text: "paper" },
+        conversation: [{ role: "user", content: "read the chapter" }],
+      });
+    await q.executeTask(task.id);
+    assert.equal(calls, 3);
+    assert.equal(task.status, "failed");
+    assert.equal(task.retryCount, 0);
+    if (expectHint) {
+      assert.match(task.error, /ollama-context-limit.*16217.*4096/);
+      assert.match(task.errorDetails, /"inputTokens": 16217/);
+      assert.match(task.errorDetails, /"contextTokens": 4096/);
+    } else {
+      assert.match(task.error, /llm-error-api-exhausted/);
+    }
+  });
+}

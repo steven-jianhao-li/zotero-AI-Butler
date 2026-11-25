@@ -907,7 +907,7 @@ agent-runtime-permission-changed = 本次运行的文献库权限已切换为：
 # ==================== 输出语言 / Output language ====================
 settings-output-language-notice = 这项设置对「AI 总结」「AI 精读」「表格填充/综述」「文献综述」「思维导图」「侧边栏对话」同时生效。
 settings-output-language-label = 输出语言
-settings-output-language-help = 直接填写最终输出的目标语言，例如 简体中文、繁體中文、English、日本語、Français。留空表示不干预，完全以您的提示词为准；填写中文或英文时会同时切换内置默认提示词的语言。
+settings-output-language-help = 填写生成内容的目标语言，例如简体中文、English 或日本語。填写后优先使用此语言，留空则按提示词要求输出。内置模板语言可在上方单独选择。
 settings-output-language-placeholder = 例如：简体中文 / English / 日本語（留空＝不干预）
 settings-output-language-domain-label = 学科口径
 settings-output-language-domain-help = 用于按学科生成更贴合的翻译与写作规范（术语、单位、引用、文体）。不确定时选「通用」。

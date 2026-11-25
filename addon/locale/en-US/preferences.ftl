@@ -907,7 +907,7 @@ agent-runtime-permission-changed = Library permission for this run: { $permissio
 # ==================== Output language ====================
 settings-output-language-notice = This setting applies to AI Summary, AI Deep Reading, table fill/review, literature review, mindmap and the sidebar chat at the same time.
 settings-output-language-label = Output Language
-settings-output-language-help = Type the language you want the final output in, for example Simplified Chinese, Traditional Chinese, English, Japanese or French. Leave it empty to add nothing and rely on your own prompts. Chinese or English also switches the built-in default prompts.
+settings-output-language-help = Enter the language for generated text, such as English, Japanese or French. It takes precedence over language instructions in your prompt. Leave it empty to follow the prompt. Choose the built-in template language separately above.
 settings-output-language-placeholder = e.g. English / Simplified Chinese / Japanese (empty = no rule)
 settings-output-language-domain-label = Discipline Profile
 settings-output-language-domain-help = Tailors the generated translation and writing rules to the field (terminology, units, citations, register). Choose General when unsure.

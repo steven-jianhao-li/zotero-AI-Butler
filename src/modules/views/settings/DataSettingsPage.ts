@@ -217,6 +217,9 @@ export class DataSettingsPage {
       "stream",
       "requestTimeout",
       "autoContinuationRounds",
+      "promptLanguage",
+      "outputLanguage",
+      "outputLanguageDomain",
       "summaryPrompt",
       "customPrompts",
       "multiRoundPromptTemplates",
@@ -338,6 +341,9 @@ export class DataSettingsPage {
     if (!ok) return;
 
     // 恢复常用项
+    setPref("promptLanguage", "auto");
+    setPref("outputLanguage", "");
+    setPref("outputLanguageDomain", "general");
     setPref("summaryPrompt", getDefaultSummaryPrompt());
     setPref("provider", "openai-compat");
     setPref("openaiApiUrl", "https://api.openai.com/v1/responses");

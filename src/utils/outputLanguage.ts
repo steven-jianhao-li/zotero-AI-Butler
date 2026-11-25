@@ -224,7 +224,6 @@ const DOMAIN_PROFILES: Record<OutputLanguageDomain, DomainProfile> = {
 
 const ZH_LANGUAGE_PATTERN =
   /(中文|汉语|漢語|华语|chinese|zh[-_ ]?cn|zh[-_ ]?tw|zh[-_ ]?hk|\bzh\b)/i;
-const EN_LANGUAGE_PATTERN = /\b(english|en[-_ ]?(us|gb|au|ca|nz|ie)|en)\b/i;
 
 /**
  * 规范化用户填写的目标语言：压缩空白、剔除尖括号与换行、限制长度。
@@ -281,21 +280,6 @@ export function setOutputLanguageDomain(value: unknown): OutputLanguageDomain {
   const domain = normalizeOutputLanguageDomain(value);
   setPref(OUTPUT_LANGUAGE_DOMAIN_PREF_KEY, domain);
   return domain;
-}
-
-/**
- * 由目标语言推断内置默认提示词应使用哪种语言。
- * 这样"输出语言"仍然是唯一开关：填写中文/英文时自动切换到对应内置模板，
- * 填写其他语言时保留现有模板，由注入的规则保证最终输出语言。
- */
-export function detectBuiltinPromptLanguage(
-  language?: string,
-): "zh-CN" | "en-US" | undefined {
-  const value = normalizeOutputLanguage(language ?? getOutputLanguage());
-  if (!value) return undefined;
-  if (ZH_LANGUAGE_PATTERN.test(value)) return "zh-CN";
-  if (EN_LANGUAGE_PATTERN.test(value)) return "en-US";
-  return undefined;
 }
 
 function buildChineseDirective(
@@ -371,10 +355,9 @@ export function buildOutputLanguageDirective(
     domain ?? getOutputLanguageDomain(),
   );
   const profile = DOMAIN_PROFILES[resolvedDomain];
-  const body =
-    detectBuiltinPromptLanguage(target) === "zh-CN"
-      ? buildChineseDirective(target, profile)
-      : buildEnglishDirective(target, profile);
+  const body = ZH_LANGUAGE_PATTERN.test(target)
+    ? buildChineseDirective(target, profile)
+    : buildEnglishDirective(target, profile);
   return `<${OUTPUT_LANGUAGE_TAG}>\n${body}\n</${OUTPUT_LANGUAGE_TAG}>`;
 }
 

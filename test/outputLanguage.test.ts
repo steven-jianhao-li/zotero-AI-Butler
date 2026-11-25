@@ -4,7 +4,6 @@ import {
   applyOutputLanguageToConversation,
   applyOutputLanguageToPrompt,
   buildOutputLanguageDirective,
-  detectBuiltinPromptLanguage,
   normalizeOutputLanguage,
   normalizeOutputLanguageDomain,
 } from "../src/utils/outputLanguage";
@@ -30,15 +29,6 @@ describe("output language control", function () {
     expect(normalizeOutputLanguageDomain("Science")).to.equal("science");
     expect(normalizeOutputLanguageDomain("astrology")).to.equal("general");
     expect(normalizeOutputLanguageDomain(undefined)).to.equal("general");
-  });
-
-  it("detects when the built-in prompt language can follow the target", function () {
-    expect(detectBuiltinPromptLanguage("简体中文")).to.equal("zh-CN");
-    expect(detectBuiltinPromptLanguage("Chinese")).to.equal("zh-CN");
-    expect(detectBuiltinPromptLanguage("English")).to.equal("en-US");
-    expect(detectBuiltinPromptLanguage("en-GB")).to.equal("en-US");
-    expect(detectBuiltinPromptLanguage("日本語")).to.equal(undefined);
-    expect(detectBuiltinPromptLanguage("")).to.equal(undefined);
   });
 
   it("produces no directive when the setting is empty", function () {

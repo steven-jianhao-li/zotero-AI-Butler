@@ -32,6 +32,10 @@ import {
   type ChatAbortControllerLike,
 } from "./chatContext";
 import {
+  throwIfAborted,
+  waitWithAbort,
+} from "./llmproviders/shared/requestAbort";
+import {
   chatPersist,
   cloneChatContext,
   normalizeChatMessages,
@@ -44,7 +48,6 @@ import {
   getQuickChatRelatedLimit,
   resolveQuickChatRelatedContext,
   validateQuickChatRelatedSelection,
-  type QuickChatRelatedContextResult,
   type QuickChatRelatedItemRef,
   type QuickChatRelatedMode,
 } from "./quickChatRelatedContext";
@@ -901,19 +904,22 @@ function sidebarHasQuickChat(body: HTMLElement): boolean {
 }
 
 function persistActiveQuickChatThread(): void {
-  try {
-    if (currentChatState.itemId != null && currentChatState.threadId) {
-      chatPersist.saveMessages(
-        currentChatState.itemId,
-        currentChatState.threadId,
-        currentChatState.conversationHistory,
-        currentChatState,
-      );
-    }
-  } catch (err) {
-    ztoolkit.log("[AI-Butler] ChatPersist save failed:", err);
-  }
+  const { itemId, threadId, conversationHistory } = currentChatState;
+  chatPersist.saveMessages(
+    itemId,
+    threadId,
+    conversationHistory,
+    currentChatState,
+  );
 }
+
+type QuickChatOperation = {
+  owner: HTMLElement;
+  controller: ChatAbortControllerLike;
+};
+let activeQuickChatRequest: QuickChatOperation | null = null;
+let quickChatPdfLoad: (QuickChatOperation & { ready: Promise<void> }) | null =
+  null;
 
 function resetQuickChatState(itemId: number | null): void {
   currentChatState = {
@@ -993,7 +999,6 @@ function renderItemPaneSection(
   // 检查是否有有效的文献条目
   if (!item || !item.isRegularItem()) {
     if (currentChatState.itemId != null) {
-      persistActiveQuickChatThread();
       currentChatState.abortController?.abort(
         getString("itempane-quick-chat-abort-item-switched"),
       );
@@ -1021,9 +1026,8 @@ function renderItemPaneSection(
     sidebarNoteEditState = null;
   }
 
-  // 切换条目时先落盘上一篇的对话，再终止进行中的请求。
+  // Questions are already persisted before preparation starts.
   if (currentChatState.itemId !== item.id) {
-    persistActiveQuickChatThread();
     currentChatState.abortController?.abort(
       getString("itempane-quick-chat-abort-item-switched"),
     );
@@ -1380,6 +1384,13 @@ function canElementScrollVertically(
 }
 
 function cleanupSidebarWorkspace(body: HTMLElement): void {
+  for (const operation of [activeQuickChatRequest, quickChatPdfLoad]) {
+    if (operation && body.contains(operation.owner)) {
+      operation.controller.abort(
+        getString("itempane-quick-chat-abort-refreshed"),
+      );
+    }
+  }
   const previousLayoutCleanup = sidebarWorkspaceLayoutCleanups.get(body);
   if (previousLayoutCleanup) {
     previousLayoutCleanup();
@@ -4331,6 +4342,10 @@ function renderChatArea(
   `;
 
   let quickChatBindGeneration = 0;
+  const isBoundGeneration = (generation: number) =>
+    generation === quickChatBindGeneration &&
+    messagesArea.isConnected &&
+    currentChatState.itemId === item.id;
 
   const syncQuickChatThreadControls = (): void => {
     const busy = currentChatState.isChatting;
@@ -4390,6 +4405,15 @@ function renderChatArea(
         answer.pairId ||= `${currentChatState.threadId}_legacy_${index + 1}`;
         index += 2;
       } else {
+        // Earlier #457 files stored only the tagged question on an empty stop.
+        if (message.pairId) {
+          answer = {
+            role: "assistant",
+            pairId: message.pairId,
+            content: "",
+            stopped: true,
+          };
+        }
         index += 1;
       }
       const pairWrapper = doc.createElement("div");
@@ -4437,9 +4461,10 @@ function renderChatArea(
           overflow-x: hidden;
           user-select: text;
         `;
-        updateQuickChatAssistantMessage(aiMsgDiv, answer.content);
+        renderQuickChatAnswer(aiMsgDiv, answer);
         pairWrapper.appendChild(aiMsgDiv);
-        appendPairActions(pairWrapper, pairId, question, answer);
+        if (answer.content)
+          appendPairActions(pairWrapper, pairId, question, answer);
       }
       messagesArea.appendChild(pairWrapper);
     }
@@ -4490,14 +4515,8 @@ function renderChatArea(
 
   const ensureActiveThreadLoaded = async (): Promise<void> => {
     const generation = quickChatBindGeneration;
-    const requestItemId = item.id;
     await chatPersist.ensureLoaded();
-    if (
-      generation !== quickChatBindGeneration ||
-      !messagesArea.isConnected ||
-      currentChatState.itemId !== requestItemId ||
-      currentChatState.isChatting
-    ) {
+    if (!isBoundGeneration(generation) || currentChatState.isChatting) {
       return;
     }
     if (currentChatState.threadId) {
@@ -4523,12 +4542,11 @@ function renderChatArea(
 
   newThreadBtn.addEventListener("click", async () => {
     if (currentChatState.isChatting) return;
-    quickChatBindGeneration += 1;
+    const generation = ++quickChatBindGeneration;
     await chatPersist.ensureLoaded();
-    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+    if (!isBoundGeneration(generation) || currentChatState.isChatting) {
       return;
     }
-    persistActiveQuickChatThread();
     bindThreadToState(chatPersist.createThread(item.id));
     if (!currentChatState.pdfContent) {
       void loadPdfContentIfNeeded();
@@ -4551,9 +4569,9 @@ function renderChatArea(
       confirmed = true;
     }
     if (!confirmed) return;
-    quickChatBindGeneration += 1;
+    const generation = ++quickChatBindGeneration;
     await chatPersist.ensureLoaded();
-    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+    if (!isBoundGeneration(generation) || currentChatState.isChatting) {
       return;
     }
     const next = chatPersist.deleteThread(item.id, targetId);
@@ -4573,14 +4591,13 @@ function renderChatArea(
       refreshThreadSelect();
       return;
     }
-    quickChatBindGeneration += 1;
+    const generation = ++quickChatBindGeneration;
     const nextId = threadSelect.value;
     if (!nextId || nextId === currentChatState.threadId) return;
     await chatPersist.ensureLoaded();
-    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
+    if (!isBoundGeneration(generation) || currentChatState.isChatting) {
       return;
     }
-    persistActiveQuickChatThread();
     const thread = chatPersist.setActiveThread(item.id, nextId);
     if (thread) bindThreadToState(thread);
   });
@@ -4785,6 +4802,7 @@ function renderChatArea(
   };
 
   function resetQuickChatConversationForRelatedChange(message: string): void {
+    quickChatBindGeneration++;
     currentChatState.abortController?.abort(message);
     currentChatState.conversationHistory = [];
     currentChatState.relatedContextSignature = "";
@@ -4863,13 +4881,14 @@ function renderChatArea(
   }
 
   async function pickRelatedItemsFromCollection(): Promise<void> {
+    const generation = quickChatBindGeneration;
     const result = await openQuickChatRelatedSelectorDialog(
       doc,
       item.id,
       currentChatState.relatedItems,
       currentChatState.relatedMode,
     );
-    if (!result) return;
+    if (!result || !isBoundGeneration(generation)) return;
     applyRelatedSelection(result.refs, result.mode);
   }
 
@@ -5026,11 +5045,11 @@ function renderChatArea(
     justify-content: center;
   `;
   stopBtn.addEventListener("click", () => {
-    if (!currentChatState.isChatting) return;
+    if (activeQuickChatRequest?.owner !== messagesArea) return;
     stopBtn.textContent = getString("itempane-stopping");
     stopBtn.style.background = "#9e9e9e";
     (stopBtn as HTMLButtonElement).disabled = true;
-    currentChatState.abortController?.abort(getString("itempane-stop-current"));
+    activeQuickChatRequest.controller.abort(getString("itempane-stop-current"));
   });
 
   const resizeQuickChatInput = (): void => {
@@ -5048,7 +5067,14 @@ function renderChatArea(
   });
 
   const startNewQuickChatConversation = async (): Promise<void> => {
-    quickChatBindGeneration += 1;
+    const generation = ++quickChatBindGeneration;
+    if (!currentChatState.threadId) {
+      await chatPersist.ensureLoaded();
+      if (!isBoundGeneration(generation)) return;
+      currentChatState.threadId = chatPersist.getOrCreateActiveThread(
+        item.id,
+      ).id;
+    }
     currentChatState.abortController?.abort(
       getString("itempane-quick-chat-new-conversation-abort"),
     );
@@ -5059,25 +5085,8 @@ function renderChatArea(
     currentChatState.abortController = null;
     currentChatState.savedPairIds = new Set();
     syncQuickChatThreadControls();
-    await chatPersist.ensureLoaded();
-    if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
-      return;
-    }
-    if (currentChatState.itemId != null) {
-      if (!currentChatState.threadId) {
-        const thread = chatPersist.getOrCreateActiveThread(
-          currentChatState.itemId,
-        );
-        currentChatState.threadId = thread.id;
-      }
-      chatPersist.saveMessages(
-        currentChatState.itemId,
-        currentChatState.threadId,
-        [],
-        currentChatState,
-      );
-      refreshThreadSelect();
-    }
+    persistActiveQuickChatThread();
+    refreshThreadSelect();
 
     messagesArea.innerHTML = `<div style="color: #777; text-align: center; padding: 10px;">${escapeHtmlForChat(getString("itempane-quick-chat-new-conversation-created"))}</div>`;
     inputBox.value = "";
@@ -5108,8 +5117,9 @@ function renderChatArea(
       getPref("quickChatSuppressNewConversationWarning"),
     );
     if (!suppressWarning) {
+      const generation = quickChatBindGeneration;
       const confirmed = await confirmQuickChatNewConversation(doc);
-      if (!confirmed.ok) return;
+      if (!confirmed.ok || !isBoundGeneration(generation)) return;
       if (confirmed.suppressFutureWarning) {
         setPref("quickChatSuppressNewConversationWarning", true);
       }
@@ -5160,41 +5170,56 @@ function renderChatArea(
     messagesArea.innerHTML = html;
   };
 
-  const loadPdfContentIfNeeded = async (): Promise<void> => {
+  const loadPdfContentIfNeeded = (
+    controller = createChatAbortController(),
+  ): Promise<void> => {
     const requestState = currentChatState;
-    if (currentChatState.pdfContent) {
+    if (requestState.pdfContent) {
       if (!messagesArea.textContent?.trim()) {
         showPdfStatus(
           `<div style="color: #4caf50; text-align: center; padding: 10px;">${getString("itempane-chat-pdf-loaded")}</div>`,
         );
       }
-      return;
+      return Promise.resolve();
     }
+    if (
+      quickChatPdfLoad?.owner === messagesArea &&
+      !quickChatPdfLoad.controller.signal.aborted
+    ) {
+      return quickChatPdfLoad.ready;
+    }
+    quickChatPdfLoad?.controller.abort(
+      getString("itempane-quick-chat-abort-refreshed"),
+    );
+    const isCurrentLoad = () =>
+      !controller.signal.aborted &&
+      currentChatState === requestState &&
+      currentChatState.itemId === item.id &&
+      messagesArea.isConnected;
 
-    // 如果尚未加载 PDF 内容，则加载
-    if (item) {
+    const ready = (async () => {
       try {
         const { ContentExtractor } = await import("./contentExtractor");
         const { default: LLMService } = await import("./llmService");
+        if (!isCurrentLoad()) return;
         const pdfMode = LLMService.getEffectivePdfProcessMode();
 
         showPdfStatus(
           `<div style="color: #999; text-align: center; padding: 10px;">${getString("itempane-chat-loading-pdf")}</div>`,
         );
 
-        const { content: pdfContent, isBase64 } =
-          await ContentExtractor.extractAnalyzableContentFromItem(
+        const { content: pdfContent, isBase64 } = await waitWithAbort(
+          ContentExtractor.extractAnalyzableContentFromItem(
             item,
             pdfMode === "base64",
             pdfMode,
-          );
+            undefined,
+            { abortSignal: controller.signal },
+          ),
+          controller.signal,
+        );
 
-        if (
-          currentChatState !== requestState ||
-          currentChatState.itemId !== item.id ||
-          !messagesArea.isConnected
-        )
-          return;
+        if (!isCurrentLoad()) return;
 
         if (pdfContent) {
           currentChatState.pdfContent = pdfContent;
@@ -5208,12 +5233,18 @@ function renderChatArea(
           );
         }
       } catch (err: any) {
+        if (!isCurrentLoad()) return;
         ztoolkit.log("[AI-Butler] 快速追问加载 PDF 失败:", err);
         showPdfStatus(
           `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-load-failed", { args: { message: escapeHtmlForChat(err?.message || getString("common-unknown-error")) } })}</div>`,
         );
+      } finally {
+        if (quickChatPdfLoad?.controller === controller)
+          quickChatPdfLoad = null;
       }
-    }
+    })();
+    quickChatPdfLoad = { owner: messagesArea, controller, ready };
+    return ready;
   };
 
   const showChatArea = async (
@@ -5277,25 +5308,31 @@ function renderChatArea(
     )
       return;
 
-    // 检查是否有 PDF 内容
-    if (!currentChatState.pdfContent) {
-      if (!quickChatHasVisibleMessages()) {
-        messagesArea.innerHTML = `<div style="color: #f44336; text-align: center; padding: 10px;">${getString("itempane-chat-wait-pdf-loaded")}</div>`;
-      }
-      return;
-    }
-
-    // 设置为正在聊天状态
     currentChatState.isChatting = true;
     syncQuickChatThreadControls();
-    currentChatState.abortController = createChatAbortController();
+    // A send during preload takes ownership of the same extraction and its signal.
+    currentChatState.abortController =
+      quickChatPdfLoad?.owner === messagesArea &&
+      !quickChatPdfLoad.controller.signal.aborted
+        ? quickChatPdfLoad.controller
+        : createChatAbortController();
     const requestState = currentChatState;
     const requestController = currentChatState.abortController;
+    const requestItemId = currentChatState.itemId;
     const requestThreadId = currentChatState.threadId;
+    const requestContext = cloneChatContext(requestState);
+    activeQuickChatRequest = {
+      owner: messagesArea,
+      controller: requestController,
+    };
     const isCurrentRequest = (): boolean =>
       currentChatState === requestState &&
       currentChatState.threadId === requestThreadId &&
       currentChatState.abortController === requestController;
+    const canContinue = (): boolean => {
+      throwIfAborted(requestController.signal);
+      return isCurrentRequest() && messagesArea.isConnected;
+    };
     sendBtn.textContent = "…";
     sendBtn.title = getString("itempane-generating-status");
     sendBtn.style.background = "#9e9e9e";
@@ -5306,7 +5343,7 @@ function renderChatArea(
     stopBtn.style.display = "inline-flex";
     (inputBox as HTMLTextAreaElement).disabled = false;
 
-    // 生成唯一对话对 ID
+    // 生成唯一对话对 ID（同一函数作用域，catch 里也能用于落盘）
     quickChatPairIdCounter++;
     const pairId = `quick_${Date.now()}_${quickChatPairIdCounter}`;
 
@@ -5389,39 +5426,111 @@ function renderChatArea(
     // 清空输入框
     inputBox.value = "";
     resizeQuickChatInput();
-    let fullResponse = "";
-    // 流式渲染器：合并 delta 的 DOM 写入，收尾时一次性渲染 Markdown/公式
-    let streamRenderer: StreamingMarkdownRenderer | null = null;
+    const streamRenderer = new StreamingMarkdownRenderer({
+      mount: () => aiMsgDiv,
+      renderStreamingSeed: () =>
+        `<strong>${getString("itempane-assistant-label")}</strong><br/>`,
+      renderFinal: (markdown, suffixHtml = "") =>
+        buildQuickChatAssistantHtml(markdown, suffixHtml),
+      onAfterRender: () => scrollQuickChatToBottomIfPinned(),
+    });
+    let sourceLabel = getString("itempane-quick-chat-source-label");
+    const signature = createQuickChatRelatedContextSignature(
+      requestContext.relatedMode,
+      requestContext.relatedItems,
+    );
+    if (
+      requestContext.relatedContextSignature &&
+      requestContext.relatedContextSignature !== signature
+    ) {
+      requestState.conversationHistory = [];
+      requestContext.relatedContextSignature = "";
+      requestContext.relatedContextIncludedCount = 0;
+    }
+    const conversation = buildQuickChatConversation(
+      requestState.conversationHistory,
+      question,
+    );
+    const pending: ChatPersistMessage = {
+      role: "user",
+      content: question,
+      displayContent: question,
+      pairId,
+    };
+    requestState.conversationHistory.push(pending);
+
+    const finishTurn = (answer?: ChatPersistMessage): boolean => {
+      const saved = chatPersist.finishTurn(
+        requestItemId,
+        requestThreadId,
+        pending,
+        answer,
+        answer && !answer.stopped ? requestContext : undefined,
+      );
+      const history = currentChatState.conversationHistory;
+      const last = history[history.length - 1];
+      if (
+        saved &&
+        currentChatState.itemId === requestItemId &&
+        currentChatState.threadId === requestThreadId &&
+        last?.role === "user" &&
+        last.pairId === pairId
+      ) {
+        if (answer) {
+          history.splice(-1, 1, pending, answer);
+          if (!answer.stopped) Object.assign(currentChatState, requestContext);
+        } else {
+          delete pending.pairId;
+        }
+      }
+      return saved;
+    };
+
+    // Abort fires before a replacement panel can restore this pending question.
+    const recordStoppedTurn = (): void => {
+      const answer: ChatPersistMessage = {
+        role: "assistant",
+        content: streamRenderer.text,
+        pairId,
+        sourceLabel,
+        stopped: true,
+      };
+      if (finishTurn(answer)) {
+        renderQuickChatAnswer(aiMsgDiv, answer, streamRenderer);
+        if (isCurrentRequest() && messagesArea.isConnected) {
+          refreshThreadSelect();
+          if (answer.content)
+            appendPairActions(pairWrapper, pairId, question, answer);
+        }
+      }
+    };
 
     try {
+      persistActiveQuickChatThread();
+      requestController.signal.addEventListener?.("abort", recordStoppedTurn, {
+        once: true,
+      });
+      if (!requestState.pdfContent) {
+        await loadPdfContentIfNeeded(requestController);
+        if (!canContinue()) return;
+        if (!requestState.pdfContent)
+          throw new Error(getString("itempane-chat-pdf-load-unavailable"));
+      }
       const { default: LLMService } = await import("./llmService");
-      if (!isCurrentRequest()) return;
+      if (!canContinue()) return;
 
-      let relatedContextResult: QuickChatRelatedContextResult | null = null;
-      let conversationQuestion = question;
-      let sourceLabel = getString("itempane-quick-chat-source-label");
-      if (currentChatState.relatedItems.length > 0) {
-        const nextSignature = createQuickChatRelatedContextSignature(
-          currentChatState.relatedMode,
-          currentChatState.relatedItems,
-        );
-        if (
-          currentChatState.relatedContextSignature &&
-          currentChatState.relatedContextSignature !== nextSignature
-        ) {
-          currentChatState.conversationHistory = [];
-        }
-
-        if (currentChatState.conversationHistory.length === 0) {
+      if (requestContext.relatedItems.length > 0) {
+        if (!conversation.some((message) => message.role === "assistant")) {
           setRelatedStatus(getString("itempane-related-context-loading"));
-          relatedContextResult = await resolveQuickChatRelatedContext(
-            currentChatState.relatedItems,
-            currentChatState.relatedMode,
+          const relatedContextResult = await resolveQuickChatRelatedContext(
+            requestContext.relatedItems,
+            requestContext.relatedMode,
+            { abortSignal: requestController.signal },
           );
-          if (!isCurrentRequest()) return;
-          currentChatState.relatedContextSignature =
+          if (!canContinue()) return;
+          requestContext.relatedContextSignature =
             relatedContextResult.signature;
-          currentChatState.relatedContextIncludedCount =
+          requestContext.relatedContextIncludedCount =
             relatedContextResult.included.length;
 
           if (relatedContextResult.skipped.length > 0) {
@@ -5433,7 +5542,7 @@ function renderChatArea(
             );
           }
           if (relatedContextResult.included.length > 0) {
-            conversationQuestion = buildQuickChatQuestionWithRelatedContext(
+            pending.content = buildQuickChatQuestionWithRelatedContext(
               question,
               relatedContextResult,
             );
@@ -5450,105 +5559,94 @@ function renderChatArea(
             );
             sourceLabel = getString("itempane-quick-chat-source-label");
           }
-        } else if (currentChatState.relatedContextIncludedCount > 0) {
+        } else if (requestContext.relatedContextIncludedCount > 0) {
           sourceLabel = getString("itempane-related-source-label", {
             args: {
-              count: currentChatState.relatedContextIncludedCount,
+              count: requestContext.relatedContextIncludedCount,
               mode: getRelatedModeLabel(),
             },
           });
         }
       }
 
-      const conversationHistory = buildQuickChatConversation(
-        currentChatState.conversationHistory,
-        conversationQuestion,
+      conversation[conversation.length - 1].content = pending.content;
+      const response = await waitWithAbort(
+        LLMService.chat({
+          content: {
+            kind: "legacy",
+            content: currentChatState.pdfContent,
+            isBase64: currentChatState.isBase64,
+            policy: currentChatState.isBase64 ? "pdf-base64" : "text",
+          },
+          conversation,
+          transport: {
+            abortSignal: requestController.signal,
+          },
+          onProgress: (chunk: string) => {
+            if (
+              !isCurrentRequest() ||
+              !messagesArea.isConnected ||
+              requestController.signal.aborted
+            )
+              return;
+            streamRenderer.push(chunk);
+          },
+        }),
+        requestController.signal,
       );
-
-      let responseMetadata: LLMNoteMetadata | null = null;
-      streamRenderer = new StreamingMarkdownRenderer({
-        mount: () => aiMsgDiv,
-        renderStreamingSeed: () =>
-          `<strong>${getString("itempane-assistant-label")}</strong><br/>`,
-        renderFinal: (markdown, suffixHtml = "") =>
-          buildQuickChatAssistantHtml(markdown, suffixHtml),
-        onAfterRender: () => scrollQuickChatToBottomIfPinned(),
-      });
-      const response = await LLMService.chat({
-        content: {
-          kind: "legacy",
-          content: currentChatState.pdfContent,
-          isBase64: currentChatState.isBase64,
-          policy: currentChatState.isBase64 ? "pdf-base64" : "text",
-        },
-        conversation: conversationHistory,
-        transport: {
-          abortSignal: requestController.signal,
-        },
-        onProgress: (chunk: string) => {
-          if (!isCurrentRequest()) return;
-          fullResponse += chunk;
-          // 只累积 + 合并调度：流式期不做 Markdown/公式渲染
-          streamRenderer?.push(chunk);
-        },
-      });
-      if (!isCurrentRequest()) return;
-      fullResponse = response.text;
-      responseMetadata = LLMNoteMetadataService.fromResponse("chat", response);
-
-      // 完成后一次性渲染 Markdown（含公式）
-      streamRenderer?.finalize(fullResponse);
+      if (!canContinue()) return;
 
       const answer: ChatPersistMessage = {
         role: "assistant",
-        content: fullResponse,
+        content: response.text,
         pairId,
-        noteMetadata: responseMetadata,
+        noteMetadata: LLMNoteMetadataService.fromResponse("chat", response),
         sourceLabel,
       };
-      currentChatState.conversationHistory.push(
-        {
-          role: "user",
-          content: conversationQuestion,
-          displayContent: question,
-        },
-        answer,
-      );
-      persistActiveQuickChatThread();
+      if (!finishTurn(answer)) return;
+      renderQuickChatAnswer(aiMsgDiv, answer, streamRenderer);
       refreshThreadSelect();
       appendPairActions(pairWrapper, pairId, question, answer);
     } catch (err: any) {
-      if (!isCurrentRequest()) return;
       if (isChatAbortError(err, requestController.signal)) {
-        if (fullResponse) {
-          streamRenderer?.finalize(
-            fullResponse,
-            `<div style="color: #777; font-size: 11px; margin-top: 6px;">${getString("itempane-stopped-note")}</div>`,
-          );
-        } else {
-          streamRenderer?.dispose();
-          aiMsgDiv.innerHTML = `<strong>${getString("itempane-assistant-label")}</strong> <span style="color: #777;">${getString("itempane-stopped-empty")}</span>`;
-        }
+        recordStoppedTurn();
         return;
       }
+      if (!isCurrentRequest()) return;
+      finishTurn();
       ztoolkit.log("[AI-Butler] 快速追问发送失败:", err);
-      streamRenderer?.dispose();
       aiMsgDiv.innerHTML = `<strong>${getString("itempane-assistant-label")}</strong> <span style="color: #f44336;">${getString("itempane-error", { args: { error: err?.message || getString("itempane-send-failed") } })}</span>`;
     } finally {
-      streamRenderer?.dispose();
-      // 恢复状态
-      if (isCurrentRequest()) {
+      requestController.signal.removeEventListener?.(
+        "abort",
+        recordStoppedTurn,
+      );
+      streamRenderer.dispose();
+      const stateIsCurrent = isCurrentRequest();
+      if (activeQuickChatRequest?.controller === requestController) {
+        activeQuickChatRequest = null;
+      }
+      if (stateIsCurrent) {
         currentChatState.isChatting = false;
         currentChatState.abortController = null;
+      }
+      // 发送/停止按钮是共享 DOM：只要没有新的请求在跑就必须复位。
+      // 旧实现在这里用 isCurrentRequest() 做唯一条件，一旦请求变“过期”
+      // （切线程、换条目、或请求始终不结束），按钮就永远停在
+      // “停止中…”且发送键保持禁用 —— 这就是“stop 按钮卡住”。
+      if (!currentChatState.isChatting) {
         syncQuickChatThreadControls();
         sendBtn.textContent = "↑";
         sendBtn.title = getString("itempane-send");
         sendBtn.style.background = "#59c0bc";
         (sendBtn as HTMLButtonElement).disabled = false;
         stopBtn.style.display = "none";
+        stopBtn.textContent = getString("itempane-stop");
+        stopBtn.style.background = "#f44336";
         (stopBtn as HTMLButtonElement).disabled = false;
         (inputBox as HTMLTextAreaElement).disabled = false;
-        inputBox.focus();
+        // 只有当前请求才抢焦点：过期请求不得打断用户（#427）。
+        if (stateIsCurrent && messagesArea.isConnected) inputBox.focus();
       }
     }
   });
@@ -5807,13 +5905,18 @@ function buildQuickChatAssistantHtml(
   return `<strong>${getString("itempane-assistant-label")}</strong><br/>${renderQuickChatMarkdown(markdown)}${suffixHtml}`;
 }
 
-function updateQuickChatAssistantMessage(
+function renderQuickChatAnswer(
   container: HTMLElement,
-  markdown: string,
-  suffixHtml = "",
+  answer: ChatPersistMessage,
+  renderer?: StreamingMarkdownRenderer,
 ): void {
+  const suffix = answer.stopped
+    ? `<div style="color: #777; font-size: 11px; margin-top: 6px;">${getString(answer.content ? "itempane-stopped-note" : "itempane-stopped-empty")}</div>`
+    : "";
+  const markdown = answer.content;
   try {
-    container.innerHTML = buildQuickChatAssistantHtml(markdown, suffixHtml);
+    if (renderer) renderer.finalize(markdown, suffix);
+    else container.innerHTML = buildQuickChatAssistantHtml(markdown, suffix);
   } catch (error) {
     ztoolkit.log(
       "[AI-Butler] 快速追问写入渲染结果失败，尝试清洗后重试:",
@@ -5822,7 +5925,7 @@ function updateQuickChatAssistantMessage(
     try {
       container.innerHTML = buildQuickChatAssistantHtml(
         sanitizeQuickChatDomString(markdown),
-        sanitizeQuickChatDomString(suffixHtml),
+        sanitizeQuickChatDomString(suffix),
       );
     } catch (retryError) {
       ztoolkit.log(

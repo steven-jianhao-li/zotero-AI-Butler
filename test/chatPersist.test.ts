@@ -7,6 +7,7 @@ import {
 import {
   ChatPersist,
   cloneChatContext,
+  normalizeChatMessages,
   type ChatPersistIo,
   type ChatPersistMessage,
   type ChatPersistContext,
@@ -198,6 +199,59 @@ describe("quick-chat persistence and abort labeling", function () {
     await store.flush();
   });
 
+  it("writes a newer turn and selection after an already running flush (#457)", async function () {
+    const io = memoryIo();
+    const write = io.write.bind(io);
+    let release!: () => void;
+    let started!: () => void;
+    const slowWrite = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const writing = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let writes = 0;
+    io.write = async (path, snapshot) => {
+      if (++writes === 1) {
+        started();
+        await slowWrite;
+      }
+      await write(path, snapshot);
+    };
+
+    const { store } = createStore(io, ["a", "b"]);
+    await store.ensureLoaded();
+    store.createThread(7);
+    const question: ChatPersistMessage = {
+      role: "user",
+      content: "Interrupted",
+      pairId: "p",
+    };
+    store.saveMessages(7, "a", [question]);
+    const old = store.flush();
+    await writing;
+    store.finishTurn(7, "a", question, {
+      role: "assistant",
+      content: "Partial",
+      stopped: true,
+      pairId: "p",
+    });
+    store.createThread(7);
+    store.saveMessages(7, "b", [{ role: "user", content: "New question" }]);
+    const newer = store.flush();
+    // Let a concurrent writer finish before releasing the delayed snapshot.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    release();
+    await Promise.all([old, newer]);
+    const restored = createStore(io, []).store;
+    await restored.ensureLoaded();
+    expect(restored.getOrCreateActiveThread(7).id).to.equal("b");
+    expect(restored.getThread(7, "b")?.messages[0].content).to.equal(
+      "New question",
+    );
+    expect(restored.getThread(7, "a")?.messages[1].stopped).to.equal(true);
+  });
+
   it("keeps per-item threads across a reload", async function () {
     const io = memoryIo();
     const first = createStore(io, ["thread-a", "thread-b"]);
@@ -300,5 +354,24 @@ describe("quick-chat persistence and abort labeling", function () {
     expect(isChatAbortError(new Error("network"), controller.signal)).to.equal(
       true,
     );
+  });
+
+  it("keeps the stopped marker so interrupted answers stay identifiable", function () {
+    const messages = normalizeChatMessages([
+      { role: "user", content: "Q", pairId: "p1" },
+      {
+        role: "assistant",
+        content: "partial answer",
+        pairId: "p1",
+        stopped: true,
+      },
+      { role: "assistant", content: "complete answer", pairId: "p2" },
+    ]);
+
+    expect(messages).to.have.length(3);
+    expect(messages[1].content).to.equal("partial answer");
+    expect(messages[1].stopped).to.equal(true);
+    expect(messages[1].pairId).to.equal("p1");
+    expect(messages[2].stopped).to.equal(undefined);
   });
 });

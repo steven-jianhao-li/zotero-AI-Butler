@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile, access } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { setImmediate } from "node:timers";
@@ -44,6 +47,7 @@ function load(source, imports = {}, globals = {}) {
 }
 
 class Element {
+  dataset = {};
   children = [];
   style = {};
   listeners = new Map();
@@ -58,8 +62,38 @@ class Element {
     this.children.push(child);
   }
 
+  getClientRects() {
+    return [];
+  }
+
   get childElementCount() {
     return this.children.length;
+  }
+
+  focus() {
+    this.focusCount = (this.focusCount || 0) + 1;
+  }
+
+  find(predicate) {
+    if (predicate(this)) return this;
+    for (const child of this.children) {
+      const found = child.find(predicate);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  querySelector(selector) {
+    return this.find((element) =>
+      selector
+        .split(", ")
+        .some(
+          (part) =>
+            part === "#" + element.id ||
+            part === "." + element.className ||
+            (part === "[data-pair-id]" && element["data-pair-id"]),
+        ),
+    );
   }
 
   querySelectorAll() {
@@ -93,7 +127,8 @@ const doc = {
 function sidebar(imports = {}, globals = {}) {
   return load(
     `${sidebarSource}
-export { getAvailableSidebarTabs, renderSidebarTabPanel, createQuickChatPairActions };
+export { getAvailableSidebarTabs, renderSidebarTabPanel, createQuickChatPairActions, renderChatArea, renderQuickChatAnswer, resetQuickChatState };
+export const getState = () => currentChatState;
 renderImageSummarySection = (...args) => __renderImage(...args);
 copyQuickChatText = (...args) => __copy(...args);
 saveChatPairToNote = (...args) => __save(...args);`,
@@ -271,9 +306,7 @@ function threadFixture() {
       chatPersist: { markPairSaved: (...args) => marked.push(args) },
       getString: locale.getString,
       escapeHtmlForChat: (text) => text,
-      updateQuickChatAssistantMessage: (element, text) => {
-        element.answer = text;
-      },
+      renderQuickChatAnswer: ui.renderQuickChatAnswer,
       renderRelatedControls: () => {
         relatedRenders++;
       },
@@ -427,37 +460,6 @@ test("a failed note save can be retried without marking the reply as saved (#427
   assert.equal(save.disabled, true);
 });
 
-// 侧边栏发送处理器现在通过 StreamingMarkdownRenderer 合并流式写入，
-// VM 夹具需要提供同名构造器（真实实现由 test/streamingMarkdownRenderer.test.ts 覆盖）。
-class StreamingMarkdownRendererStub {
-  constructor(options = {}) {
-    this.options = options;
-    StreamingMarkdownRendererStub.lastOptions = options;
-    this.buffer = "";
-    this.disposed = false;
-  }
-
-  push(delta) {
-    if (this.disposed) return;
-    this.buffer += delta;
-  }
-
-  flush() {}
-
-  finalize(markdown) {
-    if (this.disposed) return;
-    this.buffer = typeof markdown === "string" ? markdown : this.buffer;
-  }
-
-  dispose() {
-    this.disposed = true;
-  }
-
-  get metrics() {
-    return { streamingWrites: 0, finalRender: 0, pushes: 0 };
-  }
-}
-
 function deferred() {
   let resolve;
   const promise = new Promise((done) => {
@@ -466,159 +468,533 @@ function deferred() {
   return { promise, resolve };
 }
 
-test("a late reply from another paper cannot overwrite or unlock the active chat (#427)", async () => {
-  const started = deferred();
-  const response = deferred();
-  const sendBtn = new Element("button");
-  const inputBox = new Element("textarea");
-  inputBox.value = "Question?";
-  inputBox.focus = () => assert.fail("A stale request stole input focus");
-  const scope = {
-    currentChatState: {
-      itemId: 7,
-      threadId: "a",
-      isChatting: false,
-      pdfContent: "Paper A",
-      relatedItems: [],
-      conversationHistory: [],
-      abortController: null,
-    },
-    sendBtn,
-    inputBox,
-    stopBtn: new Element("button"),
-    doc,
-    item: { id: 7 },
-    messagesArea: new Element("div"),
-    quickChatPairIdCounter: 0,
-    quickChatBindGeneration: 0,
-    quickChatPinnedToBottom: true,
-    getString: locale.getString,
-    escapeHtmlForChat: (text) => text,
-    createChatAbortController: () => new globalThis.AbortController(),
-    ensureActiveThreadLoaded: async () => {},
-    syncQuickChatThreadControls() {},
-    quickChatHasVisibleMessages: () => false,
-    scrollQuickChatToBottomIfPinned() {},
-    resizeQuickChatInput() {},
-    buildQuickChatConversation: (history, question) => [
-      ...history,
-      { role: "user", content: question },
-    ],
-    updateQuickChatAssistantMessage: () =>
-      assert.fail("A stale reply changed the UI"),
-    persistActiveQuickChatThread: () =>
-      assert.fail("A stale reply was persisted"),
-    StreamingMarkdownRenderer: StreamingMarkdownRendererStub,
-    buildQuickChatAssistantHtml: (markdown, suffixHtml = "") =>
-      String(markdown) + suffixHtml,
-  };
-  const first = sidebarSource.indexOf(
-    '  sendBtn.addEventListener("click", async () => {',
+function moduleSource(name) {
+  return readFileSync(
+    new URL(`../src/modules/${name}.ts`, import.meta.url),
+    "utf8",
   );
-  const last = sidebarSource.indexOf("  // Enter 发送", first);
-  const source = sidebarSource.slice(first, last);
-  // Keep the VM context so the fixture can simulate switching the selected item.
-  const context = vm.createContext({
-    ...scope,
-    require: () => ({
-      __esModule: true,
-      default: {
-        chat: (options) => {
-          started.resolve(options);
-          return response.promise;
+}
+
+async function chatProfile(t) {
+  const dir = await mkdtemp(path.join(tmpdir(), "butler-quick-chat-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const { ChatPersist, ...persist } = load(persistSource, {
+    "../utils/locale": locale,
+  });
+  const io = {
+    getDirectory: () => dir,
+    ensureDirectory: async () => {},
+    exists: (file) =>
+      access(file).then(
+        () => true,
+        () => false,
+      ),
+    read: (file) => readFile(file, "utf8"),
+    write: (file, value) => writeFile(file, value, "utf8"),
+    join: path.join,
+  };
+  return async (chat, imports = {}, globals = {}) => {
+    const deps = {
+      "../utils/locale": locale,
+      "./llmproviders/shared/requestAbort": load(
+        moduleSource("llmproviders/shared/requestAbort"),
+        {
+          "../../../utils/locale": locale,
+        },
+      ),
+      ...imports,
+    };
+    deps["./contentExtractor"] = load(moduleSource("contentExtractor"), deps);
+    const chatPersist = new ChatPersist(io);
+    await chatPersist.ensureLoaded();
+    const ui = sidebar({
+      "../utils/prefs": {
+        getPref: (key) => key === "quickChatSuppressNewConversationWarning",
+      },
+      "./chatPersist": { ...persist, chatPersist },
+      "../utils/streamingMarkdownRenderer": load(
+        moduleSource("../utils/streamingMarkdownRenderer"),
+      ),
+      "./chatContext": load(moduleSource("chatContext"), {
+        "../utils/locale": locale,
+      }),
+      "./quickChatRelatedContext": load(
+        moduleSource("quickChatRelatedContext"),
+        deps,
+        globals,
+      ),
+      "./llmService": {
+        __esModule: true,
+        default: { chat, getEffectivePdfProcessMode: () => "text" },
+      },
+      "./llmNoteMetadata": {
+        LLMNoteMetadataService: { fromResponse: () => null },
+      },
+      ...deps,
+    });
+    async function open(itemId = 7, preload = false) {
+      const panel = new Element("div");
+      ui.renderChatArea(panel, doc, { id: itemId }, preload);
+      await new Promise(setImmediate);
+      const state = ui.getState();
+      if (!preload) state.pdfContent = "Paper " + itemId;
+      const input = panel.find((element) => element.tag === "textarea");
+      const send = panel.find((element) => element.title === "itempane-send");
+      const stop = panel.find(
+        (element) => element.title === "itempane-stop-current",
+      );
+      const messages = panel.querySelector(".ai-butler-quick-chat-messages");
+      return {
+        state,
+        input,
+        send,
+        stop,
+        panel,
+        messages,
+        ask(question) {
+          input.value = question;
+          return send.click();
+        },
+      };
+    }
+    return { chatPersist, open, ui };
+  };
+}
+
+function pausedChat(options) {
+  const started = deferred();
+  const chat = (request) => {
+    started.resolve(request);
+    if (options.partial) request.onProgress(options.partial);
+    return new Promise((resolve, reject) => {
+      options.finish = () => resolve({ text: "Late reply" });
+      options.reject = () => reject(new Error("Cancelled"));
+      if (!options.delayAbort)
+        request.transport.abortSignal.addEventListener("abort", options.reject);
+    });
+  };
+  return { chat, started: started.promise };
+}
+
+for (const partial of ["Partial answer", ""]) {
+  test(`stopping with ${partial ? "partial text" : "no tokens"} survives a follow-up and profile reload (#457)`, async (t) => {
+    const profile = await chatProfile(t);
+    const blocked = pausedChat({ partial });
+    const calls = [];
+    const session = await profile((request) => {
+      calls.push(request.conversation);
+      return calls.length === 1 ? blocked.chat(request) : { text: "Finished" };
+    });
+    const a = await session.open();
+    const pending = a.ask("Interrupted question");
+    await blocked.started;
+    await a.stop.click();
+    await pending;
+    const marker = partial ? "itempane-stopped-note" : "itempane-stopped-empty";
+    const checkStoppedPair = (messages) => {
+      const pair = messages.children[0];
+      assert.match(pair.children[0].html, /Interrupted question/);
+      assert.ok(pair.children[1].html.includes(partial));
+      assert.ok(pair.children[1].html.includes(marker));
+      assert.equal(pair.children.length, partial ? 3 : 2);
+    };
+    checkStoppedPair(a.messages);
+    assert.equal(a.send.disabled, false);
+    assert.equal(a.stop.style.display, "none");
+    assert.equal(a.input.disabled, false);
+    await a.ask("Next question");
+    assert.deepEqual(
+      Array.from(calls[1], (m) => m.content),
+      ["Next question"],
+    );
+    await session.chatPersist.flush();
+    const restarted = await profile((request) => {
+      calls.push(request.conversation);
+      return { text: "Third answer" };
+    });
+    const b = await restarted.open();
+    checkStoppedPair(b.messages);
+    const history = b.state.conversationHistory;
+    assert.equal(history.length, 4);
+    assert.equal(history[1].pairId, history[0].pairId);
+    assert.equal(history[1].stopped, true);
+    await b.ask("Third question");
+    assert.deepEqual(
+      Array.from(calls[2], (m) => m.content),
+      ["Next question", "Finished", "Third question"],
+    );
+  });
+}
+
+test("a failed request restores its question without a stopped label (#457)", async (t) => {
+  const profile = await chatProfile(t);
+  const session = await profile(() => {
+    throw new Error("Provider failure");
+  });
+  const active = await session.open();
+  await active.ask("Failed question");
+  await session.chatPersist.flush();
+  const restored = await (await profile()).open();
+  assert.equal(restored.messages.children[0].children.length, 1);
+  assert.match(
+    restored.messages.children[0].children[0].html,
+    /Failed question/,
+  );
+});
+
+test("legacy interrupted questions and partial answers restore without entering prompts (#457)", async (t) => {
+  const profile = await chatProfile(t);
+  const first = await profile();
+  const thread = first.chatPersist.createThread(7);
+  first.chatPersist.saveMessages(7, thread.id, [
+    { role: "user", content: "Old question" },
+    { role: "assistant", content: "Old answer" },
+    { role: "user", content: "Interrupted", pairId: "partial" },
+    {
+      role: "assistant",
+      content: "Fragment",
+      pairId: "partial",
+      stopped: true,
+    },
+    { role: "user", content: "No tokens", pairId: "empty" },
+  ]);
+  await first.chatPersist.flush();
+  let prompt;
+  const restarted = await profile((request) => {
+    prompt = request.conversation;
+    return { text: "New answer" };
+  });
+  const active = await restarted.open();
+  assert.ok(
+    active.messages.children[1].children[1].html.includes(
+      "itempane-stopped-note",
+    ),
+  );
+  assert.ok(
+    active.messages.children[2].children[1].html.includes(
+      "itempane-stopped-empty",
+    ),
+  );
+  await active.ask("Continue");
+  assert.deepEqual(
+    Array.from(prompt, (m) => m.content),
+    ["Old question", "Old answer", "Continue"],
+  );
+});
+
+test("a late provider success cannot overwrite or unlock a newer request (#427)", async (t) => {
+  const profile = await chatProfile(t);
+  const old = { delayAbort: true };
+  const next = { delayAbort: true };
+  const first = pausedChat(old);
+  const second = pausedChat(next);
+  const session = await profile((request) =>
+    request.content.content === "Paper 7"
+      ? first.chat(request)
+      : second.chat(request),
+  );
+  const a = await session.open();
+  const sending = a.ask("Question A");
+  const request = await first.started;
+  session.ui.resetQuickChatState(8);
+  const b = await session.open(8);
+  const newer = b.ask("Question B");
+  await second.started;
+  request.onProgress("Late text");
+  old.finish();
+  await sending;
+  assert.equal(b.send.disabled, true);
+  assert.ok(b.state.abortController);
+  assert.equal(a.input.focusCount, undefined);
+  assert.equal(
+    session.chatPersist.getThread(7, a.state.threadId).messages.length,
+    1,
+  );
+  assert.equal(b.state.conversationHistory.length, 1);
+  next.finish();
+  await newer;
+});
+
+for (const change of ["switch", "clear", "delete", "newer turn"]) {
+  test(`late cancellation respects ${change} in the same paper (#457)`, async (t) => {
+    const profile = await chatProfile(t);
+    const old = { partial: "Fragment", delayAbort: true };
+    const blocked = pausedChat(old);
+    const session = await profile(blocked.chat);
+    const a = await session.open();
+    const origin = a.state.threadId;
+    a.state.relatedMode = "fullText";
+    const sending = a.ask("Question A");
+    await blocked.started;
+    const store = session.chatPersist;
+    const selected = store.createThread(7);
+    store.saveMessages(
+      7,
+      selected.id,
+      [{ role: "user", content: "Other thread" }],
+      {
+        relatedItems: [{ itemId: 22, title: "Other source" }],
+        relatedMode: "summary",
+        relatedContextSignature: "summary:22",
+        relatedContextIncludedCount: 1,
+      },
+    );
+    session.ui.resetQuickChatState(7);
+    const b = await session.open();
+    assert.equal(b.state.threadId, selected.id);
+    if (change === "clear") store.saveMessages(7, origin, []);
+    if (change === "delete") store.deleteThread(7, origin);
+    if (change === "newer turn")
+      store.saveMessages(7, origin, [
+        ...store.getThread(7, origin).messages,
+        { role: "user", content: "New turn", pairId: "new-id" },
+      ]);
+    await a.stop.click();
+    old.reject();
+    await sending;
+    await store.flush();
+    const { chatPersist: restored } = await profile();
+    const active = restored.getOrCreateActiveThread(7);
+    assert.equal(active.id, selected.id);
+    assert.equal(active.context.relatedItems[0].itemId, 22);
+    assert.equal(active.messages[0].content, "Other thread");
+    const thread = restored.getThread(7, origin);
+    if (change === "switch") {
+      assert.equal(thread.context.relatedMode, "fullText");
+      assert.equal(thread.messages.at(-1).stopped, true);
+      assert.equal(thread.messages.at(-1).content, "Fragment");
+      assert.ok(
+        a.messages.children
+          .at(-1)
+          .children[1].html.includes("itempane-stopped-note"),
+      );
+    }
+    if (change === "clear") assert.equal(thread.messages.length, 0);
+    if (change === "delete") assert.equal(restored.listThreads(7).length, 1);
+    if (change === "newer turn")
+      assert.equal(thread.messages.at(-1).pairId, "new-id");
+    assert.equal(a.stop.style.display, "none");
+    assert.equal(a.send.disabled, false);
+  });
+}
+
+test("a same-thread sidebar rebuild restores the interrupted stream in the replacement panel (#457)", async (t) => {
+  const profile = await chatProfile(t);
+  const old = { partial: "Fragment", delayAbort: true };
+  const blocked = pausedChat(old);
+  const session = await profile(blocked.chat);
+  const a = await session.open();
+  const pending = a.ask("Interrupted");
+  await blocked.started;
+  a.messages.isConnected = false;
+  const b = await session.open();
+  await pending;
+  assert.match(b.messages.children[0].children[1].html, /Fragment/);
+  assert.match(
+    b.messages.children[0].children[1].html,
+    /itempane-stopped-note/,
+  );
+});
+
+test("stop releases a send during the shared primary PDF preload (#457)", async (t) => {
+  const profile = await chatProfile(t);
+  const reads = [];
+  const slow = deferred();
+  const prompts = [];
+  const session = await profile(
+    (request) => {
+      prompts.push(request);
+      return { text: "Answer" };
+    },
+    {
+      "./pdfExtractor": {
+        PDFExtractor: {
+          getAllPdfAttachments: async () => [{}],
+          extractTextFromItem: (_item, _mode, _progress, { abortSignal }) => {
+            reads.push(abortSignal);
+            return reads.length === 1 ? slow.promise : "Fresh PDF text";
+          },
         },
       },
-    }),
-    ztoolkit: { log() {} },
-  });
-  vm.runInContext(
-    transformSync(source, {
-      loader: "ts",
-      format: "cjs",
-      target: "es2018",
-      supported: { "dynamic-import": false },
-    }).code,
-    context,
+    },
   );
-  const sending = sendBtn.click();
-  const options = await started.promise;
-  const nextState = {
-    itemId: 8,
-    threadId: "b",
-    isChatting: true,
-    pdfContent: "Paper B",
-    conversationHistory: [{ role: "user", content: "Question B" }],
-    abortController: new globalThis.AbortController(),
-  };
-  context.currentChatState = nextState;
-  options.onProgress("Late text from A");
-  response.resolve({ text: "Late answer from A" });
+  const a = await session.open(7, true);
+  const sending = a.ask("First question");
+  await new Promise(setImmediate);
+  assert.equal(reads.length, 1);
+  const signal = reads[0];
+  assert.equal(signal, a.state.abortController.signal);
+  await a.stop.click();
+  await new Promise(setImmediate);
+  assert.equal(signal.aborted, true);
+  assert.equal(a.send.disabled, false);
+  assert.equal(a.state.conversationHistory.at(-1).stopped, true);
   await sending;
-  assert.equal(nextState.isChatting, true);
-  assert.ok(nextState.abortController);
-  assert.deepEqual(nextState.conversationHistory, [
-    { role: "user", content: "Question B" },
-  ]);
-
-  // 渲染器的 renderFinal 必须把调用方追加的后缀（例如“已终止”提示）一起渲染出来。
-  const hook = StreamingMarkdownRendererStub.lastOptions;
-  assert.equal(typeof hook.renderFinal, "function");
-  const rendered = hook.renderFinal("# answer", "<div>STOPPED-NOTE</div>");
-  assert.ok(
-    rendered.includes("STOPPED-NOTE"),
-    "renderFinal must keep the suffix the caller appends",
-  );
-  assert.ok(
-    rendered.includes("answer"),
-    "renderFinal must still render the markdown",
+  assert.equal(prompts.length, 0);
+  await a.ask("Try again");
+  slow.resolve("Obsolete text");
+  await new Promise(setImmediate);
+  assert.equal(reads.length, 2);
+  assert.equal(a.state.pdfContent, "Fresh PDF text");
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].content.content, "Fresh PDF text");
+  assert.deepEqual(
+    Array.from(prompts[0].conversation, (m) => m.content),
+    ["Try again"],
   );
 });
 
-test("a late PDF extraction does not replace another paper's content (#427)", async () => {
+test("reset during text preparation keeps a newer reply when the cancelled read returns (#457)", async (t) => {
+  const profile = await chatProfile(t);
+  const slow = deferred();
   const started = deferred();
-  const extracted = deferred();
-  const context = vm.createContext({
-    currentChatState: { itemId: 7, pdfContent: "" },
-    item: { id: 7 },
-    messagesArea: new Element("div"),
-    getString: locale.getString,
-    showPdfStatus() {},
-    ztoolkit: { log() {} },
-    require: (name) =>
-      name === "./contentExtractor"
-        ? {
-            ContentExtractor: {
-              extractAnalyzableContentFromItem: () => {
-                started.resolve();
-                return extracted.promise;
-              },
-            },
-          }
-        : {
-            __esModule: true,
-            default: { getEffectivePdfProcessMode: () => "text" },
+  let reads = 0;
+  const session = await profile(
+    () => ({ text: "New reply" }),
+    {
+      "./pdfExtractor": {
+        PDFExtractor: {
+          getAllPdfAttachments: async () => [{}],
+          extractTextFromItem: () => {
+            if (++reads > 1) return "Fresh source";
+            started.resolve();
+            return slow.promise;
           },
-  });
-  vm.runInContext(
-    transformSync(
-      closure("loadPdfContentIfNeeded", "showChatArea") +
-        "\nglobalThis.loadPdf = loadPdfContentIfNeeded;",
-      {
-        loader: "ts",
-        format: "cjs",
-        target: "es2018",
-        supported: { "dynamic-import": false },
+        },
       },
-    ).code,
-    context,
+    },
+    { Zotero: { Items: { getAsync: async (id) => ({ id }) } } },
   );
-  const loading = context.loadPdf();
+  const a = await session.open();
+  a.state.relatedItems = [{ itemId: 10, title: "Related" }];
+  a.state.relatedMode = "fullText";
+  const sending = a.ask("Before reset");
   await started.promise;
-  context.currentChatState = { itemId: 8, pdfContent: "Paper B" };
-  extracted.resolve({ content: "Paper A", isBase64: false });
-  await loading;
-  assert.equal(context.currentChatState.pdfContent, "Paper B");
+  await a.panel
+    .find((element) => element.title === "itempane-quick-chat-new-conversation")
+    .click();
+  await a.ask("After reset");
+  slow.resolve("Obsolete source");
+  await sending;
+  await session.chatPersist.flush();
+  const restored = await (await profile()).open();
+  const messages = restored.state.conversationHistory;
+  assert.equal(messages.length, 2);
+  assert.equal(messages[0].displayContent, "After reset");
+  assert.match(messages[0].content, /Fresh source/);
+  assert.equal(messages[1].content, "New reply");
+  assert.equal(restored.state.relatedContextSignature, "fullText:10");
 });
+
+for (const mode of ["summary", "fullText"]) {
+  test(`stop while preparing related ${mode} releases the composer before the host read finishes (#457)`, async (t) => {
+    const profile = await chatProfile(t);
+    const slow = deferred();
+    const started = deferred();
+    const reads = [];
+    const lookups = [];
+    const prompts = [];
+    const read = (item, signal) => {
+      reads.push(item.id);
+      if (reads.length > 1) return "Related text " + item.id;
+      started.resolve(signal);
+      return slow.promise;
+    };
+    const session = await profile(
+      (request) => {
+        prompts.push(request.conversation);
+        return { text: "Complete" };
+      },
+      {
+        "./pdfExtractor": {
+          PDFExtractor: {
+            getAllPdfAttachments: async () => [{}],
+            extractTextFromItem: (item, _mode, _progress, { abortSignal }) =>
+              read(item, abortSignal),
+          },
+        },
+        "./aiNoteService": {
+          AiNoteService: {
+            findNoteRecord: async (item) => ({ rawHtml: await read(item) }),
+          },
+        },
+        "./llmNoteMetadata": {
+          LLMNoteMetadataService: {
+            parseSummaryBlocks: () => [],
+            stripSidebarMetadata: (html) => html,
+            fromResponse: () => null,
+          },
+        },
+      },
+      {
+        Zotero: {
+          Items: {
+            getAsync: async (id) => {
+              lookups.push(id);
+              return { id };
+            },
+          },
+        },
+      },
+    );
+    const a = await session.open();
+    a.state.relatedItems = [
+      { itemId: 9, title: "Nine" },
+      { itemId: 10, title: "Ten" },
+    ];
+    a.state.relatedMode = mode;
+    const sending = a.ask("Cancelled during prep");
+    const signal = await started.promise;
+    if (mode === "fullText")
+      assert.equal(signal, a.state.abortController.signal);
+    await a.stop.click();
+    await new Promise(setImmediate);
+    assert.equal(a.send.disabled, false);
+    assert.equal(a.state.isChatting, false);
+    await sending;
+    assert.deepEqual(lookups, [9]);
+    assert.equal(prompts.length, 0);
+    assert.equal(a.state.relatedContextSignature, "");
+    const stored = session.chatPersist.getThread(7, a.state.threadId);
+    assert.equal(stored.messages[1].stopped, true);
+    assert.equal(stored.messages[1].content, "");
+    await a.ask("Follow-up");
+    slow.resolve("Obsolete related text");
+    await new Promise(setImmediate);
+    assert.deepEqual(lookups, [9, 9, 10]);
+    assert.equal(prompts.length, 1);
+    assert.equal(prompts[0].length, 1);
+    assert.match(prompts[0][0].content, /Follow-up/);
+    assert.match(prompts[0][0].content, /Related text 10/);
+    assert.equal(a.state.relatedContextIncludedCount, 2);
+  });
+}
+
+for (const fails of [false, true]) {
+  test(`late primary PDF ${fails ? "failure" : "success"} leaves the new paper and status alone (#427)`, async (t) => {
+    const profile = await chatProfile(t);
+    const slow = deferred();
+    const session = await profile(undefined, {
+      "./pdfExtractor": {
+        PDFExtractor: {
+          getAllPdfAttachments: async () => [{}],
+          extractTextFromItem: async () => {
+            await slow.promise;
+            if (fails) throw new Error("Late error");
+            return "Obsolete PDF text";
+          },
+        },
+      },
+    });
+    const a = await session.open(7, true);
+    const status = a.messages.html;
+    const b = await session.open(8);
+    slow.resolve();
+    await new Promise(setImmediate);
+    assert.equal(a.messages.html, status);
+    assert.equal(b.state.pdfContent, "Paper 8");
+  });
+}
 
 test("sending while history loads cannot submit a question to a different thread (#427)", async () => {
   const loaded = deferred();

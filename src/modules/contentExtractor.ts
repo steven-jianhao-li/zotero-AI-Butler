@@ -162,12 +162,14 @@ export class ContentExtractor {
     item: Zotero.Item,
     pdfProcessMode?: LLMPdfProcessMode,
     progressCallback?: PdfExtractionProgressCallback,
+    abortSignal?: LLMAbortSignal,
   ): Promise<string> {
     const result = await this.extractAnalyzableContentFromItem(
       item,
       false,
       pdfProcessMode,
       progressCallback,
+      { abortSignal },
     );
     return result.content;
   }

@@ -18,6 +18,8 @@ export type ChatPersistMessage = {
   noteMetadata?: LLMNoteMetadata;
   sourceLabel?: string;
   savedToNote?: boolean;
+  /** 该回答被用户停止（内容可能不完整），用于恢复时给出标记 */
+  stopped?: boolean;
 };
 
 export type ChatPersistContext = {
@@ -121,6 +123,7 @@ export function normalizeChatMessages(
       : {}),
     ...(message?.sourceLabel ? { sourceLabel: message.sourceLabel } : {}),
     ...(message?.savedToNote ? { savedToNote: true } : {}),
+    ...(message?.stopped ? { stopped: true } : {}),
   }));
 }
 
@@ -222,6 +225,7 @@ export class ChatPersist {
   private loaded = false;
   private loadingPromise: Promise<ChatPersistData> | null = null;
   private writeTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingWrite: Promise<void> = Promise.resolve();
   private readonly io: ChatPersistIo;
   private readonly now: () => number;
   private readonly createId: () => string;
@@ -280,11 +284,17 @@ export class ChatPersist {
     }, WRITE_DELAY_MS);
   }
 
-  async flush(): Promise<void> {
+  flush(): Promise<void> {
     if (this.writeTimer) {
       clearTimeout(this.writeTimer);
       this.writeTimer = null;
     }
+    // Debounced and explicit flushes share one file across all items.
+    this.pendingWrite = this.pendingWrite.then(() => this.writeSnapshot());
+    return this.pendingWrite;
+  }
+
+  private async writeSnapshot(): Promise<void> {
     try {
       const dir = this.io.getDirectory();
       const storePath = this.getStorePath();
@@ -390,10 +400,8 @@ export class ChatPersist {
   ): ChatPersistThread | null {
     if (itemId == null || !threadId) return null;
     const record = this.ensureItem(itemId);
-    let thread = this.getThread(itemId, threadId);
-    if (!thread) {
-      thread = this.createThread(itemId);
-    }
+    const thread = this.getThread(itemId, threadId);
+    if (!thread) return null;
     thread.messages = messages;
     if (context) thread.context = context;
     thread.updatedAt = this.now();
@@ -403,7 +411,6 @@ export class ChatPersist {
     ) {
       thread.title = titleFromMessages(messages);
     }
-    record.activeThreadId = thread.id;
     this.pruneItem(record);
     this.scheduleSave();
     return thread;
@@ -425,6 +432,37 @@ export class ChatPersist {
       return this.getThread(itemId, threadId);
     }
     return this.writeMessages(itemId, threadId, snapshot, contextSnapshot);
+  }
+
+  /** Complete only the pending question that still owns the end of this thread. */
+  finishTurn(
+    itemId: number,
+    threadId: string,
+    question: ChatPersistMessage,
+    answer?: ChatPersistMessage,
+    context?: ChatPersistContext,
+  ): boolean {
+    const thread = this.getThread(itemId, threadId);
+    const pending = thread?.messages[thread.messages.length - 1];
+    if (
+      !thread ||
+      pending?.role !== "user" ||
+      !question.pairId ||
+      pending.pairId !== question.pairId
+    ) {
+      return false;
+    }
+    // A provider failure keeps the unanswered question, without a stopped marker.
+    const turn = answer
+      ? [question, answer]
+      : [{ ...question, pairId: undefined }];
+    this.saveMessages(
+      itemId,
+      threadId,
+      [...thread.messages.slice(0, -1), ...turn],
+      context,
+    );
+    return true;
   }
 
   markPairSaved(itemId: number, threadId: string, pairId: string): void {

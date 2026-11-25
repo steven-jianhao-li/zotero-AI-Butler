@@ -62,6 +62,10 @@ class Element {
     this.children.push(child);
   }
 
+  getClientRects() {
+    return [];
+  }
+
   get childElementCount() {
     return this.children.length;
   }
@@ -508,6 +512,9 @@ async function chatProfile(t) {
         getPref: (key) => key === "quickChatSuppressNewConversationWarning",
       },
       "./chatPersist": { ...persist, chatPersist },
+      "../utils/streamingMarkdownRenderer": load(
+        moduleSource("../utils/streamingMarkdownRenderer"),
+      ),
       "./chatContext": load(moduleSource("chatContext"), {
         "../utils/locale": locale,
       }),

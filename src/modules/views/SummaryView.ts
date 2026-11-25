@@ -27,6 +27,7 @@ import { BaseView } from "./BaseView";
 import { MainWindow } from "./MainWindow";
 import { marked } from "marked";
 import { getPref } from "../../utils/prefs";
+import { StreamingMarkdownRenderer } from "../../utils/streamingMarkdownRenderer";
 import { getConfiguredSummaryPrompt } from "../../utils/prompts";
 import { getString } from "../../utils/locale";
 import { createStyledButton } from "./ui/components";
@@ -59,8 +60,12 @@ export class SummaryView extends BaseView {
   /** 当前条目的容器 */
   private currentItemContainer: HTMLElement | null = null;
 
-  /** 当前条目的内容缓冲区 */
-  private currentItemBuffer: string = "";
+  /**
+   * 输出窗口的流式渲染器：合并 chunk 的 Markdown 渲染与 DOM 写入。
+   * 该窗口会夹杂非流式片段（标题、提示语），因此使用 markdown-coalesced
+   * 策略——保持 Markdown 结构即时可见，但把渲染频率限制到每个 interval 一次。
+   */
+  private itemStreamRenderer: StreamingMarkdownRenderer | null = null;
 
   /** Deep-read progress tree container */
   private deepReadProgressContainer: HTMLElement | null = null;
@@ -131,6 +136,8 @@ export class SummaryView extends BaseView {
 
   /** 当前追问请求的中断控制器 */
   private chatAbortController: ChatAbortControllerLike | null = null;
+
+  private chatStreamRenderer: StreamingMarkdownRenderer | null = null;
 
   /** 已保存的追问对（仅限后续追问，不含首轮“提示词+总结”） */
   private chatPairs: Array<{ id: string; user: string; assistant: string }> =
@@ -533,7 +540,8 @@ export class SummaryView extends BaseView {
     }
 
     this.isChatting = true;
-    this.chatAbortController = createChatAbortController();
+    const requestController = createChatAbortController();
+    this.chatAbortController = requestController;
     this.chatSendButton.disabled = false;
     this.chatSendButton.innerHTML = getString("summary-chat-stop");
     this.chatSendButton.style.backgroundColor = "#f44336";
@@ -649,12 +657,22 @@ export class SummaryView extends BaseView {
       }
     }
 
-    let fullResponse = "";
+    const streamRenderer = new StreamingMarkdownRenderer({
+      mount: () =>
+        assistantMessageContainer?.querySelector<HTMLElement>(
+          ".chat-message-content",
+        ) ?? null,
+      renderFinal: (markdown, suffixHtml = "") =>
+        SummaryView.convertMarkdownToHTMLCore(markdown) + suffixHtml,
+      isVisible: (host) => this.isVisible && host.getClientRects().length > 0,
+      onAfterRender: () => this.scrollToBottom(),
+    });
+    this.chatStreamRenderer = streamRenderer;
 
     try {
       const { default: LLMService } = await import("../llmService");
+      if (this.chatAbortController !== requestController) return;
 
-      let responseMetadata: LLMNoteMetadata | null = null;
       const response = await LLMService.chat({
         content: {
           kind: "legacy",
@@ -664,35 +682,17 @@ export class SummaryView extends BaseView {
         },
         conversation: requestConversation,
         transport: {
-          abortSignal: this.chatAbortController?.signal,
+          abortSignal: requestController.signal,
         },
-        onProgress: (chunk: string) => {
-          fullResponse += chunk;
-          // 更新助手消息显示
-          if (assistantMessageContainer) {
-            const contentDiv = assistantMessageContainer.querySelector(
-              ".chat-message-content",
-            ) as HTMLElement;
-            if (contentDiv) {
-              contentDiv.innerHTML =
-                SummaryView.convertMarkdownToHTMLCore(fullResponse);
-            }
-          }
-          // 自动滚动
-          this.scrollToBottom();
-        },
+        onProgress: (chunk: string) => streamRenderer.push(chunk),
       });
-      fullResponse = response.text;
-      responseMetadata = LLMNoteMetadataService.fromResponse("chat", response);
-      if (assistantMessageContainer) {
-        const contentDiv = assistantMessageContainer.querySelector(
-          ".chat-message-content",
-        ) as HTMLElement;
-        if (contentDiv) {
-          contentDiv.innerHTML =
-            SummaryView.convertMarkdownToHTMLCore(fullResponse);
-        }
-      }
+      if (this.chatAbortController !== requestController) return;
+      const fullResponse = response.text;
+      const responseMetadata = LLMNoteMetadataService.fromResponse(
+        "chat",
+        response,
+      );
+      streamRenderer.finalize(fullResponse);
 
       // 完成后再写入上下文；中断/失败不会污染后续追问。
       this.conversationHistory.push({
@@ -723,16 +723,21 @@ export class SummaryView extends BaseView {
         );
       }
     } catch (error: any) {
-      if (isChatAbortError(error, this.chatAbortController?.signal)) {
+      if (this.chatAbortController !== requestController) return;
+      if (isChatAbortError(error, requestController.signal)) {
         if (assistantMessageContainer) {
           const contentDiv = assistantMessageContainer.querySelector(
             ".chat-message-content",
           ) as HTMLElement;
           if (contentDiv) {
-            const stoppedHtml = fullResponse
-              ? `${SummaryView.convertMarkdownToHTMLCore(fullResponse)}<p style="color: #777; font-size: 12px;">${getString("summary-chat-stopped-not-saved")}</p>`
-              : `<p style="color: #777;">${getString("summary-chat-stopped-empty")}</p>`;
-            contentDiv.innerHTML = stoppedHtml;
+            if (streamRenderer.text) {
+              streamRenderer.finalize(
+                undefined,
+                `<p style="color: #777; font-size: 12px;">${getString("summary-chat-stopped-not-saved")}</p>`,
+              );
+            } else {
+              contentDiv.innerHTML = `<p style="color: #777;">${getString("summary-chat-stopped-empty")}</p>`;
+            }
           }
         }
         return;
@@ -748,19 +753,26 @@ export class SummaryView extends BaseView {
         }
       }
     } finally {
-      this.isChatting = false;
-      this.chatAbortController = null;
-      if (this.chatSendButton) {
-        this.chatSendButton.disabled = false;
-        this.chatSendButton.innerHTML = getString("summary-chat-send");
-        this.chatSendButton.style.backgroundColor = "var(--ai-accent)";
-        this.chatSendButton.style.color = "#ffffff";
-      }
-      if (this.chatInput) {
-        this.chatInput.disabled = false;
-        this.chatInput.focus();
+      if (this.chatAbortController === requestController) {
+        this.resetChatRequest();
+        this.chatInput?.focus();
       }
     }
+  }
+
+  private resetChatRequest(abortReason?: string): void {
+    if (abortReason) this.chatAbortController?.abort(abortReason);
+    this.chatStreamRenderer?.dispose();
+    this.chatStreamRenderer = null;
+    this.chatAbortController = null;
+    this.isChatting = false;
+    if (this.chatSendButton) {
+      this.chatSendButton.disabled = false;
+      this.chatSendButton.innerHTML = getString("summary-chat-send");
+      this.chatSendButton.style.backgroundColor = "var(--ai-accent)";
+      this.chatSendButton.style.color = "#ffffff";
+    }
+    if (this.chatInput) this.chatInput.disabled = false;
   }
 
   private abortActiveChat(): void {
@@ -1149,12 +1161,10 @@ export class SummaryView extends BaseView {
   /**
    * 清除论文上下文
    */
-  public clearPaperContext(): void {
-    this.chatAbortController?.abort(
-      getString("summary-chat-abort-context-cleared"),
-    );
-    this.chatAbortController = null;
-    this.isChatting = false;
+  public clearPaperContext(
+    reason = getString("summary-chat-abort-context-cleared"),
+  ): void {
+    this.resetChatRequest(reason);
     this.currentItemId = null;
     this.currentPdfContent = "";
     this.currentIsBase64 = false;
@@ -1649,6 +1659,11 @@ export class SummaryView extends BaseView {
     }
   }
 
+  protected onShow(): void {
+    this.itemStreamRenderer?.flush();
+    this.chatStreamRenderer?.flush();
+  }
+
   /**
    * 初始化 KaTeX CSS 样式
    *
@@ -1733,6 +1748,7 @@ export class SummaryView extends BaseView {
    */
   private scrollToBottom(): void {
     if (
+      !this.isVisible ||
       !this.scrollArea ||
       this.userHasScrolled ||
       getPref("autoScroll") === false
@@ -1744,6 +1760,7 @@ export class SummaryView extends BaseView {
     // 使用 setTimeout 确保在 DOM 更新后滚动
     setTimeout(() => {
       if (
+        this.isVisible &&
         this.scrollArea === area &&
         !this.userHasScrolled &&
         getPref("autoScroll") !== false
@@ -1953,6 +1970,7 @@ export class SummaryView extends BaseView {
    */
   public startItem(itemTitle: string): void {
     if (!this.outputContainer) return;
+    this.finishItem();
 
     // 隐藏加载状态(如果存在)
     this.hideLoading();
@@ -2007,8 +2025,16 @@ export class SummaryView extends BaseView {
     // 应用主题到新添加的元素
     this.applyTheme();
 
-    // 重置缓冲区
-    this.currentItemBuffer = "";
+    this.itemStreamRenderer = new StreamingMarkdownRenderer({
+      mount: () => contentElement,
+      policy: "markdown-coalesced",
+      renderFinal: (markdown) => this.convertMarkdownToHTML(markdown),
+      isVisible: () => this.isVisible,
+      onAfterRender: () => {
+        this.scheduleRenderMath();
+        this.scrollToBottom();
+      },
+    });
 
     // 滚动到底部
     this.scrollToBottom();
@@ -2162,39 +2188,7 @@ export class SummaryView extends BaseView {
   }
 
   public appendContent(chunk: string): void {
-    if (!this.currentItemContainer) return;
-
-    // 累积内容
-    this.currentItemBuffer += chunk;
-
-    // 获取内容容器
-    const contentElement = this.currentItemContainer.querySelector(
-      ".item-content",
-    ) as HTMLElement;
-
-    if (contentElement) {
-      // 渲染 Markdown
-      const html = this.convertMarkdownToHTML(this.currentItemBuffer);
-      contentElement.innerHTML = html;
-
-      // 调试信息:检查滚动容器状态
-      if (this.scrollArea) {
-        const scrollHeight = this.scrollArea.scrollHeight;
-        const clientHeight = this.scrollArea.clientHeight;
-        const hasScroll = scrollHeight > clientHeight;
-
-        // 输出调试信息到控制台
-        ztoolkit.log(
-          `[AI Butler] 滚动状态 - scrollHeight: ${scrollHeight}, clientHeight: ${clientHeight}, hasScroll: ${hasScroll}`,
-        );
-      }
-
-      // 节流渲染数学公式
-      this.scheduleRenderMath();
-
-      // 滚动到底部
-      this.scrollToBottom();
-    }
+    this.itemStreamRenderer?.push(chunk);
   }
 
   /**
@@ -2203,12 +2197,20 @@ export class SummaryView extends BaseView {
   public finishItem(): void {
     if (!this.currentItemContainer) return;
 
-    // 最终渲染一次数学公式
-    this.renderMath();
+    try {
+      // A hidden tab still needs its last buffered Markdown for the next show().
+      if (this.itemStreamRenderer?.pendingChars)
+        this.itemStreamRenderer.finalize();
+      if (this.isVisible) this.renderMath();
+    } finally {
+      this.resetItemStream();
+    }
+  }
 
-    // 清空引用
+  private resetItemStream(): void {
+    this.itemStreamRenderer?.dispose();
+    this.itemStreamRenderer = null;
     this.currentItemContainer = null;
-    this.currentItemBuffer = "";
   }
 
   /**
@@ -2543,7 +2545,8 @@ export class SummaryView extends BaseView {
     }
 
     this.renderMathTimer = setTimeout(() => {
-      this.renderMath();
+      this.renderMathTimer = null;
+      if (this.isVisible) this.renderMath();
     }, 500);
   }
 
@@ -2571,8 +2574,10 @@ export class SummaryView extends BaseView {
       // 重新显示初始提示
       this.showInitialHint();
     }
-    this.currentItemContainer = null;
-    this.currentItemBuffer = "";
+    this.resetItemStream();
+    if (this.chatAbortController) {
+      this.resetChatRequest(getString("summary-chat-abort-context-cleared"));
+    }
     this.userHasScrolled = false;
     this.updateQueueButton("ready");
   }
@@ -2583,10 +2588,8 @@ export class SummaryView extends BaseView {
    * @protected
    */
   protected onDestroy(): void {
-    this.chatAbortController?.abort(
-      getString("summary-chat-abort-view-closed"),
-    );
-    this.chatAbortController = null;
+    this.resetItemStream();
+    this.clearPaperContext(getString("summary-chat-abort-view-closed"));
 
     // 清理计时器
     if (this.renderMathTimer) {
@@ -2600,7 +2603,14 @@ export class SummaryView extends BaseView {
     }
 
     this.outputContainer = null;
-    this.currentItemContainer = null;
+    this.deepReadProgressContainer = null;
+    this.deepReadProgressRows.clear();
+    this.deepReadRetryHandler = null;
+    this.chatContainer = null;
+    this.chatSendButton = null;
+    this.chatInput = null;
+    this.userHasScrolled = false;
+    this.lastScrollTop = 0;
     this.queueButton = null;
     this.scrollContainer = null;
     this.scrollArea = null;

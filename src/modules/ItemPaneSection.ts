@@ -13,6 +13,7 @@
 import { config } from "../../package.json";
 import { getString, getLocaleID } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
+import { StreamingMarkdownRenderer } from "../utils/streamingMarkdownRenderer";
 import { registerLegacySidebar } from "../compatibility/legacyUi";
 import { isLegacyHost } from "../compatibility/host";
 import {
@@ -5425,7 +5426,14 @@ function renderChatArea(
     // 清空输入框
     inputBox.value = "";
     resizeQuickChatInput();
-    let fullResponse = "";
+    const streamRenderer = new StreamingMarkdownRenderer({
+      mount: () => aiMsgDiv,
+      renderStreamingSeed: () =>
+        `<strong>${getString("itempane-assistant-label")}</strong><br/>`,
+      renderFinal: (markdown, suffixHtml = "") =>
+        buildQuickChatAssistantHtml(markdown, suffixHtml),
+      onAfterRender: () => scrollQuickChatToBottomIfPinned(),
+    });
     let sourceLabel = getString("itempane-quick-chat-source-label");
     const signature = createQuickChatRelatedContextSignature(
       requestContext.relatedMode,
@@ -5482,13 +5490,13 @@ function renderChatArea(
     const recordStoppedTurn = (): void => {
       const answer: ChatPersistMessage = {
         role: "assistant",
-        content: fullResponse,
+        content: streamRenderer.text,
         pairId,
         sourceLabel,
         stopped: true,
       };
       if (finishTurn(answer)) {
-        renderQuickChatAnswer(aiMsgDiv, answer);
+        renderQuickChatAnswer(aiMsgDiv, answer, streamRenderer);
         if (isCurrentRequest() && messagesArea.isConnected) {
           refreshThreadSelect();
           if (answer.content)
@@ -5581,26 +5589,22 @@ function renderChatArea(
               requestController.signal.aborted
             )
               return;
-            fullResponse += chunk;
-            const shouldFollowStream = quickChatPinnedToBottom;
-            // Update streaming AI response
-            updateQuickChatAssistantMessage(aiMsgDiv, fullResponse);
-            scrollQuickChatToBottomIfPinned(shouldFollowStream);
+            streamRenderer.push(chunk);
           },
         }),
         requestController.signal,
       );
       if (!canContinue()) return;
-      fullResponse = response.text;
+
       const answer: ChatPersistMessage = {
         role: "assistant",
-        content: fullResponse,
+        content: response.text,
         pairId,
         noteMetadata: LLMNoteMetadataService.fromResponse("chat", response),
         sourceLabel,
       };
       if (!finishTurn(answer)) return;
-      renderQuickChatAnswer(aiMsgDiv, answer);
+      renderQuickChatAnswer(aiMsgDiv, answer, streamRenderer);
       refreshThreadSelect();
       appendPairActions(pairWrapper, pairId, question, answer);
     } catch (err: any) {
@@ -5617,6 +5621,7 @@ function renderChatArea(
         "abort",
         recordStoppedTurn,
       );
+      streamRenderer.dispose();
       const stateIsCurrent = isCurrentRequest();
       if (activeQuickChatRequest?.controller === requestController) {
         activeQuickChatRequest = null;
@@ -5903,20 +5908,15 @@ function buildQuickChatAssistantHtml(
 function renderQuickChatAnswer(
   container: HTMLElement,
   answer: ChatPersistMessage,
+  renderer?: StreamingMarkdownRenderer,
 ): void {
   const suffix = answer.stopped
     ? `<div style="color: #777; font-size: 11px; margin-top: 6px;">${getString(answer.content ? "itempane-stopped-note" : "itempane-stopped-empty")}</div>`
     : "";
-  updateQuickChatAssistantMessage(container, answer.content, suffix);
-}
-
-function updateQuickChatAssistantMessage(
-  container: HTMLElement,
-  markdown: string,
-  suffixHtml = "",
-): void {
+  const markdown = answer.content;
   try {
-    container.innerHTML = buildQuickChatAssistantHtml(markdown, suffixHtml);
+    if (renderer) renderer.finalize(markdown, suffix);
+    else container.innerHTML = buildQuickChatAssistantHtml(markdown, suffix);
   } catch (error) {
     ztoolkit.log(
       "[AI-Butler] 快速追问写入渲染结果失败，尝试清洗后重试:",
@@ -5925,7 +5925,7 @@ function updateQuickChatAssistantMessage(
     try {
       container.innerHTML = buildQuickChatAssistantHtml(
         sanitizeQuickChatDomString(markdown),
-        sanitizeQuickChatDomString(suffixHtml),
+        sanitizeQuickChatDomString(suffix),
       );
     } catch (retryError) {
       ztoolkit.log(

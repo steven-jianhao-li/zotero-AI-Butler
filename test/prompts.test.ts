@@ -444,6 +444,11 @@ describe("multi-round prompt templates v2", function () {
       expect(table).to.not.include("| 维度 | 内容 |");
     });
 
+    it("keeps custom Chinese table rows sharing the built-in header in an English UI", function () {
+      const custom = "| 维度 | 内容 |\n|---|---|\n| 样本 | |";
+      expect(getConfiguredTableTemplate(custom)).to.equal(custom);
+    });
+
     it("allows overriding default prompt language to Chinese in an English UI", function () {
       (globalThis as any).Zotero = {
         Prefs: {

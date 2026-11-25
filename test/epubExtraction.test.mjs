@@ -148,6 +148,10 @@ function extractionHost({
     {
       "../utils/locale": locale,
       "../utils/prefs": { getPref() {} },
+      "../utils/outputLanguage": {
+        applyOutputLanguageToPrompt: (prompt) => prompt,
+        applyOutputLanguageToConversation: (conversation) => conversation,
+      },
       "./contentExtractor": { ContentExtractor },
       "./pdfExtractor": {
         PDFExtractor: pdf,

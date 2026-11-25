@@ -28,6 +28,15 @@ import {
 import type { LLMAbortSignal } from "./llmproviders/types";
 import { getPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
+import { getOutputLanguage } from "../utils/outputLanguage";
+import {
+  checkedTableRows,
+  isTableSeparator,
+  readTable,
+  tableCells,
+  TableSchemaError,
+  templateForEntries,
+} from "./literatureTable";
 import { marked } from "marked";
 import {
   getConfiguredTableTemplate,
@@ -250,6 +259,7 @@ export class LiteratureReviewService {
       ? await this.appendTableEntriesInParallel(
           itemPdfPairs,
           appendedTableEntries,
+          tableTemplate,
           fillPrompt,
           concurrency,
           (done, total) => {
@@ -340,52 +350,41 @@ export class LiteratureReviewService {
     return entry.trim().replace(/\s+/g, " ").toLowerCase();
   }
 
-  private static parseMarkdownTableCells(line: string): string[] {
-    const content = line.trim().replace(/^\|/, "").replace(/\|$/, "");
-    return content.split("|").map((cell) => cell.trim());
-  }
-
-  private static isMarkdownSeparatorRow(cells: string[]): boolean {
-    return (
-      cells.length > 0 &&
-      cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")))
-    );
-  }
-
   private static filterSingleTableByEntries(
     tableContent: string,
-    selectedEntries: Set<string>,
+    selectedEntries: Map<string, string>,
   ): string {
+    const table = readTable(tableContent);
     const lines = tableContent.split("\n");
-    const filtered: string[] = [];
-    let headerCaptured = false;
-    let separatorCaptured = false;
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("|")) {
-        filtered.push(line);
-        continue;
-      }
-
-      const cells = this.parseMarkdownTableCells(trimmed);
-      if (!headerCaptured) {
-        headerCaptured = true;
-        filtered.push(line);
-        continue;
-      }
-      if (!separatorCaptured && this.isMarkdownSeparatorRow(cells)) {
-        separatorCaptured = true;
-        filtered.push(line);
-        continue;
-      }
-
-      const rowKey = this.normalizeTableEntryName(cells[0] || "");
-      if (rowKey && selectedEntries.has(rowKey)) {
-        filtered.push(line);
-      }
+    const firstTableLine = lines.findIndex((line) =>
+      line.trim().startsWith("|"),
+    );
+    const found = new Set<string>();
+    const filtered = lines.filter((line, i) => {
+      const inTable =
+        table && i >= table.end - table.rows.length && i < table.end;
+      if (
+        !inTable &&
+        (!line.trim().startsWith("|") ||
+          i === firstTableLine ||
+          isTableSeparator(tableCells(line)))
+      )
+        return true;
+      const key = this.normalizeTableEntryName(tableCells(line)[0] || "");
+      if (!selectedEntries.has(key)) return false;
+      found.add(key);
+      return true;
+    });
+    const missing = [...selectedEntries]
+      .filter(([key]) => !found.has(key))
+      .map(([, entry]) => entry);
+    if (missing.length && table) {
+      filtered.push(
+        getString("literature-review-table-missing-entries", {
+          args: { entries: missing.join(", ") },
+        }),
+      );
     }
-
     return filtered.join("\n");
   }
 
@@ -395,33 +394,21 @@ export class LiteratureReviewService {
   ): Map<number, string> {
     if (selectedEntries.length === 0) return tableResults;
 
-    const selectedEntrySet = new Set(
-      selectedEntries
-        .map((entry) => this.normalizeTableEntryName(entry))
-        .filter(Boolean),
-    );
-    if (selectedEntrySet.size === 0) return tableResults;
+    const selectedByKey = new Map<string, string>();
+    for (const entry of selectedEntries) {
+      const key = this.normalizeTableEntryName(entry);
+      if (key) selectedByKey.set(key, entry);
+    }
+    if (!selectedByKey.size) return tableResults;
 
     const filteredResults = new Map<number, string>();
     for (const [itemId, tableContent] of tableResults) {
       filteredResults.set(
         itemId,
-        this.filterSingleTableByEntries(tableContent, selectedEntrySet),
+        this.filterSingleTableByEntries(tableContent, selectedByKey),
       );
     }
     return filteredResults;
-  }
-
-  private static buildTableTemplateFromEntries(entries: string[]): string {
-    if (entries.length === 0) {
-      return getConfiguredTableTemplate();
-    }
-    const rows = entries.map((entry) => `| ${entry} | |`);
-    return [
-      `| ${getString("literature-review-table-column-dimension")} | ${getString("literature-review-table-column-content")} |`,
-      "|------|------|",
-      ...rows,
-    ].join("\n");
   }
 
   private static buildAppendOnlyFillPrompt(
@@ -429,7 +416,10 @@ export class LiteratureReviewService {
     appendedEntries: string[],
   ): string {
     const entryList = appendedEntries.map((entry) => `- ${entry}`).join("\n");
-    return `${fillPrompt}
+    const prompt = fillPrompt.includes("${tableTemplate}")
+      ? fillPrompt
+      : fillPrompt + "\n\n${tableTemplate}";
+    return `${prompt}
 
 【追加填表模式】
 仅填写以下新增条目：
@@ -438,120 +428,14 @@ ${entryList}
 额外要求：
 1. 不要重写已有条目
 2. 只输出新增条目的 Markdown 表格（或数据行）
-3. 不要输出解释性文字`;
-  }
-
-  private static extractTableDataRows(md: string): string[] {
-    const lines = md
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith("|"));
-    if (lines.length === 0) return [];
-
-    const dataRows: string[] = [];
-    let headerDone = false;
-    for (const line of lines) {
-      const cells = this.parseMarkdownTableCells(line);
-      if (!headerDone) {
-        if (this.isMarkdownSeparatorRow(cells)) {
-          headerDone = true;
-        }
-        continue;
-      }
-      if (!this.isMarkdownSeparatorRow(cells)) {
-        dataRows.push(line);
-      }
-    }
-
-    if (dataRows.length > 0) return dataRows;
-
-    const nonSeparator = lines.filter(
-      (line) =>
-        !this.isMarkdownSeparatorRow(this.parseMarkdownTableCells(line)),
-    );
-    if (nonSeparator.length > 1) {
-      return nonSeparator.slice(1);
-    }
-    return nonSeparator.length === 1 ? nonSeparator : [];
-  }
-
-  private static extractRowEntryName(row: string): string {
-    const cells = this.parseMarkdownTableCells(row);
-    return this.normalizeTableEntryName(cells[0] || "");
-  }
-
-  private static mergeAppendRowsIntoExistingTable(
-    existingTable: string,
-    appendResult: string,
-    appendTemplate: string,
-    appendedEntries: string[],
-  ): string {
-    const allowedEntrySet = new Set(
-      appendedEntries
-        .map((entry) => this.normalizeTableEntryName(entry))
-        .filter(Boolean),
-    );
-
-    const appendRowsRaw = this.extractTableDataRows(appendResult);
-    const appendRows: string[] = [];
-    const appendSeen = new Set<string>();
-    for (const row of appendRowsRaw) {
-      const rowKey = this.extractRowEntryName(row);
-      if (!rowKey) continue;
-      if (allowedEntrySet.size > 0 && !allowedEntrySet.has(rowKey)) continue;
-      if (appendSeen.has(rowKey)) continue;
-      appendSeen.add(rowKey);
-      appendRows.push(row);
-    }
-
-    if (!existingTable.trim()) {
-      if (appendRows.length > 0) {
-        const templateLines = appendTemplate
-          .split("\n")
-          .map((line) => line.trim())
-          .filter((line) => line.startsWith("|"));
-        const header =
-          templateLines[0] ||
-          `| ${getString("literature-review-table-column-dimension")} | ${getString("literature-review-table-column-content")} |`;
-        const separator =
-          templateLines.find((line) =>
-            this.isMarkdownSeparatorRow(this.parseMarkdownTableCells(line)),
-          ) || "|------|------|";
-        return [header, separator, ...appendRows].join("\n");
-      }
-      return appendResult.trim() || appendTemplate;
-    }
-
-    if (appendRows.length === 0) {
-      return existingTable;
-    }
-
-    const existingRows = this.extractTableDataRows(existingTable);
-    const existingEntrySet = new Set(
-      existingRows.map((row) => this.extractRowEntryName(row)).filter(Boolean),
-    );
-    const rowsToInsert = appendRows.filter(
-      (row) => !existingEntrySet.has(this.extractRowEntryName(row)),
-    );
-    if (rowsToInsert.length === 0) {
-      return existingTable;
-    }
-
-    const lines = existingTable.split("\n");
-    let insertPos = lines.length;
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (lines[i].trim().startsWith("|")) {
-        insertPos = i + 1;
-        break;
-      }
-    }
-    lines.splice(insertPos, 0, ...rowsToInsert);
-    return lines.join("\n");
+3. 逐字保留模板表头和新增条目名称，仅填写内容单元格
+4. 不要输出解释性文字`;
   }
 
   private static async appendTableEntriesInParallel(
     items: Array<{ parentItem: Zotero.Item; pdfAttachment: Zotero.Item }>,
     appendedEntries: string[],
+    tableTemplate: string,
     fillPrompt: string,
     concurrency: number,
     progressCallback?: (done: number, total: number) => void,
@@ -561,39 +445,63 @@ ${entryList}
     let completed = 0;
     const total = items.length;
     const queue = [...items];
-    const appendTemplate = this.buildTableTemplateFromEntries(appendedEntries);
-    const appendPrompt = this.buildAppendOnlyFillPrompt(
-      fillPrompt,
-      appendedEntries,
-    );
-
+    const schemaErrors: string[] = [];
     const worker = async () => {
       while (queue.length > 0) {
         const task = queue.shift()!;
         try {
           const existingTable =
             (await this.findTableNote(task.parentItem)) || "";
-          const appendResult = await this.fillTableForSinglePDF(
-            task.parentItem,
-            task.pdfAttachment,
-            appendTemplate,
-            appendPrompt,
-            undefined,
-            abortSignal,
+          const schema = readTable(existingTable || tableTemplate);
+          if (!schema) throw new TableSchemaError();
+          const existingKeys = new Set(
+            existingTable
+              ? schema.rows.map((row) =>
+                  this.normalizeTableEntryName(tableCells(row)[0] || ""),
+                )
+              : [],
           );
-          const mergedTable = this.mergeAppendRowsIntoExistingTable(
-            existingTable,
-            appendResult,
-            appendTemplate,
-            appendedEntries,
+          const missing = appendedEntries.filter(
+            (key) => !existingKeys.has(this.normalizeTableEntryName(key)),
           );
-          await this.saveTableNote(task.parentItem, mergedTable, true);
-          results.set(task.parentItem.id, mergedTable);
+          if (missing.length) {
+            const appendTemplate = templateForEntries(schema, missing);
+            const appendResult = await this.fillTableForSinglePDF(
+              task.parentItem,
+              task.pdfAttachment,
+              appendTemplate,
+              this.buildAppendOnlyFillPrompt(fillPrompt, missing),
+              undefined,
+              abortSignal,
+              "append",
+            );
+            const rows = checkedTableRows(schema, appendResult, missing);
+            const lines = existingTable
+              ? existingTable.split("\n")
+              : [schema.header, schema.separator];
+            lines.splice(existingTable ? schema.end : lines.length, 0, ...rows);
+            const merged = lines.join("\n");
+            await this.saveTableNote(
+              task.parentItem,
+              merged,
+              true,
+              undefined,
+              existingTable,
+            );
+            results.set(task.parentItem.id, merged);
+          } else {
+            results.set(task.parentItem.id, existingTable);
+          }
         } catch (error) {
           ztoolkit.log(
             `[AI-Butler] 追加填表失败: ${task.parentItem.getField("title")}`,
             error,
           );
+          if (error instanceof TableSchemaError) {
+            schemaErrors.push(
+              `${task.parentItem.getField("title")}: ${error.message}`,
+            );
+          }
           const fallback =
             (await this.findTableNote(task.parentItem)) ||
             getString("literature-review-table-append-failed-inline", {
@@ -613,6 +521,8 @@ ${entryList}
       Array.from({ length: effectiveConcurrency }, () => worker()),
     );
 
+    if (schemaErrors.length)
+      throw new TableSchemaError(schemaErrors.join("\n"));
     return results;
   }
 
@@ -635,6 +545,7 @@ ${entryList}
     fillPrompt: string,
     progressCallback?: (message: string, progress: number) => void,
     abortSignal?: LLMAbortSignal,
+    mode: "fill" | "append" = "fill",
   ): Promise<string> {
     const itemTitle =
       (item.getField("title") as string) ||
@@ -650,8 +561,14 @@ ${entryList}
     // 构建完整提示词：将 ${tableTemplate} 替换为实际模板
     const actualPrompt = fillPrompt.replace(
       /\$\{tableTemplate\}/g,
-      tableTemplate,
+      () => tableTemplate,
     );
+    const checkSchema =
+      mode === "fill" &&
+      getOutputLanguage() &&
+      actualPrompt.includes(tableTemplate)
+        ? readTable(tableTemplate)
+        : undefined;
 
     progressCallback?.(
       getString("literature-review-progress-filling-title", {
@@ -675,6 +592,7 @@ ${entryList}
       transport: { abortSignal },
     });
     const result = response.text;
+    if (checkSchema) checkedTableRows(checkSchema, result);
     this.lastTableMetadataByItemId.set(
       item.id,
       LLMNoteMetadataService.fromResponse("table", response),
@@ -745,28 +663,32 @@ ${entryList}
       const note = await this.findTableNoteItem(item);
       if (!note) return null;
 
-      const noteContent: string = (note as any).getNote?.() || "";
-      // 提取 data-ai-table-raw 元素中的原始 Markdown（兼容 div 和 pre）
-      const rawMatch = noteContent.match(
-        /<(?:div|pre)[^>]*data-ai-table-raw[^>]*>([\s\S]*?)<\/(?:div|pre)>/,
-      );
-      if (rawMatch && rawMatch[1]) {
-        // 反转义 HTML 实体
-        const raw = rawMatch[1]
-          .replace(/&amp;/g, "&")
-          .replace(/&lt;/g, "<")
-          .replace(/&gt;/g, ">")
-          .replace(/&quot;/g, '"')
-          .trim();
-        return raw || null;
-      }
-
-      // 兼容旧格式：直接去除 HTML 标签
-      const textContent = noteContent.replace(/<[^>]*>/g, "").trim();
-      return textContent || null;
+      return this.readTableNote(note);
     } catch {
       return null;
     }
+  }
+
+  private static readTableNote(note: Zotero.Item): string | null {
+    const noteContent = note.getNote();
+    // 提取 data-ai-table-raw 元素中的原始 Markdown（兼容 div 和 pre）
+    const rawMatch = noteContent.match(
+      /<(?:div|pre)[^>]*data-ai-table-raw[^>]*>([\s\S]*?)<\/(?:div|pre)>/,
+    );
+    if (rawMatch && rawMatch[1]) {
+      // 反转义 HTML 实体
+      const raw = rawMatch[1]
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, "&")
+        .trim();
+      return raw || null;
+    }
+
+    // 兼容旧格式：直接去除 HTML 标签
+    const textContent = noteContent.replace(/<[^>]*>/g, "").trim();
+    return textContent || null;
   }
 
   /**
@@ -779,6 +701,7 @@ ${entryList}
    * @param item 文献条目
    * @param tableContent 填表的 Markdown 内容
    * @param forceOverwrite 是否强制覆盖（忽略 tableStrategy）
+   * @param expectedTable 追加前读取的原表，防止覆盖并发修改
    * @returns 创建的笔记，或已存在的笔记（skip 模式）
    */
   static async saveTableNote(
@@ -786,23 +709,37 @@ ${entryList}
     tableContent: string,
     forceOverwrite: boolean = false,
     metadata?: LLMNoteMetadata | null,
+    expectedTable?: string,
   ): Promise<Zotero.Item> {
     const strategy: TableStrategy = ((getPref(
       "tableStrategy" as any,
     ) as string) || "skip") as TableStrategy;
 
-    // 查找已有的 AI-Table 笔记
-    const existingNote = await this.findTableNoteItem(item);
-
-    // 根据策略处理已有笔记
-    if (existingNote) {
-      if (!forceOverwrite && strategy === "skip") {
+    return Zotero.DB.executeTransaction(async () => {
+      const existingNote = await this.findTableNoteItem(item);
+      if (existingNote && !forceOverwrite && strategy === "skip")
         return existingNote;
+      // A second append can finish while this paper is still at the provider.
+      if (
+        expectedTable !== undefined &&
+        (existingNote ? this.readTableNote(existingNote) : "") !== expectedTable
+      ) {
+        throw new TableSchemaError(
+          getString("literature-review-table-changed"),
+        );
       }
-      // overwrite: 删除旧笔记
-      await (existingNote as any).eraseTx?.();
-    }
+      const note = this.createTableNote(item, tableContent, metadata);
+      await note.save();
+      if (existingNote) await existingNote.erase();
+      return note;
+    });
+  }
 
+  private static createTableNote(
+    item: Zotero.Item,
+    tableContent: string,
+    metadata?: LLMNoteMetadata | null,
+  ): Zotero.Item {
     // 创建新的填表笔记
     // 不使用 formatNoteContent，避免标题模式与 AI 笔记冲突
     const itemTitle = (
@@ -849,8 +786,6 @@ ${entryList}
     note.parentID = item.id;
     note.setNote(noteHtml);
     note.addTag(TABLE_NOTE_TAG);
-    await note.saveTx();
-
     return note;
   }
 
@@ -975,6 +910,7 @@ ${entryList}
         entry += `\n${nonTableContent}`;
       }
       if (dataRows) {
+        if (header && header !== globalHeader) entry += `\n${header}`;
         entry += `\n${dataRows}`;
       } else {
         // 如果没有解析出数据行（表格格式不标准），原样输出

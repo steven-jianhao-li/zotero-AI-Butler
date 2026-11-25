@@ -903,3 +903,20 @@ agent-citation-invalid = 此引用链接无效。
 agent-citation-item-unavailable = 引用条目不可用或已在回收站中。
 agent-citation-window-unavailable = 请打开 Zotero 文献库窗口后重试。
 agent-runtime-permission-changed = 本次运行的文献库权限已切换为：{ $permission }。
+
+# ==================== 输出语言 / Output language ====================
+settings-output-language-notice = 这项设置对「AI 总结」「AI 精读」「表格填充/综述」「文献综述」「思维导图」「侧边栏对话」同时生效。
+settings-output-language-label = 输出语言
+settings-output-language-help = 填写生成内容的目标语言，例如简体中文、English 或日本語。填写后优先使用此语言，留空则按提示词要求输出。内置模板语言可在上方单独选择。
+settings-output-language-placeholder = 例如：简体中文 / English / 日本語（留空＝不干预）
+settings-output-language-domain-label = 学科口径
+settings-output-language-domain-help = 用于按学科生成更贴合的翻译与写作规范（术语、单位、引用、文体）。不确定时选「通用」。
+settings-output-language-domain-general = 通用（基础版）
+settings-output-language-domain-science = 理科（数理化生 / 地学 / 材料）
+settings-output-language-domain-engineering = 工科（机械 / 电子 / 计算机 / 土木 / 化工）
+settings-output-language-domain-arts = 艺术（美术 / 音乐 / 影视 / 设计 / 建筑）
+settings-output-language-domain-business = 商科（经济 / 金融 / 管理 / 会计 / 营销）
+settings-output-language-domain-humanities = 人文（哲学 / 历史 / 文学 / 法学 / 社会学）
+settings-output-language-saved = 输出语言已保存。
+settings-output-language-domain-medicine = 医学（临床 / 基础 / 药学 / 公卫 / 护理）
+settings-output-language-domain-law = 法学（法理 / 民刑 / 公法 / 国际法）

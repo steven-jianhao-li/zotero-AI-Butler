@@ -31,6 +31,14 @@ import {
   type MultiRoundPromptPhase,
 } from "../../../utils/prompts";
 import {
+  OUTPUT_LANGUAGE_DOMAINS,
+  getOutputLanguage,
+  getOutputLanguageDomain,
+  setOutputLanguage,
+  setOutputLanguageDomain,
+  type OutputLanguageDomain,
+} from "../../../utils/outputLanguage";
+import {
   createFormGroup,
   createInput,
   createTextarea,
@@ -51,6 +59,16 @@ type PromptSettingsKind = "summary" | "deepRead" | "table" | "all";
 const CURRENT_MULTI_ROUND_TEMPLATE_ID = "__current_multi_round_template__";
 const MULTI_ROUND_TEMPLATE_ID_PREF = "multiRoundPromptTemplateId";
 const XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+const OUTPUT_LANGUAGE_DOMAIN_LABEL_IDS: Record<OutputLanguageDomain, string> = {
+  general: "settings-output-language-domain-general",
+  science: "settings-output-language-domain-science",
+  engineering: "settings-output-language-domain-engineering",
+  arts: "settings-output-language-domain-arts",
+  business: "settings-output-language-domain-business",
+  humanities: "settings-output-language-domain-humanities",
+  medicine: "settings-output-language-domain-medicine",
+  law: "settings-output-language-domain-law",
+};
 
 export class PromptsSettingsPage {
   private container: HTMLElement;
@@ -130,6 +148,7 @@ export class PromptsSettingsPage {
 
     contentWrapper.appendChild(createNotice(this.getPageNotice(), "info"));
     contentWrapper.appendChild(this.renderDefaultPromptLanguageSetting());
+    contentWrapper.appendChild(this.renderOutputLanguageSetting());
 
     // =========== AI 精读提示词设置 ===========
     const modeSection = Zotero.getMainWindow().document.createElement("div");
@@ -476,6 +495,97 @@ export class PromptsSettingsPage {
       select,
       getString("settings-prompts-language-help"),
     );
+  }
+
+  private renderOutputLanguageSetting(): HTMLElement {
+    const doc = Zotero.getMainWindow().document;
+    const wrapper = doc.createElementNS(
+      XHTML_NAMESPACE,
+      "div",
+    ) as HTMLElementTagNameMap["div"];
+    Object.assign(wrapper.style, { marginBottom: "18px" });
+
+    wrapper.appendChild(
+      createNotice(getString("settings-output-language-notice"), "info"),
+    );
+
+    const languageInput = createInput(
+      "outputLanguage",
+      "text",
+      getOutputLanguage(),
+      getString("settings-output-language-placeholder"),
+    );
+    languageInput.style.maxWidth = "420px";
+
+    const persistLanguage = () => {
+      const previous = getOutputLanguage();
+      const next = setOutputLanguage(languageInput.value);
+      if (languageInput.value !== next) languageInput.value = next;
+      if (next !== previous) {
+        this.showPromptToast(
+          getString("settings-output-language-saved"),
+          "success",
+        );
+      }
+    };
+    languageInput.addEventListener("change", persistLanguage);
+    languageInput.addEventListener("blur", persistLanguage);
+
+    wrapper.appendChild(
+      createFormGroup(
+        getString("settings-output-language-label"),
+        languageInput,
+        getString("settings-output-language-help"),
+      ),
+    );
+
+    // 原生 select：Zotero 6 (Gecko 60) 下比自绘下拉稳定
+    const domainSelect = doc.createElementNS(
+      XHTML_NAMESPACE,
+      "select",
+    ) as HTMLSelectElement;
+    domainSelect.id = "setting-outputLanguageDomain";
+    const currentDomain = getOutputLanguageDomain();
+    for (const domain of OUTPUT_LANGUAGE_DOMAINS) {
+      const option = doc.createElementNS(
+        XHTML_NAMESPACE,
+        "option",
+      ) as HTMLOptionElement;
+      option.value = domain;
+      option.textContent = getString(
+        OUTPUT_LANGUAGE_DOMAIN_LABEL_IDS[domain] as any,
+      );
+      if (domain === currentDomain) option.selected = true;
+      domainSelect.appendChild(option);
+    }
+    Object.assign(domainSelect.style, {
+      width: "100%",
+      maxWidth: "420px",
+      padding: "10px 12px",
+      fontSize: "14px",
+      borderRadius: "6px",
+      border: "1px solid var(--ai-input-border, #cccccc)",
+      backgroundColor: "var(--ai-input-bg, #ffffff)",
+      color: "var(--ai-input-text, #000000)",
+      boxSizing: "border-box",
+      cursor: "pointer",
+    });
+    domainSelect.addEventListener("change", () => {
+      setOutputLanguageDomain(domainSelect.value);
+      this.showPromptToast(
+        getString("settings-output-language-saved"),
+        "success",
+      );
+    });
+    wrapper.appendChild(
+      createFormGroup(
+        getString("settings-output-language-domain-label"),
+        domainSelect,
+        getString("settings-output-language-domain-help"),
+      ),
+    );
+
+    return wrapper;
   }
 
   private getSummaryPanelStyle(): Partial<CSSStyleDeclaration> {

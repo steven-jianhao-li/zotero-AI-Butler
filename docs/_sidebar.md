@@ -7,6 +7,7 @@
 - [🖼️ 一图总结](one-image-summary.md)
 - [📚 文献综述](literature-review.md)
 - [📤 AI 笔记导出](note-export.md)
+- [输出语言](output-language.md)
 - [❓ 常见问题 FAQ](faq.md)
 - [🔧 故障排除](troubleshooting.md)
 

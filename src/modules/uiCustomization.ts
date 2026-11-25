@@ -38,6 +38,12 @@ export const CONTEXT_MENU_ITEMS = [
     scope: "item",
   },
   {
+    id: "refreshTable",
+    labelKey: "settings-ui-context-menu-refreshTable-label",
+    descriptionKey: "settings-ui-context-menu-refreshTable-description",
+    scope: "item",
+  },
+  {
     id: "chatWithAI",
     labelKey: "settings-ui-context-menu-chatWithAI-label",
     descriptionKey: "settings-ui-context-menu-chatWithAI-description",
@@ -119,6 +125,7 @@ export const DEFAULT_CONTEXT_MENU_ITEM_VISIBILITY: ContextMenuVisibility = {
   dashboard: true,
   imageSummary: true,
   mindmap: true,
+  refreshTable: true,
   chatWithAI: true,
   literatureReview: true,
   clearCollectionAiNotes: true,
@@ -151,6 +158,7 @@ export const DEFAULT_CONTEXT_MENU_ITEM_ORDER: ContextMenuItemId[] = [
   "dashboard",
   "imageSummary",
   "mindmap",
+  "refreshTable",
   "chatWithAI",
   "literatureReview",
   "clearCollectionAiNotes",

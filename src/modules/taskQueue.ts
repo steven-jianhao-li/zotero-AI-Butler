@@ -591,6 +591,9 @@ export class TaskQueueManager {
     }
 
     if (artifactType === "tableFill") {
+      if (options?.forceOverwrite) {
+        return true;
+      }
       const policy = (
         (getPref("tableStrategy" as any) as string) || "skip"
       ).toLowerCase();
@@ -1433,6 +1436,7 @@ export class TaskQueueManager {
   public async addTableFillTask(
     item: Zotero.Item,
     priority: boolean = true,
+    options?: TaskItem["options"],
   ): Promise<string> {
     if (!isTableFeatureEnabled()) {
       throw new Error(getString("task-error-table-feature-disabled"));
@@ -1447,7 +1451,7 @@ export class TaskQueueManager {
         item,
         "tableFill",
         priority,
-        undefined,
+        options,
         getString("task-stage-waiting-start"),
       );
       if (shouldRun) {
@@ -1474,6 +1478,7 @@ export class TaskQueueManager {
       maxRetries: 2,
       taskType: "tableFill",
       workflowStage: getString("task-stage-waiting-start"),
+      options,
     };
 
     this.tasks.set(taskId, task);
@@ -1581,7 +1586,11 @@ export class TaskQueueManager {
       task.progress = 80;
       this.notifyProgress(taskId, 80, getString("progress-note-saving"));
 
-      await LiteratureReviewService.saveTableNote(item, tableContent);
+      await LiteratureReviewService.saveTableNote(
+        item,
+        tableContent,
+        task.options?.forceOverwrite === true,
+      );
 
       task.status = TaskStatus.COMPLETED;
       task.progress = 100;

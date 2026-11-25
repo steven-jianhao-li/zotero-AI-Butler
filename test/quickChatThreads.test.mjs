@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile, access } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { setImmediate } from "node:timers";
@@ -44,6 +47,7 @@ function load(source, imports = {}, globals = {}) {
 }
 
 class Element {
+  dataset = {};
   children = [];
   style = {};
   listeners = new Map();
@@ -60,6 +64,32 @@ class Element {
 
   get childElementCount() {
     return this.children.length;
+  }
+
+  focus() {
+    this.focusCount = (this.focusCount || 0) + 1;
+  }
+
+  find(predicate) {
+    if (predicate(this)) return this;
+    for (const child of this.children) {
+      const found = child.find(predicate);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  querySelector(selector) {
+    return this.find((element) =>
+      selector
+        .split(", ")
+        .some(
+          (part) =>
+            part === "#" + element.id ||
+            part === "." + element.className ||
+            (part === "[data-pair-id]" && element["data-pair-id"]),
+        ),
+    );
   }
 
   querySelectorAll() {
@@ -93,7 +123,8 @@ const doc = {
 function sidebar(imports = {}, globals = {}) {
   return load(
     `${sidebarSource}
-export { getAvailableSidebarTabs, renderSidebarTabPanel, createQuickChatPairActions };
+export { getAvailableSidebarTabs, renderSidebarTabPanel, createQuickChatPairActions, renderChatArea, renderQuickChatAnswer, resetQuickChatState };
+export const getState = () => currentChatState;
 renderImageSummarySection = (...args) => __renderImage(...args);
 copyQuickChatText = (...args) => __copy(...args);
 saveChatPairToNote = (...args) => __save(...args);`,
@@ -271,9 +302,7 @@ function threadFixture() {
       chatPersist: { markPairSaved: (...args) => marked.push(args) },
       getString: locale.getString,
       escapeHtmlForChat: (text) => text,
-      updateQuickChatAssistantMessage: (element, text) => {
-        element.answer = text;
-      },
+      renderQuickChatAnswer: ui.renderQuickChatAnswer,
       renderRelatedControls: () => {
         relatedRenders++;
       },
@@ -435,267 +464,297 @@ function deferred() {
   return { promise, resolve };
 }
 
-test("a late reply from another paper cannot overwrite or unlock the active chat (#427)", async () => {
-  const started = deferred();
-  const response = deferred();
-  const persistCalls = [];
-  const stoppedPairs = [];
-  const contextRef = { stateSwitched: false };
-  const sendBtn = new Element("button");
-  const inputBox = new Element("textarea");
-  inputBox.value = "Question?";
-  inputBox.focus = () => assert.fail("A stale request stole input focus");
-  const scope = {
-    currentChatState: {
-      itemId: 7,
-      threadId: "a",
-      isChatting: false,
-      pdfContent: "Paper A",
-      relatedItems: [],
-      conversationHistory: [],
-      abortController: null,
-    },
-    sendBtn,
-    inputBox,
-    stopBtn: new Element("button"),
-    doc,
-    item: { id: 7 },
-    messagesArea: new Element("div"),
-    quickChatPairIdCounter: 0,
-    quickChatBindGeneration: 0,
-    quickChatPinnedToBottom: true,
-    activeChatAbortController: null,
-    getString: locale.getString,
-    escapeHtmlForChat: (text) => text,
-    createChatAbortController: () => new globalThis.AbortController(),
-    ensureActiveThreadLoaded: async () => {},
-    syncQuickChatThreadControls() {},
-    quickChatHasVisibleMessages: () => false,
-    scrollQuickChatToBottomIfPinned() {},
-    resizeQuickChatInput() {},
-    buildQuickChatConversation: (history, question) => [
-      ...history,
-      { role: "user", content: question },
-    ],
-    updateQuickChatAssistantMessage: () => {
-      if (contextRef.stateSwitched) {
-        assert.fail("A stale reply changed the UI");
-      }
-    },
-    persistActiveQuickChatThread: (messages) => {
-      persistCalls.push(messages ?? []);
-    },
-    persistStoppedQuickChatPair: (params) => {
-      stoppedPairs.push(params);
-    },
-  };
-  const first = sidebarSource.indexOf(
-    '  sendBtn.addEventListener("click", async () => {',
+function moduleSource(name) {
+  return readFileSync(
+    new URL(`../src/modules/${name}.ts`, import.meta.url),
+    "utf8",
   );
-  const last = sidebarSource.indexOf("  // Enter 发送", first);
-  const source = sidebarSource.slice(first, last);
-  // Keep the VM context so the fixture can simulate switching the selected item.
-  const context = vm.createContext({
-    ...scope,
-    require: () => ({
-      __esModule: true,
-      default: {
-        chat: (options) => {
-          started.resolve(options);
-          return response.promise;
-        },
-      },
-    }),
-    ztoolkit: { log() {} },
+}
+
+async function chatProfile(t) {
+  const dir = await mkdtemp(path.join(tmpdir(), "butler-quick-chat-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const { ChatPersist, ...persist } = load(persistSource, {
+    "../utils/locale": locale,
   });
-  vm.runInContext(
-    transformSync(source, {
-      loader: "ts",
-      format: "cjs",
-      target: "es2018",
-      supported: { "dynamic-import": false },
-    }).code,
-    context,
-  );
-  const sending = sendBtn.click();
-  const options = await started.promise;
-  const nextState = {
-    itemId: 8,
-    threadId: "b",
-    isChatting: true,
-    pdfContent: "Paper B",
-    conversationHistory: [{ role: "user", content: "Question B" }],
-    abortController: new globalThis.AbortController(),
+  const io = {
+    getDirectory: () => dir,
+    ensureDirectory: async () => {},
+    exists: (file) =>
+      access(file).then(
+        () => true,
+        () => false,
+      ),
+    read: (file) => readFile(file, "utf8"),
+    write: (file, value) => writeFile(file, value, "utf8"),
+    join: path.join,
   };
-  // 发送时已经把提问落盘；切换条目之后不得再写入任何内容。
-  const persistCountAtSend = persistCalls.length;
-  assert.ok(
-    persistCountAtSend >= 1,
-    "the question should be persisted on send",
+  return async (chat, imports = {}) => {
+    const chatPersist = new ChatPersist(io);
+    await chatPersist.ensureLoaded();
+    const ui = sidebar({
+      "../utils/prefs": {
+        getPref: (key) => key === "quickChatSuppressNewConversationWarning",
+      },
+      "./chatPersist": { ...persist, chatPersist },
+      "./chatContext": load(moduleSource("chatContext"), {
+        "../utils/locale": locale,
+      }),
+      "./quickChatRelatedContext": load(
+        moduleSource("quickChatRelatedContext"),
+        { "../utils/locale": locale },
+      ),
+      "./llmService": { __esModule: true, default: { chat } },
+      "./llmNoteMetadata": {
+        LLMNoteMetadataService: { fromResponse: () => null },
+      },
+      ...imports,
+    });
+    async function open(itemId = 7) {
+      const panel = new Element("div");
+      ui.renderChatArea(panel, doc, { id: itemId });
+      await new Promise(setImmediate);
+      const state = ui.getState();
+      state.pdfContent = "Paper " + itemId;
+      const input = panel.find((element) => element.tag === "textarea");
+      const send = panel.find((element) => element.title === "itempane-send");
+      const stop = panel.find(
+        (element) => element.title === "itempane-stop-current",
+      );
+      const messages = panel.querySelector(".ai-butler-quick-chat-messages");
+      return {
+        state,
+        input,
+        send,
+        stop,
+        panel,
+        messages,
+        ask(question) {
+          input.value = question;
+          return send.click();
+        },
+      };
+    }
+    return { chatPersist, open, ui };
+  };
+}
+
+function pausedChat(options) {
+  const started = deferred();
+  const chat = (request) => {
+    started.resolve(request);
+    if (options.partial) request.onProgress(options.partial);
+    return new Promise((resolve, reject) => {
+      options.finish = () => resolve({ text: "Late reply" });
+      options.reject = () => reject(new Error("Cancelled"));
+      if (!options.delayAbort)
+        request.transport.abortSignal.addEventListener("abort", options.reject);
+    });
+  };
+  return { chat, started: started.promise };
+}
+
+for (const partial of ["Partial answer", ""]) {
+  test(`stopping with ${partial ? "partial text" : "no tokens"} survives a follow-up and profile reload (#457)`, async (t) => {
+    const profile = await chatProfile(t);
+    const blocked = pausedChat({ partial });
+    const calls = [];
+    const session = await profile((request) => {
+      calls.push(request.conversation);
+      return calls.length === 1 ? blocked.chat(request) : { text: "Finished" };
+    });
+    const a = await session.open();
+    const pending = a.ask("Interrupted question");
+    await blocked.started;
+    await a.stop.click();
+    await pending;
+    const marker = partial ? "itempane-stopped-note" : "itempane-stopped-empty";
+    const checkStoppedPair = (messages) => {
+      const pair = messages.children[0];
+      assert.match(pair.children[0].html, /Interrupted question/);
+      assert.ok(pair.children[1].html.includes(partial));
+      assert.ok(pair.children[1].html.includes(marker));
+      assert.equal(pair.children.length, partial ? 3 : 2);
+    };
+    checkStoppedPair(a.messages);
+    assert.equal(a.send.disabled, false);
+    assert.equal(a.stop.style.display, "none");
+    assert.equal(a.input.disabled, false);
+    await a.ask("Next question");
+    assert.deepEqual(
+      Array.from(calls[1], (m) => m.content),
+      ["Next question"],
+    );
+    await session.chatPersist.flush();
+    const restarted = await profile((request) => {
+      calls.push(request.conversation);
+      return { text: "Third answer" };
+    });
+    const b = await restarted.open();
+    checkStoppedPair(b.messages);
+    const history = b.state.conversationHistory;
+    assert.equal(history.length, 4);
+    assert.equal(history[1].pairId, history[0].pairId);
+    assert.equal(history[1].stopped, true);
+    await b.ask("Third question");
+    assert.deepEqual(
+      Array.from(calls[2], (m) => m.content),
+      ["Next question", "Finished", "Third question"],
+    );
+  });
+}
+
+test("a failed request restores its question without a stopped label (#457)", async (t) => {
+  const profile = await chatProfile(t);
+  const session = await profile(() => {
+    throw new Error("Provider failure");
+  });
+  const active = await session.open();
+  await active.ask("Failed question");
+  await session.chatPersist.flush();
+  const restored = await (await profile()).open();
+  assert.equal(restored.messages.children[0].children.length, 1);
+  assert.match(
+    restored.messages.children[0].children[0].html,
+    /Failed question/,
   );
-  contextRef.stateSwitched = true;
-  context.currentChatState = nextState;
-  options.onProgress("Late text from A");
-  response.resolve({ text: "Late answer from A" });
-  await sending;
-  assert.equal(
-    persistCalls.length,
-    persistCountAtSend,
-    "a stale reply must not be persisted",
-  );
-  assert.equal(
-    stoppedPairs.length,
-    0,
-    "a stale reply must not be recorded as stopped",
-  );
-  assert.equal(nextState.isChatting, true);
-  assert.ok(nextState.abortController);
-  assert.deepEqual(nextState.conversationHistory, [
-    { role: "user", content: "Question B" },
+});
+
+test("legacy interrupted questions and partial answers restore without entering prompts (#457)", async (t) => {
+  const profile = await chatProfile(t);
+  const first = await profile();
+  const thread = first.chatPersist.createThread(7);
+  first.chatPersist.saveMessages(7, thread.id, [
+    { role: "user", content: "Old question" },
+    { role: "assistant", content: "Old answer" },
+    { role: "user", content: "Interrupted", pairId: "partial" },
+    {
+      role: "assistant",
+      content: "Fragment",
+      pairId: "partial",
+      stopped: true,
+    },
+    { role: "user", content: "No tokens", pairId: "empty" },
   ]);
-});
-
-test("stopping a request whose state went stale still releases the composer", async () => {
-  const started = deferred();
-  const sendBtn = new Element("button");
-  const stopBtn = new Element("button");
-  const inputBox = new Element("textarea");
-  inputBox.value = "Question?";
-  inputBox.focus = () => {};
-  const stoppedPairs = [];
-  const persistCalls = [];
-  const updateCalls = [];
-  const scope = {
-    currentChatState: {
-      itemId: 7,
-      threadId: "a",
-      isChatting: false,
-      pdfContent: "Paper A",
-      relatedItems: [],
-      conversationHistory: [],
-      abortController: null,
-    },
-    sendBtn,
-    inputBox,
-    stopBtn,
-    doc,
-    item: { id: 7 },
-    messagesArea: new Element("div"),
-    quickChatPairIdCounter: 0,
-    quickChatBindGeneration: 0,
-    quickChatPinnedToBottom: true,
-    activeChatAbortController: null,
-    getString: locale.getString,
-    escapeHtmlForChat: (value) => value,
-    createChatAbortController: () => new globalThis.AbortController(),
-    isChatAbortError: (error, signal) =>
-      signal?.aborted === true ||
-      error?.name === "LLMRequestAbortError" ||
-      error?.name === "AbortError",
-    ensureActiveThreadLoaded: async () => {},
-    syncQuickChatThreadControls() {},
-    quickChatHasVisibleMessages: () => false,
-    scrollQuickChatToBottomIfPinned() {},
-    resizeQuickChatInput() {},
-    buildQuickChatConversation: (history, question) => [
-      ...history,
-      { role: "user", content: question },
-    ],
-    updateQuickChatAssistantMessage: (container, markdown, suffixHtml = "") => {
-      updateCalls.push({ markdown, suffixHtml });
-    },
-    persistActiveQuickChatThread: (messages) => {
-      persistCalls.push(messages ?? []);
-    },
-    persistStoppedQuickChatPair: (params) => {
-      stoppedPairs.push(params);
-    },
-  };
-  const context = vm.createContext({
-    ...scope,
-    require: () => ({
-      __esModule: true,
-      default: {
-        chat: (options) => {
-          started.resolve(options);
-          options.onProgress("Partial answer");
-          return new Promise((_resolve, reject) => {
-            const fail = () => {
-              const error = new Error("stopped by user");
-              error.name = "LLMRequestAbortError";
-              reject(error);
-            };
-            const signal = options.transport.abortSignal;
-            if (signal.aborted) fail();
-            else signal.addEventListener("abort", fail);
-          });
-        },
-      },
-    }),
-    ztoolkit: { log() {} },
+  await first.chatPersist.flush();
+  let prompt;
+  const restarted = await profile((request) => {
+    prompt = request.conversation;
+    return { text: "New answer" };
   });
-  const compile = (source) =>
-    transformSync(source, {
-      loader: "ts",
-      format: "cjs",
-      target: "es2018",
-      supported: { "dynamic-import": false },
-    }).code;
-
-  // 停止按钮处理器与发送处理器是两段独立代码，都需要注册到同一个上下文里。
-  const stopStart = sidebarSource.indexOf(
-    '  stopBtn.addEventListener("click", () => {',
-  );
-  const stopEnd = sidebarSource.indexOf(
-    "  const resizeQuickChatInput = ",
-    stopStart,
-  );
-  assert.ok(stopStart > 0 && stopEnd > stopStart, "stop handler slice");
-  vm.runInContext(compile(sidebarSource.slice(stopStart, stopEnd)), context);
-
-  const sendStart = sidebarSource.indexOf(
-    '  sendBtn.addEventListener("click", async () => {',
-  );
-  const sendEnd = sidebarSource.indexOf("  // Enter 发送", sendStart);
-  vm.runInContext(compile(sidebarSource.slice(sendStart, sendEnd)), context);
-
-  const sending = sendBtn.click();
-  await started.promise;
-  // 面板已经切到另一个条目：原请求成了“过期请求”，此时用户点停止。
-  context.currentChatState = {
-    itemId: 8,
-    threadId: "b",
-    isChatting: false,
-    pdfContent: "Paper B",
-    relatedItems: [],
-    conversationHistory: [],
-    abortController: null,
-  };
-  stopBtn.listeners.get("click")?.();
-  await sending;
-
-  assert.equal(
-    stopBtn.style.display,
-    "none",
-    "stop button must be hidden again",
-  );
-  assert.equal(stopBtn.disabled, false, "stop button must be clickable again");
-  assert.equal(sendBtn.disabled, false, "send button must be enabled again");
-  assert.equal(inputBox.disabled, false, "input must be enabled again");
-  assert.equal(stoppedPairs.length, 1, "the stopped pair must be persisted");
-  assert.ok(stoppedPairs[0].pairId.length > 0);
-  assert.ok(persistCalls.length >= 1);
+  const active = await restarted.open();
   assert.ok(
-    updateCalls.length >= 1,
-    "a stopped turn must still paint its own bubble",
+    active.messages.children[1].children[1].html.includes(
+      "itempane-stopped-note",
+    ),
   );
-  const finalPaint = updateCalls[updateCalls.length - 1];
-  assert.equal(finalPaint.markdown, "Partial answer");
   assert.ok(
-    finalPaint.suffixHtml.includes("itempane-stopped-note"),
-    "the bubble must carry the stopped note",
+    active.messages.children[2].children[1].html.includes(
+      "itempane-stopped-empty",
+    ),
+  );
+  await active.ask("Continue");
+  assert.deepEqual(
+    Array.from(prompt, (m) => m.content),
+    ["Old question", "Old answer", "Continue"],
   );
 });
+
+test("a late provider success cannot overwrite or unlock a newer request (#427)", async (t) => {
+  const profile = await chatProfile(t);
+  const old = { delayAbort: true };
+  const next = { delayAbort: true };
+  const first = pausedChat(old);
+  const second = pausedChat(next);
+  const session = await profile((request) =>
+    request.content.content === "Paper 7"
+      ? first.chat(request)
+      : second.chat(request),
+  );
+  const a = await session.open();
+  const sending = a.ask("Question A");
+  const request = await first.started;
+  session.ui.resetQuickChatState(8);
+  const b = await session.open(8);
+  const newer = b.ask("Question B");
+  await second.started;
+  request.onProgress("Late text");
+  old.finish();
+  await sending;
+  assert.equal(b.send.disabled, true);
+  assert.ok(b.state.abortController);
+  assert.equal(a.input.focusCount, undefined);
+  assert.equal(
+    session.chatPersist.getThread(7, a.state.threadId).messages.length,
+    1,
+  );
+  assert.equal(b.state.conversationHistory.length, 1);
+  next.finish();
+  await newer;
+});
+
+for (const change of ["switch", "clear", "delete", "newer turn"]) {
+  test(`late cancellation respects ${change} in the same paper (#457)`, async (t) => {
+    const profile = await chatProfile(t);
+    const old = { partial: "Fragment", delayAbort: true };
+    const blocked = pausedChat(old);
+    const session = await profile(blocked.chat);
+    const a = await session.open();
+    const origin = a.state.threadId;
+    a.state.relatedMode = "fullText";
+    const sending = a.ask("Question A");
+    await blocked.started;
+    const store = session.chatPersist;
+    const selected = store.createThread(7);
+    store.saveMessages(
+      7,
+      selected.id,
+      [{ role: "user", content: "Other thread" }],
+      {
+        relatedItems: [{ itemId: 22, title: "Other source" }],
+        relatedMode: "summary",
+        relatedContextSignature: "summary:22",
+        relatedContextIncludedCount: 1,
+      },
+    );
+    session.ui.resetQuickChatState(7);
+    const b = await session.open();
+    assert.equal(b.state.threadId, selected.id);
+    if (change === "clear") store.saveMessages(7, origin, []);
+    if (change === "delete") store.deleteThread(7, origin);
+    if (change === "newer turn")
+      store.saveMessages(7, origin, [
+        ...store.getThread(7, origin).messages,
+        { role: "user", content: "New turn", pairId: "new-id" },
+      ]);
+    await a.stop.click();
+    old.reject();
+    await sending;
+    await store.flush();
+    const { chatPersist: restored } = await profile();
+    const active = restored.getOrCreateActiveThread(7);
+    assert.equal(active.id, selected.id);
+    assert.equal(active.context.relatedItems[0].itemId, 22);
+    assert.equal(active.messages[0].content, "Other thread");
+    const thread = restored.getThread(7, origin);
+    if (change === "switch") {
+      assert.equal(thread.context.relatedMode, "fullText");
+      assert.equal(thread.messages.at(-1).stopped, true);
+      assert.equal(thread.messages.at(-1).content, "Fragment");
+      assert.ok(
+        a.messages.children
+          .at(-1)
+          .children[1].html.includes("itempane-stopped-note"),
+      );
+    }
+    if (change === "clear") assert.equal(thread.messages.length, 0);
+    if (change === "delete") assert.equal(restored.listThreads(7).length, 1);
+    if (change === "newer turn")
+      assert.equal(thread.messages.at(-1).pairId, "new-id");
+    assert.equal(a.stop.style.display, "none");
+    assert.equal(a.send.disabled, false);
+  });
+}
 
 test("a late PDF extraction does not replace another paper's content (#427)", async () => {
   const started = deferred();

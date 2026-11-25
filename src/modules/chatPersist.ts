@@ -393,10 +393,8 @@ export class ChatPersist {
   ): ChatPersistThread | null {
     if (itemId == null || !threadId) return null;
     const record = this.ensureItem(itemId);
-    let thread = this.getThread(itemId, threadId);
-    if (!thread) {
-      thread = this.createThread(itemId);
-    }
+    const thread = this.getThread(itemId, threadId);
+    if (!thread) return null;
     thread.messages = messages;
     if (context) thread.context = context;
     thread.updatedAt = this.now();
@@ -406,7 +404,6 @@ export class ChatPersist {
     ) {
       thread.title = titleFromMessages(messages);
     }
-    record.activeThreadId = thread.id;
     this.pruneItem(record);
     this.scheduleSave();
     return thread;
@@ -428,6 +425,37 @@ export class ChatPersist {
       return this.getThread(itemId, threadId);
     }
     return this.writeMessages(itemId, threadId, snapshot, contextSnapshot);
+  }
+
+  /** Complete only the pending question that still owns the end of this thread. */
+  finishTurn(
+    itemId: number,
+    threadId: string,
+    question: ChatPersistMessage,
+    answer?: ChatPersistMessage,
+    context?: ChatPersistContext,
+  ): boolean {
+    const thread = this.getThread(itemId, threadId);
+    const pending = thread?.messages.at(-1);
+    if (
+      !thread ||
+      pending?.role !== "user" ||
+      !question.pairId ||
+      pending.pairId !== question.pairId
+    ) {
+      return false;
+    }
+    // A provider failure keeps the unanswered question, without a stopped marker.
+    const turn = answer
+      ? [question, answer]
+      : [{ ...question, pairId: undefined }];
+    this.saveMessages(
+      itemId,
+      threadId,
+      [...thread.messages.slice(0, -1), ...turn],
+      context,
+    );
+    return true;
   }
 
   markPairSaved(itemId: number, threadId: string, pairId: string): void {

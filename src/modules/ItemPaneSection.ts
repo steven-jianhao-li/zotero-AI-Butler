@@ -43,7 +43,6 @@ import {
   getQuickChatRelatedLimit,
   resolveQuickChatRelatedContext,
   validateQuickChatRelatedSelection,
-  type QuickChatRelatedContextResult,
   type QuickChatRelatedItemRef,
   type QuickChatRelatedMode,
 } from "./quickChatRelatedContext";
@@ -899,65 +898,14 @@ function sidebarHasQuickChat(body: HTMLElement): boolean {
   return !!body.querySelector("#ai-butler-inline-chat");
 }
 
-function persistActiveQuickChatThread(
-  messages: ChatPersistMessage[] = currentChatState.conversationHistory,
-  target?: { itemId: number | null; threadId: string | null },
-): void {
-  try {
-    const itemId = target ? target.itemId : currentChatState.itemId;
-    const threadId = target ? target.threadId : currentChatState.threadId;
-    if (itemId != null && threadId) {
-      chatPersist.saveMessages(itemId, threadId, messages, currentChatState);
-    }
-  } catch (err) {
-    ztoolkit.log("[AI-Butler] ChatPersist save failed:", err);
-  }
-}
-
-/**
- * 取消/出错时把「提问 + 已生成的部分回答」一起落盘。
- *
- * 之前只有成功的一对才会持久化：一旦用户点停止（或请求卡住），这条问答就只
- * 存在于内存里，切线程/重开面板即丢失，用户无法回看自己问了什么、回答到哪。
- * 这里显式写入一条 `stopped: true` 的记录，恢复时会带“已停止”标记。
- */
-function persistStoppedQuickChatPair(params: {
-  conversationQuestion: string;
-  displayQuestion: string;
-  pairId: string;
-  response: string;
-  sourceLabel?: string;
-  /** 请求所属的条目/线程：面板可能已经切走，不能再用 currentChatState */
-  itemId?: number | null;
-  threadId?: string | null;
-  baseHistory?: ChatPersistMessage[];
-}): void {
-  try {
-    const messages: ChatPersistMessage[] = [
-      ...(params.baseHistory ?? currentChatState.conversationHistory),
-      {
-        role: "user",
-        content: params.conversationQuestion,
-        displayContent: params.displayQuestion,
-        pairId: params.pairId,
-      },
-    ];
-    if (params.response) {
-      messages.push({
-        role: "assistant",
-        content: params.response,
-        pairId: params.pairId,
-        stopped: true,
-        ...(params.sourceLabel ? { sourceLabel: params.sourceLabel } : {}),
-      });
-    }
-    persistActiveQuickChatThread(messages, {
-      itemId: params.itemId ?? currentChatState.itemId,
-      threadId: params.threadId ?? currentChatState.threadId,
-    });
-  } catch (err) {
-    ztoolkit.log("[AI-Butler] ChatPersist stopped pair failed:", err);
-  }
+function persistActiveQuickChatThread(): void {
+  const { itemId, threadId, conversationHistory } = currentChatState;
+  chatPersist.saveMessages(
+    itemId,
+    threadId,
+    conversationHistory,
+    currentChatState,
+  );
 }
 
 /**
@@ -1048,7 +996,6 @@ function renderItemPaneSection(
   // 检查是否有有效的文献条目
   if (!item || !item.isRegularItem()) {
     if (currentChatState.itemId != null) {
-      persistActiveQuickChatThread();
       currentChatState.abortController?.abort(
         getString("itempane-quick-chat-abort-item-switched"),
       );
@@ -1076,9 +1023,8 @@ function renderItemPaneSection(
     sidebarNoteEditState = null;
   }
 
-  // 切换条目时先落盘上一篇的对话，再终止进行中的请求。
+  // Questions are already persisted before preparation starts.
   if (currentChatState.itemId !== item.id) {
-    persistActiveQuickChatThread();
     currentChatState.abortController?.abort(
       getString("itempane-quick-chat-abort-item-switched"),
     );
@@ -4445,6 +4391,15 @@ function renderChatArea(
         answer.pairId ||= `${currentChatState.threadId}_legacy_${index + 1}`;
         index += 2;
       } else {
+        // Earlier #457 files stored only the tagged question on an empty stop.
+        if (message.pairId) {
+          answer = {
+            role: "assistant",
+            pairId: message.pairId,
+            content: "",
+            stopped: true,
+          };
+        }
         index += 1;
       }
       const pairWrapper = doc.createElement("div");
@@ -4492,15 +4447,10 @@ function renderChatArea(
           overflow-x: hidden;
           user-select: text;
         `;
-        updateQuickChatAssistantMessage(
-          aiMsgDiv,
-          answer.content,
-          answer.stopped
-            ? `<div style="color: #777; font-size: 11px; margin-top: 6px;">${getString("itempane-stopped-note")}</div>`
-            : "",
-        );
+        renderQuickChatAnswer(aiMsgDiv, answer);
         pairWrapper.appendChild(aiMsgDiv);
-        appendPairActions(pairWrapper, pairId, question, answer);
+        if (answer.content)
+          appendPairActions(pairWrapper, pairId, question, answer);
       }
       messagesArea.appendChild(pairWrapper);
     }
@@ -4589,7 +4539,6 @@ function renderChatArea(
     if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
       return;
     }
-    persistActiveQuickChatThread();
     bindThreadToState(chatPersist.createThread(item.id));
     if (!currentChatState.pdfContent) {
       void loadPdfContentIfNeeded();
@@ -4641,7 +4590,6 @@ function renderChatArea(
     if (!messagesArea.isConnected || currentChatState.itemId !== item.id) {
       return;
     }
-    persistActiveQuickChatThread();
     const thread = chatPersist.setActiveThread(item.id, nextId);
     if (thread) bindThreadToState(thread);
   });
@@ -5358,7 +5306,7 @@ function renderChatArea(
     const requestController = currentChatState.abortController;
     const requestItemId = currentChatState.itemId;
     const requestThreadId = currentChatState.threadId;
-    const requestHistory = [...currentChatState.conversationHistory];
+    const requestContext = cloneChatContext(requestState);
     activeChatAbortController = requestController;
     const isCurrentRequest = (): boolean =>
       currentChatState === requestState &&
@@ -5458,38 +5406,73 @@ function renderChatArea(
     inputBox.value = "";
     resizeQuickChatInput();
     let fullResponse = "";
-    let conversationQuestion = question;
     let sourceLabel = getString("itempane-quick-chat-source-label");
+    const signature = createQuickChatRelatedContextSignature(
+      requestContext.relatedMode,
+      requestContext.relatedItems,
+    );
+    if (
+      requestContext.relatedContextSignature &&
+      requestContext.relatedContextSignature !== signature
+    ) {
+      requestState.conversationHistory = [];
+      requestContext.relatedContextSignature = "";
+      requestContext.relatedContextIncludedCount = 0;
+    }
+    const conversation = buildQuickChatConversation(
+      requestState.conversationHistory,
+      question,
+    );
+    const pending: ChatPersistMessage = {
+      role: "user",
+      content: question,
+      displayContent: question,
+      pairId,
+    };
+    requestState.conversationHistory.push(pending);
+
+    const finishTurn = (answer?: ChatPersistMessage): boolean => {
+      const saved = chatPersist.finishTurn(
+        requestItemId,
+        requestThreadId,
+        pending,
+        answer,
+        answer && !answer.stopped ? requestContext : undefined,
+      );
+      const history = currentChatState.conversationHistory;
+      if (
+        saved &&
+        currentChatState.itemId === requestItemId &&
+        currentChatState.threadId === requestThreadId &&
+        history.at(-1)?.role === "user" &&
+        history.at(-1)?.pairId === pairId
+      ) {
+        if (answer) {
+          history.splice(-1, 1, pending, answer);
+          if (!answer.stopped) Object.assign(currentChatState, requestContext);
+        } else {
+          delete pending.pairId;
+        }
+      }
+      return saved;
+    };
 
     try {
+      persistActiveQuickChatThread();
       const { default: LLMService } = await import("./llmService");
       if (!isCurrentRequest()) return;
 
-      let relatedContextResult: QuickChatRelatedContextResult | null = null;
-      conversationQuestion = question;
-      sourceLabel = getString("itempane-quick-chat-source-label");
-      if (currentChatState.relatedItems.length > 0) {
-        const nextSignature = createQuickChatRelatedContextSignature(
-          currentChatState.relatedMode,
-          currentChatState.relatedItems,
-        );
-        if (
-          currentChatState.relatedContextSignature &&
-          currentChatState.relatedContextSignature !== nextSignature
-        ) {
-          currentChatState.conversationHistory = [];
-        }
-
-        if (currentChatState.conversationHistory.length === 0) {
+      if (requestContext.relatedItems.length > 0) {
+        if (!conversation.some((message) => message.role === "assistant")) {
           setRelatedStatus(getString("itempane-related-context-loading"));
-          relatedContextResult = await resolveQuickChatRelatedContext(
-            currentChatState.relatedItems,
-            currentChatState.relatedMode,
+          const relatedContextResult = await resolveQuickChatRelatedContext(
+            requestContext.relatedItems,
+            requestContext.relatedMode,
           );
           if (!isCurrentRequest()) return;
-          currentChatState.relatedContextSignature =
+          requestContext.relatedContextSignature =
             relatedContextResult.signature;
-          currentChatState.relatedContextIncludedCount =
+          requestContext.relatedContextIncludedCount =
             relatedContextResult.included.length;
 
           if (relatedContextResult.skipped.length > 0) {
@@ -5501,7 +5484,7 @@ function renderChatArea(
             );
           }
           if (relatedContextResult.included.length > 0) {
-            conversationQuestion = buildQuickChatQuestionWithRelatedContext(
+            pending.content = buildQuickChatQuestionWithRelatedContext(
               question,
               relatedContextResult,
             );
@@ -5518,36 +5501,17 @@ function renderChatArea(
             );
             sourceLabel = getString("itempane-quick-chat-source-label");
           }
-        } else if (currentChatState.relatedContextIncludedCount > 0) {
+        } else if (requestContext.relatedContextIncludedCount > 0) {
           sourceLabel = getString("itempane-related-source-label", {
             args: {
-              count: currentChatState.relatedContextIncludedCount,
+              count: requestContext.relatedContextIncludedCount,
               mode: getRelatedModeLabel(),
             },
           });
         }
       }
 
-      // 先把提问落盘：即使随后请求卡住、被取消或应用退出，历史里也不会丢问题。
-      persistActiveQuickChatThread(
-        [
-          ...requestHistory,
-          {
-            role: "user",
-            content: conversationQuestion,
-            displayContent: question,
-            pairId,
-          },
-        ],
-        { itemId: requestItemId, threadId: requestThreadId },
-      );
-
-      const conversationHistory = buildQuickChatConversation(
-        currentChatState.conversationHistory,
-        conversationQuestion,
-      );
-
-      let responseMetadata: LLMNoteMetadata | null = null;
+      conversation[conversation.length - 1].content = pending.content;
       const response = await LLMService.chat({
         content: {
           kind: "legacy",
@@ -5555,7 +5519,7 @@ function renderChatArea(
           isBase64: currentChatState.isBase64,
           policy: currentChatState.isBase64 ? "pdf-base64" : "text",
         },
-        conversation: conversationHistory,
+        conversation,
         transport: {
           abortSignal: requestController.signal,
         },
@@ -5570,61 +5534,38 @@ function renderChatArea(
       });
       if (!isCurrentRequest()) return;
       fullResponse = response.text;
-      responseMetadata = LLMNoteMetadataService.fromResponse("chat", response);
-
-      // 完成后最终更新
-      updateQuickChatAssistantMessage(aiMsgDiv, fullResponse);
-
       const answer: ChatPersistMessage = {
         role: "assistant",
         content: fullResponse,
         pairId,
-        noteMetadata: responseMetadata,
+        noteMetadata: LLMNoteMetadataService.fromResponse("chat", response),
         sourceLabel,
       };
-      currentChatState.conversationHistory.push(
-        {
-          role: "user",
-          content: conversationQuestion,
-          displayContent: question,
-        },
-        answer,
-      );
-      persistActiveQuickChatThread();
+      if (!finishTurn(answer)) return;
+      renderQuickChatAnswer(aiMsgDiv, answer);
       refreshThreadSelect();
       appendPairActions(pairWrapper, pairId, question, answer);
     } catch (err: any) {
-      const aborted = isChatAbortError(err, requestController.signal);
-      if (aborted) {
-        // 面板可能已经切到别的条目/线程，仍然把这一问一答写回它自己的线程，
-        // 否则用户停止后既看不到问题也看不到已生成的部分。
-        persistStoppedQuickChatPair({
-          conversationQuestion,
-          displayQuestion: question,
+      if (isChatAbortError(err, requestController.signal)) {
+        const answer: ChatPersistMessage = {
+          role: "assistant",
+          content: fullResponse,
           pairId,
-          response: fullResponse,
           sourceLabel,
-          itemId: requestItemId,
-          threadId: requestThreadId,
-          baseHistory: requestHistory,
-        });
-      }
-      // 中断渲染放在“过期请求”守卫之前：aiMsgDiv 属于这一次请求自己的气泡，
-      // 即使停止恰好撞上侧栏重新绑定（isCurrentRequest() 变 false），也应由这一轮
-      // 把已生成内容与“已终止”提示写完；共享的输入区/按钮仍由下面的守卫把关。
-      if (aborted) {
-        if (fullResponse) {
-          updateQuickChatAssistantMessage(
-            aiMsgDiv,
-            fullResponse,
-            `<div style="color: #777; font-size: 11px; margin-top: 6px;">${getString("itempane-stopped-note")}</div>`,
-          );
-        } else {
-          aiMsgDiv.innerHTML = `<strong>${getString("itempane-assistant-label")}</strong> <span style="color: #777;">${getString("itempane-stopped-empty")}</span>`;
+          stopped: true,
+        };
+        if (finishTurn(answer)) {
+          renderQuickChatAnswer(aiMsgDiv, answer);
+          if (isCurrentRequest()) {
+            refreshThreadSelect();
+            if (answer.content)
+              appendPairActions(pairWrapper, pairId, question, answer);
+          }
         }
         return;
       }
       if (!isCurrentRequest()) return;
+      finishTurn();
       ztoolkit.log("[AI-Butler] 快速追问发送失败:", err);
       aiMsgDiv.innerHTML = `<strong>${getString("itempane-assistant-label")}</strong> <span style="color: #f44336;">${getString("itempane-error", { args: { error: err?.message || getString("itempane-send-failed") } })}</span>`;
     } finally {
@@ -5909,6 +5850,16 @@ function buildQuickChatAssistantHtml(
   suffixHtml = "",
 ): string {
   return `<strong>${getString("itempane-assistant-label")}</strong><br/>${renderQuickChatMarkdown(markdown)}${suffixHtml}`;
+}
+
+function renderQuickChatAnswer(
+  container: HTMLElement,
+  answer: ChatPersistMessage,
+): void {
+  const suffix = answer.stopped
+    ? `<div style="color: #777; font-size: 11px; margin-top: 6px;">${getString(answer.content ? "itempane-stopped-note" : "itempane-stopped-empty")}</div>`
+    : "";
+  updateQuickChatAssistantMessage(container, answer.content, suffix);
 }
 
 function updateQuickChatAssistantMessage(

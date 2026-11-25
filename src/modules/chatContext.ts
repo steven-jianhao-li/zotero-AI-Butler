@@ -1,5 +1,6 @@
 import { getString } from "../utils/locale";
 import type { ConversationMessage, LLMAbortSignal } from "./llmproviders/types";
+import type { ChatPersistMessage } from "./chatPersist";
 
 export type ChatAbortControllerLike = {
   signal: LLMAbortSignal;
@@ -21,13 +22,32 @@ function normalizeConversationMessage(
 }
 
 export function buildQuickChatConversation(
-  sessionHistory: ConversationMessage[],
+  sessionHistory: readonly ChatPersistMessage[],
   question: string,
 ): ConversationMessage[] {
-  return [
-    ...sessionHistory.map(normalizeConversationMessage),
-    { role: "user", content: question },
-  ];
+  const conversation: ConversationMessage[] = [];
+  for (let index = 0; index < sessionHistory.length; index++) {
+    const message = sessionHistory[index];
+    if (message.role === "system") {
+      conversation.push(normalizeConversationMessage(message));
+      continue;
+    }
+    const answer = sessionHistory[index + 1];
+    // A stopped pair (or just its question in older files) is transcript-only.
+    if (
+      message.role === "user" &&
+      answer?.role === "assistant" &&
+      !answer.stopped &&
+      (!message.pairId || !answer.pairId || message.pairId === answer.pairId)
+    ) {
+      conversation.push(
+        normalizeConversationMessage(message),
+        normalizeConversationMessage(answer),
+      );
+    }
+  }
+  conversation.push({ role: "user", content: question });
+  return conversation;
 }
 
 export function appendQuickChatTurn(
